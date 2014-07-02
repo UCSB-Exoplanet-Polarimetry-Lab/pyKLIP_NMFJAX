@@ -12,9 +12,9 @@ def CreeDiaphragmeOffset(R1, n, n0, m0): # checked!
     
 def RemoveHotPixels(im1, NOneSidedShifts, Thres):
     NShifts=2*NOneSidedShifts+1
-    ShiftTable=itertools.permutations(np.arange(-NOneSidedShifts,NOneSidedShifts+1))
-    tmp=np.array([RotateRight(im1,ShiftTable[p,0],ShiftTable[p,1]) 
-         for p in range(0,size(ShiftTable))])
+    ShiftTable=np.array(list(itertools.permutations(np.arange(-NOneSidedShifts,NOneSidedShifts+1))))    
+    tmp=np.array([RotateRight(im1,ShiftTable[p,0],ShiftTable[p,1]) for p in range(0,size(ShiftTable))])
+    # see np.roll
     devs = np.std(tmp)
     ms = np.median(tmp)
     mms = np.mean(tmp)
