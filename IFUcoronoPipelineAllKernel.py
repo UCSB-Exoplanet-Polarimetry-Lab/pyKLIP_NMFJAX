@@ -11,6 +11,9 @@ def CreeDiaphragmeOffset(R1, n, n0, m0): # checked!
     return arr
     
 def RemoveHotPixels(im1, NOneSidedShifts, Thres):
+    """
+    Unfinished - there's still some unconverted Mathematica code in here
+    """
     NShifts=2*NOneSidedShifts+1
     ShiftTable=np.array(list(itertools.permutations(np.arange(-NOneSidedShifts,NOneSidedShifts+1))))    
     tmp=np.array([RotateRight(im1,ShiftTable[p,0],ShiftTable[p,1]) for p in range(0,size(ShiftTable))])
