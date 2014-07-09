@@ -5,13 +5,16 @@ def klip_math(sci, ref_psfs, numbasis):
 	Helper function for KLIP that does the linear algebra
 	
 	Inputs:
-		sci : array of length p containing the science data
-		ref_psfs : N x p array of the N reference PSFs that 
+		sci: array of length p containing the science data
+		ref_psfs: N x p array of the N reference PSFs that 
 							 characterizes the PSF of the p pixels
-		numbasis : number of KLIP basis vectors to use
+		numbasis: number of KLIP basis vectors to use
 
 	Outputs:
-		sub_img : array of lenght p that is the PSF subtracted data
+		sub_img: array of lenght p that is the PSF subtracted data
+
+	TODO:
+		make numbasis to be any number of KLIP cutoffs and return all of them
 	"""
 	import numpy.linalg as la
 	#import pdb	
@@ -64,4 +67,72 @@ def klip_math(sci, ref_psfs, numbasis):
 	#pdb.set_trace()
 
 	return sub_img
+
+def align_and_scale(img, new_center, old_center=None, scale_factor=1):
+	"""
+	Helper function that realigns and/or scales the image
+
+	Inputs:
+		img: 2D image to perform manipulation on
+		new_center: 2 element tuple (xpos, ypos) of new image center
+		old_center: 2 element tuple (xpos, ypos) of old image center
+		scale_factor: how much the stretch/contract the image. Will we
+									scaled w.r.t the new_center (done after relaignment).
+									We will adopt the convention
+											>1: stretch image (shorter to longer wavelengths)
+											<1: contract the image (longer to shorter wvs)
+
+	Outputs:
+		resampled_img: shifted and/or scaled 2D image
+	"""	
+	import scipy.ndimage as ndimage
+	import scipy.interpolate as interp
+	import pdb
+
+	#create the coordinate system of the image to manipulate for the transform
+	dims = img.shape
+	x,y = np.meshgrid(np.arange(dims[0], dtype=np.float32), np.arange(dims[1], dtype=np.float32))
+
+	#if old_center is specified, realign the images
+	if old_center is not None:
+		dx = new_center[0] - old_center[0]
+		dy = new_center[1] - old_center[1]
+		x -= dx
+		y -= dy
+
+	#if scale_factor is specified, scale the images
+	if scale_factor != 1:
+		#conver to polar for scaling
+		r = np.sqrt((x - new_center[0])**2 + (y - new_center[1])**2) 
+		theta = np.arctan2(y-new_center[1],x-new_center[0]) #theta range is [-pi,pi]
+		
+		r /= scale_factor
 	
+		#convert back to cartesian
+		x = r*np.cos(theta) + new_center[0]
+		y = r*np.sin(theta) + new_center[1]
+
+	#resample image based on new coordinates
+	#scipy uses y,x convention when meshgrid uses x,y
+	#stupid scipy functions can't work with masked arrays (NANs)
+	#and trying to use interp2d with sparse arrays is way to slow
+	#hack my way out of this by picking a really small value for NANs and try to detect them again after the interpolation
+	minval = np.min([np.nanmin(img), 0.0])
+	nanpix = np.where(np.isnan(img))
+	img = np.copy(img)
+	img[nanpix] = minval*2.0
+	resampled_img = ndimage.map_coordinates(img, [y,x], cval=np.nan)
+	resampled_img[np.where(resampled_img <= minval)] = np.nan
+	resampled_img[nanpix] = np.nan
+
+	#broken attempt at using sparse arrays with interp2d. Warning: takes forever to run
+	#good_dat = np.where(~(np.isnan(img)))
+	##recreate old coordinate system
+	#x0,y0 = np.meshgrid(np.arange(dims[0], dtype=np.float32), np.arange(dims[1], dtype=np.float32))
+	#interpolated = interp.interp2d(x0[good_dat], y0[good_dat], img[good_dat], kind='cubic')
+	#resampled_img = np.ones(img.shape) + np.nan
+	#resampled_img[good] = interpolated(y[good],x[good])
+
+	return resampled_img
+		
+		
