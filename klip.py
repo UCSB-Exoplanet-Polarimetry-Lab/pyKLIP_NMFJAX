@@ -91,7 +91,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
-    x,y = np.meshgrid(np.arange(dims[0], dtype=np.float32), np.arange(dims[1], dtype=np.float32))
+    x,y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
 
     #if old_center is specified, realign the images
     if old_center is not None:
@@ -135,4 +135,93 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     return resampled_img
         
+
+def klip_sdi(imgs, centers, wvs, annuli=5, subsections=4, movement=3, numbasis=50):
+    """
+    KLIP PSF Subtraction using spectral differential imaging
+
+    Inputs:
+        imgs: array of 2D images for SDI. Shape of array (N,y,x)
+        centers: N by 2 array of (x,y) coordinates of image centers
+        wvs: N legnth array detailing wavelength of each image
+        anuuli: number of annuli to use for KLIP
+        subsections: number of sections to break each annuli into
+        movement: minimum amount of movement (in pixels) of an astrophysical souce
+                  to consider using that image for a refernece PSF
+        numbasis: number of KL basis vectors to use
+
+    Ouput:
+        sub_imgs: array of 2D images (PSF subtracted)
+    """
+
+    #figure out error checking later..
+
+    #save all bad pixels
+    allnans = np.where(np.isnan(imgs))
+
+    #use first image to figure out how to divide the annuli
+    #TODO: should be smart about this in the future. Going to hard code some guessing
+    #need to make the next 10 lines or so much smarter
+    dims = imgs.shape
+    x,y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+    nanpix = np.where(np.isnan(imgs[0]))
+    OWA = np.sqrt(np.min( (x[nanpix]-centers[0][0])**2 + (y[nanpix]-centers[0][1])**2 ))
+    IWA = 10 #because I'm lazy
+    dr = float(OWA - IWA)/(annuli-1)
+    
+    #error checking for too small of annuli go here
+
+    #calculate the annuli
+    rad_bounds = [(dr*rad + IWA, dr*(rad+1) + IWA) for rad in range(annuli)]
+    rad_bounds[annuli-1] = (rad_bounds[annuli-1][0], imgs[0].shape[0]/2) #last annulus should mostly emcompass everything
+
+    #divide annuli into subsections
+    dphi = 2*np.pi/subsections
+    phi_bounds = [ ( dphi*phi_i - np.pi, dphi*(phi_i+1) - np.pi ) for phi_i in range(subsections) ]
+
+    #before we start, create the output array in flattened form
+    sub_imgs = np.zeros([dims[0], dims[1]*dims[2]])
+
+
+    #begin KLIP process for each image
+    for img_num, (center, wv) in enumerate(zip(centers, wvs)):
         
+        #calculate the necessary wavelength scaling
+        scale_factors = wv/wvs
+
+        #align and scale images
+        rescaled = np.array([align_and_scale(slice, center, oldcenter, scale_factor) for slice, oldcenter, scale_factor in zip(imgs, centers, scale_factors)])
+        
+        #create coordinate system 
+        r = np.sqrt( (x-center[0])**2 + (y-center[1])**2 )
+        phi = np.arctan2( y-center[1], x-center[0] )
+
+        #flatten img dimension
+        flattened = imgs.reshape((dims[0], dims[1]*dims[2]))
+        r = r.reshape(dims[1]*dims[2])
+        phi = phi.reshape(dims[1]*dims[2])
+
+        for radstart,radend in rad_bounds:
+            for phistart, phiend in phi_bounds:
+                #grab the pixel location of the section we are going to anaylze
+                section_ind = np.where( (r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend) )
+                if np.size(section_ind) == 0:
+                    continue
+                #grab the files suitable for reference PSF
+                avg_rad = (radstart + radend)/2.0
+                file_ind = np.where( (wv/wvs -1)*avg_rad > movement )
+                if np.size(file_ind) < 2:
+                    sub_imgs[img_num,section_ind] = np.zeros(np.size(section_ind))                  
+                    continue
+                ref_psfs = flattened[file_ind[0],:]
+                ref_psfs = ref_psfs[:, section_ind[0]]
+                print(ref_psfs.shape)
+                sub_imgs[img_num, section_ind] = klip_math(flattened[img_num, section_ind], ref_psfs, numbasis)
+                 
+    #finished. Let's reshape the output images
+    sub_imgs = sub_imgs.reshape((dims[0], dims[1], dims[2]))
+    sub_imgs[allnans] = np.nan
+    
+    return sub_imgs
+
+
