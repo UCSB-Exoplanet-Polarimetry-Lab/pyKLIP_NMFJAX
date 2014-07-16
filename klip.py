@@ -1,4 +1,6 @@
 import numpy as np
+import numpy.linalg as la
+import scipy.ndimage as ndimage
 
 def klip_math(sci, ref_psfs, numbasis):
     """
@@ -16,7 +18,6 @@ def klip_math(sci, ref_psfs, numbasis):
     TODO:
         make numbasis to be any number of KLIP cutoffs and return all of them
     """
-    import numpy.linalg as la
     #import pdb 
 
     #for the science image, subtract the mean and mask bad pixels
@@ -26,7 +27,7 @@ def klip_math(sci, ref_psfs, numbasis):
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction
-    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:,None]
+    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
 
     #calculate the covariance matrix for the reference PSFs
@@ -42,8 +43,8 @@ def klip_math(sci, ref_psfs, numbasis):
     eig_args_all = np.argsort(evals)
     
     #calculate the KL basis vectors
-    Z = np.dot(evecs, ref_psfs_mean_sub)
-    Z = Z * (1./np.sqrt(evals*(np.size(sci)-1)))[:,None] #multiply a value from each row
+    kl_basis = np.dot(evecs, ref_psfs_mean_sub)
+    kl_basis = kl_basis * (1./np.sqrt(evals*(np.size(sci)-1)))[:, None] #multiply a value from each row
     
     #pick the largest however many to model PSF
     tot_basis = np.size(evals)
@@ -52,11 +53,11 @@ def klip_math(sci, ref_psfs, numbasis):
     #remember that sorting sorted the smallest eigenvalues first
     eig_args = eig_args_all[tot_basis - trunc_basis : tot_basis]
 
-    Z = Z[eig_args, :]
+    kl_basis = kl_basis[eig_args, :]
 
     #project KL vectors onto science image to construct model PSF
-    inner_products = np.dot(sci_mean_sub, Z.T)
-    klip_psf = np.dot(inner_products, Z)
+    inner_products = np.dot(sci_mean_sub, kl_basis.T)
+    klip_psf = np.dot(inner_products, kl_basis)
     
     #subtract from original image to get final image
     sub_img = sci_mean_sub - klip_psf
@@ -84,14 +85,13 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     Outputs:
         resampled_img: shifted and/or scaled 2D image
-    """ 
-    import scipy.ndimage as ndimage
+    """
     #import scipy.interpolate as interp
     #import pdb
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
-    x,y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
 
     #if old_center is specified, realign the images
     if old_center is not None:
@@ -116,7 +116,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     #scipy uses y,x convention when meshgrid uses x,y
     #stupid scipy functions can't work with masked arrays (NANs)
     #and trying to use interp2d with sparse arrays is way to slow
-    #hack my way out of this by picking a really small value for NANs and try to detect them again after the interpolation
+    #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
     minval = np.min([np.nanmin(img), 0.0])
     nanpix = np.where(np.isnan(img))
     img = np.copy(img)
@@ -173,11 +173,12 @@ def klip_sdi(imgs, centers, wvs, annuli=5, subsections=4, movement=3, numbasis=5
 
     #calculate the annuli
     rad_bounds = [(dr*rad + IWA, dr*(rad+1) + IWA) for rad in range(annuli)]
-    rad_bounds[annuli-1] = (rad_bounds[annuli-1][0], imgs[0].shape[0]/2) #last annulus should mostly emcompass everything
+    #last annulus should mostly emcompass everything
+    rad_bounds[annuli-1] = (rad_bounds[annuli-1][0], imgs[0].shape[0]/2)
 
     #divide annuli into subsections
     dphi = 2*np.pi/subsections
-    phi_bounds = [ ( dphi*phi_i - np.pi, dphi*(phi_i+1) - np.pi ) for phi_i in range(subsections) ]
+    phi_bounds = [(dphi*phi_i - np.pi, dphi*(phi_i+1) - np.pi) for phi_i in range(subsections)]
 
     #before we start, create the output array in flattened form
     sub_imgs = np.zeros([dims[0], dims[1]*dims[2]])
@@ -190,10 +191,11 @@ def klip_sdi(imgs, centers, wvs, annuli=5, subsections=4, movement=3, numbasis=5
         scale_factors = wv/wvs
 
         #align and scale images
-        rescaled = np.array([align_and_scale(slice, center, oldcenter, scale_factor) for slice, oldcenter, scale_factor in zip(imgs, centers, scale_factors)])
+        rescaled = np.array([align_and_scale(frame, center, oldcenter, scale_factor)
+                             for frame, oldcenter, scale_factor in zip(imgs, centers, scale_factors)])
         
         #create coordinate system 
-        r = np.sqrt( (x-center[0])**2 + (y-center[1])**2 )
+        r = np.sqrt((x-center[0])**2 + (y-center[1])**2)
         phi = np.arctan2( y-center[1], x-center[0] )
 
         #flatten img dimension
@@ -204,12 +206,12 @@ def klip_sdi(imgs, centers, wvs, annuli=5, subsections=4, movement=3, numbasis=5
         for radstart,radend in rad_bounds:
             for phistart, phiend in phi_bounds:
                 #grab the pixel location of the section we are going to anaylze
-                section_ind = np.where( (r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend) )
+                section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
                 if np.size(section_ind) == 0:
                     continue
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend)/2.0
-                file_ind = np.where( (wv/wvs -1)*avg_rad > movement )
+                file_ind = np.where((wv/wvs - 1)*avg_rad > movement)
                 if np.size(file_ind) < 2:
                     sub_imgs[img_num,section_ind] = np.zeros(np.size(section_ind))                  
                     continue
