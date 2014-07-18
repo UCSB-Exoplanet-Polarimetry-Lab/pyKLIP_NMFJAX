@@ -7,8 +7,20 @@ def gpi_read_data(filepaths):
     Method to open and read a list of GPI data
 
     Inputs:
-        filespaths: a list of filepaths (as strings)
+        filespaths: a list of filepaths
+
+    Outputs:
+        dataset: a dictionary with the following keys. Here N = (number of datacubes) * (number of datacubes per image)
+            data: Array of shape (N,y,x) for N images of shape (y,x)
+            centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
+            filenums: Array of size N for the numerical index to map data to file that was passed in
+            filenames: Array of size N for the actual filepath of the file that corresponds to the data
+            PAs: parallactic angle rotation of the target (used for ADI) [in degrees]
+            wvs: wavelength of the image (used for SDI) [in microns]. For polarization data, defaults to "None"
     """
+    #check to see if user just inputted a single filename string
+    if isinstance(filepaths, str):
+        filepaths = [filepaths]
 
     #make some lists for quick appending
     data = []
@@ -24,12 +36,12 @@ def gpi_read_data(filepaths):
         data.append(cube)
         centers.append(center)
         rot_angles.append(pa)
-        wvs.append(wvs)
+        wvs.append(wv)
         filenums.append(np.ones(pa.shape[0]) * index)
 
-        filename = np.chararray(pa.shape[0])
-        filename[:] = filepath
-        filenames.append(filename)
+        #filename = np.chararray(pa.shape[0])
+        #filename[:] = filepath
+        filenames.append([filepath for i in range(pa.shape[0])])
 
     #convert everything into numpy arrays
     #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
@@ -55,6 +67,12 @@ def gpi_process_file(filepath):
 
     Inputs:
         filepath: the file to open
+
+    Outputs: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
+        cube: 3D data cube from the file. Shape is (z,281,281)
+        center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
+        parang: array of z of the parallactic angle of the target (same value just repeated z times)
+        wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
     '''
     hdulist = pyfits.open(filepath)
 
@@ -84,7 +102,7 @@ def gpi_process_file(filepath):
         cube = np.sum(cube, axis=0)  #sum to total intensity
         cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
         center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
-        parang = [exthdr['AVPARANG']]
+        parang = exthdr['AVPARANG']*np.ones(1)
     else:
         raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
 
