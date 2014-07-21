@@ -93,13 +93,15 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+    mod_flag = 0 #check how many modifications we are making
 
     #if old_center is specified, realign the images
-    if old_center is not None:
+    if ((old_center is not None) & ~(np.array_equal(new_center, old_center))):
         dx = new_center[0] - old_center[0]
         dy = new_center[1] - old_center[1]
         x -= dx
         y -= dy
+        mod_flag += 1
 
     #if scale_factor is specified, scale the images
     if scale_factor != 1:
@@ -112,6 +114,11 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
         #convert back to cartesian
         x = r * np.cos(theta) + new_center[0]
         y = r * np.sin(theta) + new_center[1]
+        mod_flag += 1
+
+    #if nothing is to be changed, return a copy of the image
+    if mod_flag == 0:
+        return np.copy(img)
 
     #resample image based on new coordinates
     #scipy uses y,x convention when meshgrid uses x,y
@@ -137,38 +144,51 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     return resampled_img
 
 
-def rotate(img, angle, center, old_center=None):
+def rotate(img, angle, center, new_center=None):
     """
     Rotate an image by the given angle about the given center.
-    Optional: can shift the image from the oldcenter first before rotating
+    Optional: can shift the image to a new image center after rotation
+
+    Inputs:
+        img: a 2D image
+        angle: angle CCW to rotate by (degrees)
+        center: 2 element list [x,y] that defines the center to rotate the image to respect to
+        new_center: 2 element list [x,y] that defines the new image center after rotation
+
+    Outputs:
+        resampled_img: new 2D image
     """
 
+    angle_rad = np.radians(angle)
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
 
-    if old_center is not None:
-        dx = center[0] - old_center[0]
-        dy = center[1] - old_center[1]
+    #do rotation. CW rotation formula to get a CCW of the image
+    xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
+    yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
+
+    #if necessary, move coordinates to new center
+    if new_center is not None:
+        dx = new_center[0] - center[0]
+        dy = new_center[1] - center[1]
         x -= dx
         y -= dy
-        center = old_center
-
-    #do rotation. CW rotation formula to get a CCW of the image
-    xp = (x-center[0])*np.cos(angle) + (y-center[1])*np.sin(angle) + center[0]
-    yp = -(x-center[0])*np.sin(angle) + (y-center[1])*np.cos(angle) + center[1]
 
     #resample image based on new coordinates
     #scipy uses y,x convention when meshgrid uses x,y
     #stupid scipy functions can't work with masked arrays (NANs)
     #and trying to use interp2d with sparse arrays is way to slow
     #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
+    #then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
     minval = np.min([np.nanmin(img), 0.0])
     nanpix = np.where(np.isnan(img))
     img_copy = np.copy(img)
-    img_copy[nanpix] = minval * 2.0
+    img_copy[nanpix] = minval * 5.0
+    resampled_img_mask = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
+    img_copy[nanpix] = 0
     resampled_img = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
-    resampled_img[np.where(resampled_img <= minval)] = np.nan
+    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
     return resampled_img
 
@@ -190,7 +210,6 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
     Ouput:
         sub_imgs: array of 2D images (PSF subtracted)
     """
-
     #figure out error checking later..
 
     #save all bad pixels
@@ -204,7 +223,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
     nanpix = np.where(np.isnan(imgs[0]))
     OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
     IWA = 10  #because I'm lazy
-    dr = float(OWA - IWA) / (annuli - 1)
+    dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
 
@@ -223,8 +242,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
 
     #begin KLIP process for each image
     for img_num, (center, pa) in enumerate(zip(centers, parangs)):
-
-        #align images
+        print(center, pa)
         recentered = np.array([align_and_scale(frame, center, oldcenter)
                                for frame, oldcenter in zip(imgs, centers)])
 
@@ -233,7 +251,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
         phi = np.arctan2(y - center[1], x - center[0])
 
         #flatten img dimension
-        flattened = imgs.reshape((dims[0], dims[1] * dims[2]))
+        flattened = recentered.reshape((dims[0], dims[1] * dims[2]))
         r = r.reshape(dims[1] * dims[2])
         phi = phi.reshape(dims[1] * dims[2])
 
@@ -246,13 +264,14 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
                     continue
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend) / 2.0
-                file_ind = np.where((parangs - pa) * avg_rad > movement)
+                file_ind = np.where(np.abs(np.radians(parangs - pa)) * avg_rad > movement)
                 if np.size(file_ind) < 2:
+                    print("less than 2 reference PSFs available, skipping...")
                     sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
                     continue
                 ref_psfs = flattened[file_ind[0], :]
                 ref_psfs = ref_psfs[:, section_ind[0]]
-                print(ref_psfs.shape)
+                print(img_num, avg_rad, ref_psfs.shape)
                 sub_imgs[img_num, section_ind] = klip_math(flattened[img_num, section_ind][0], ref_psfs, numbasis)
 
     #finished. Let's reshape the output images
