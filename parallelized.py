@@ -140,7 +140,7 @@ def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
     if new_center is None:
         new_center = [140, 140]
 
-    tpool = mp.pool(processes=numthreads)
+    tpool = mp.Pool(processes=numthreads)
 
     #klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
     tasks = [tpool.apply_async(klip.rotate, args=(img, -angle, center, new_center))
