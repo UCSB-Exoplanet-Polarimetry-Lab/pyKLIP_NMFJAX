@@ -11,10 +11,11 @@ def klip_math(sci, ref_psfs, numbasis):
         sci: array of length p containing the science data
         ref_psfs: N x p array of the N reference PSFs that 
                   characterizes the PSF of the p pixels
-        numbasis: number of KLIP basis vectors to use (can be an int or an array of ints)
+        numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
 
     Outputs:
-        sub_img: array of lenght p that is the PSF subtracted data
+        sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
+                               cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
 
     TODO:
         make numbasis to be any number of KLIP cutoffs and return all of them
@@ -40,37 +41,54 @@ def klip_math(sci, ref_psfs, numbasis):
     #calculate eigenvalues and eigenvectors of covariance matrix
     evals, evecs = la.eigh(covar_psfs)  #function for symmetric matrices
 
-    #sort the eigenvalues and eigenvectors (unfortunately smallest first)
-    eig_args_all = np.argsort(evals)
+    #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
+    eig_args_all = np.argsort(evals)[::-1]
 
     #calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
     kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value from each row
 
-    #pick the largest however many to model PSF
-    tot_basis = np.size(evals)
-    #truncation either based on user input or maximum number of PSFs
-    #trunc_basis = np.min([numbasis, tot_basis])
-    #remember that sorting sorted the smallest eigenvalues first
-    #eig_args = eig_args_all[tot_basis - trunc_basis: tot_basis]
-    #kl_basis = kl_basis[:, eig_args]
+    #sort to KL basis in descending order (largest first)
+    kl_basis = kl_basis[:,eig_args_all]
 
-    #begin experimental klip mode calculation
+    #maximum number of KL modes
+    tot_basis = np.size(evals)
+
+    #calculate the subtracted image for all the different requested KLIP cutcoffs
     #only pick numbasis requested that are valid, or give them the max
-    numbasis = np.clip(numbasis, 0, tot_basis-1) #clip greater values, for output consistency we'll keep duplicates
-    sci_mean_sub_rows = np.tile(sci_mean_sub, (tot_basis, 1)) #duplicate science image by tot_basis
+    #do numbasis - 1 since index 0 is using 1 KL basis vector
+    numbasis = np.clip(numbasis - 1, 0, tot_basis-1) #clip greater values, for output consistency we'll keep duplicates
+
+    #duplicate science image by tot_basis
+    sci_mean_sub_rows = np.tile(sci_mean_sub, (tot_basis, 1))
+
     #bad pixel mask
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
     sci_mean_sub_rows[sci_nanpix] = 0
+
+    #do the KLIP equation, but now all the different k_KLIP simultaneously
     inner_products = np.dot(sci_mean_sub_rows, kl_basis) #calculate the inner product for all of them
     inner_products = inner_products * np.tril(np.ones([tot_basis, tot_basis])) #select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal
     klip_psf = np.dot(inner_products, kl_basis.transpose()) #make a KLIP PSF for each amount of klip basis
     sub_img_rows = sci_mean_sub_rows - klip_psf #make subtracted image for each number of klip basis
-    sub_img_rows[sci_nanpix] = np.nan
-    sub_img_rows_selected = sub_img_rows[numbasis,:]
-    return sub_img_rows_selected.transpose()
-    #end experimental klip mode calculation
 
+    #restore NaNs
+    sub_img_rows[sci_nanpix] = np.nan
+
+    #select the KL mode cutoffs that we want to record
+    sub_img_rows_selected = sub_img_rows[numbasis,:]
+
+    #ned to flip them so the output is shaped (p,b)
+    return sub_img_rows_selected.transpose()
+
+
+    #old code that only did one number of KL basis for truncation
+    # #truncation either based on user input or maximum number of PSFs
+    # trunc_basis = np.min([numbasis, tot_basis])
+    # #eigenvalues are ordered largest first now
+    # eig_args = eig_args_all[0: trunc_basis]
+    # kl_basis = kl_basis[:, eig_args]
+    #
     # #project KL vectors onto science image to construct model PSF
     # inner_products = np.dot(sci_mean_sub, kl_basis)
     # klip_psf = np.dot(inner_products, kl_basis.T)
@@ -175,12 +193,12 @@ def rotate(img, angle, center, new_center=None):
         resampled_img: new 2D image
     """
 
-    angle_rad = np.radians(angle)
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
 
     #do rotation. CW rotation formula to get a CCW of the image
+    angle_rad = np.radians(angle)
     xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
     yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
 
@@ -219,7 +237,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
         parangs: N legnth array detailing parallactic angle of each image
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
-        movement: minimum amount of movement (in pixels) of an astrophysical souce
+        movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
 
@@ -234,7 +252,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
     #defaullt numbasis if none
     if numbasis is None:
         totalimgs = imgs.shape[0]
-        numbasis = 5 * np.arange(totalimgs/5+1)
+        numbasis = np.arange(1, totalimgs + 5, 5)
         print(numbasis)
     else:
         if hasattr(numbasis, "__len__"):
@@ -243,7 +261,7 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
             numbasis = np.array([numbasis])
 
     #save all bad pixels
-    #allnans = np.where(np.isnan(imgs))
+    allnans = np.where(np.isnan(imgs))
 
     #use first image to figure out how to divide the annuli
     #TODO: should be smart about this in the future. Going to hard code some guessing
@@ -282,8 +300,8 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
 
         #flatten img dimension
         flattened = recentered.reshape((dims[0], dims[1] * dims[2]))
-        r = r.reshape(dims[1] * dims[2])
-        phi = phi.reshape(dims[1] * dims[2])
+        r.shape = (dims[1] * dims[2])
+        phi.shape = (dims[1] * dims[2])
 
         #iterate over the different sections
         for radstart, radend in rad_bounds:
@@ -307,11 +325,13 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
                 sub_imgs[img_num, section_ind, :] = klip_math(flattened[img_num, section_ind][0], ref_psfs, numbasis)
 
     #finished. Let's reshape the output images
+    #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
     #if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off the number of basis)
     if sub_imgs.shape[0] == 1:
         sub_imgs = sub_imgs[0]
-    #sub_imgs[allnans] = np.nan
+    #restore bad pixels
+    sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
 
     #derotate images
     #sub_imgs = np.array([rotate(img, pa, (140,140), center) for img,pa,center in zip(sub_imgs, parangs, centers)])
