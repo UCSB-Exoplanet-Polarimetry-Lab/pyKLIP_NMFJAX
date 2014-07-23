@@ -5,9 +5,13 @@ import numpy as np
 import numpy.linalg as la
 import scipy.ndimage as ndimage
 
-def tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
+def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs):
-    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, jobcounter, printlock
+    """
+    Initializer function for the thread pool that initializes various shared variables. Main things to note that all
+    except the shapes are shared arrays (mp.Array).
+    """
+    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center
     original = original_imgs
     original_shape = original_imgs_shape
     aligned = aligned_imgs
@@ -17,25 +21,37 @@ def tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_sh
     img_pa = pa_imgs
     img_wv = wvs_imgs
     img_center = centers_imgs
-    jobcounter = mp.Value("i")
-    jobcounter = 0
-    printlock = mp.Lock()
 
 
-def arraytonumpy(raw_array, shape=None):
+def _arraytonumpy(shared_array, shape=None):
     """
-    Covert a ctype array to a numpy array
+    Covert a shared array to a numpy array
+    Input:
+        shared_array: a multiprocessing.Array array
+        shape: a shape for the numpy array. otherwise, will assume a 1d array
+
+    Output:
+        numpy_array: numpy array for vectorized operation. still points to the same memory!
     """
-    numpy_array = np.frombuffer(raw_array.get_obj())
+    numpy_array = np.frombuffer(shared_array.get_obj())
     if shape is not None:
         numpy_array.shape = shape
 
     return numpy_array
 
 
-def align_and_scale(ref_wv_iter, ref_center = None):
+def _align_and_scale(ref_wv_iter, ref_center=None):
     """
-    Aligns and scales the set of original images about a reference center and scaled to a reference wavelength
+    Aligns and scales the set of original images about a reference center and scaled to a reference wavelength.
+    Note: is a helper function to only be used after initializing the threadpool!
+
+    Inputs:
+        ref_wv_iter: a tuple of two elements. First is the index of the reference wavelength (between 0 and 36).
+                     second is the value of the reference wavelength. This is to determine scaling
+        ref_center: a two-element array with the [x,y] cetner position to align all the images to. Default is [140,140]
+
+    Ouputs:
+        just returns ref_wv_iter again
     """
     if ref_center is None:
         ref_center = [140, 140]
@@ -44,31 +60,27 @@ def align_and_scale(ref_wv_iter, ref_center = None):
     ref_wv_index = ref_wv_iter[0]
     ref_wv = ref_wv_iter[1]
 
-    original_imgs = arraytonumpy(original, original_shape)
-    wvs_imgs = arraytonumpy(img_wv)
-    centers_imgs = arraytonumpy(img_center, (np.size(wvs_imgs),2))
+    original_imgs = _arraytonumpy(original, original_shape)
+    wvs_imgs = _arraytonumpy(img_wv)
+    centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2))
 
     recentered = np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv)
                                for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
 
-    aligned_imgs = arraytonumpy(aligned, aligned_shape)
-    aligned_imgs[ref_wv_index,:,:,:] = recentered
+    aligned_imgs = _arraytonumpy(aligned, aligned_shape)
+    aligned_imgs[ref_wv_index, :, :, :] = recentered
 
     return ref_wv_index, ref_wv
 
-def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
+
+def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
     """
-    Runs klip on a section of an image as given by the geometric parameters
+    Runs klip on a section of an image as given by the geometric parameters. Helper fucntion of klip routines and
+    requires thread pool to be initialized! Currently is designed only for ADI+SDI. Not yet that flexible.
     """
-    global jobcounter, printlock, output, aligned, pa_imgs, wvs_imgs
+    global output, aligned, pa_imgs, wvs_imgs
     if ref_center is None:
         ref_center = [140, 140]
-
-    printlock.acquire()
-    jobcounter += 1
-    if jobcounter % 50 == 0:
-        print(jobcounter)
-    printlock.release()
 
     #create a coordinate system
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
@@ -85,8 +97,8 @@ def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rade
 
     #grab the files suitable for reference PSF
     #load shared arrays for wavelengths and PAs
-    wvs_imgs = arraytonumpy(img_wv)
-    pa_imgs = arraytonumpy(img_pa)
+    wvs_imgs = _arraytonumpy(img_wv)
+    pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section
     avg_rad = (radstart + radend) / 2.0
     moves = np.sqrt((np.radians(pa_imgs - parang) * avg_rad)**2 + ((wvs_imgs/wavelength - 1.0) * avg_rad)**2)
@@ -96,7 +108,7 @@ def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rade
         return False
 
     #load aligned images and make reference PSFs
-    aligned_imgs = arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
     ref_psfs = aligned_imgs[file_ind[0], :]
     ref_psfs = ref_psfs[:,  section_ind[0]]
     #ref_psfs = ref_psfs[:, section_ind]
@@ -105,14 +117,39 @@ def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rade
     #print(sub_imgs[img_num, section_ind, :].shape)
 
     #write to output
-    output_imgs = arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
+    output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
     klipped = klip.klip_math(aligned_imgs[img_num, section_ind], ref_psfs, numbasis)
-    printlock.acquire()
-    print("shapes {0}, {1}".format(klipped.shape, output_imgs[img_num, section_ind, :].shape))
-    printlock.release()
     output_imgs[img_num, section_ind, :] = klipped
-    print("out")
     return True
+
+
+def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
+    """
+    derotate a sequences of images by their respective angles
+
+    Inputs:
+        imgs: array of shape (N,y,x) containing N images
+        angles: array of length N with the angle to rotate each frame. Each angle should be CW in degrees. (TODO: fix this angle convention)
+        centers: array of shape N,2 with the [x,y] center of each frame
+        new_centers: a 2-element array with the new center to register each frame. Default is [140,140]
+        numthreads: number of threads to be used
+
+    Output:
+        derotated: array of shape (N,y,x) containing the derotated images
+    """
+    if new_center is None:
+        new_center = [140, 140]
+
+    tpool = mp.pool(processes=numthreads)
+
+    #klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
+    tasks = [tpool.apply_async(klip.rotate, args=(img, -angle, center, new_center))
+             for img, angle, center in zip(imgs, angles, centers)]
+
+    derotated = np.array([task.get() for task in tasks])
+
+    return derotated
+
 
 def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None):
     """
@@ -127,6 +164,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        numthreads:
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -176,7 +214,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     #make the array for the original images and initalize it
     original_imgs = mp.Array(ctypes.c_double, np.size(imgs))
     original_imgs_shape = imgs.shape
-    original_imgs_np = arraytonumpy(original_imgs, original_imgs_shape)
+    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape)
     original_imgs_np[:] = imgs
     #make array for recentered/rescaled image for each wavelength
     unique_wvs = np.unique(wvs)
@@ -187,20 +225,20 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     output_imgs_shape = imgs.shape + numbasis.shape
     #remake the PA, wv, and center arrays as shared arrays
     pa_imgs = mp.Array(ctypes.c_double, np.size(parangs))
-    pa_imgs_np = arraytonumpy(pa_imgs)
+    pa_imgs_np = _arraytonumpy(pa_imgs)
     pa_imgs_np[:] = parangs
     wvs_imgs = mp.Array(ctypes.c_double, np.size(wvs))
-    wvs_imgs_np = arraytonumpy(wvs_imgs)
+    wvs_imgs_np = _arraytonumpy(wvs_imgs)
     wvs_imgs_np[:] = wvs
     centers_imgs = mp.Array(ctypes.c_double, np.size(centers))
-    centers_imgs_np = arraytonumpy(centers_imgs, centers.shape)
+    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
     centers_imgs_np[:] = centers
-    tpool = mp.Pool(processes=numthreads, initializer=tpool_init,
+    tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs))
 
     #align and scale the images for each image. Use map to do this asynchronously
-    realigned_index = tpool.imap_unordered(align_and_scale, enumerate(unique_wvs))
+    realigned_index = tpool.imap_unordered(_align_and_scale, enumerate(unique_wvs))
 
     outputs = []
     #as each is finishing, queue up the aligned data to be processed with KLIP
@@ -210,7 +248,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         scidata_indicies = np.where(wvs == wv_value)[0]
 
         #def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
-        outputs += [tpool.apply_async(klip_section, args=(file_index, parang, wv_value, wv_index, numbasis,
+        outputs += [tpool.apply_async(_klip_section, args=(file_index, parang, wv_value, wv_index, numbasis,
                                                           radstart, radend, phistart, phiend, movement))
                             for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds
@@ -226,11 +264,9 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     print("Waiting for jobs to finish")
     tpool.join()
 
-    import pdb
-    pdb.set_trace()
     #finished. Let's reshape the output images
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
-    sub_imgs = arraytonumpy(output_imgs, output_imgs_shape)
+    sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
     #if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off the number of basis)
     if sub_imgs.shape[0] == 1:

@@ -2,7 +2,7 @@ import pyfits
 import numpy as np
 
 
-def gpi_read_data(filepaths):
+def gpi_readdata(filepaths):
     """
     Method to open and read a list of GPI data
 
