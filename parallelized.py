@@ -2,8 +2,8 @@ import klip
 import multiprocessing as mp
 import ctypes
 import numpy as np
-import numpy.linalg as la
-import scipy.ndimage as ndimage
+import cProfile
+import os
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs):
@@ -64,11 +64,9 @@ def _align_and_scale(ref_wv_iter, ref_center=None):
     wvs_imgs = _arraytonumpy(img_wv)
     centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2))
 
-    recentered = np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv)
-                               for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
-
     aligned_imgs = _arraytonumpy(aligned, aligned_shape)
-    aligned_imgs[ref_wv_index, :, :, :] = recentered
+    aligned_imgs[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv/old_wv)
+                                        for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
 
     return ref_wv_index, ref_wv
 
@@ -78,7 +76,7 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
     Runs klip on a section of an image as given by the geometric parameters. Helper fucntion of klip routines and
     requires thread pool to be initialized! Currently is designed only for ADI+SDI. Not yet that flexible.
     """
-    global output, aligned, pa_imgs, wvs_imgs
+    global output, aligned
     if ref_center is None:
         ref_center = [140, 140]
 
@@ -101,8 +99,8 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
     pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section
     avg_rad = (radstart + radend) / 2.0
-    moves = np.sqrt((np.radians(pa_imgs - parang) * avg_rad)**2 + ((wvs_imgs/wavelength - 1.0) * avg_rad)**2)
-    file_ind = np.where(np.sqrt((np.radians(pa_imgs - parang) * avg_rad)**2 + ((wvs_imgs/wavelength - 1.0) * avg_rad)**2) >= minmove)
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    file_ind = np.where(moves >= minmove)
     if np.size(file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
@@ -120,6 +118,103 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
     klipped = klip.klip_math(aligned_imgs[img_num, section_ind], ref_psfs, numbasis)
     output_imgs[img_num, section_ind, :] = klipped
+    return True
+
+
+def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
+    """
+    Profiler wrapper for _klip_section
+    """
+    cProfile.runctx("_klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center)",
+                    globals(), locals(), 'profile-{0}.out'.format(os.getpid()))
+    return True
+
+
+def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
+    """
+    Profiler wrapper for _klip_section_multifile
+    """
+    cProfile.runctx("_klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center)",
+                    globals(), locals(), 'profile-{0}.out'.format((radstart+radend)/2.0))
+    return True
+
+
+def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
+    """
+    Runs klip on a section for all the images of a given wavelength. Bigger size of atomization of work than _klip_section
+    but saves computation time and memory. Currently no need to break it down even smaller
+    """
+    if ref_center is None:
+        ref_center = [140, 140]
+
+    #create a coordinate system
+    x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+    x.shape = (x.shape[0] * x.shape[1])
+    y.shape = (y.shape[0] * y.shape[1])
+    r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
+    phi = np.arctan2(y - ref_center[1], x - ref_center[0])
+
+    #grab the pixel location of the section we are going to anaylze
+    section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
+    if np.size(section_ind) == 0:
+        print("section is empty, skipping...")
+        return False
+
+    #export some of klip.klip_math functions to here to minimize computation repeats
+
+    #load aligned images for this wavelength
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
+    ref_psfs = aligned_imgs[:,  section_ind[0]]
+
+    #do the same for the reference PSFs
+    #playing some tricks to vectorize the subtraction
+    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+    ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
+
+    #calculate the covariance matrix for the reference PSFs
+    #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
+    #we have to correct for that in the klip.klip_math routine when consturcting the KL
+    #vectors since that's not part of the equation in the KLIP paper
+    covar_psfs = np.cov(ref_psfs_mean_sub)
+
+    #grab the parangs
+    parangs = _arraytonumpy(img_pa)
+    [_klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
+                                     parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
+        for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+
+    return True
+
+
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove):
+    """
+    Imitates the rest of _klip_section for the multifile code
+    """
+    #grab the files suitable for reference PSF
+    #load shared arrays for wavelengths and PAs
+    wvs_imgs = _arraytonumpy(img_wv)
+    pa_imgs = _arraytonumpy(img_pa)
+    #calculate average movement in this section
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    file_ind = np.where(moves >= minmove)
+    if np.size(file_ind[0]) < 2:
+        print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
+        return False
+
+    #pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
+    covar_files = covar[file_ind[0].reshape(np.size(file_ind),1), file_ind[0]]
+
+    #load input/output data
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
+    output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
+    #run KLIP
+    try:
+        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs[file_ind[0],:], numbasis, covar_files)
+    except (ValueError, RuntimeError) as err:
+        print(err)
+
+    #write to output
+    output_imgs[img_num, section_ind[0], :] = klipped
     return True
 
 
@@ -150,6 +245,21 @@ def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
 
     return derotated
 
+
+
+def _check_output(enumerated_input):
+    """
+    Helper function that checks and prints progress of the multiprocessing
+
+    Input:
+        enumerated_input: 2 element tuple output of enumerate. First is the index, second is the output of apply_async
+    """
+    global tot_iter
+    index = enumerated_input[0] + 1
+    output = enumerated_input[1]
+    output.wait()
+    if index % 50 == 0:
+        print("{0} percent done".format(float(index)*100/tot_iter))
 
 def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None):
     """
@@ -206,6 +316,10 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     dphi = 2 * np.pi / subsections
     phi_bounds = [(dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi) for phi_i in range(subsections)]
 
+    #calculate how many iterations we need to do
+    global tot_iter
+    tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
+
     #before we start, create the output array in flattened form
     #sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
 
@@ -235,7 +349,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     centers_imgs_np[:] = centers
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs))
+                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
 
     #align and scale the images for each image. Use map to do this asynchronously
     realigned_index = tpool.imap_unordered(_align_and_scale, enumerate(unique_wvs))
@@ -248,15 +362,24 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         scidata_indicies = np.where(wvs == wv_value)[0]
 
         #def klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center=None):
-        outputs += [tpool.apply_async(_klip_section, args=(file_index, parang, wv_value, wv_index, numbasis,
+        # outputs += [tpool.apply_async(_klip_section_profiler, args=(file_index, parang, wv_value, wv_index, numbasis,
+        #                                                   radstart, radend, phistart, phiend, movement))
+        #                     for phistart,phiend in phi_bounds
+        #                 for radstart, radend in rad_bounds
+        #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+        outputs += [tpool.apply_async(_klip_section_multifile_profiler, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                           radstart, radend, phistart, phiend, movement))
-                            for phistart,phiend in phi_bounds
-                        for radstart, radend in rad_bounds
-                    for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+                        for phistart,phiend in phi_bounds
+                    for radstart, radend in rad_bounds]
 
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
-    [out.wait() for out in outputs]
+    #[out.wait() for out in outputs]
+    map(_check_output, enumerate(outputs))
+    #for index,out in enumerate(outputs):
+    #    out.wait()
+    #    if index % 50 == 0:
+    #        print("{0} percent done".format(float(index)*100/tot_iter))
 
     #close to pool now and wait for all processes to finish
     print("Calling threadpool close()")

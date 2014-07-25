@@ -3,7 +3,7 @@ import numpy.linalg as la
 import scipy.ndimage as ndimage
 
 
-def klip_math(sci, ref_psfs, numbasis):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -12,6 +12,7 @@ def klip_math(sci, ref_psfs, numbasis):
         ref_psfs: N x p array of the N reference PSFs that 
                   characterizes the PSF of the p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
+        covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
 
     Outputs:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
@@ -36,47 +37,60 @@ def klip_math(sci, ref_psfs, numbasis):
     #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
     #we have to correct for that a few lines down when consturcting the KL 
     #vectors since that's not part of the equation in the KLIP paper
-    covar_psfs = np.cov(ref_psfs_mean_sub)
+    if covar_psfs is None:
+        covar_psfs = np.cov(ref_psfs_mean_sub)
 
     #calculate eigenvalues and eigenvectors of covariance matrix
-    evals, evecs = la.eigh(covar_psfs)  #function for symmetric matrices
-
-    #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
-    eig_args_all = np.argsort(evals)[::-1]
-
-    #calculate the KL basis vectors
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
-    kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value from each row
-
-    #sort to KL basis in descending order (largest first)
-    kl_basis = kl_basis[:,eig_args_all]
+    evals, evecs = la.eigh(covar_psfs)  # function for symmetric matrices
 
     #maximum number of KL modes
     tot_basis = np.size(evals)
 
-    #calculate the subtracted image for all the different requested KLIP cutcoffs
     #only pick numbasis requested that are valid, or give them the max
     #do numbasis - 1 since index 0 is using 1 KL basis vector
-    numbasis = np.clip(numbasis - 1, 0, tot_basis-1) #clip greater values, for output consistency we'll keep duplicates
+    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip greater values, for output consistency we'll keep duplicates
+    max_basis = np.max(numbasis) + 1 # maximum number of eigenvectors/KL basis we actually need to use
 
-    #duplicate science image by tot_basis
-    sci_mean_sub_rows = np.tile(sci_mean_sub, (tot_basis, 1))
+    #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
+    eig_args_all = np.argsort(evals)[::-1]
+    #grab only enough eigenvalues up to the maximum number of KLIP basis we need
+    eig_args = eig_args_all[0: max_basis]
+
+    #calculate the KL basis vectors
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs[:,eig_args])
+    kl_basis = kl_basis * (1. / np.sqrt(evals[eig_args] * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
+
+    #sort to KL basis in descending order (largest first)
+    #kl_basis = kl_basis[:,eig_args_all]
+
+    #duplicate science image by the max_basis to do simultaneous calculation for different k_KLIP
+    sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
+    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) #this is the actual output image which has less rows
 
     #bad pixel mask
+    #do it first for the image we're just doing computations on but don't care about the output
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
     sci_mean_sub_rows[sci_nanpix] = 0
+    #now do it for the output image
+    sci_nanpix = np.where(np.isnan(sci_rows_selected))
+    sci_rows_selected[sci_nanpix] = 0
 
-    #do the KLIP equation, but now all the different k_KLIP simultaneously
-    inner_products = np.dot(sci_mean_sub_rows, kl_basis) #calculate the inner product for all of them
-    inner_products = inner_products * np.tril(np.ones([tot_basis, tot_basis])) #select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal
-    klip_psf = np.dot(inner_products, kl_basis.transpose()) #make a KLIP PSF for each amount of klip basis
-    sub_img_rows = sci_mean_sub_rows - klip_psf #make subtracted image for each number of klip basis
+    # do the KLIP equation, but now all the different k_KLIP simultaneously
+    # calculate the inner product of science image with each of the different kl_basis vectors
+    #TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
+    inner_products = np.dot(sci_mean_sub_rows, kl_basis)
+    # select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal matrix
+    inner_products = inner_products * np.tril(np.ones([max_basis, max_basis]))
+    # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
+    klip_psf = np.dot(inner_products[numbasis,:], kl_basis.transpose())
+    # make subtracted image for each number of klip basis
+    sub_img_rows_selected = sci_rows_selected - klip_psf
 
     #restore NaNs
-    sub_img_rows[sci_nanpix] = np.nan
+    sub_img_rows_selected[sci_nanpix] = np.nan
 
     #select the KL mode cutoffs that we want to record
-    sub_img_rows_selected = sub_img_rows[numbasis,:]
+    #sub_img_rows_selected = sub_img_rows[numbasis,:]
 
     #ned to flip them so the output is shaped (p,b)
     return sub_img_rows_selected.transpose()
@@ -104,6 +118,45 @@ def klip_math(sci, ref_psfs, numbasis):
     # return sub_img
 
 
+def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wavelengths=None):
+    """
+    Estimates the movement of a hypothetical astrophysical source in ADI and/or SDI at the given radius and
+    given reference parallactic angle (parang0) and reference wavelegnth (wavelength0)
+
+    Inputs:
+        radius: the radius from the star of the hypothetical astrophysical source
+        parang0: the parallactic angle of the reference image (in degrees)
+        parangs: array of length N of the parallactic angle of all N images (in degrees)
+        wavelength0: the wavelength of the reference image
+        wavelengths: array of length N of the wavelengths of all N images
+        NOTE: we expect parang0 and parangs to be either both defined or both None.
+                Same with wavelength0 and wavelengths
+
+    Output:
+        moves: array of length N of the distance an astrophysical source would have moved from the
+               reference image
+    """
+    #default no movement parameters
+    dtheta = 0 # how much the images moved in theta (polar coordinate)
+    scale_fac = 1 # how much the image moved radially (r/radius)
+
+    if parang0 is not None:
+        dtheta = np.radians(parang0 - parangs)
+    if wavelength0 is not None:
+        scale_fac = (wavelength0/wavelengths)
+
+    #define cartesean coordinate system where astrophysical source is at (x,y) = (r,0)
+    x0 = radius
+    y0 = 0.
+
+    #find x,y location of astrophysical source for the rest of the images
+    r = radius * scale_fac
+    x = r * np.cos(dtheta)
+    y = r * np.sin(dtheta)
+
+    moves = np.sqrt((x-x0)**2 + (y-y0)**2)
+    return moves
+
 def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     """
     Helper function that realigns and/or scales the image
@@ -117,7 +170,8 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
                       We will adopt the convention
                         >1: stretch image (shorter to longer wavelengths)
                         <1: contract the image (longer to shorter wvs)
-
+                        This means scale factor should be lambda_0/lambda
+                        where lambda_0 is the wavelength you want to scale to
     Outputs:
         resampled_img: shifted and/or scaled 2D image
     """
@@ -227,7 +281,7 @@ def rotate(img, angle, center, new_center=None):
     return resampled_img
 
 
-def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbasis=None):
+def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasis=None):
     """
     KLIP PSF Subtraction using angular differential imaging
 
@@ -312,7 +366,8 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, movement=3, numbas
                     continue
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend) / 2.0
-                file_ind = np.where(np.abs(np.radians(parangs - pa)) * avg_rad > movement)
+                moves = estimate_movement(avg_rad, parang0=pa, parangs=parangs)
+                file_ind = np.where(moves >= minmove)
                 if np.size(file_ind) < 2:
                     print("less than 2 reference PSFs available, skipping...")
                     sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
