@@ -135,7 +135,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
     Profiler wrapper for _klip_section_multifile
     """
     cProfile.runctx("_klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove, ref_center)",
-                    globals(), locals(), 'profile-{0}.out'.format((radstart+radend)/2.0))
+                    globals(), locals(), 'profile2-{0}.out'.format((radstart+radend)/2.0))
     return True
 
 
@@ -375,11 +375,13 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
     #[out.wait() for out in outputs]
-    map(_check_output, enumerate(outputs))
-    #for index,out in enumerate(outputs):
-    #    out.wait()
-    #    if index % 50 == 0:
-    #        print("{0} percent done".format(float(index)*100/tot_iter))
+    # map(_check_output, enumerate(outputs))
+    for index,out in enumerate(outputs):
+        out.wait()
+        if index % 50 == 0:
+            print("{0} percent done".format(float(index)*100/tot_iter))
+    # TODO: make the process of waiting for all threads to finish better and print progress in both python2 and python3
+
 
     #close to pool now and wait for all processes to finish
     print("Calling threadpool close()")

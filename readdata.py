@@ -62,7 +62,7 @@ def gpi_readdata(filepaths):
 
 
 def gpi_process_file(filepath):
-    '''
+    """
     Method to open and parse a GPI file
 
     Inputs:
@@ -73,38 +73,42 @@ def gpi_process_file(filepath):
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
         parang: array of z of the parallactic angle of the target (same value just repeated z times)
         wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
-    '''
-    hdulist = pyfits.open(filepath)
+    """
 
-    #grab the data and header from the first extension
-    cube = hdulist[1].data
-    exthdr = hdulist[1].header
+    try:
+        hdulist = pyfits.open(filepath)
 
-    #for spectral mode we need to treat each wavelegnth slice separately
-    if exthdr['CTYPE3'].strip() == 'WAVE':
-        channels = exthdr['NAXIS3']
-        wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
-        center = []
-        #calculate centers from satellite spots
-        for i in range(channels):
-            spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
-            spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
-            spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
-            spot3 = exthdr['SATS{wave}_3'.format(wave=i)].split()
-            centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
-            centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
-            center.append([centx, centy])
+        #grab the data and header from the first extension
+        cube = hdulist[1].data
+        exthdr = hdulist[1].header
 
-        parang = np.ones(channels) * exthdr['AVPARANG'] #populate PA for each wavelength slice (the same)
-    #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
-    elif exthdr['CTYPE3'].strip() == 'STOKES':
-        wvs = [None]
-        cube = np.sum(cube, axis=0)  #sum to total intensity
-        cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
-        center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
-        parang = exthdr['AVPARANG']*np.ones(1)
-    else:
-        raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
+        #for spectral mode we need to treat each wavelegnth slice separately
+        if exthdr['CTYPE3'].strip() == 'WAVE':
+            channels = exthdr['NAXIS3']
+            wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
+            center = []
+            #calculate centers from satellite spots
+            for i in range(channels):
+                spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
+                spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
+                spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
+                spot3 = exthdr['SATS{wave}_3'.format(wave=i)].split()
+                centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
+                centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
+                center.append([centx, centy])
+
+            parang = np.ones(channels) * exthdr['AVPARANG'] #populate PA for each wavelength slice (the same)
+        #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
+        elif exthdr['CTYPE3'].strip() == 'STOKES':
+            wvs = [None]
+            cube = np.sum(cube, axis=0)  #sum to total intensity
+            cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
+            center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
+            parang = exthdr['AVPARANG']*np.ones(1)
+        else:
+            raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
+    finally:
+        hdulist.close()
 
     return (cube, center, parang, wvs)
 

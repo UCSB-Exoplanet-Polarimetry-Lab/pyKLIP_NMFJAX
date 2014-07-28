@@ -42,6 +42,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
 
     #calculate eigenvalues and eigenvectors of covariance matrix
     evals, evecs = la.eigh(covar_psfs)  # function for symmetric matrices
+    evecs = np.require(evecs, requirements=['F'])
 
     #maximum number of KL modes
     tot_basis = np.size(evals)
@@ -78,11 +79,11 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     # do the KLIP equation, but now all the different k_KLIP simultaneously
     # calculate the inner product of science image with each of the different kl_basis vectors
     #TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
-    inner_products = np.dot(sci_mean_sub_rows, kl_basis)
+    inner_products = np.dot(sci_mean_sub_rows, np.require(kl_basis, requirements=['F']))
     # select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal matrix
     inner_products = inner_products * np.tril(np.ones([max_basis, max_basis]))
     # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
-    klip_psf = np.dot(inner_products[numbasis,:], kl_basis.transpose())
+    klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
     # make subtracted image for each number of klip basis
     sub_img_rows_selected = sci_rows_selected - klip_psf
 
