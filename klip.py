@@ -43,19 +43,17 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     #maximum number of KL modes
     tot_basis = covar_psfs.shape[0]
 
-    #only pick numbasis requested that are valid, or give them the max
-    #do numbasis - 1 since index 0 is using 1 KL basis vector
-    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip greater values, for output consistency we'll keep duplicates
-    max_basis = np.max(numbasis) + 1 # maximum number of eigenvectors/KL basis we actually need to use
+    #only pick numbasis requested that are valid. We can't compute more KL basis than there are reference PSFs
+    #do numbasis - 1 for ease of indexing since index 0 is using 1 KL basis vector
+    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip values, for output consistency we'll keep duplicates
+    max_basis = np.max(numbasis) + 1  # maximum number of eigenvectors/KL basis we actually need to use/calculate
 
     #calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
-    evals, evecs = la.eigh(covar_psfs, overwrite_a=True, eigvals=(tot_basis-max_basis, tot_basis-1))  # function for symmetric matrices
+    evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
     evecs = np.require(evecs, requirements=['F'])
 
     #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
-    #eig_args_all = np.argsort(evals)[::-1]
-    #grab only enough eigenvalues up to the maximum number of KLIP basis we need
-    eig_args = np.argsort(evals)[::-1] #eig_args_all[0: max_basis]
+    eig_args = np.argsort(evals)[::-1]
 
     #calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs[:,eig_args])
@@ -66,7 +64,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
 
     #duplicate science image by the max_basis to do simultaneous calculation for different k_KLIP
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
-    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) #this is the actual output image which has less rows
+    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) # this is the output image which has less rows
 
     #bad pixel mask
     #do it first for the image we're just doing computations on but don't care about the output
@@ -90,11 +88,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     #restore NaNs
     sub_img_rows_selected[sci_nanpix] = np.nan
 
-    #select the KL mode cutoffs that we want to record
-    #sub_img_rows_selected = sub_img_rows[numbasis,:]
-
-    #ned to flip them so the output is shaped (p,b)
-    return sub_img_rows_selected.transpose()
+    return sub_img_rows_selected.transpose() # need to flip them so the output is shaped (p,b)
 
 
     #old code that only did one number of KL basis for truncation
