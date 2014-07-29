@@ -1,5 +1,5 @@
 import numpy as np
-import numpy.linalg as la
+import scipy.linalg as la
 import scipy.ndimage as ndimage
 
 
@@ -40,22 +40,22 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     if covar_psfs is None:
         covar_psfs = np.cov(ref_psfs_mean_sub)
 
-    #calculate eigenvalues and eigenvectors of covariance matrix
-    evals, evecs = la.eigh(covar_psfs)  # function for symmetric matrices
-    evecs = np.require(evecs, requirements=['F'])
-
     #maximum number of KL modes
-    tot_basis = np.size(evals)
+    tot_basis = covar_psfs.shape[0]
 
     #only pick numbasis requested that are valid, or give them the max
     #do numbasis - 1 since index 0 is using 1 KL basis vector
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip greater values, for output consistency we'll keep duplicates
     max_basis = np.max(numbasis) + 1 # maximum number of eigenvectors/KL basis we actually need to use
 
+    #calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
+    evals, evecs = la.eigh(covar_psfs, overwrite_a=True, eigvals=(tot_basis-max_basis, tot_basis-1))  # function for symmetric matrices
+    evecs = np.require(evecs, requirements=['F'])
+
     #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
-    eig_args_all = np.argsort(evals)[::-1]
+    #eig_args_all = np.argsort(evals)[::-1]
     #grab only enough eigenvalues up to the maximum number of KLIP basis we need
-    eig_args = eig_args_all[0: max_basis]
+    eig_args = np.argsort(evals)[::-1] #eig_args_all[0: max_basis]
 
     #calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs[:,eig_args])
