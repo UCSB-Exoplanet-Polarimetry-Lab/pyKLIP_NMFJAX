@@ -352,6 +352,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
 
     #align and scale the images for each image. Use map to do this asynchronously
+    print("Begin align and scale images for each wavelength")
     realigned_index = tpool.imap_unordered(_align_and_scale, enumerate(unique_wvs))
 
     outputs = []
@@ -367,7 +368,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         #                     for phistart,phiend in phi_bounds
         #                 for radstart, radend in rad_bounds
         #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
-        outputs += [tpool.apply_async(_klip_section_multifile_profiler, args=(scidata_indicies, wv_value, wv_index, numbasis,
+        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                           radstart, radend, phistart, phiend, movement))
                         for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
@@ -376,10 +377,11 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     #check make sure we are completely unblocked before outputting the data
     #[out.wait() for out in outputs]
     # map(_check_output, enumerate(outputs))
+    print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     for index,out in enumerate(outputs):
         out.wait()
-        if index % 50 == 0:
-            print("{0} percent done".format(float(index)*100/tot_iter))
+        if (index + 1) % 10 == 0:
+            print("{0} percent done ({1}/{2} computations completed)".format(index*100.0/tot_iter, index, tot_iter))
     # TODO: make the process of waiting for all threads to finish better and print progress in both python2 and python3
 
 
