@@ -15,8 +15,8 @@
 
 ### TODO ###
 
-* Fix derotate to rotate North Up and East Left
-* Smarter way of breaking image into annuli
-* Wrapper function to reduce the complexity of use
+* Remove GPI specific code
+* Read in instrument parameters for an .ini file
+* Smarter way of breaking image into annuli (related to above)
 * Post processing analysis functions
 * Spectral Recovery

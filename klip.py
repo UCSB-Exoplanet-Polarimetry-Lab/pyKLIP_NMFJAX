@@ -50,14 +50,15 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
 
     #calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
     evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
-    evecs = np.require(evecs, requirements=['F'])
 
-    #sort the eigenvalues and eigenvectors (unfortunately smallest first so need to reverse)
-    eig_args = np.argsort(evals)[::-1]
+    #scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
+    #we're going to recopy them to hopefully improve caching when doing matrix multiplication
+    evals = np.copy(evals[::-1])
+    evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
 
     #calculate the KL basis vectors
-    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs[:,eig_args])
-    kl_basis = kl_basis * (1. / np.sqrt(evals[eig_args] * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
+    kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
+    kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
 
     #sort to KL basis in descending order (largest first)
     #kl_basis = kl_basis[:,eig_args_all]
@@ -227,29 +228,38 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     return resampled_img
 
 
-def rotate(img, angle, center, new_center=None):
+def rotate(img, angle, center, new_center=None, flipx=True):
     """
     Rotate an image by the given angle about the given center.
-    Optional: can shift the image to a new image center after rotation
+    Optional: can shift the image to a new image center after rotation. Also can reverse x axis for those left
+              handed astronomy coordinate systems
 
     Inputs:
         img: a 2D image
         angle: angle CCW to rotate by (degrees)
         center: 2 element list [x,y] that defines the center to rotate the image to respect to
         new_center: 2 element list [x,y] that defines the new image center after rotation
+        flipx: default is True, which reverses x axis. NOTE: If this is True, a CCW of the the unflipped image
+               needs to be a CW one, so needs to be multiplie by a negative sign.
 
     Outputs:
         resampled_img: new 2D image
     """
+    #convert angle to radians
+    angle_rad = np.radians(angle)
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-
-    #do rotation. CW rotation formula to get a CCW of the image
-    angle_rad = np.radians(angle)
-    xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
-    yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
+    #flip x if needed
+    if flipx is True:
+        x = x[:, ::-1]
+        xp = (x-center[0])*np.cos(angle_rad) - (y-center[1])*np.sin(angle_rad) + center[0]
+        yp = (x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
+    else:
+        #do rotation. CW rotation formula to get a CCW of the image
+        xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
+        yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
 
     #if necessary, move coordinates to new center
     if new_center is not None:

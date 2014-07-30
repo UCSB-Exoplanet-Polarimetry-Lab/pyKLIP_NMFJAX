@@ -50,7 +50,7 @@ def gpi_readdata(filepaths):
     data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
     filenums = np.array(filenums).reshape([dims[0] * dims[1]])
     filenames = np.array(filenames).reshape([dims[0] * dims[1]])
-    rot_angles = np.array(rot_angles).reshape([dims[0] * dims[1]])
+    rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - 24.5)  # TODO: read from ini file
     wvs = np.array(wvs).reshape([dims[0] * dims[1]])
     centers = np.array(centers).reshape([dims[0] * dims[1], 2])
 

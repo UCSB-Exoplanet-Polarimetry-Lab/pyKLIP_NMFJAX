@@ -3,6 +3,7 @@ import multiprocessing as mp
 import ctypes
 import numpy as np
 import cProfile
+import pyfits
 import os
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
@@ -243,9 +244,17 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #grab the parangs
     parangs = _arraytonumpy(img_pa)
-    [_klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
-                                     parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
-        for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+    for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+        try:
+            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
+                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
+        except (ValueError, RuntimeError, TypeError) as err:
+            print("({0}): {1}".format(err.errno, err.strerror))
+            return False
+
+ #   [_klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
+  #                                   parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
+  #      for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
 
     return True
 
@@ -282,16 +291,31 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         return False
 
     #pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
-    covar_files = covar[file_ind[0].reshape(np.size(file_ind),1), file_ind[0]]
+    covar_files = covar[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
+
+    #pick only the most correlated reference PSFs if there's more than enough PSFs
+    maxbasis_requested = np.max(numbasis)
+    maxbasis_possible = np.size(file_ind)
+    if maxbasis_possible > maxbasis_requested:
+        xcorr = covar[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
+        sort_ind = np.argsort(xcorr)
+        closest_matched = sort_ind[-maxbasis_requested:]  # sorted smallest first so need to grab from the end
+        # grab the new and smaller covariance matrix
+        covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
+        # grab smaller set of reference PSFs
+        ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
+    else:
+        # else just grab the reference PSFs for all the valid files
+        ref_psfs_selected = ref_psfs[file_ind[0], :]
 
     #load input/output data
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
     #run KLIP
     try:
-        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs[file_ind[0],:], numbasis, covar_files)
-    except (ValueError, RuntimeError) as err:
-        print(err)
+        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files)
+    except (ValueError, RuntimeError, TypeError) as err:
+        print("({0}): {1}".format(err.errno, err.strerror))
         return False
 
     #write to output
@@ -299,7 +323,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     return True
 
 
-def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
+def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True):
     """
     derotate a sequences of images by their respective angles
 
@@ -310,6 +334,7 @@ def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
         centers: array of shape N,2 with the [x,y] center of each frame
         new_centers: a 2-element array with the new center to register each frame. Default is [140,140]
         numthreads: number of threads to be used
+        flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
 
     Output:
         derotated: array of shape (N,y,x) containing the derotated images
@@ -321,7 +346,7 @@ def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
 
     #klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
     #multithreading the rotation for each image
-    tasks = [tpool.apply_async(klip.rotate, args=(img, -angle, center, new_center))
+    tasks = [tpool.apply_async(klip.rotate, args=(img, angle, center, new_center, flipx))
              for img, angle, center in zip(imgs, angles, centers)]
 
     #reform back into a giant array
@@ -332,7 +357,8 @@ def derotate_imgs(imgs, angles, centers, new_center=None, numthreads=None):
     return derotated
 
 
-def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None):
+def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, movement=3, numbasis=None,
+                      aligned_center=None, numthreads=None):
     """
     KLIP PSF Subtraction using angular differential imaging
 
@@ -345,6 +371,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
 
     Ouput:
@@ -355,13 +383,18 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     #defaullt numbasis if none
     if numbasis is None:
         totalimgs = imgs.shape[0]
-        numbasis = np.arange(1, totalimgs + 5, 5)
-        print(numbasis)
+        maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
+        numbasis = np.arange(1, maxbasis + 5, 5)
+        print("KL basis not specified. Using default.", numbasis)
     else:
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    #default aligned_center if none:
+    if aligned_center is None:
+        aligned_center = [int(imgs.shape[2]/2), int(imgs.shape[1]/2)]
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
@@ -444,7 +477,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
 
         #perform KLIP asynchronously for each group of files of a specific wavelenght and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
-                                                                     radstart, radend, phistart, phiend, movement))
+                                                                     radstart, radend, phistart, phiend, movement,
+                                                                     aligned_center))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -454,7 +488,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     for index, out in enumerate(outputs):
         out.wait()
         if (index + 1) % 10 == 0:
-            print("{0} percent done ({1}/{2} computations completed)".format(index*100.0/tot_iter, index, tot_iter))
+            print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
     # TODO: make the process of waiting for all threads to finish better and print progress in both python2 and python3
 
 
@@ -475,4 +509,92 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     if sub_imgs.shape[0] == 1:
         sub_imgs = sub_imgs[0]
 
+    #all of the image centers are now at aligned_center
+    centers[:,0] = aligned_center[0]
+    centers[:,1] = aligned_center[1]
+
     return sub_imgs
+
+def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
+                 numthreads=None ):
+    """
+    run klip on a dataset outputted by readdata.py
+
+    Inputs:
+        dataset: dictionary with arrays of data, centers, rot angles, etc...
+        mode: one of ['A', 'S', 'AS'] for ADI, SDI, or ADI+SDI
+        outputdir: directory to save output files
+        fileprefix: filename prefix for saved files
+        anuuli: number of annuli to use for KLIP
+        subsections: number of sections to break each annuli into
+        movement: minimum amount of movement (in pixels) of an astrophysical source
+                  to consider using that image for a refernece PSF
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
+
+    Output
+        Saved files in the output directory
+    """
+    #defaullt numbasis if none
+    if numbasis is None:
+        totalimgs = dataset['data'].shape[0]
+        maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
+        numbasis = np.arange(1, maxbasis + 5, 5)
+        print("KL basis not specified. Using default.", numbasis)
+    else:
+        if hasattr(numbasis, "__len__"):
+            numbasis = np.array(numbasis)
+        else:
+            numbasis = np.array([numbasis])
+
+    #run KLIP
+    if mode == 'AS':
+        print("Beginning ADI+SDI KLIP")
+        klipped_imgs = klip_adi_plus_sdi(dataset['data'], dataset['centers'], dataset['PAs'], dataset['wvs'],
+                                         annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
+                                         numthreads=numthreads)
+    elif mode == 'A':
+        print("ADI Not Yet Implemented")
+        return
+    elif mode == 'S':
+        print("SDI Not Yet Implemented")
+        return
+    else:
+        print("Invalid mode. Either A, S, or AS")
+        return
+
+    #pyfits.writeto("out1.fits", klipped_imgs[-1], clobber=True)
+
+    #TODO: handling of only a single numbasis
+    #derotate all the images
+    #first we need to flatten so it's just a 3D array
+    oldshape = klipped_imgs.shape
+    klipped_imgs = klipped_imgs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+    #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
+    flattend_parangs = np.tile(dataset['PAs'], oldshape[0])
+    flattened_centers = np.tile(dataset['centers'].reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
+
+    #parallelized rotate images
+    print("Derotating Images...")
+    rot_imgs = rotate_imgs(klipped_imgs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True)
+
+    #reconstruct datacubes, need to obtain wavelength dimension size
+    num_wvs = np.size(np.unique(dataset['wvs'])) # assuming all datacubes are taken in same band
+
+    #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+    rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+
+    #valid output path and write iamges
+    outputdirpath = os.path.realpath(outputdir)
+    print("Writing Images to directory {0}".format(outputdirpath))
+
+    #collapse in time and wavelength to examine KL modes
+    KLmode_cube = np.nanmean(rot_imgs, axis=(1,2))
+    pyfits.writeto(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, clobber=True)
+
+    #for each KL mode, collapse in time to examine spectra
+    KLmode_spectral_cubes = np.nanmean(rot_imgs, axis=1)
+    for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+        pyfits.writeto(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube, clobber=True)
+
+    return
