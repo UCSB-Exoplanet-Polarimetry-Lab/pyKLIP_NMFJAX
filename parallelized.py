@@ -463,7 +463,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     outputs = []
     #as each is finishing, queue up the aligned data to be processed with KLIP
     for wv_index, wv_value in realigned_index:
-        print("Wavelength {1} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
+        print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
 
         #pick out the science images that need PSF subtraction for this wavelength
         scidata_indicies = np.where(wvs == wv_value)[0]
@@ -491,8 +491,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
             print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
     # TODO: make the process of waiting for all threads to finish better and print progress in both python2 and python3
 
-
-    #close to pool now and make sure there's no processes still runnign (there shouldn't be or else that would be bad)
+    #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     print("Closing threadpool")
     tpool.close()
     tpool.join()
@@ -534,6 +533,8 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     Output
         Saved files in the output directory
+        Returns: rot_imgs: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images (N), wavelengths (wv),
+                            and spatial dimensions. Images are derotated.
     """
     #defaullt numbasis if none
     if numbasis is None:
@@ -597,4 +598,4 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
         pyfits.writeto(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube, clobber=True)
 
-    return
+    return rot_imgs

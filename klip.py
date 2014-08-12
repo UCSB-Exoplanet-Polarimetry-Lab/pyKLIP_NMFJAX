@@ -213,7 +213,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     nanpix = np.where(np.isnan(img))
     img_copy = np.copy(img)
     img_copy[nanpix] = minval * 2.0
-    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
+    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 2.0)
     resampled_img[np.where(resampled_img <= minval)] = np.nan
     resampled_img[nanpix] = np.nan
 
@@ -239,9 +239,7 @@ def rotate(img, angle, center, new_center=None, flipx=True):
         angle: angle CCW to rotate by (degrees)
         center: 2 element list [x,y] that defines the center to rotate the image to respect to
         new_center: 2 element list [x,y] that defines the new image center after rotation
-        flipx: default is True, which reverses x axis. NOTE: If this is True, a CCW of the the unflipped image
-               needs to be a CW one, so needs to be multiplie by a negative sign.
-
+        flipx: default is True, which reverses x axis.
     Outputs:
         resampled_img: new 2D image
     """
@@ -251,15 +249,6 @@ def rotate(img, angle, center, new_center=None, flipx=True):
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-    #flip x if needed
-    if flipx is True:
-        x = x[:, ::-1]
-        xp = (x-center[0])*np.cos(angle_rad) - (y-center[1])*np.sin(angle_rad) + center[0]
-        yp = (x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
-    else:
-        #do rotation. CW rotation formula to get a CCW of the image
-        xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
-        yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
 
     #if necessary, move coordinates to new center
     if new_center is not None:
@@ -267,6 +256,15 @@ def rotate(img, angle, center, new_center=None, flipx=True):
         dy = new_center[1] - center[1]
         x -= dx
         y -= dy
+
+    #flip x if needed to get East left of North
+    if flipx is True:
+        x = x[:, ::-1]
+
+    #do rotation. CW rotation formula to get a CCW of the image
+    xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
+    yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
+
 
     #resample image based on new coordinates
     #scipy uses y,x convention when meshgrid uses x,y
@@ -278,7 +276,7 @@ def rotate(img, angle, center, new_center=None, flipx=True):
     nanpix = np.where(np.isnan(img))
     img_copy = np.copy(img)
     img_copy[nanpix] = minval * 5.0
-    resampled_img_mask = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
+    resampled_img_mask = ndimage.map_coordinates(img_copy, [yp, xp], cval=minval * 5.0)
     img_copy[nanpix] = 0
     resampled_img = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
     resampled_img[np.where(resampled_img_mask < minval)] = np.nan
