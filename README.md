@@ -10,7 +10,7 @@
 
 * numpy
 * scipy
-* pyfits
+* astropy
 * python2.7 or python3
 
 ### TODO ###
