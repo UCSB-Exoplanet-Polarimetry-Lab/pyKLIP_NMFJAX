@@ -5,6 +5,7 @@ import numpy as np
 import cProfile
 import pyfits
 import os
+import itertools
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs):
@@ -55,23 +56,24 @@ def _arraytonumpy(shared_array, shape=None):
     return numpy_array
 
 
-def _align_and_scale(ref_wv_iter, ref_center=None):
+def _align_and_scale(iterable_arg):
     """
     Aligns and scales the set of original images about a reference center and scaled to a reference wavelength.
     Note: is a helper function to only be used after initializing the threadpool!
 
     Inputs:
-        ref_wv_iter: a tuple of two elements. First is the index of the reference wavelength (between 0 and 36).
-                     second is the value of the reference wavelength. This is to determine scaling
-        ref_center: a two-element array with the [x,y] cetner position to align all the images to. Default is [140,140]
+        iterable_arg: a tuple of two elements:
+            ref_wv_iter: a tuple of two elements. First is the index of the reference wavelength (between 0 and 36).
+                         second is the value of the reference wavelength. This is to determine scaling
+            ref_center: a two-element array with the [x,y] center position to align all the images to.
 
     Ouputs:
         just returns ref_wv_iter again
     """
-    if ref_center is None:
-        ref_center = [140, 140]
 
-    #extract out wavelength information from the iteration argument
+    #extract out arguments from the iteration argument
+    ref_wv_iter = iterable_arg[0]
+    ref_center = iterable_arg[1]
     ref_wv_index = ref_wv_iter[0]
     ref_wv = ref_wv_iter[1]
 
@@ -87,7 +89,7 @@ def _align_and_scale(ref_wv_iter, ref_center=None):
 
 
 def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
-                  ref_center=None):
+                  ref_center):
     """
     Runs klip on a section of an image as given by the geometric parameters. Helper fucntion of klip routines and
     requires thread pool to be initialized! Currently is designed only for ADI+SDI. Not yet that flexible.
@@ -105,15 +107,12 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
         phiend: upper boundin CCW angle from y axis for the end of the section
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
-                    Default is [140, 140]
 
     Ouputs:
         Returns True on success and False on failure.
         Output images are stored in output array as defined by _tpool_init()
     """
     global output, aligned
-    if ref_center is None:
-        ref_center = [140, 140]
 
     #create a coordinate system
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
@@ -186,7 +185,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center=None):
+                            minmove, ref_center):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -203,14 +202,11 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         phiend: upper boundin CCW angle from y axis for the end of the section
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
-                    Default is [140, 140]
 
     Outputs:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
         Saves data to output array as defined in _tpool_init()
     """
-    if ref_center is None:
-        ref_center = [140, 140]
 
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
@@ -332,15 +328,13 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
         angles: array of length N with the angle to rotate each frame. Each angle should be CW in degrees.
                 (TODO: fix this angle convention)
         centers: array of shape N,2 with the [x,y] center of each frame
-        new_centers: a 2-element array with the new center to register each frame. Default is [140,140]
+        new_centers: a 2-element array with the new center to register each frame. Default is middle of image
         numthreads: number of threads to be used
         flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
 
     Output:
         derotated: array of shape (N,y,x) containing the derotated images
     """
-    if new_center is None:
-        new_center = [140, 140]
 
     tpool = mp.Pool(processes=numthreads)
 
@@ -394,7 +388,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
 
     #default aligned_center if none:
     if aligned_center is None:
-        aligned_center = [int(imgs.shape[2]/2), int(imgs.shape[1]/2)]
+        aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
@@ -457,7 +451,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
 
     #align and scale the images for each image. Use map to do this asynchronously
     print("Begin align and scale images for each wavelength")
-    realigned_index = tpool.imap_unordered(_align_and_scale, enumerate(unique_wvs))
+    realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center)))
 
     #list to store each threadpool task
     outputs = []
@@ -489,7 +483,6 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         out.wait()
         if (index + 1) % 10 == 0:
             print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
-    # TODO: make the process of waiting for all threads to finish better and print progress in both python2 and python3
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     print("Closing threadpool")
