@@ -1,4 +1,5 @@
 import astropy.io.fits as pyfits
+from astropy import wcs
 import numpy as np
 
 
@@ -17,6 +18,7 @@ def gpi_readdata(filepaths):
             filenames: Array of size N for the actual filepath of the file that corresponds to the data
             PAs: parallactic angle rotation of the target (used for ADI) [in degrees]
             wvs: wavelength of the image (used for SDI) [in microns]. For polarization data, defaults to "None"
+            wcs: wcs astormetry headers for each image.
     """
     #check to see if user just inputted a single filename string
     if isinstance(filepaths, str):
@@ -29,15 +31,17 @@ def gpi_readdata(filepaths):
     rot_angles = []
     wvs = []
     centers = []
+    wcs_hdrs = []
     #extract data from each file
     for index, filepath in enumerate(filepaths):
-        cube, center, pa, wv = gpi_process_file(filepath)
+        cube, center, pa, wv, astr_hdrs = gpi_process_file(filepath)
 
         data.append(cube)
         centers.append(center)
         rot_angles.append(pa)
         wvs.append(wv)
         filenums.append(np.ones(pa.shape[0]) * index)
+        wcs_hdrs.append(astr_hdrs)
 
         #filename = np.chararray(pa.shape[0])
         #filename[:] = filepath
@@ -52,11 +56,12 @@ def gpi_readdata(filepaths):
     filenames = np.array(filenames).reshape([dims[0] * dims[1]])
     rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - 24.5)  # TODO: read from ini file
     wvs = np.array(wvs).reshape([dims[0] * dims[1]])
+    wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
     centers = np.array(centers).reshape([dims[0] * dims[1], 2])
 
     #return as a dictionary to index all of these numpy arrays
     dataset = {'data': data, 'centers': centers, 'filenums': filenums, 'filenames': filenames,
-               'PAs': rot_angles, 'wvs': wvs}
+               'PAs': rot_angles, 'wvs': wvs, 'wcs' : wcs_hdrs}
 
     return dataset
 
@@ -73,6 +78,7 @@ def gpi_process_file(filepath):
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
         parang: array of z of the parallactic angle of the target (same value just repeated z times)
         wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
+        astr_hdrs: array of z of the WCS header for each datacube slice
     """
 
     try:
@@ -81,6 +87,9 @@ def gpi_process_file(filepath):
         #grab the data and header from the first extension
         cube = hdulist[1].data
         exthdr = hdulist[1].header
+
+        #grab the astro header
+        w = wcs.WCS(header=exthdr, naxis=[1,2])
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -97,7 +106,8 @@ def gpi_process_file(filepath):
                 centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
                 center.append([centx, centy])
 
-            parang = np.ones(channels) * exthdr['AVPARANG'] #populate PA for each wavelength slice (the same)
+            parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
             wvs = [None]
@@ -105,12 +115,20 @@ def gpi_process_file(filepath):
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
+            astr_hdrs = np.repeat(w, 1)
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
 
-    return (cube, center, parang, wvs)
+    return (cube, center, parang, wvs, astr_hdrs)
 
-
-
+def gpi_savedata(filepath, data, astr_hdr=None):
+    if astr_hdr is None:
+        pyfits.writeto(filepath, data, clobber=True)
+    else:
+        hdulist = astr_hdr.to_fits()
+        hdulist.append(hdulist[0])
+        hdulist[1].data = data
+        hdulist.writeto(filepath, clobber=True)
+        hdulist.close()

@@ -3,9 +3,9 @@ import multiprocessing as mp
 import ctypes
 import numpy as np
 import cProfile
-import pyfits
 import os
 import itertools
+import readdata
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs):
@@ -217,8 +217,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #grab the pixel location of the section we are going to anaylze
     section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
-    if np.size(section_ind) == 0:
-        print("section is empty, skipping...")
+    if np.size(section_ind) <= 1:
+        print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
 
     #export some of klip.klip_math functions to here to minimize computation repeats
@@ -319,7 +319,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     return True
 
 
-def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True):
+def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None):
     """
     derotate a sequences of images by their respective angles
 
@@ -331,6 +331,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
         new_centers: a 2-element array with the new center to register each frame. Default is middle of image
         numthreads: number of threads to be used
         flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
+        hdrs: array of N wcs astrometry headers
 
     Output:
         derotated: array of shape (N,y,x) containing the derotated images
@@ -340,8 +341,15 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
     #klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
     #multithreading the rotation for each image
-    tasks = [tpool.apply_async(klip.rotate, args=(img, angle, center, new_center, flipx))
-             for img, angle, center in zip(imgs, angles, centers)]
+    if hdrs is None:
+        tasks = [tpool.apply_async(klip.rotate, args=(img, angle, center, new_center, flipx, None))
+                 for img, angle, center in zip(imgs, angles, centers)]
+    else:
+        tasks = [tpool.apply_async(klip.rotate, args=(img, angle, center, new_center, flipx, None))
+                 for img, angle, center in zip(imgs, angles, centers)]
+        #lazy hack around the fact that wcs objects don't preserve wcs.cd fields when sent to other processes
+        #so let's just do it manually outside of the rotation
+        [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx) for angle, astr_hdr in zip(angles, hdrs)]
 
     #reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
@@ -570,7 +578,8 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     #parallelized rotate images
     print("Derotating Images...")
-    rot_imgs = rotate_imgs(klipped_imgs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True)
+    rot_imgs = rotate_imgs(klipped_imgs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                           hdrs=dataset['wcs'])
 
     #reconstruct datacubes, need to obtain wavelength dimension size
     num_wvs = np.size(np.unique(dataset['wvs'])) # assuming all datacubes are taken in same band
@@ -584,11 +593,12 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     #collapse in time and wavelength to examine KL modes
     KLmode_cube = np.nanmean(rot_imgs, axis=(1,2))
-    pyfits.writeto(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, clobber=True)
+    readdata.gpi_savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset['wcs'][0])
 
     #for each KL mode, collapse in time to examine spectra
     KLmode_spectral_cubes = np.nanmean(rot_imgs, axis=1)
     for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-        pyfits.writeto(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube, clobber=True)
+        readdata.gpi_savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                              dataset['wcs'][0])
 
     return rot_imgs
