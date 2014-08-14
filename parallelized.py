@@ -434,6 +434,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     recentered_imgs_shape = (np.size(unique_wvs),) + imgs.shape
     #make output array which also has an extra dimension for the number of KL modes to use
     output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
+    output_imgs_np = _arraytonumpy(output_imgs)
+    output_imgs_np[:] = np.nan
     output_imgs_shape = imgs.shape + numbasis.shape
     #remake the PA, wv, and center arrays as shared arrays
     pa_imgs = mp.Array(ctypes.c_double, np.size(parangs))
