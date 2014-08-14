@@ -228,7 +228,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     return resampled_img
 
 
-def rotate(img, angle, center, new_center=None, flipx=True):
+def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     """
     Rotate an image by the given angle about the given center.
     Optional: can shift the image to a new image center after rotation. Also can reverse x axis for those left
@@ -240,6 +240,7 @@ def rotate(img, angle, center, new_center=None, flipx=True):
         center: 2 element list [x,y] that defines the center to rotate the image to respect to
         new_center: 2 element list [x,y] that defines the new image center after rotation
         flipx: default is True, which reverses x axis.
+        astr_hdr: wcs astrometry header for the image
     Outputs:
         resampled_img: new 2D image
     """
@@ -281,7 +282,28 @@ def rotate(img, angle, center, new_center=None, flipx=True):
     resampled_img = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
     resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
+    #edit the astrometry header if given to compensate for orientation
+    if astr_hdr is not None:
+        _rotate_wcs_hdr(astr_hdr, angle, flipx=flipx)
+
     return resampled_img
+
+
+def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
+    """
+    Modifies the wcs header when rotating/flipping an image.
+
+    Inputs:
+        wcs_header: wcs astrometry header
+        rot_angle: in degrees CCW, the specified rotation desired
+        flipx: after the rotation, reverse x axis? Yes if True
+        flipy: after the rotation, reverse y axis? Yes if True
+    """
+    wcs_header.rotateCD(rot_angle)
+    if flipx is True:
+        wcs_header.wcs.cd[:,0] *= -1
+    if flipy is True:
+        wcs_header.wcs.cd[:,1] *= -1
 
 
 def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasis=None):
