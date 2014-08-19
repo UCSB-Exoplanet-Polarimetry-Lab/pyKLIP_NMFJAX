@@ -30,7 +30,7 @@ You'll need some GPI reduced spectral datacubes to start. First we need to parse
         import instruments.GPI as GPI
 
         filelist = glob.glob("path/to/dataset/*.fits")
-        dataset = GPI.readdata(filelist)
+        dataset = GPI.GPIData(filelist)
 
 This returns ``dataset``, an implementation of the abstract class ``Instrument.Data`` with fields such as ``data``,
 ``wvs``, ``PAs`` that are needed to perform the KLIP subtraction. Please read the docstring for ``GPI`` or
