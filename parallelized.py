@@ -5,7 +5,6 @@ import numpy as np
 import cProfile
 import os
 import itertools
-import readdata
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs):
@@ -359,7 +358,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     return derotated
 
 
-def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, movement=3, numbasis=None,
+def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
                       aligned_center=None, numthreads=None):
     """
     KLIP PSF Subtraction using angular differential imaging
@@ -376,6 +375,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
+        IWA: inner working angle (in pixels)
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -402,13 +402,12 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
     allnans = np.where(np.isnan(imgs))
 
     #use first image to figure out how to divide the annuli
-    #TODO: should be smart about this in the future. Going to hard code some guessing
+    #TODO: what to do with OWA
     #need to make the next 10 lines or so much smarter
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
     OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-    IWA = 10  #because I'm lazy
     dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
@@ -520,10 +519,10 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, annuli=5, subsections=4, move
 def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
                  numthreads=None ):
     """
-    run klip on a dataset outputted by readdata.py
+    run klip on a dataset class outputted by an implementation of Instrument.Data
 
     Inputs:
-        dataset: dictionary with arrays of data, centers, rot angles, etc...
+        dataset: an implementation of Instrument.Data (see instruments/ subfolder)
         mode: one of ['A', 'S', 'AS'] for ADI, SDI, or ADI+SDI
         outputdir: directory to save output files
         fileprefix: filename prefix for saved files
@@ -541,7 +540,7 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     """
     #defaullt numbasis if none
     if numbasis is None:
-        totalimgs = dataset['data'].shape[0]
+        totalimgs = dataset.input.shape[0]
         maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
         numbasis = np.arange(1, maxbasis + 5, 5)
         print("KL basis not specified. Using default.", numbasis)
@@ -554,9 +553,9 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     #run KLIP
     if mode == 'AS':
         print("Beginning ADI+SDI KLIP")
-        klipped_imgs = klip_adi_plus_sdi(dataset['data'], dataset['centers'], dataset['PAs'], dataset['wvs'],
-                                         annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
-                                         numthreads=numthreads)
+        klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
+                                         numbasis=numbasis, numthreads=numthreads)
     elif mode == 'A':
         print("ADI Not Yet Implemented")
         return
@@ -575,16 +574,16 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     oldshape = klipped_imgs.shape
     klipped_imgs = klipped_imgs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
     #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
-    flattend_parangs = np.tile(dataset['PAs'], oldshape[0])
-    flattened_centers = np.tile(dataset['centers'].reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
+    flattend_parangs = np.tile(dataset.PAs, oldshape[0])
+    flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
     #parallelized rotate images
     print("Derotating Images...")
     rot_imgs = rotate_imgs(klipped_imgs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                           hdrs=dataset['wcs'])
+                           hdrs=dataset.wcs)
 
     #reconstruct datacubes, need to obtain wavelength dimension size
-    num_wvs = np.size(np.unique(dataset['wvs'])) # assuming all datacubes are taken in same band
+    num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
 
     #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
@@ -595,12 +594,12 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     #collapse in time and wavelength to examine KL modes
     KLmode_cube = np.nanmean(rot_imgs, axis=(1,2))
-    readdata.gpi_savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset['wcs'][0])
+    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
 
     #for each KL mode, collapse in time to examine spectra
     KLmode_spectral_cubes = np.nanmean(rot_imgs, axis=1)
     for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-        readdata.gpi_savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                              dataset['wcs'][0])
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                              dataset.wcs[0])
 
-    return rot_imgs
+    dataset.output = rot_imgs
