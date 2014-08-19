@@ -1,9 +1,16 @@
 import astropy.io.fits as pyfits
 from astropy import wcs
 import numpy as np
-import ConfigParser
 import os
-from Instrument import Data
+#different importants depending on if python2.7 or python3
+import sys
+if sys.version_info < (3,0):
+    #python 2.7 behavior
+    import ConfigParser
+    from Instrument import Data
+else:
+    import configparser as ConfigParser
+    from instruments.Instrument import Data
 
 class GPIData(Data):
     """
