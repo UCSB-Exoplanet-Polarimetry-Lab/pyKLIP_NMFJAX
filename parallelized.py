@@ -90,6 +90,8 @@ def _align_and_scale(iterable_arg):
 def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
                   ref_center):
     """
+    DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
+
     Runs klip on a section of an image as given by the geometric parameters. Helper fucntion of klip routines and
     requires thread pool to be initialized! Currently is designed only for ADI+SDI. Not yet that flexible.
 
@@ -157,6 +159,8 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
 def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
                            ref_center=None):
     """
+    DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
+
     Profiler wrapper for _klip_section. Outputs a file openable by pstats.Stats for each annulus wavelength.
     However there is no guarentee which wavelength and which subsection of the annulus is saved to disk.
 
@@ -168,7 +172,7 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
 
 
 def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart,
-                                     phiend, minmove, ref_center=None):
+                                     phiend, minmove, ref_center=None, minrot=0):
     """
     Profiler wrapper for _klip_section_multifile. Outputs a file openable by pstats.Stats for each annulus wavelength.
     However there is no guarentee which wavelength and which subsection of the annulus is saved to disk. There
@@ -178,13 +182,13 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
     Inputs: Same arguments as _klip_section_multifile()
     """
     cProfile.runctx("_klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, "
-                    "phistart, phiend, minmove, ref_center)", globals(), locals(),
+                    "phistart, phiend, minmove, ref_center, minrot)", globals(), locals(),
                     'profile-{0}.out'.format(int(radstart + radend)/2))
     return True
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center):
+                            minmove, ref_center, minrot):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -201,6 +205,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         phiend: upper boundin CCW angle from y axis for the end of the section
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
 
     Outputs:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -241,8 +246,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     parangs = _arraytonumpy(img_pa)
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
-            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
-                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
+            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
+                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -254,7 +259,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove):
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove, minrot):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -280,7 +285,10 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
-    file_ind = np.where(moves >= minmove)
+    if minrot > 0:
+        file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
+    else:
+        file_ind = np.where(moves >= minmove)
     if np.size(file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
@@ -359,14 +367,16 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
 
 def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None):
+                      aligned_center=None, numthreads=None, minrot=0):
     """
     KLIP PSF Subtraction using angular differential imaging
 
     Inputs:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
         centers: N by 2 array of (x,y) coordinates of image centers
-        parangs: N legnth array detailing parallactic angle of each image
+        parangs: N length array detailing parallactic angle of each image
+        wvs: N length array of the wavelengths
+        IWA: inner working angle (in pixels)
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
         movement: minimum amount of movement (in pixels) of an astrophysical source
@@ -375,7 +385,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
-        IWA: inner working angle (in pixels)
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -481,7 +491,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         #perform KLIP asynchronously for each group of files of a specific wavelenght and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center))
+                                                                     aligned_center, minrot))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -517,7 +527,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     return sub_imgs
 
 def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None ):
+                 numthreads=None, minrot=0):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -532,6 +542,7 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
 
     Output
         Saved files in the output directory
@@ -555,7 +566,7 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
         print("Beginning ADI+SDI KLIP")
         klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, numthreads=numthreads)
+                                         numbasis=numbasis, numthreads=numthreads, minrot=minrot)
     elif mode == 'A':
         print("ADI Not Yet Implemented")
         return
