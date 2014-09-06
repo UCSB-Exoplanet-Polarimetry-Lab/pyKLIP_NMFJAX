@@ -12,6 +12,11 @@
 * scipy
 * astropy
 * python2.7 or python3
+* Recommended: a computer with lots of cores (16+) and lots of memory (~100 GB?)
+
+### Installation ###
+
+Put all of the files into a folder called *pyklip* and put the *pyklip* folder into either the directory in which your python script that will call ``pyklip`` resies or into a directory that is in your ``PYTHONPATH``.
 
 ### TODO ###
 
