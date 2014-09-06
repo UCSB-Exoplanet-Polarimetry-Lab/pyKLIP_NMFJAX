@@ -243,7 +243,7 @@ def _gpi_process_file(filepath):
         filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string)
         fpm_band: which coronagrpah was used (string)
     """
-
+    print("Reading File: {0}".format(filepath))
     try:
         hdulist = pyfits.open(filepath)
 

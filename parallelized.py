@@ -1,4 +1,4 @@
-import klip
+import pyklip.klip as klip
 import multiprocessing as mp
 import ctypes
 import numpy as np
