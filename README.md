@@ -28,11 +28,11 @@ Put all of the files into a folder called *pyklip* and put the *pyklip* folder i
 
 ### GPI Example ###
 
-You'll need some GPI reduced spectral datacubes to start. First we need to parse through the data. This is done with the ``readdata`` module.
+You'll need some GPI reduced spectral datacubes to start (with satellite spots located). First we need to parse through the data. This is done with the ``readdata`` module.
 
     :::python
         import glob
-        import instruments.GPI as GPI
+        import pyklip.instruments.GPI as GPI
 
         filelist = glob.glob("path/to/dataset/*.fits")
         dataset = GPI.GPIData(filelist)
@@ -45,7 +45,7 @@ Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of 
 ``parallelized`` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code.
 
     :::python
-        import parallelized
+        import pyklip.parallelized as parallelized
 
         parallelized.klip_dataset(dataset, outputdir="path/to/save/dir/", fileprefix="myobject")
 
