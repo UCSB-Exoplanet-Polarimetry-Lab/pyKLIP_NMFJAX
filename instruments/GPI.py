@@ -38,6 +38,7 @@ class GPIData(Data):
     centralwave = {}  # in microns
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
+    spot_ratio = {} #w.r.t. central star
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
@@ -57,6 +58,8 @@ class GPIData(Data):
             centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
             fpm_diam[band] = float(config.get("instrument", "fpm_diam_{0}".format(band))) / lenslet_scale  # pixels
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
+            spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
+
     except ConfigParser.Error as e:
         print("Error reading GPI configuration file: {0}".format(e.message))
         raise e
@@ -76,6 +79,7 @@ class GPIData(Data):
             self._wvs = None
             self._wcs = None
             self._IWA = None
+            self.spot_flux = None
         else:
             self.readdata(filepaths)
 
@@ -170,12 +174,14 @@ class GPIData(Data):
         wvs = []
         centers = []
         wcs_hdrs = []
+        spot_fluxes = []
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band = _gpi_process_file(filepath)
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux = _gpi_process_file(filepath)
 
             data.append(cube)
             centers.append(center)
+            spot_fluxes.append(spot_flux)
             rot_angles.append(pa)
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
@@ -196,6 +202,7 @@ class GPIData(Data):
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
+        spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
         #set these as the fields for the GPIData object
         self._input = data
@@ -206,6 +213,7 @@ class GPIData(Data):
         self._wvs = wvs
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
+        self.spot_flux = spot_fluxes
 
     @staticmethod
     def savedata(filepath, data, astr_hdr=None):
@@ -225,6 +233,17 @@ class GPIData(Data):
             hdulist[1].data = data
             hdulist.writeto(filepath, clobber=True)
             hdulist.close()
+
+    def calibrate_output(units="contrast"):
+        """
+        Calibrates the flux of the output klipped data.
+        Inputs:
+            units: currently only support "contrast" w.r.t central star
+        Output:
+            stores calibrated data in self.output
+        """
+        return
+
 
 
 def _gpi_process_file(filepath):
@@ -255,6 +274,7 @@ def _gpi_process_file(filepath):
         #get some instrument configuration from the primary header
         filt_band = prihdr['IFSFILT'].split('_')[1]
         fpm_band = prihdr['OCCULTER'].split('_')[1]
+        ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
 
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
@@ -264,6 +284,7 @@ def _gpi_process_file(filepath):
             channels = exthdr['NAXIS3']
             wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
             center = []
+            spot_fluxes = []
             #calculate centers from satellite spots
             for i in range(channels):
                 spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
@@ -273,6 +294,12 @@ def _gpi_process_file(filepath):
                 centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
                 centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
                 center.append([centx, centy])
+
+                spot0flux = exthdr['SATF{wave}_0'.format(wave=i)]
+                spot1flux = exthdr['SATF{wave}_1'.format(wave=i)]
+                spot2flux = exthdr['SATF{wave}_2'.format(wave=i)]
+                spot3flux = exthdr['SATF{wave}_3'.format(wave=i)]
+                spot_fluxes.append(np.mean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
@@ -284,9 +311,11 @@ def _gpi_process_file(filepath):
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
             astr_hdrs = np.repeat(w, 1)
+            spot_fluxes = [[0]] #not suported currently
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes
+
