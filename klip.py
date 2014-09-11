@@ -306,7 +306,8 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
-def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasis=None):
+def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, minmove=3, numbasis=None, aligned_center=None,
+             minrot=0):
     """
     KLIP PSF Subtraction using angular differential imaging
 
@@ -314,11 +315,15 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasi
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
         centers: N by 2 array of (x,y) coordinates of image centers
         parangs: N legnth array detailing parallactic angle of each image
+        IWA: inner working angle (in pixels)
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -339,6 +344,9 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasi
         else:
             numbasis = np.array([numbasis])
 
+    if aligned_center is None:
+        aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
+
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
 
@@ -349,7 +357,6 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasi
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
     OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-    IWA = 10  #because I'm lazy
     dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
@@ -368,14 +375,13 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasi
 
 
     #begin KLIP process for each image
-    for img_num, (center, pa) in enumerate(zip(centers, parangs)):
-        print(center, pa)
-        recentered = np.array([align_and_scale(frame, center, oldcenter)
+    for img_num, pa in enumerate(parangs):
+        recentered = np.array([align_and_scale(frame, aligned_center, oldcenter)
                                for frame, oldcenter in zip(imgs, centers)])
 
         #create coordinate system 
-        r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
-        phi = np.arctan2(y - center[1], x - center[0])
+        r = np.sqrt((x - aligned_center[0]) ** 2 + (y - aligned_center[1]) ** 2)
+        phi = np.arctan2(y - aligned_center[1], x - aligned_center[0])
 
         #flatten img dimension
         flattened = recentered.reshape((dims[0], dims[1] * dims[2]))
@@ -392,14 +398,13 @@ def klip_adi(imgs, centers, parangs, annuli=5, subsections=4, minmove=3, numbasi
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend) / 2.0
                 moves = estimate_movement(avg_rad, parang0=pa, parangs=parangs)
-                file_ind = np.where(moves >= minmove)
+                file_ind = np.where((moves >= minmove) & (np.abs(parangs - pa) > minrot))
                 if np.size(file_ind) < 2:
                     print("less than 2 reference PSFs available, skipping...")
                     sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
                     continue
                 ref_psfs = flattened[file_ind[0], :]
                 ref_psfs = ref_psfs[:, section_ind[0]]
-                print(img_num, avg_rad, ref_psfs.shape)
                 #print(sub_imgs.shape)
                 #print(sub_imgs[img_num, section_ind, :].shape)
                 sub_imgs[img_num, section_ind, :] = klip_math(flattened[img_num, section_ind][0], ref_psfs, numbasis)
