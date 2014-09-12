@@ -211,11 +211,13 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
     minval = np.min([np.nanmin(img), 0.0])
     nanpix = np.where(np.isnan(img))
+    medval = np.median(img[np.where(~np.isnan(img))])
     img_copy = np.copy(img)
-    img_copy[nanpix] = minval * 2.0
-    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 2.0)
-    resampled_img[np.where(resampled_img <= minval)] = np.nan
-    resampled_img[nanpix] = np.nan
+    img_copy[nanpix] = minval * 5.0
+    resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
+    img_copy[nanpix] = medval
+    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
+    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
     #broken attempt at using sparse arrays with interp2d. Warning: takes forever to run
     #good_dat = np.where(~(np.isnan(img)))
@@ -275,10 +277,11 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     #then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
     minval = np.min([np.nanmin(img), 0.0])
     nanpix = np.where(np.isnan(img))
+    medval = np.median(img[np.where(~np.isnan(img))])
     img_copy = np.copy(img)
     img_copy[nanpix] = minval * 5.0
     resampled_img_mask = ndimage.map_coordinates(img_copy, [yp, xp], cval=minval * 5.0)
-    img_copy[nanpix] = 0
+    img_copy[nanpix] = medval
     resampled_img = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
     resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 

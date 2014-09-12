@@ -429,7 +429,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections
-    phi_bounds = [(dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi) for phi_i in range(subsections)]
+    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+    phi_bounds[-1][1] = 2. * np.pi
 
     #calculate how many iterations we need to do
     global tot_iter
