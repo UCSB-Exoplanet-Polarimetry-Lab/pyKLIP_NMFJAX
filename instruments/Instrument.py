@@ -141,3 +141,10 @@ class Data(object):
         Saves data for this instrument
         """
         return NotImplementedError("Subclass needs to implement this!")
+
+    @abc.abstractmethod
+    def calibrate_output(self):
+        """
+        Calibrates the flux of the output klipped data.
+        """
+        return NotImplementedError("Subclass needs to implement this!")

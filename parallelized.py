@@ -528,7 +528,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     return sub_imgs
 
 def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0):
+                 numthreads=None, minrot=0, calibrate_flux=False):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -544,6 +544,7 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
 
     Output
         Saved files in the output directory
@@ -600,18 +601,22 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
 
+    dataset.output = rot_imgs
+    if calibrate_flux == True:
+        dataset.calibrate_output()
+
     #valid output path and write iamges
     outputdirpath = os.path.realpath(outputdir)
     print("Writing Images to directory {0}".format(outputdirpath))
 
     #collapse in time and wavelength to examine KL modes
-    KLmode_cube = np.nanmean(rot_imgs, axis=(1,2))
+    KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
     dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
 
     #for each KL mode, collapse in time to examine spectra
-    KLmode_spectral_cubes = np.nanmean(rot_imgs, axis=1)
+    KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
     for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
                               dataset.wcs[0])
 
-    dataset.output = rot_imgs
+

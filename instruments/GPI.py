@@ -80,6 +80,7 @@ class GPIData(Data):
             self._wcs = None
             self._IWA = None
             self.spot_flux = None
+            self.contrast_scaling = None
         else:
             self.readdata(filepaths)
 
@@ -214,6 +215,7 @@ class GPIData(Data):
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
+        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/spot_fluxes
 
     @staticmethod
     def savedata(filepath, data, astr_hdr=None):
@@ -234,7 +236,7 @@ class GPIData(Data):
             hdulist.writeto(filepath, clobber=True)
             hdulist.close()
 
-    def calibrate_output(units="contrast"):
+    def calibrate_output(self, units="contrast"):
         """
         Calibrates the flux of the output klipped data.
         Inputs:
@@ -242,7 +244,9 @@ class GPIData(Data):
         Output:
             stores calibrated data in self.output
         """
-        return
+        if units=="contrast":
+            self.output *= self.contrast_scaling
+        
 
 
 
