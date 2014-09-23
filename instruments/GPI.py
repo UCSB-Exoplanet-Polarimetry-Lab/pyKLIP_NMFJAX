@@ -244,8 +244,8 @@ class GPIData(Data):
         Output:
             stores calibrated data in self.output
         """
-        if units=="contrast":
-            self.output *= self.contrast_scaling
+        if units == "contrast":
+            self.output *= self.contrast_scaling[None, :, :, :]
         
 
 

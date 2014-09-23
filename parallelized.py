@@ -581,6 +581,9 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     #pyfits.writeto("out1.fits", klipped_imgs[-1], clobber=True)
 
+    if calibrate_flux == True:
+        dataset.calibrate_output()
+
     #TODO: handling of only a single numbasis
     #derotate all the images
     #first we need to flatten so it's just a 3D array
@@ -602,8 +605,6 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
 
     dataset.output = rot_imgs
-    if calibrate_flux == True:
-        dataset.calibrate_output()
 
     #valid output path and write iamges
     outputdirpath = os.path.realpath(outputdir)
