@@ -581,6 +581,7 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
 
     #pyfits.writeto("out1.fits", klipped_imgs[-1], clobber=True)
 
+    dataset.output = klipped_imgs
     if calibrate_flux == True:
         dataset.calibrate_output()
 
@@ -588,14 +589,14 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     #derotate all the images
     #first we need to flatten so it's just a 3D array
     oldshape = klipped_imgs.shape
-    klipped_imgs = klipped_imgs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+    dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
     #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
     flattend_parangs = np.tile(dataset.PAs, oldshape[0])
     flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
     #parallelized rotate images
     print("Derotating Images...")
-    rot_imgs = rotate_imgs(klipped_imgs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+    rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
                            hdrs=dataset.wcs)
 
     #reconstruct datacubes, need to obtain wavelength dimension size
