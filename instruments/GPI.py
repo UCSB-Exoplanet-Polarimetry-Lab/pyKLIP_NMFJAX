@@ -10,7 +10,7 @@ if sys.version_info < (3,0):
     from Instrument import Data
 else:
     import configparser as ConfigParser
-    from instruments.Instrument import Data
+    from pyklip.instruments.Instrument import Data
 
 class GPIData(Data):
     """
@@ -267,8 +267,8 @@ def _gpi_process_file(filepath):
         fpm_band: which coronagrpah was used (string)
     """
     print("Reading File: {0}".format(filepath))
+    hdulist = pyfits.open(filepath)
     try:
-        hdulist = pyfits.open(filepath)
 
         #grab the data and headers
         cube = hdulist[1].data
