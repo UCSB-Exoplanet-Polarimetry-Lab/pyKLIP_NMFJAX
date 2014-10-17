@@ -243,7 +243,18 @@ class P1640Data(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
+def _p1640_center_cube(cube, scaling):
+    """
+    Method to center all wavelength slices of a cube
 
+    Inputs: 
+        cube: Npix x Npix x Nlambda datacube
+        scaling: 1 x Nlambda array of scaling factors
+
+    Outputs:
+        scaled_cube: cube, centered
+    """
+    pass
 
 def _p1640_process_file(filepath):
     """
