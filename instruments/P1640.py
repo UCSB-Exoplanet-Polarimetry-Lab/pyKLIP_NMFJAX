@@ -243,6 +243,12 @@ class P1640Data(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
+def _p1640_scale_cube(cube):
+    """
+    """
+    tmpCube = cube.copy()
+    
+
 def _p1640_center_cube(cube, scaling):
     """
     Method to center all wavelength slices of a cube
