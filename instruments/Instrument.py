@@ -146,5 +146,8 @@ class Data(object):
     def calibrate_output(self):
         """
         Calibrates the flux of the output klipped data.
+
+        Assumes self.output exists and has shape (b,N,y,x) for N is the number of images and b is
+        number of KL modes used.
         """
         return NotImplementedError("Subclass needs to implement this!")
