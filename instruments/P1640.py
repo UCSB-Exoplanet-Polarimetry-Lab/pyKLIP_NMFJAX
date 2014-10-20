@@ -11,6 +11,7 @@ if sys.version_info < (3,0):
 else:
     import configparser as ConfigParser
     from pyklip.instruments.Instrument import Data
+from P1640_support import sanitize_cubes
 
 class P1640Data(Data):
     """
@@ -44,7 +45,7 @@ class P1640Data(Data):
 
     ## read in P1640 configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
-    configfile = package_directory + "/" + "P1640.ini"
+    configfile = os.path.join(package_directory,"P1640.ini")
     config = ConfigParser.ConfigParser()
     try:
         config.read(configfile)
@@ -293,7 +294,7 @@ def _p1640_process_file(filepath):
 
         #grab the astro header
         w = wcs.WCS(header=prihdr, naxis=[1,2])
-
+        wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
         channels = prihdr['NAXIS3']
         center = []
         spot_fluxes = []
