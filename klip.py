@@ -18,8 +18,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
 
-    TODO:
-        make numbasis to be any number of KLIP cutoffs and return all of them
     """
     #import pdb
 

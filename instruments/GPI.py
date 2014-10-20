@@ -238,7 +238,11 @@ class GPIData(Data):
 
     def calibrate_output(self, units="contrast"):
         """
-        Calibrates the flux of the output klipped data.
+        Calibrates the flux of the output of PSF subtracted data.
+
+        Assumes self.output exists and has shape (b,N,y,x) for N is the number of images and b is
+        number of KL modes used.
+
         Inputs:
             units: currently only support "contrast" w.r.t central star
         Output:
@@ -315,7 +319,7 @@ def _gpi_process_file(filepath):
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
             astr_hdrs = np.repeat(w, 1)
-            spot_fluxes = [[0]] #not suported currently
+            spot_fluxes = [[1]] #not suported currently
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
@@ -323,3 +327,60 @@ def _gpi_process_file(filepath):
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes
 
+def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
+    """
+    Injects a fake planet with a Gaussian PSF into a dataframe
+
+    Inputs:
+        frame: a 2D data frame
+        xpos,ypos: x,y location (in pixels) where the planet should be
+        amplitude: peak of the Gaussian PSf (in appropriate units not dictacted here)
+        fwhm: fwhm of gaussian
+
+    Outputs:
+        frame: the frame with the injected planet
+    """
+
+    #figure out sigma when given FWHM
+    sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
+
+    #create a meshgrid for the psf
+    x,y = np.meshgrid(np.arange(1.0*frame.shape[1]), np.arange(1.0*frame.shape[0]))
+    x -= xpos
+    y -= ypos
+
+    psf = amplitude * np.exp(-(x**2./(2.*fwhm) + y**2./(2.*fwhm)))
+
+    frame += psf
+    return frame
+
+def inject_planet(frames, centers, peakfluxes, astr_hdrs, radius, pa, fwhm=3.5):
+    """
+    Injects a fake planet into a dataset
+
+    Inputs:
+        frames: array of (N,y,x) for N is the total number of frames
+        centers: array of size (N,2) of [x,y] coordiantes of the image center
+        peakflxes: array of size N of the peak flux of the fake planet in each frame
+        astr_hdrs: array of size N of the WCS headers
+        radius: separation of the planet from the star
+        pa: parallactic angle (in degrees) of  planet (if that is a quantity that makes any sense)
+    """
+
+    for frame, center, peakflux, astr_hdr in zip(frames, centers, peakfluxes, astr_hdrs):
+        #calculate the x,y location of the planet for each image
+        rot_det = astr_hdr.wcs.cd[0,0] * astr_hdr.wcs.cd[1,1] - astr_hdr.wcs.cd[0,1] * astr_hdr.wcs.cd[1,0]
+        if rot_det < 0:
+            rot_sgn = -1.
+        else:
+            rot_sgn = 1.
+        #calculate CCW rotation from +Y to North in radians
+        rot_YN = np.arctan2(rot_sgn * astr_hdr.wcs.cd[0,1],rot_sgn * astr_hdr.wcs.cd[0,0])
+        #now that we know where north it, find the CCW rotation from +Y to find location of plaet
+        rot_YPA = rot_YN - rot_sgn*pa*np.pi/180.
+
+        x_pl = -radius * np.sin(rot_YPA) + center[0]
+        y_pl = radius * np.cos(rot_YPA) + center[1]
+
+        #now that we found the planet location, inject it
+        frame = _inject_gaussian_planet(frame, x_pl, y_pl, peakflux, fwhm=fwhm)
