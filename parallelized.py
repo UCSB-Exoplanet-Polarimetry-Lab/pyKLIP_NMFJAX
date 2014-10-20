@@ -425,7 +425,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     #calculate the annuli
     rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
     #last annulus should mostly emcompass everything
-    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0] / 2)
+    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections
@@ -528,7 +528,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     return sub_imgs
 
 def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False):
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -545,6 +545,8 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
 
     Output
         Saved files in the output directory
@@ -568,7 +570,8 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
         print("Beginning ADI+SDI KLIP")
         klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, numthreads=numthreads, minrot=minrot)
+                                         numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center)
     elif mode == 'A':
         print("ADI Not Yet Implemented")
         return

@@ -262,7 +262,7 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
 
     #flip x if needed to get East left of North
     if flipx is True:
-        x = x[:, ::-1]
+        x = center[0] - (x - center[0])
 
     #do rotation. CW rotation formula to get a CCW of the image
     xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]

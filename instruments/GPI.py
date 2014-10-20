@@ -295,15 +295,15 @@ def _gpi_process_file(filepath):
                 spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
                 spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
                 spot3 = exthdr['SATS{wave}_3'.format(wave=i)].split()
-                centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
-                centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
+                centx = np.nanmean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
+                centy = np.nanmean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
                 center.append([centx, centy])
 
-                spot0flux = exthdr['SATF{wave}_0'.format(wave=i)]
-                spot1flux = exthdr['SATF{wave}_1'.format(wave=i)]
-                spot2flux = exthdr['SATF{wave}_2'.format(wave=i)]
-                spot3flux = exthdr['SATF{wave}_3'.format(wave=i)]
-                spot_fluxes.append(np.mean([spot0flux, spot1flux, spot2flux, spot3flux]))
+                spot0flux = float(exthdr['SATF{wave}_0'.format(wave=i)])
+                spot1flux = float(exthdr['SATF{wave}_1'.format(wave=i)])
+                spot2flux = float(exthdr['SATF{wave}_2'.format(wave=i)])
+                spot3flux = float(exthdr['SATF{wave}_3'.format(wave=i)])
+                spot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
