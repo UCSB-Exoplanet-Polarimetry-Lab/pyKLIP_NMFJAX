@@ -389,7 +389,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
-                    specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
+                    specified by numbasis. Shape of (b,N,y,x).
     """
 
     #defaullt numbasis if none
@@ -517,9 +517,10 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     #restore bad pixels
     sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
 
-    #if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off that axis)
-    if sub_imgs.shape[0] == 1:
-        sub_imgs = sub_imgs[0]
+    #scrapping this behavior for now because I don't feel like dealing with edge cases
+    ## if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off that axis)
+    #if sub_imgs.shape[0] == 1:
+    #    sub_imgs = sub_imgs[0]
 
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
@@ -527,14 +528,14 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     return sub_imgs
 
-def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
+def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
                  numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
     Inputs:
         dataset: an implementation of Instrument.Data (see instruments/ subfolder)
-        mode: one of ['A', 'S', 'AS'] for ADI, SDI, or ADI+SDI
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         outputdir: directory to save output files
         fileprefix: filename prefix for saved files
         anuuli: number of annuli to use for KLIP
@@ -566,62 +567,91 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
             numbasis = np.array([numbasis])
 
     #run KLIP
-    if mode == 'AS':
+    if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
         klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
                                          numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center)
-    elif mode == 'A':
-        print("ADI Not Yet Implemented")
-        return
-    elif mode == 'S':
+        dataset.output = klipped_imgs
+        if calibrate_flux == True:
+            dataset.calibrate_output()
+
+        #TODO: handling of only a single numbasis
+        #derotate all the images
+        #first we need to flatten so it's just a 3D array
+        oldshape = klipped_imgs.shape
+        dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+        #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
+        flattend_parangs = np.tile(dataset.PAs, oldshape[0])
+        flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
+
+        #parallelized rotate images
+        print("Derotating Images...")
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                               hdrs=dataset.wcs)
+
+        #reconstruct datacubes, need to obtain wavelength dimension size
+        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+
+        #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+
+        dataset.output = rot_imgs
+
+        #valid output path and write iamges
+        outputdirpath = os.path.realpath(outputdir)
+        print("Writing Images to directory {0}".format(outputdirpath))
+
+        #collapse in time and wavelength to examine KL modes
+        KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
+
+        #for each KL mode, collapse in time to examine spectra
+        KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
+        for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                                  dataset.wcs[0])
+    elif mode == 'ADI':
+        #ADI is not parallelized
+        klipped_imgs = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
+                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
+                                         numbasis=numbasis, minrot=minrot, aligned_center=aligned_center)
+        #TODO: handling of only a single numbasis
+        #derotate all the images
+        #first we need to flatten so it's just a 3D array
+        oldshape = klipped_imgs.shape
+        dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+        #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
+        flattend_parangs = np.tile(dataset.PAs, oldshape[0])
+        flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
+
+        #parallelized rotate images
+        print("Derotating Images...")
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                               hdrs=dataset.wcs)
+
+        #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
+
+        dataset.output = rot_imgs
+
+        #valid output path and write iamges
+        outputdirpath = os.path.realpath(outputdir)
+        print("Writing Images to directory {0}".format(outputdirpath))
+
+        #collapse in time and wavelength to examine KL modes
+        KLmode_cube = np.nanmean(dataset.output, axis=(1))
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
+    elif mode == 'SDI':
         print("SDI Not Yet Implemented")
         return
     else:
-        print("Invalid mode. Either A, S, or AS")
+        print("Invalid mode. Either ADI, SDI, or ADI+SDI")
         return
 
     #pyfits.writeto("out1.fits", klipped_imgs[-1], clobber=True)
 
-    dataset.output = klipped_imgs
-    if calibrate_flux == True:
-        dataset.calibrate_output()
 
-    #TODO: handling of only a single numbasis
-    #derotate all the images
-    #first we need to flatten so it's just a 3D array
-    oldshape = klipped_imgs.shape
-    dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
-    #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
-    flattend_parangs = np.tile(dataset.PAs, oldshape[0])
-    flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
-
-    #parallelized rotate images
-    print("Derotating Images...")
-    rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                           hdrs=dataset.wcs)
-
-    #reconstruct datacubes, need to obtain wavelength dimension size
-    num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
-
-    #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
-    rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
-
-    dataset.output = rot_imgs
-
-    #valid output path and write iamges
-    outputdirpath = os.path.realpath(outputdir)
-    print("Writing Images to directory {0}".format(outputdirpath))
-
-    #collapse in time and wavelength to examine KL modes
-    KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
-
-    #for each KL mode, collapse in time to examine spectra
-    KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
-    for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                              dataset.wcs[0])
 
 
