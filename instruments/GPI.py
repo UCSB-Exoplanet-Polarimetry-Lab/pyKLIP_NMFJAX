@@ -299,6 +299,7 @@ def _gpi_process_file(filepath):
             spot_fluxes = []
             #calculate centers from satellite spots
             for i in range(channels):
+                #grab satellite spot positions
                 spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
                 spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
                 spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
@@ -307,10 +308,17 @@ def _gpi_process_file(filepath):
                 centy = np.nanmean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
                 center.append([centx, centy])
 
-                spot0flux = float(exthdr['SATF{wave}_0'.format(wave=i)])
-                spot1flux = float(exthdr['SATF{wave}_1'.format(wave=i)])
-                spot2flux = float(exthdr['SATF{wave}_2'.format(wave=i)])
-                spot3flux = float(exthdr['SATF{wave}_3'.format(wave=i)])
+                #grab sat spot fluxes if they're there
+                try:
+                    spot0flux = float(exthdr['SATF{wave}_0'.format(wave=i)])
+                    spot1flux = float(exthdr['SATF{wave}_1'.format(wave=i)])
+                    spot2flux = float(exthdr['SATF{wave}_2'.format(wave=i)])
+                    spot3flux = float(exthdr['SATF{wave}_3'.format(wave=i)])
+                except KeyError:
+                    spot0flux = 1
+                    spot1flux = 1
+                    spot2flux = 1
+                    spot3flux = 1
                 spot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
