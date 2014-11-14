@@ -1,2 +1,6 @@
-def jb_test()
+def jb_test():
+    '''
+    
+    :return:
+    '''
     pass
