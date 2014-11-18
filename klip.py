@@ -307,7 +307,7 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
-def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, minmove=3, numbasis=None, aligned_center=None,
+def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
              minrot=0):
     """
     KLIP PSF Subtraction using angular differential imaging
@@ -369,7 +369,8 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, minmove=3, nu
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections
-    phi_bounds = [(dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi) for phi_i in range(subsections)]
+    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+    phi_bounds[-1][1] = 2. * np.pi
 
     #before we start, create the output array in flattened form
     sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
@@ -399,7 +400,7 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, minmove=3, nu
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend) / 2.0
                 moves = estimate_movement(avg_rad, parang0=pa, parangs=parangs)
-                file_ind = np.where((moves >= minmove) & (np.abs(parangs - pa) > minrot))
+                file_ind = np.where((moves >= movement) & (np.abs(parangs - pa) > minrot))
                 if np.size(file_ind) < 2:
                     print("less than 2 reference PSFs available, skipping...")
                     sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
@@ -421,6 +422,10 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, minmove=3, nu
 
     #derotate images
     #sub_imgs = np.array([rotate(img, pa, (140,140), center) for img,pa,center in zip(sub_imgs, parangs, centers)])
+
+    #all of the image centers are now at aligned_center
+    centers[:,0] = aligned_center[0]
+    centers[:,1] = aligned_center[1]
 
     return sub_imgs
 
