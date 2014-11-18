@@ -614,13 +614,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                   dataset.wcs[0])
     elif mode == 'ADI':
         #ADI is not parallelized
-        klipped_imgs = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
+        dataset.output = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
                                          numbasis=numbasis, minrot=minrot, aligned_center=aligned_center)
         #TODO: handling of only a single numbasis
         #derotate all the images
         #first we need to flatten so it's just a 3D array
-        oldshape = klipped_imgs.shape
+        oldshape = dataset.output.shape
         dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
         #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
         flattend_parangs = np.tile(dataset.PAs, oldshape[0])

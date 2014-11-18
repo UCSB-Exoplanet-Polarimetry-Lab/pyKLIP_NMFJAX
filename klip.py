@@ -369,7 +369,8 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections
-    phi_bounds = [(dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi) for phi_i in range(subsections)]
+    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+    phi_bounds[-1][1] = 2. * np.pi
 
     #before we start, create the output array in flattened form
     sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
