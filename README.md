@@ -20,10 +20,11 @@ Put all of the files into a folder called *pyklip* and put the *pyklip* folder i
 
 ### TODO ###
 
-* Remove GPI specific code
-* Read in instrument parameters for an .ini file
-* Smarter way of breaking image into annuli (related to above)
 * Post processing analysis functions
+* Rewrite IDL aper? 
+* Option to optimize for Methane planets
+* Better handling of Headers
+* Contrast curves
 * Spectral Recovery
 
 ### GPI Example ###
