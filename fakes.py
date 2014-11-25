@@ -147,7 +147,7 @@ def gauss2d(x0, y0, peak, sigma):
     sigma *= 1.0
     return lambda x,y: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
 
-def gaussfit2d(frame, x0, y0, searchrad=5, guessfwhm=3.0, guesspeak=1):
+def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
     """
     Fits a 2d gaussian to the data at point (xguess, yguess)
 
@@ -161,8 +161,8 @@ def gaussfit2d(frame, x0, y0, searchrad=5, guessfwhm=3.0, guesspeak=1):
     Ouputs:
         peakflux: the peakflux of the gaussian
     """
-    x0 = np.round(x0)
-    y0 = np.round(y0)
+    x0 = np.round(xguess)
+    y0 = np.round(yguess)
     #construct our searchbox
     fitbox = frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1]
     #construct the residual to the fit
@@ -182,7 +182,7 @@ def gaussfit2d(frame, x0, y0, searchrad=5, guessfwhm=3.0, guesspeak=1):
     return peakflux
 
 
-def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searechrad=5, guessfwhm=3.0, guesspeak=1):
+def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=5, guessfwhm=3.0, guesspeak=1):
     """
     Retrives the peak flux of the planet from a series of frames given a separation and PA
 
@@ -208,8 +208,8 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searechrad=5, gues
         y = sep*np.sin(np.radians(theta)) + center[1]
 
         #calculate the flux
-        flux = gaussfit2d(frame, x, y, searchrad=searechrad, guessfwhm=guessfwhm, guesspeak=guesspeak)
-        
+        flux = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak)
+
         peakfluxes.append(flux)
 
     return np.array(peakfluxes)
