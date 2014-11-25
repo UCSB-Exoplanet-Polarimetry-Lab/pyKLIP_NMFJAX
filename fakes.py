@@ -168,6 +168,9 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
     #construct the residual to the fit
     errorfunction = lambda p: np.ravel(gauss2d(*p)(*np.indices(fitbox.shape)) - fitbox)
 
+    #mask bad pixels
+    fitbox[np.where(np.isnan(fitbox))] = 0
+
     #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
     #(2searchrad+1,2searchrad+1)
     p, success = optimize.leastsq(errorfunction, (searchrad, searchrad, guesspeak, guessfwhm/(2 * np.sqrt(2*np.log(2)))))
