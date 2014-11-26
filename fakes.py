@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import optimize
+import scipy.ndimage as ndimage
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -53,23 +54,26 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
     frame += psf
     return frame
 
-def inject_planet(frames, centers, peakfluxes, astr_hdrs, radius, pa, fwhm=3.5):
+def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5):
     """
-    Injects a fake planet into a dataset
+    Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
     Inputs:
         frames: array of (N,y,x) for N is the total number of frames
         centers: array of size (N,2) of [x,y] coordiantes of the image center
-        peakflxes: array of size N of the peak flux of the fake planet in each frame
+        inputflux: EITHER array of size N of the peak flux of the fake planet in each frame (will inject a Gaussian PSF)
+                   OR array of size (N,psfy,psfx) of template PSFs. The brightnesses should be scaled and the PSFs
+                   should be centered at the center of each of the template images
         astr_hdrs: array of size N of the WCS headers
         radius: separation of the planet from the star
         pa: parallactic angle (in degrees) of  planet (if that is a quantity that makes any sense)
+        fwhm: fwhm (in pixels) of gaussian
 
     Outputs:
         saves result in input "frames" variable
     """
 
-    for frame, center, peakflux, astr_hdr in zip(frames, centers, peakfluxes, astr_hdrs):
+    for frame, center, inputpsf, astr_hdr in zip(frames, centers, inputflux, astr_hdrs):
         #calculate the x,y location of the planet for each image
         theta = covert_pa_to_image_polar(pa, astr_hdr)
 
@@ -77,7 +81,21 @@ def inject_planet(frames, centers, peakfluxes, astr_hdrs, radius, pa, fwhm=3.5):
         y_pl = radius * np.sin(theta*np.pi/180.) + center[1]
 
         #now that we found the planet location, inject it
-        frame = _inject_gaussian_planet(frame, x_pl, y_pl, peakflux, fwhm=fwhm)
+        #check whether we are injecting a gaussian of a template PSF
+        if type(inputpsf) == np.ndarray:
+            #shift psf so that center is aligned
+            #calculate center of box
+            boxsize = inputpsf.shape[0]
+            boxcent = (boxsize-1)/2
+            #create coordinates to align PSF with image
+            xpsf,ypsf = np.meshgrid(np.arange(frame.shape[1]), np.arange(frame.shape[0]))
+            xpsf = xpsf - x_pl + boxcent
+            ypsf = ypsf - y_pl + boxcent
+            #inject into frame
+            frame += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
+
+        else:
+            frame = _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm)
 
 def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
     """
@@ -164,7 +182,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
     x0 = np.round(xguess)
     y0 = np.round(yguess)
     #construct our searchbox
-    fitbox = frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1]
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
     #construct the residual to the fit
     errorfunction = lambda p: np.ravel(gauss2d(*p)(*np.indices(fitbox.shape)) - fitbox)
 
