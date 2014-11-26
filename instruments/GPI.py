@@ -326,6 +326,16 @@ def _gpi_process_file(filepath):
 
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
+        #turns out WCS data can be wrong. Let's recalculate it using avparang
+        parang = exthdr['AVPARANG']
+        vert_angle = -(360-parang) + GPIData.ifs_rotation - 90
+        vert_angle = np.radians(vert_angle)
+        pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
+        cdmatrix = pc * GPIData.lenslet_scale /3600.
+        w.wcs.cd[0,0] = cdmatrix[0,0]
+        w.wcs.cd[0,1] = cdmatrix[0,1]
+        w.wcs.cd[1,0] = cdmatrix[1,0]
+        w.wcs.cd[1,1] = cdmatrix[1,1]
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
