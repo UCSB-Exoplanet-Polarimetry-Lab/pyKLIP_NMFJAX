@@ -1,6 +1,8 @@
 import astropy.io.fits as pyfits
 from astropy import wcs
 import numpy as np
+import scipy.ndimage as ndimage
+import scipy.stats
 import os
 import re
 #different importants depending on if python2.7 or python3
@@ -288,6 +290,41 @@ class GPIData(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
+    def generate_psfs(self, boxrad=5):
+        """
+        Generates PSF for each frame of input data. Only works on spectral mode data.
+        Currently hard coded assuming 37 spectral channels!!!
+
+        Inputs:
+            boxrad: the halflength of the size of the extracted PSF (in pixels)
+
+        Outputs:
+            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+        """
+        self.psfs = []
+
+        for i,frame in enumerate(self.input):
+            #figure out which header and which wavelength slice
+            #TODO: remove hard coded 37's
+            hdrindex = int(i)/int(37)
+            slice = i % 37
+            #now grab the values from them by parsing the header
+            hdr = self.exthdrs[hdrindex]
+            spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
+            spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
+            spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
+            spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
+
+            #put all the sat spot info together
+            spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
+                     [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+            #now make a psf
+            spotpsf = generate_psf(frame, spots, boxrad=boxrad)
+            self.psfs.append(spotpsf)
+
+        self.psfs = np.array(self.psfs)
+
+
 ######################
 ## Static Functions ##
 ######################
@@ -374,3 +411,46 @@ def _gpi_process_file(filepath):
         hdulist.close()
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+
+def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
+    """
+    Generates a GPI PSF for the frame based on the satellite spots
+
+    Inputs:
+        frame: 2d frame of data
+        location: array of (N,2) containing [x,y] coordinates of all N satellite spots
+        boxrad: half length of box to use to pull out PSF
+        medianboxsize: size in pixels of box for median filter
+
+    Outputs:
+        genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
+    """
+    genpsf = np.zeros([2*boxrad+1, 2*boxrad+1])
+    #mask nans
+    cleaned = np.copy(frame)
+    cleaned[np.where(np.isnan(cleaned))] = 0
+
+    #highpass filter to remove background
+    #mask source for median filter
+    masked = np.copy(cleaned)
+    for loc in locations:
+        spotx = np.round(loc[0])
+        spoty = np.round(loc[1])
+        masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
+            masked.reshape(masked.shape[0]*masked.shape[1]))
+    #subtract out median filtered image
+    cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
+
+    for loc in locations:
+        #grab satellite spot positions
+        spotx = loc[0]
+        spoty = loc[1]
+
+        #interpolate image to grab satellite psf with it centered
+        #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
+        #create arrays of size 2*boxrad+2)
+        x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
+        spotpsf = ndimage.map_coordinates(cleaned, [y,x])
+        genpsf += spotpsf
+
+    return genpsf/len(locations)
