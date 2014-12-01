@@ -76,7 +76,14 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None):
+    def __init__(self, filepaths=None, skipslices=None):
+        """
+        Initialization code for GPIData
+
+        Inputs:
+            filepaths: list of filepaths to files
+            skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        """
         self._output = None
         if filepaths is None:
             self._input = None
@@ -92,7 +99,7 @@ class GPIData(Data):
             self.prihdrs = None
             self.exthdrs = None
         else:
-            self.readdata(filepaths)
+            self.readdata(filepaths, skipslices=skipslices)
 
     ################################
     ### Instance Required Fields ###
@@ -163,12 +170,13 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths):
+    def readdata(self, filepaths, skipslices=None):
         """
         Method to open and read a list of GPI data
 
         Inputs:
             filespaths: a list of filepaths
+            skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
 
         Outputs:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -191,7 +199,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _gpi_process_file(filepath)
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _gpi_process_file(filepath, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
@@ -305,9 +313,9 @@ class GPIData(Data):
 
         for i,frame in enumerate(self.input):
             #figure out which header and which wavelength slice
-            #TODO: remove hard coded 37's
-            hdrindex = int(i)/int(37)
-            slice = i % 37
+            numwaves = np.size(np.unique(self.wvs))
+            hdrindex = int(i)/int(numwaves)
+            slice = i % numwaves
             #now grab the values from them by parsing the header
             hdr = self.exthdrs[hdrindex]
             spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
@@ -329,14 +337,13 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-
-
-def _gpi_process_file(filepath):
+def _gpi_process_file(filepath, skipslices=None):
     """
     Method to open and parse a GPI file
 
     Inputs:
         filepath: the file to open
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
 
     Outputs: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -346,6 +353,10 @@ def _gpi_process_file(filepath):
         astr_hdrs: array of z of the WCS header for each datacube slice
         filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string)
         fpm_band: which coronagrpah was used (string)
+        ppm_band: which apodizer was used (string)
+        spot_fluxes: array of z containing average satellite spot fluxes for each image
+        prihdr: primary header of the FITS file
+        exthdr: 1st extention header of the FITS file
     """
     print("Reading File: {0}".format(filepath))
     hdulist = pyfits.open(filepath)
@@ -419,6 +430,15 @@ def _gpi_process_file(filepath):
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
+
+    #remove undesirable slices of the datacube if necessary
+    if skipslices is not None:
+        cube = np.delete(cube, skipslices, axis=0)
+        center = np.delete(center, skipslices, axis=0)
+        parang = np.delete(parang, skipslices)
+        wvs = np.delete(wvs, skipslices)
+        astr_hdrs = np.delete(astr_hdrs, skipslices)
+        spot_fluxes = np.delete(spot_fluxes, skipslices)
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
