@@ -83,6 +83,7 @@ def _align_and_scale(iterable_arg):
     aligned_imgs = _arraytonumpy(aligned, aligned_shape)
     aligned_imgs[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv/old_wv)
                                         for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
+    #print aligned_imgs.shape
 
     return ref_wv_index, ref_wv
 
@@ -214,6 +215,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+    #JB question: x = x[:]?
     x.shape = (x.shape[0] * x.shape[1])
     y.shape = (y.shape[0] * y.shape[1])
     r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
@@ -473,6 +475,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     print("Begin align and scale images for each wavelength")
     realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center)))
 
+
     #list to store each threadpool task
     outputs = []
     #as each is finishing, queue up the aligned data to be processed with KLIP
@@ -614,14 +617,19 @@ def klip_dataset(dataset, mode='AS', outputdir=".", fileprefix="", annuli=5, sub
     outputdirpath = os.path.realpath(outputdir)
     print("Writing Images to directory {0}".format(outputdirpath))
 
+    # JB: Add center of the image in the header because the sat-spot are gone so we can't get it after klip.
+    if aligned_center is None:
+        c = [int(dataset.input.shape[2]//2),int(dataset.input.shape[1]//2)]
+    else:
+        c = [aligned_center[0],aligned_center[1]]
+
     #collapse in time and wavelength to examine KL modes
     KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0])
+    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center = c)
 
     #for each KL mode, collapse in time to examine spectra
     KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
     for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                              dataset.wcs[0])
-
+                              dataset.wcs[0], center = c)
 
