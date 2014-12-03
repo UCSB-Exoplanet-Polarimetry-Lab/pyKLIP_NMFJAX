@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import optimize
 import scipy.ndimage as ndimage
+import scipy.interpolate as interp
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -23,6 +24,7 @@ def covert_pa_to_image_polar(pa, astr_hdr):
     rot_YN = np.arctan2(rot_sgn * astr_hdr.wcs.cd[0,1],rot_sgn * astr_hdr.wcs.cd[0,0])
     #now that we know where north it, find the CCW rotation from +Y to find location of planet
     rot_YPA = rot_YN - rot_sgn*pa*np.pi/180. #radians
+    #rot_YPA = rot_YN + pa*np.pi/180. #radians
 
     theta = rot_YPA * 180./np.pi + 90.0 #degrees
     return theta
@@ -54,7 +56,7 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
     frame += psf
     return frame
 
-def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5):
+def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None):
     """
     Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
@@ -68,15 +70,19 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5):
         radius: separation of the planet from the star
         pa: parallactic angle (in degrees) of  planet (if that is a quantity that makes any sense)
         fwhm: fwhm (in pixels) of gaussian
+        thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
+                array of size N
 
     Outputs:
         saves result in input "frames" variable
     """
 
-    for frame, center, inputpsf, astr_hdr in zip(frames, centers, inputflux, astr_hdrs):
-        #calculate the x,y location of the planet for each image
-        theta = covert_pa_to_image_polar(pa, astr_hdr)
+    if thetas is None:
+        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
+    for frame, center, inputpsf, theta in zip(frames, centers, inputflux, thetas):
+        #calculate the x,y location of the planet for each image
+        #theta = covert_pa_to_image_polar(pa, astr_hdr)
         x_pl = radius * np.cos(theta*np.pi/180.) + center[0]
         y_pl = radius * np.sin(theta*np.pi/180.) + center[1]
 
@@ -165,7 +171,7 @@ def gauss2d(x0, y0, peak, sigma):
     sigma *= 1.0
     return lambda x,y: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
 
-def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
+def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, refinefit=True):
     """
     Fits a 2d gaussian to the data at point (xguess, yguess)
 
@@ -175,6 +181,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
         searchrad: 1/2 the length of the box used for the fit
         guessfwhm: approximate fwhm to fit to
         guesspeak: approximate flux
+        refinefit: whether to refine the fit of the position of the guess
 
     Ouputs:
         peakflux: the peakflux of the gaussian
@@ -183,27 +190,61 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3.0, guesspeak=1):
     y0 = np.round(yguess)
     #construct our searchbox
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
-    #construct the residual to the fit
-    errorfunction = lambda p: np.ravel(gauss2d(*p)(*np.indices(fitbox.shape)) - fitbox)
 
     #mask bad pixels
     fitbox[np.where(np.isnan(fitbox))] = 0
+ 
+    #fit a least squares gaussian to refine the fit on the source, otherwise just use the guess
+    if refinefit:
+        #construct the residual to the fit
+        errorfunction = lambda p: np.ravel(gauss2d(*p)(*np.indices(fitbox.shape)) - fitbox)
+   
+        #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
+        #(2searchrad+1,2searchrad+1)
+        p, success = optimize.leastsq(errorfunction, (searchrad, searchrad, guesspeak, guessfwhm/(2 * np.sqrt(2*np.log(2)))))
+        
+        xfit = p[0]
+        yfit = p[1]
+        peakflux = p[2]
+        fwhm = p[3] * (2 * np.sqrt(2*np.log(2)))
+    else:
+        xfit = xguess-x0 + searchrad
+        yfit = yguess-y0 + searchrad
+   
+    #ok now, to really calculate fwhm and flux, because we really need that right, we're going
+    # to use what's in the GPI DRP pipeline to measure satellite spot fluxes instead of
+    # a least squares gaussian fit. Apparently my least squares fit relatively underestimates
+    # the flux so it's not consistent.
+    # grab a radial profile of the fit
+    rs = np.arange(searchrad)
+    thetas = np.arange(0,2*np.pi, 1./searchrad) #divide maximum circumfrence into equal parts
+    radprof = [np.mean(ndimage.map_coordinates(fitbox, [thisr*np.sin(thetas)+yfit, thisr*np.cos(thetas)+xfit])) for thisr in rs]
+    #now interpolate this radial profile to get fwhm
+    try:
+        radprof_interp = interp.interp1d(radprof, rs)
+        fwhm = 2*radprof_interp(np.max(fitbox)/2)
+    except ValueError:
+        fwhm = searchrad
 
-    #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
-    #(2searchrad+1,2searchrad+1)
-    p, success = optimize.leastsq(errorfunction, (searchrad, searchrad, guesspeak, guessfwhm/(2 * np.sqrt(2*np.log(2)))))
+    #now calculate flux
+    xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xfit, np.arange(0, 2*searchrad+1, 1.0)-yfit)
+    #correlate data with a gaussian to get flux
+    sigma = fwhm/(2*np.sqrt(2*np.log(2)))
+    ## attempt to calculate sigma using moments
+    #sigmax = np.sqrt(np.nansum(xfitbox*xfitbox*fitbox)/np.nansum(fitbox) - (np.nansum(xfitbox*fitbox)/np.nansum(fitbox))**2)
+    #sigmay = np.sqrt(np.nansum(yfitbox*yfitbox*fitbox)/np.nansum(fitbox) - (np.nansum(yfitbox*fitbox)/np.nansum(fitbox))**2)
+    #sigma = np.nanmean([sigmax, sigmay])
+    #print(sigma, sigmax, sigmay)
+    gmask = np.exp(-(xfitbox**2+yfitbox**2)/(2.*sigma**2))
+    outofaper = np.where(xfitbox**2 + yfitbox**2 > searchrad**2)
+    gmask[outofaper] = 0 
+    corrflux = np.nansum(fitbox*gmask)/np.sum(gmask*gmask)
 
-    xfit = p[0]
-    yfit = p[1]
-    peakflux = p[2]
-    fwhm = p[3] * (2 * np.sqrt(2*np.log(2)))
+    print("Fitparams", xfit, yfit, corrflux, fwhm)
 
-    print("Fitparams", xfit, yfit, peakflux, fwhm)
+    return corrflux, fwhm, xfit, yfit
 
-    return peakflux
-
-
-def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=5, guessfwhm=3.0, guesspeak=1):
+def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False, thetas=None):
     """
     Retrives the peak flux of the planet from a series of frames given a separation and PA
 
@@ -216,21 +257,29 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=5, guess
         searchrad: 1/2 the length of the box used for the fit
         guessfwhm: approximate fwhm to fit to
         guesspeak: approximate flux
+        refinefit: whether or not to refine the positioning of the planet
+        thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
+                array of size N
 
     Outputs:
         peakfluxes: array of N peak planet fluxes
     """
     peakfluxes = []
+
+   
+    if thetas is None:
+        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])        
+
     #loop over all of them
-    for frame, center, astr_hdr in zip(frames, centers, astr_hdrs):
+    for frame, center, theta in zip(frames, centers, thetas):
         #find the pixel location on this image
-        theta = covert_pa_to_image_polar(pa, astr_hdr)
+        #theta = covert_pa_to_image_polar(pa, astr_hdr)
         x = sep*np.cos(np.radians(theta)) + center[0]
         y = sep*np.sin(np.radians(theta)) + center[1]
-
+        print(x,y)
         #calculate the flux
-        flux = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak)
-
+        flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
+        
         peakfluxes.append(flux)
 
     return np.array(peakfluxes)

@@ -290,7 +290,7 @@ class GPIData(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
-    def generate_psfs(self, boxrad=5):
+    def generate_psfs(self, boxrad=7):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
         Currently hard coded assuming 37 spectral channels!!!
@@ -435,7 +435,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     Outputs:
         genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
     """
-    genpsf = np.zeros([2*boxrad+1, 2*boxrad+1])
+    genpsf = []
     #mask nans
     cleaned = np.copy(frame)
     cleaned[np.where(np.isnan(cleaned))] = 0
@@ -449,7 +449,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
             masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
-    cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
+    #cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
 
     for loc in locations:
         #grab satellite spot positions
@@ -461,6 +461,9 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         #create arrays of size 2*boxrad+2)
         x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
         spotpsf = ndimage.map_coordinates(cleaned, [y,x])
-        genpsf += spotpsf
+        genpsf.append(spotpsf)
 
-    return genpsf/len(locations)
+    genpsf = np.array(genpsf)
+    genpsf = np.mean(genpsf, axis=0) #average the different psfs together    
+
+    return genpsf
