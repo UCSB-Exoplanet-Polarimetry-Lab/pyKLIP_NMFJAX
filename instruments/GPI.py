@@ -218,7 +218,7 @@ class GPIData(Data):
         self.contrast_scaling = GPIData.spot_ratio[ppm_band]/spot_fluxes
 
     @staticmethod
-    def savedata(filepath, data, astr_hdr=None):
+    def savedata(filepath, data, astr_hdr=None, center=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -226,15 +226,30 @@ class GPIData(Data):
             filepath: path to file to output
             data: 2D or 3D data to save
             astr_hdr: wcs astrometry header
+            center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
+                The first pixel has coordinates (0,0)
         """
-        if astr_hdr is None:
-            pyfits.writeto(filepath, data, clobber=True)
+        if center is None:
+            if astr_hdr is None:
+                pyfits.writeto(filepath, data, clobber=True)
+            else:
+                hdulist = astr_hdr.to_fits()
+                hdulist.append(hdulist[0])
+                hdulist[1].data = data
+                hdulist.writeto(filepath, clobber=True)
+                hdulist.close()
         else:
-            hdulist = astr_hdr.to_fits()
-            hdulist.append(hdulist[0])
-            hdulist[1].data = data
-            hdulist.writeto(filepath, clobber=True)
-            hdulist.close()
+            if astr_hdr is None:
+                cards = [pyfits.Card(keyword='PSFCENTX',value=center[0]),pyfits.Card(keyword='PSFCENTY',value=center[1])]
+                pyfits.writeto(filepath, data, header = pyfits.Header(cards), clobber=True)
+            else:
+                hdulist = astr_hdr.to_fits()
+                hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+                hdulist.append(hdulist[0])
+                hdulist[1].data = data
+                hdulist.writeto(filepath, clobber=True)
+                hdulist.close()
+
 
     def calibrate_output(self, units="contrast"):
         """
