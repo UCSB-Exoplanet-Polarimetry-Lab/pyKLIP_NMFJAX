@@ -241,7 +241,7 @@ def candidate_detection(filename,toPNG='', toDraw=False, logFile='' ):
         khi = np.sqrt(np.sum((stamp-g(stamp_x_grid, stamp_y_grid))**2))
 
         # JB Todo: Should explore the meaning of 'ierr' but I can't find a good clear documentation of astropy.fitting
-        sig_min = 1.0 ; sig_max = 2.0 ;
+        sig_min = 1.0 ; sig_max = 2.5 ;
         valid_potential_planet = (khi/max_val < 3 and # Check that the fit was good enough. Not a weird looking speckle.
                                  fit_g.fit_info['ierr'] == 1 and # Check that the fitting actually occured. Actually I have no idea what the number mean but it looks like when it succeeds it is 1.
                                  sig_min < g.x_stddev < sig_max and # Check the shape of the gaussian. It should be more or less circular and not too wide to be a planet.
@@ -403,8 +403,8 @@ if __name__ == "__main__":
     #dataset = GPI.GPIData(filelist)
 
     filename = filelist[0]
-    #candidate_detection(filename, toPNG="Baade", logFile='Baade')
-    candidate_detection(filename, toPNG="HD114174", logFile='HD114174')
+    #candidate_detection(filename, toDraw=True)#toPNG="Baade", logFile='Baade')
+    candidate_detection(filename, toDraw=True)#toPNG="HD114174", logFile='HD114174')
 
 
 
