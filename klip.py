@@ -401,9 +401,12 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
                 avg_rad = (radstart + radend) / 2.0
                 moves = estimate_movement(avg_rad, parang0=pa, parangs=parangs)
                 file_ind = np.where((moves >= movement) & (np.abs(parangs - pa) > minrot))
+
                 if np.size(file_ind) < 2:
                     print("less than 2 reference PSFs available, skipping...")
-                    sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
+                    print (sub_imgs[img_num, section_ind]).shape
+                    print np.zeros(np.size(section_ind)).shape 
+#                    sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
                     continue
                 ref_psfs = flattened[file_ind[0], :]
                 ref_psfs = ref_psfs[:, section_ind[0]]
