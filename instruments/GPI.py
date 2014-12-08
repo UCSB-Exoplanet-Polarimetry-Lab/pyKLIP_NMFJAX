@@ -1,7 +1,10 @@
 import astropy.io.fits as pyfits
 from astropy import wcs
 import numpy as np
+import scipy.ndimage as ndimage
+import scipy.stats
 import os
+import re
 #different importants depending on if python2.7 or python3
 import sys
 if sys.version_info < (3,0):
@@ -26,10 +29,15 @@ class GPIData(Data):
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        spot_flux: Array of N of average satellite spot flux for each frame
+        contrast_scaling: Array of N flux calibration factors (multiply by image to "calibrate" flux)
+        prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
+        exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
 
     Functions:
-        readdata(): reread in the dadta
+        readdata(): reread in the data
         savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
+        calibrate_output(): calibrates flux of self.output
     """
     ##########################
     ###Class Initilization ###
@@ -68,7 +76,14 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None):
+    def __init__(self, filepaths=None, skipslices=None):
+        """
+        Initialization code for GPIData
+
+        Inputs:
+            filepaths: list of filepaths to files
+            skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        """
         self._output = None
         if filepaths is None:
             self._input = None
@@ -81,8 +96,10 @@ class GPIData(Data):
             self._IWA = None
             self.spot_flux = None
             self.contrast_scaling = None
+            self.prihdrs = None
+            self.exthdrs = None
         else:
-            self.readdata(filepaths)
+            self.readdata(filepaths, skipslices=skipslices)
 
     ################################
     ### Instance Required Fields ###
@@ -153,12 +170,13 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths):
+    def readdata(self, filepaths, skipslices=None):
         """
         Method to open and read a list of GPI data
 
         Inputs:
             filespaths: a list of filepaths
+            skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
 
         Outputs:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -176,9 +194,12 @@ class GPIData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        prihdrs = []
+        exthdrs = []
+
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux = _gpi_process_file(filepath)
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _gpi_process_file(filepath, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
@@ -187,6 +208,8 @@ class GPIData(Data):
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
             wcs_hdrs.append(astr_hdrs)
+            prihdrs.append(prihdr)
+            exthdrs.append(exthdr)
 
             #filename = np.chararray(pa.shape[0])
             #filename[:] = filepath
@@ -216,9 +239,10 @@ class GPIData(Data):
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.contrast_scaling = GPIData.spot_ratio[ppm_band]/spot_fluxes
+        self.prihdrs = prihdrs
+        self.exthdrs = exthdrs
 
-    @staticmethod
-    def savedata(filepath, data, astr_hdr=None, center=None):
+    def savedata(self, filepath, data, astr_hdr=None, center=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -229,27 +253,38 @@ class GPIData(Data):
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
         """
-        if center is None:
-            if astr_hdr is None:
-                pyfits.writeto(filepath, data, clobber=True)
-            else:
-                hdulist = astr_hdr.to_fits()
-                hdulist.append(hdulist[0])
-                hdulist[1].data = data
-                hdulist.writeto(filepath, clobber=True)
-                hdulist.close()
-        else:
-            if astr_hdr is None:
-                cards = [pyfits.Card(keyword='PSFCENTX',value=center[0]),pyfits.Card(keyword='PSFCENTY',value=center[1])]
-                pyfits.writeto(filepath, data, header = pyfits.Header(cards), clobber=True)
-            else:
-                hdulist = astr_hdr.to_fits()
-                hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
-                hdulist.append(hdulist[0])
-                hdulist[1].data = data
-                hdulist.writeto(filepath, clobber=True)
-                hdulist.close()
+        hdulist = pyfits.HDUList()
+        hdulist.append(pyfits.PrimaryHDU(header=self.prihdrs[0]))
+        hdulist.append(pyfits.ImageHDU(header=self.exthdrs[0], data=data, name="Sci"))
 
+        #we'll assume you used all the input files
+        #remove duplicates from list
+        filenames = np.unique(self.filenames)
+        nfiles = np.size(filenames)
+        hdulist[0].header["DRPNFILE"] = nfiles
+        for i, thispath in enumerate(filenames):
+            thispath = thispath.replace("\\", '/')
+            splited = thispath.split("/")
+            fname = splited[-1]
+            matches = re.search('S20[0-9]{6}[SE][0-9]{4}', fname)
+            filename = matches.group(0)
+            hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+
+        if astr_hdr is not None:
+            #update astro header
+            #I don't have a better way doing this so we'll just inject all the values by hand
+            astroheader = astr_hdr.to_header()
+            exthdr = hdulist[1].header
+            exthdr['PC1_1'] = astroheader['PC1_1']
+            exthdr['PC1_2'] = astroheader['PC1_2']
+            exthdr['PC2_1'] = astroheader['PC2_1']
+            exthdr['PC2_2'] = astroheader['PC2_2']
+
+        if center is not None:
+            hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+
+        hdulist.writeto(filepath, clobber=True)
+        hdulist.close()
 
     def calibrate_output(self, units="contrast"):
         """
@@ -267,18 +302,52 @@ class GPIData(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
+    def generate_psfs(self, boxrad=5):
+        """
+        Generates PSF for each frame of input data. Only works on spectral mode data.
+        Currently hard coded assuming 37 spectral channels!!!
+
+        Inputs:
+            boxrad: the halflength of the size of the extracted PSF (in pixels)
+
+        Outputs:
+            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+        """
+        self.psfs = []
+
+        for i,frame in enumerate(self.input):
+            #figure out which header and which wavelength slice
+            numwaves = np.size(np.unique(self.wvs))
+            hdrindex = int(i)/int(numwaves)
+            slice = i % numwaves
+            #now grab the values from them by parsing the header
+            hdr = self.exthdrs[hdrindex]
+            spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
+            spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
+            spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
+            spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
+
+            #put all the sat spot info together
+            spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
+                     [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+            #now make a psf
+            spotpsf = generate_psf(frame, spots, boxrad=boxrad)
+            self.psfs.append(spotpsf)
+
+        self.psfs = np.array(self.psfs)
+
+
 ######################
 ## Static Functions ##
 ######################
 
-
-
-def _gpi_process_file(filepath):
+def _gpi_process_file(filepath, skipslices=None):
     """
     Method to open and parse a GPI file
 
     Inputs:
         filepath: the file to open
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
 
     Outputs: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -288,6 +357,10 @@ def _gpi_process_file(filepath):
         astr_hdrs: array of z of the WCS header for each datacube slice
         filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string)
         fpm_band: which coronagrpah was used (string)
+        ppm_band: which apodizer was used (string)
+        spot_fluxes: array of z containing average satellite spot fluxes for each image
+        prihdr: primary header of the FITS file
+        exthdr: 1st extention header of the FITS file
     """
     print("Reading File: {0}".format(filepath))
     hdulist = pyfits.open(filepath)
@@ -305,6 +378,16 @@ def _gpi_process_file(filepath):
 
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
+        #turns out WCS data can be wrong. Let's recalculate it using avparang
+        parang = exthdr['AVPARANG']
+        vert_angle = -(360-parang) + GPIData.ifs_rotation - 90
+        vert_angle = np.radians(vert_angle)
+        pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
+        cdmatrix = pc * GPIData.lenslet_scale /3600.
+        w.wcs.cd[0,0] = cdmatrix[0,0]
+        w.wcs.cd[0,1] = cdmatrix[0,1]
+        w.wcs.cd[1,0] = cdmatrix[1,0]
+        w.wcs.cd[1,1] = cdmatrix[1,1]
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -352,137 +435,56 @@ def _gpi_process_file(filepath):
     finally:
         hdulist.close()
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes
+    #remove undesirable slices of the datacube if necessary
+    if skipslices is not None:
+        cube = np.delete(cube, skipslices, axis=0)
+        center = np.delete(center, skipslices, axis=0)
+        parang = np.delete(parang, skipslices)
+        wvs = np.delete(wvs, skipslices)
+        astr_hdrs = np.delete(astr_hdrs, skipslices)
+        spot_fluxes = np.delete(spot_fluxes, skipslices)
 
-def covert_pa_to_image_polar(pa, astr_hdr):
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+
+def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
-    Given a parallactic angle (angle from N to Zenith rotating in the Eastward direction), calculate what
-    polar angle theta (angle from +X CCW towards +Y) it corresponds to
-
-    Input:
-        pa: parallactic angle in degrees
-        astr_hdr: wcs astrometry header (astropy.wcs)
-
-    Output:
-        theta: polar angle in degrees
-    """
-    rot_det = astr_hdr.wcs.cd[0,0] * astr_hdr.wcs.cd[1,1] - astr_hdr.wcs.cd[0,1] * astr_hdr.wcs.cd[1,0]
-    if rot_det < 0:
-        rot_sgn = -1.
-    else:
-        rot_sgn = 1.
-    #calculate CCW rotation from +Y to North in radians
-    rot_YN = np.arctan2(rot_sgn * astr_hdr.wcs.cd[0,1],rot_sgn * astr_hdr.wcs.cd[0,0])
-    #now that we know where north it, find the CCW rotation from +Y to find location of planet
-    rot_YPA = rot_YN - rot_sgn*pa*np.pi/180. #radians
-
-    theta = rot_YPA * 180./np.pi + 90.0 #degrees
-    return theta
-
-def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
-    """
-    Injects a fake planet with a Gaussian PSF into a dataframe
+    Generates a GPI PSF for the frame based on the satellite spots
 
     Inputs:
-        frame: a 2D data frame
-        xpos,ypos: x,y location (in pixels) where the planet should be
-        amplitude: peak of the Gaussian PSf (in appropriate units not dictacted here)
-        fwhm: fwhm of gaussian
+        frame: 2d frame of data
+        location: array of (N,2) containing [x,y] coordinates of all N satellite spots
+        boxrad: half length of box to use to pull out PSF
+        medianboxsize: size in pixels of box for median filter
 
     Outputs:
-        frame: the frame with the injected planet
+        genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
     """
+    genpsf = np.zeros([2*boxrad+1, 2*boxrad+1])
+    #mask nans
+    cleaned = np.copy(frame)
+    cleaned[np.where(np.isnan(cleaned))] = 0
 
-    #figure out sigma when given FWHM
-    sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
+    #highpass filter to remove background
+    #mask source for median filter
+    masked = np.copy(cleaned)
+    for loc in locations:
+        spotx = np.round(loc[0])
+        spoty = np.round(loc[1])
+        masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
+            masked.reshape(masked.shape[0]*masked.shape[1]))
+    #subtract out median filtered image
+    cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
 
-    #create a meshgrid for the psf
-    x,y = np.meshgrid(np.arange(1.0*frame.shape[1]), np.arange(1.0*frame.shape[0]))
-    x -= xpos
-    y -= ypos
+    for loc in locations:
+        #grab satellite spot positions
+        spotx = loc[0]
+        spoty = loc[1]
 
-    psf = amplitude * np.exp(-(x**2./(2.*fwhm) + y**2./(2.*fwhm)))
+        #interpolate image to grab satellite psf with it centered
+        #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
+        #create arrays of size 2*boxrad+2)
+        x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
+        spotpsf = ndimage.map_coordinates(cleaned, [y,x])
+        genpsf += spotpsf
 
-    frame += psf
-    return frame
-
-def inject_planet(frames, centers, peakfluxes, astr_hdrs, radius, pa, fwhm=3.5):
-    """
-    Injects a fake planet into a dataset
-
-    Inputs:
-        frames: array of (N,y,x) for N is the total number of frames
-        centers: array of size (N,2) of [x,y] coordiantes of the image center
-        peakflxes: array of size N of the peak flux of the fake planet in each frame
-        astr_hdrs: array of size N of the WCS headers
-        radius: separation of the planet from the star
-        pa: parallactic angle (in degrees) of  planet (if that is a quantity that makes any sense)
-
-    Outputs:
-        saves result in input "frames" variable
-    """
-
-    for frame, center, peakflux, astr_hdr in zip(frames, centers, peakfluxes, astr_hdrs):
-        #calculate the x,y location of the planet for each image
-        theta = covert_pa_to_image_polar(pa, astr_hdr)
-
-        x_pl = radius * np.cos(theta*np.pi/180.) + center[0]
-        y_pl = radius * np.sin(theta*np.pi/180.) + center[1]
-
-        #now that we found the planet location, inject it
-        frame = _inject_gaussian_planet(frame, x_pl, y_pl, peakflux, fwhm=fwhm)
-
-def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
-    """
-    Constructs a rectangular slab for a disk with a vertical gaussian profile
-
-    Inputs:
-        x0,y0: center of disk
-        xsize, ysize: x and y dimensions of the output image
-        intensity: peak intensity of the disk (whatever units you want)
-        angle: orientation of the disk plane (CCW from +x axis) [degrees]
-        fwhm: FWHM of guassian profile (in pixels)
-
-    Outputs:
-        disk_img: 2d array of size (ysize,xsize) with the image of the disk
-    """
-
-    #construct a coordinate system
-    x,y = np.meshgrid(np.arange(ysize*1.0), np.arange(xsize*1.0))
-
-    #center at image center
-    x -= x0
-    y -= y0
-
-    #rotate so x is parallel to the disk plane, y is vertical cuts through the disk
-    #so need to do a CW rotation
-    rad_angle = angle * np.pi/180.
-    xp = x * np.cos(rad_angle) + y * np.sin(rad_angle) + x0
-    yp = -x * np.sin(rad_angle) + y * np.cos(rad_angle) + y0
-
-    sigma = fwhm/(2 * np.sqrt(2*np.log(2)))
-    disk_img = intensity / (np.sqrt(2*np.pi) * sigma) * np.exp(-(yp-y0)**2/(2*sigma**2))
-
-    return disk_img
-
-def inject_disk(frames, centers, peakfluxes, astr_hdrs, pa, fwhm=3.5):
-    """
-    Injects a fake disk into a dataset
-
-    Inputs:
-        frames: array of (N,y,x) for N is the total number of frames
-        centers: array of size (N,2) of [x,y] coordiantes of the image center
-        peakflxes: array of size N of the peak flux of the fake disk in each frame
-        astr_hdrs: array of size N of the WCS headers
-        pa: parallactic angle (in degrees) of disk plane (if that is a quantity that makes any sense)
-
-    Outputs:
-        saves result in input "frames" variable
-    """
-
-    for frame, center, peakflux, astr_hdr in zip(frames, centers, peakfluxes, astr_hdrs):
-        #calculate the x,y location of the planet for each image
-        theta = covert_pa_to_image_polar(pa, astr_hdr)
-
-        #now that we found the planet location, inject it
-        frame += _construct_gaussian_disk(center[0], center[1], frame.shape[1], frame.shape[0], peakflux, theta, fwhm=fwhm)
+    return genpsf/len(locations)
