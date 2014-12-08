@@ -119,7 +119,7 @@ def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
     """
 
     #construct a coordinate system
-    x,y = np.meshgrid(np.arange(ysize*1.0), np.arange(xsize*1.0))
+    x,y = np.meshgrid(np.arange(xsize*1.0), np.arange(ysize*1.0))
 
     #center at image center
     x -= x0
@@ -136,7 +136,7 @@ def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
 
     return disk_img
 
-def inject_disk(frames, centers, peakfluxes, astr_hdrs, pa, fwhm=3.5):
+def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
     """
     Injects a fake disk into a dataset
 
@@ -151,12 +151,29 @@ def inject_disk(frames, centers, peakfluxes, astr_hdrs, pa, fwhm=3.5):
         saves result in input "frames" variable
     """
 
-    for frame, center, peakflux, astr_hdr in zip(frames, centers, peakfluxes, astr_hdrs):
-        #calculate the x,y location of the planet for each image
+    for frame, center, inputpsf, astr_hdr in zip(frames, centers, inputfluxes, astr_hdrs):
+        #calculate the rotation angle in the pixel plane
         theta = covert_pa_to_image_polar(pa, astr_hdr)
 
-        #now that we found the planet location, inject it
-        frame += _construct_gaussian_disk(center[0], center[1], frame.shape[1], frame.shape[0], peakflux, theta, fwhm=fwhm)
+        if type(inputpsf) == np.ndarray:
+            # inject real data
+            # rotate and grab pixels of disk that can be injected into the image
+            # assume disk is centered
+            xpsf0 = inputpsf.shape[1]/2
+            ypsf0 = inputpsf.shape[0]/2
+            #grab the pixel numbers for the data
+            ximg, yimg = np.meshgrid(np.arange(frame.shape[1]), np.arange(frame.shape[0]))
+            #rotate them to extract the disk at the right angle
+            ximg -= center[0]
+            yimg -= center[1]
+            theta_rad = np.radians(theta)
+            ximgp = ximg * np.cos(theta_rad) + yimg * np.sin(theta_rad) + xpsf0
+            yimgp = -ximg * np.sin(theta_rad) + yimg * np.cos(theta_rad) + ypsf0
+            #interpolate and inject datqa
+            frame += ndimage.map_coordinates(inputpsf, [yimgp, ximgp])
+        else:
+            #inject guassian bar into data
+            frame += _construct_gaussian_disk(center[0], center[1], frame.shape[1], frame.shape[0], inputpsf, theta, fwhm=fwhm)
 
 
 def gauss2d(x0, y0, peak, sigma):
