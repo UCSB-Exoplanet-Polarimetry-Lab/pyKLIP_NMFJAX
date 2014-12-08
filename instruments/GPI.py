@@ -242,11 +242,7 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-<<<<<<< HEAD
     def savedata(self, filepath, data, astr_hdr=None, center=None):
-=======
-    def savedata(self, filepath, data, astr_hdr=None):
->>>>>>> 3c61bdcd67342e1ccd83f0446dfb11bc0ab27b5d
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -284,11 +280,8 @@ class GPIData(Data):
             exthdr['PC2_1'] = astroheader['PC2_1']
             exthdr['PC2_2'] = astroheader['PC2_2']
 
-<<<<<<< HEAD
         if center is not None:
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
-=======
->>>>>>> 3c61bdcd67342e1ccd83f0446dfb11bc0ab27b5d
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
@@ -309,11 +302,7 @@ class GPIData(Data):
             self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
         
 
-<<<<<<< HEAD
-    def generate_psfs(self, boxrad=5):
-=======
     def generate_psfs(self, boxrad=7):
->>>>>>> 3c61bdcd67342e1ccd83f0446dfb11bc0ab27b5d
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
         Currently hard coded assuming 37 spectral channels!!!
