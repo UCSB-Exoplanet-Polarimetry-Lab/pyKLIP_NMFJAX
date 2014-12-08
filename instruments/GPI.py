@@ -242,7 +242,7 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, astr_hdr=None):
+    def savedata(self, filepath, data, astr_hdr=None, center=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -250,6 +250,8 @@ class GPIData(Data):
             filepath: path to file to output
             data: 2D or 3D data to save
             astr_hdr: wcs astrometry header
+            center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
+                The first pixel has coordinates (0,0)
         """
         hdulist = pyfits.HDUList()
         hdulist.append(pyfits.PrimaryHDU(header=self.prihdrs[0]))
@@ -278,6 +280,8 @@ class GPIData(Data):
             exthdr['PC2_1'] = astroheader['PC2_1']
             exthdr['PC2_2'] = astroheader['PC2_2']
 
+        if center is not None:
+            hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
@@ -469,6 +473,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
             masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
+
     #cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
 
     for loc in locations:

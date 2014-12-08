@@ -56,6 +56,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
 
     #calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
+    #JB question: Why is there this [None, :]? (It adds an empty first dimension)
     kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
 
     #sort to KL basis in descending order (largest first)
@@ -191,6 +192,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
         r = np.sqrt((x - new_center[0]) ** 2 + (y - new_center[1]) ** 2)
         theta = np.arctan2(y - new_center[1], x - new_center[0])  #theta range is [-pi,pi]
 
+        #Because x and y are the coordinates where we want to interpolate in the original image. See the following lines
         r /= scale_factor
 
         #convert back to cartesian
@@ -211,6 +213,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     nanpix = np.where(np.isnan(img))
     medval = np.median(img[np.where(~np.isnan(img))])
     img_copy = np.copy(img)
+    #JB question: Doesn't it work only if min<0?
     img_copy[nanpix] = minval * 5.0
     resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
     img_copy[nanpix] = medval
