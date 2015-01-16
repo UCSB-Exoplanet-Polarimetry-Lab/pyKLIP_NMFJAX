@@ -30,7 +30,7 @@ class GPIData(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         spot_flux: Array of N of average satellite spot flux for each frame
-        contrast_scaling: Array of N flux calibration factors (multiply by image to "calibrate" flux)
+        contrast_scaling: Flux calibration factors (multiply by image to "calibrate" flux)
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
 
@@ -238,7 +238,7 @@ class GPIData(Data):
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/spot_fluxes
+        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.mean(spot_fluxes)
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
@@ -279,6 +279,14 @@ class GPIData(Data):
             exthdr['PC1_2'] = astroheader['PC1_2']
             exthdr['PC2_1'] = astroheader['PC2_1']
             exthdr['PC2_2'] = astroheader['PC2_2']
+            #remove CD values as those are confusing
+            exthdr.remove('CD1_1')
+            exthdr.remove('CD1_2')
+            exthdr.remove('CD2_1')
+            exthdr.remove('CD2_2')
+            exthdr['CDELT1'] = 1
+            exthdr['CDELT2'] = 1
+            
 
         if center is not None:
             hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
@@ -299,7 +307,7 @@ class GPIData(Data):
             stores calibrated data in self.output
         """
         if units == "contrast":
-            self.output[:,:,:,:] *= self.contrast_scaling[None, :, None, None]
+            self.output *= self.contrast_scaling
         
 
     def generate_psfs(self, boxrad=7):
