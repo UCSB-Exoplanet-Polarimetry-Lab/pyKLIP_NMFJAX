@@ -5,9 +5,13 @@ import numpy as np
 import cProfile
 import os
 import itertools
+import fakes
+
+import matplotlib.pyplot as plt
+import astropy.io.fits as pyfits
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
-               pa_imgs, wvs_imgs, centers_imgs):
+               pa_imgs, wvs_imgs, centers_imgs,ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array).
@@ -21,8 +25,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         output_imgs_shape: (b, N, y, x), b = number of different KL basis cutoffs for KLIP routine
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
+        ori_PSFs_shared: original images containing the sole PSFs. Same shape as original_imgs.
+        rec_PSFs_shared: aligned and scaled images of the sole PSFs for processing. Same shape as aligned.
+        out_PSFs_shared: output images of the sole PSFs after KLIP processing. Same shape as output_imgs.
     """
-    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center
+    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, ori_PSFs_thread,rec_PSFs_thread,out_PSFs_thread
     #original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -36,6 +43,10 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_pa = pa_imgs
     img_wv = wvs_imgs
     img_center = centers_imgs
+    #Management of the sole PSFs arrays
+    ori_PSFs_thread = ori_PSFs_shared
+    rec_PSFs_thread = rec_PSFs_shared
+    out_PSFs_thread = out_PSFs_shared
 
 
 def _arraytonumpy(shared_array, shape=None):
@@ -83,6 +94,14 @@ def _align_and_scale(iterable_arg):
     aligned_imgs = _arraytonumpy(aligned, aligned_shape)
     aligned_imgs[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv/old_wv)
                                         for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
+
+    # Apply align and scale to the sole PSFs as well.
+    if ori_PSFs_thread is not None:
+        ori_PSFs_thread_np = _arraytonumpy(ori_PSFs_thread, original_shape)
+        rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, aligned_shape)
+        rec_PSFs_thread_np[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame_PSF, ref_center, old_center, ref_wv/old_wv)
+                                            for frame_PSF, old_center, old_wv in zip(ori_PSFs_thread_np, centers_imgs, wvs_imgs)])
+    
     #print aligned_imgs.shape
 
     return ref_wv_index, ref_wv
@@ -215,7 +234,6 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
-    #JB question: x = x[:]?
     x.shape = (x.shape[0] * x.shape[1])
     y.shape = (y.shape[0] * y.shape[1])
     r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
@@ -232,11 +250,22 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     #load aligned images for this wavelength
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
+    # Do the same for the sole PSFs (~fake planet)
+    if rec_PSFs_thread is not None:
+        rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+        PSFsarea_thread_np = rec_PSFs_thread_np[:,  section_ind[0]]
+    else:
+        PSFsarea_thread_np = None
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
+
+    # Replace the nans of the sole PSFs (~fake planet) area by zeros.
+    # We don't want to subtract the mean here. Well at least JB thinks so...
+    if PSFsarea_thread_np is not None:
+        PSFsarea_thread_np[np.where(np.isnan(PSFsarea_thread_np))] = 0
 
     #calculate the covariance matrix for the reference PSFs
     #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
@@ -249,7 +278,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
-                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot)
+                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot,
+                                            PSFsarea_thread_np = PSFsarea_thread_np)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -261,7 +291,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove, minrot):
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove, minrot, PSFsarea_thread_np = None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -276,6 +306,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         avg_rad: average radius of this annulus
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        PSFsarea_thread_np: Ignored if None. Should be the same as ref_psfs but with the sole PSFs.
 
     Outputs:
         return True on success, False on failure.
@@ -309,22 +340,35 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
+        if PSFsarea_thread_np is not None:
+            PSFsarea_thread_np_selected = PSFsarea_thread_np[file_ind[0][closest_matched], :]
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[file_ind[0], :]
+        if PSFsarea_thread_np is not None:
+            PSFsarea_thread_np_selected = PSFsarea_thread_np[file_ind[0], :]
 
     #load input/output data
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
+    if rec_PSFs_thread is not None:
+        rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+        out_PSFs_threads_np = _arraytonumpy(out_PSFs_thread, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
     #run KLIP
     try:
-        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files)
+        if rec_PSFs_thread is not None:
+            klipped,klipped_solePSFs = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files,
+                                     PSFarea_tobeklipped=rec_PSFs_thread_np[img_num, section_ind[0]], PSFsarea_forklipping=PSFsarea_thread_np_selected)
+        else:
+            klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
         return False
 
     #write to output
     output_imgs[img_num, section_ind[0], :] = klipped
+    if rec_PSFs_thread is not None:
+        out_PSFs_threads_np[img_num, section_ind[0], :] = klipped_solePSFs
     return True
 
 
@@ -369,7 +413,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
 
 def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None, minrot=0):
+                      aligned_center=None, numthreads=None, minrot=0, PSFs = None,out_PSFs=None):
     """
     KLIP PSF Subtraction using angular differential imaging
 
@@ -388,6 +432,10 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        PSFs: Array of shape similar to imgs. It should contain sole PSFs. It will suffer exactly the same
+              transformation as imgs without influencing the KL-modes.
+        out_PSFs: Array of shape similar to sub_imgs (the output of this function). It contains the reduced images of PSFs.
+                  It should be defined as out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape).
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -412,6 +460,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
+    if PSFs is not None:
+        allnans_PSFs = np.where(np.isnan(PSFs))
 
     #use first image to figure out how to divide the annuli
     #TODO: what to do with OWA
@@ -467,14 +517,33 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     centers_imgs = mp.Array(ctypes.c_double, np.size(centers))
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
     centers_imgs_np[:] = centers
+
+    if PSFs is not None:
+        # ori_PSFs_shared are the sole PSFs images. It corresponds to input set of images.
+        ori_PSFs_shared = mp.Array(ctypes.c_double, np.size(imgs))
+        ori_PSFs_shared_np = _arraytonumpy(ori_PSFs_shared, PSFs.shape)
+        ori_PSFs_shared_np[:] = PSFs
+        # rec_PSFs_shared contains the PSFs rescaled and realigned for all the different wavelengths.
+        rec_PSFs_shared =  mp.Array(ctypes.c_double, np.size(imgs)*np.size(unique_wvs))
+        #rec_PSFs_shared_np = _arraytonumpy(rec_PSFs_shared, (np.size(unique_wvs),) + imgs.shape)
+        out_PSFs_shared = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
+        out_PSFs_shared_np = _arraytonumpy(out_PSFs_shared)
+        out_PSFs_shared_np[:] = np.nan
+    else:
+        # If no PSFs then define None variables.
+        ori_PSFs_shared = None
+        rec_PSFs_shared = None
+        out_PSFs_shared = None
+
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
+                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
+                             ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared), maxtasksperchild=50)
+
 
     #align and scale the images for each image. Use map to do this asynchronously
     print("Begin align and scale images for each wavelength")
     realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center)))
-
 
     #list to store each threadpool task
     outputs = []
@@ -492,7 +561,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         #                 for radstart, radend in rad_bounds
         #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
 
-        #perform KLIP asynchronously for each group of files of a specific wavelenght and section of the image
+        #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot))
@@ -507,6 +576,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         if (index + 1) % 10 == 0:
             print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
 
+
+
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     print("Closing threadpool")
     tpool.close()
@@ -520,6 +591,19 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     #restore bad pixels
     sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
 
+    if PSFs is not None:
+        rec_PSFs_shared_np = _arraytonumpy(rec_PSFs_shared, (np.size(unique_wvs),) + imgs.shape)
+        out_PSFs_shared_np = np.rollaxis(out_PSFs_shared_np.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
+        out_PSFs_shared_np[:, allnans_PSFs[0], allnans_PSFs[1], allnans_PSFs[2]] = np.nan
+
+    #JB's debug
+    #plt.imshow(ori_PSFs_shared_np[100,:,:],interpolation = 'nearest')
+    #plt.show()
+    #plt.imshow(rec_PSFs_shared_np[1,100,:,:],interpolation = 'nearest')
+    #plt.show()
+    #plt.imshow(out_PSFs_shared_np[1,100,:,:],interpolation = 'nearest')
+    #plt.show()
+
     #scrapping this behavior for now because I don't feel like dealing with edge cases
     ## if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off that axis)
     #if sub_imgs.shape[0] == 1:
@@ -529,10 +613,14 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
 
+    # Output for the sole PSFs
+    if PSFs is not None:
+        out_PSFs[:] = out_PSFs_shared_np
+
     return sub_imgs
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None):
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,calculate_PSFs=False):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -551,6 +639,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
+        calculate_PSFs: Boolean activating the computation of the PSF through KLIP. It injects fake planets into the
+                        original cubes and apply KLIP normally. In addition it creates another set of cubes with the
+                        sole planets (no speckles) and apply the same transformation on this cube as on the first one.
+                        It will create an extra output fileprefix + "-KLmodes-all-PSFs.fits" which is the equivalent of
+                        fileprefix + "-KLmodes-all.fits" but built with the sole PSFs dataset.
+                        There are still a couple of hard-coded parameters.
+                        This is because this version is not definitive.
 
     Output
         Saved files in the output directory
@@ -569,19 +664,62 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             numbasis = np.array([numbasis])
 
-    # JB: Add center of the image in the header because the sat-spot are gone so we can't get it after klip.
-    if aligned_center is None:
-        c = [int(dataset.input.shape[2]//2),int(dataset.input.shape[1]//2)]
-    else:
-        c = [aligned_center[0],aligned_center[1]]
-
     #run KLIP
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
+
+        if calculate_PSFs:
+            #dataset.generate_psfs()
+
+            # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
+            # We want to inject one planet per section where klip is independently applied.
+            dims = dataset.input.shape
+            x_grid, y_grid = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+            nanpix = np.where(np.isnan(dataset.input[0]))
+            OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
+            dr = float(OWA - dataset.IWA) / (annuli)
+
+            # calculate the annuli mean radius where the fake planets are going to be.
+            annuli_radii = [dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)]
+            # No PSFs in the last annulus which will emcompass everything
+
+            # New array for data with sole PSFs
+            PSFs = np.zeros(dataset.input.shape)
+            PSFs[np.where(np.isnan(dataset.input))] = np.nan
+            # Define an array that will contain the reduced PSFs dataset after klip_adi_plus_sdi().
+            out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape)
+
+            # Loop for injecting fake planets. One planet per section of the image.
+            # Too many hard-coded parameters because still work in progress.
+            for annuli_id, radius in enumerate(annuli_radii):
+                #PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
+                #delta_pa = 180/np.pi*PSF_dist/radius
+                delta_th = 360/subsections
+                th_list = np.arange(-180+delta_th/2.,180.1-delta_th/2.,delta_th)
+                pa_list = fakes.covert_polar_to_image_pa(th_list, dataset.wcs[0])
+                for pa_id, pa in enumerate(pa_list):
+                    fakes.inject_planet(PSFs, dataset.centers, dataset.spot_flux/30., dataset.wcs, radius, pa)
+                    fakes.inject_planet(dataset.input, dataset.centers, dataset.spot_flux/30., dataset.wcs, radius, pa)
+                    #fakes.inject_planet(PSFs, dataset.centers, dataset.psfs, dataset.wcs, radius, pa)
+                    #fakes.inject_planet(dataset.input, dataset.centers, dataset.psfs, dataset.wcs, radius, pa)
+            # Save fits for debugging on JB's computer
+            #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpPSFs.fits", PSFs, clobber=True)
+            #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpINPUT.fits", dataset.input, clobber=True)
+            #return
+        else:
+            # Define the PSFs variables as None so that klip is applied normally without fake planets injections.
+            PSFs = None
+            out_PSFs = None
+
+
         klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
                                          numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center)
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs)
+        #JB's debug
+        #if calculate_PSFs:
+        #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
+
         dataset.output = klipped_imgs
         if calibrate_flux == True:
             dataset.calibrate_output()
@@ -606,21 +744,32 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
 
+
         dataset.output = rot_imgs
 
         #valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
         print("Writing Images to directory {0}".format(outputdirpath))
 
+        # apply same transformation on out_PSFs than on dataset.output
+        if calculate_PSFs:
+            out_PSFs = out_PSFs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+            rot_out_PSFs = rotate_imgs(out_PSFs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                                   hdrs=dataset.wcs)
+            rot_out_PSFs = rot_out_PSFs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+            KLmode_cube_PSFs = np.nanmean(rot_out_PSFs, axis=(1,2))
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube_PSFs, dataset.wcs[0], center=dataset.centers[0])
+            #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/KLmode_cube_PSFs.fits", KLmode_cube_PSFs, clobber=True)
+
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=c)
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
 
         #for each KL mode, collapse in time to examine spectra
         KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
         for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                                  dataset.wcs[0], center=c)
+                                  dataset.wcs[0], center=dataset.centers[0])
     elif mode == 'ADI':
         #ADI is not parallelized
         dataset.output = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
@@ -651,7 +800,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=c)
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
     elif mode == 'SDI':
         print("SDI Not Yet Implemented")
         return

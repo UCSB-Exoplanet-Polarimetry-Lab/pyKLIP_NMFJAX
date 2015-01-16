@@ -281,7 +281,7 @@ class GPIData(Data):
             exthdr['PC2_2'] = astroheader['PC2_2']
 
         if center is not None:
-            hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+            hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()

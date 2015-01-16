@@ -3,7 +3,7 @@ import scipy.linalg as la
 import scipy.ndimage as ndimage
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None, PSFsarea_forklipping=None):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -13,6 +13,9 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
                   characterizes the PSF of the p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
         covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
+        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped.
+        PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
+                              the klipping. ie from which the modes are calculated.
 
     Outputs:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
@@ -30,6 +33,11 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     #playing some tricks to vectorize the subtraction
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
+
+    # Replace the nans of the PSFs (~fake planet) area by zeros.
+    # We don't want to subtract the mean here. Well at least JB thinks so...
+    if PSFsarea_forklipping is not None:
+        PSFsarea_forklipping[np.where(np.isnan(PSFsarea_forklipping))] = 0
 
     #calculate the covariance matrix for the reference PSFs
     #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
@@ -66,6 +74,12 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) # this is the output image which has less rows
 
+    #Do the same for the PFSs (fake planet)
+    if PSFarea_tobeklipped is not None:
+        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
+        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
+
+
     #bad pixel mask
     #do it first for the image we're just doing computations on but don't care about the output
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
@@ -73,6 +87,12 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     #now do it for the output image
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
+
+    #Do the same for the PFSs (fake planet)
+    if PSFarea_tobeklipped is not None:
+        PSFarea_tobeklipped_rows[np.where(np.isnan(PSFarea_tobeklipped_rows))] = 0
+        solePSFs_nanpix = np.where(np.isnan(PSFarea_tobeklipped_rows_selected))
+        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = 0
 
     # do the KLIP equation, but now all the different k_KLIP simultaneously
     # calculate the inner product of science image with each of the different kl_basis vectors
@@ -88,7 +108,19 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None):
     #restore NaNs
     sub_img_rows_selected[sci_nanpix] = np.nan
 
-    return sub_img_rows_selected.transpose() # need to flip them so the output is shaped (p,b)
+    # Apply klip similarly but this time on the sole PSFs (The fake planet only)
+    # Note that we use the same KL basis as before. Just the inner product changes.
+    if PSFarea_tobeklipped is not None:
+        inner_products_solePSFs = np.dot(PSFarea_tobeklipped_rows, np.require(kl_basis, requirements=['F']))
+        inner_products_solePSFs = inner_products_solePSFs * np.tril(np.ones([max_basis, max_basis]))
+        klip_solePSFs = np.dot(inner_products_solePSFs[numbasis,:], kl_basis.T)
+        PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
+        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
+
+        # need to flip them so the output is shaped (p,b)
+        return sub_img_rows_selected.transpose(), PSFarea_tobeklipped_rows_selected.transpose()
+
+    return sub_img_rows_selected.transpose()
 
 
     #old code that only did one number of KL basis for truncation
@@ -213,12 +245,23 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     nanpix = np.where(np.isnan(img))
     medval = np.median(img[np.where(~np.isnan(img))])
     img_copy = np.copy(img)
-    #JB question: Doesn't it work only if min<0?
-    img_copy[nanpix] = minval * 5.0
-    resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
+    # JB question: Doesn't it work only if min<0?
+    # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
+    # JB: I think my code should work in both cases so waiting for Jason's approval
+    #
+    if minval >= 0:
+        minval2 = -np.nanmax(abs(img))
+        img_copy[nanpix] = minval2*100.
+        resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval2*100.)
+    else:
+        img_copy[nanpix] = minval * 5.0
+        resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
     img_copy[nanpix] = medval
     resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
-    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
+    if minval >= 0: # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
+        resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
+    else:
+        resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
     #broken attempt at using sparse arrays with interp2d. Warning: takes forever to run
     #good_dat = np.where(~(np.isnan(img)))

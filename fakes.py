@@ -29,6 +29,31 @@ def covert_pa_to_image_polar(pa, astr_hdr):
     theta = rot_YPA * 180./np.pi + 90.0 #degrees
     return theta
 
+def covert_polar_to_image_pa(theta, astr_hdr):
+    """
+    Reversed engineer from covert_pa_to_image_polar by JB. Actually JB doesn't quite understand how it works...
+
+    Input:
+        theta: parallactic angle in degrees
+        astr_hdr: wcs astrometry header (astropy.wcs)
+
+    Output:
+        theta: polar angle in degrees
+    """
+    rot_det = astr_hdr.wcs.cd[0,0] * astr_hdr.wcs.cd[1,1] - astr_hdr.wcs.cd[0,1] * astr_hdr.wcs.cd[1,0]
+    if rot_det < 0:
+        rot_sgn = -1.
+    else:
+        rot_sgn = 1.
+    #calculate CCW rotation from +Y to North in radians
+    rot_YN = np.arctan2(rot_sgn * astr_hdr.wcs.cd[0,1],rot_sgn * astr_hdr.wcs.cd[0,0])
+
+    rot_YPA = (theta-90)*np.pi/180.
+
+    pa = rot_sgn*(rot_YN-rot_YPA)* 180./np.pi
+
+    return pa
+
 def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
     """
     Injects a fake planet with a Gaussian PSF into a dataframe
