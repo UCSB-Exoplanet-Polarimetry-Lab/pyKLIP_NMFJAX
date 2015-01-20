@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg as la
 import scipy.ndimage as ndimage
-
+from scipy.stats import t
 
 def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None, PSFsarea_forklipping=None):
     """
@@ -351,6 +351,61 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,0] *= -1
     if flipy is True:
         wcs_header.wcs.cd[:,1] *= -1
+
+
+def meas_contrast(dat, iwa, owa, resolution):
+    """
+    Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
+    thoughput.
+
+    Inputs:
+        dat: 2D image - already flux calibrated
+        iwa: inner working angle
+        owa: outer working angle
+        resolution: size of resolution element in pixels (FWHM or lambda/D)
+
+    Returns:
+        (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
+
+    """
+
+    #figure out how finely to sample the radial profile
+    numseps = int((owa-iwa)/resolution)
+    seps = np.arange(numseps)*resolution + iwa + resolution/2.0 #don't want to start right at the edge of the occulting mask
+    dsep = resolution
+
+    contrast = []
+    #create a coordinate grid
+    x,y = np.meshgrid(np.arange(float(dat.shape[1])), np.arange(float(dat.shape[0])))
+    r = np.sqrt((x-140.)**2 + (y-140.)**2)
+    theta = np.arctan2(y-140, x-140) % 2*np.pi
+    for sep in seps:
+        #make a bunch of circular aperatures at this separation
+        dtheta = dsep/float(sep)
+        thetabins = np.arange(0, 360-dtheta/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
+        specklethetas = []
+        specklefluxes = []
+        for thistheta in thetabins:
+            #measure the flux in this resolution element
+            #first get the position of the center of the element
+            xphot = np.cos(np.radians(thistheta)) * sep + 140.
+            yphot = np.sin(np.radians(thistheta)) * sep + 140.
+            #coordinate system around this resolution element
+            rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
+            sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
+            gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
+            validphotpix = np.where(rphot <= dsep/2)
+            speckleflux = np.nansum((gmask*dat)[validphotpix])/np.sum((gmask*gmask)[validphotpix]) #convolve with gaussian
+
+            specklethetas.append(thistheta)
+            specklefluxes.append(speckleflux)
+
+        #find 5 sigma flux using student-t statistics
+        fpf_flux = t.ppf(0.99999942697, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes))
+        contrast.append(fpf_flux)
+
+    return (seps, np.array(contrast))
+
 
 
 def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
