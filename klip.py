@@ -395,7 +395,7 @@ def meas_contrast(dat, iwa, owa, resolution):
             sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
             gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
             validphotpix = np.where(rphot <= dsep/2)
-            speckleflux = np.nansum((gmask*dat)[validphotpix])/np.sum((gmask*gmask)[validphotpix]) #convolve with gaussian
+            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.sum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
 
             specklethetas.append(thistheta)
             specklefluxes.append(speckleflux)
