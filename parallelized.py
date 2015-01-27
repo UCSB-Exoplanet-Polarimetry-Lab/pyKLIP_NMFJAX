@@ -208,7 +208,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot, spectrum):
+                            minmove, ref_center, minrot, spectrum, mode):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -228,6 +228,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
         spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
 
     Outputs:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -280,7 +281,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
-                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot,
+                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot, mode,
                                             PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
@@ -294,7 +295,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
 
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad,
-                                    numbasis, minmove, minrot, PSFsarea_thread_np = None, spectrum=None):
+                                    numbasis, minmove, minrot, mode, PSFsarea_thread_np = None, spectrum=None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -309,6 +310,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         avg_rad: average radius of this annulus
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         PSFsarea_thread_np: Ignored if None. Should be the same as ref_psfs but with the sole PSFs.
         spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
@@ -322,7 +324,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     wvs_imgs = _arraytonumpy(img_wv)
     pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section for each PSF reference image w.r.t the science image
-    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     #check all the PSF selection criterion
     #enough movement of the astrophyiscal source
     goodmv = (moves >= minmove)
@@ -430,10 +432,10 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     return derotated
 
 
-def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3, numbasis=None,
                       aligned_center=None, numthreads=None, minrot=0, PSFs = None, out_PSFs=None, spectrum=None):
     """
-    KLIP PSF Subtraction using angular differential imaging
+    multithreaded KLIP PSF Subtraction
 
     Inputs:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
@@ -441,6 +443,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
         IWA: inner working angle (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
         movement: minimum amount of movement (in pixels) of an astrophysical source
@@ -584,7 +587,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, spectrum))
+                                                                     aligned_center, minrot, spectrum, mode))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -673,6 +676,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         Saved files in the output directory
         Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
                             (N), wavelengths (wv), and spatial dimensions. Images are derotated.
+                            For ADI only, the wv is omitted so only 4D cube
     """
     #defaullt numbasis if none
     if numbasis is None:
@@ -734,9 +738,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             out_PSFs = None
 
 
-        klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
-                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+        klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum)
         #JB's debug
         #if calculate_PSFs:
@@ -794,9 +798,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                   dataset.wcs[0], center=dataset.centers[0])
     elif mode == 'ADI':
         #ADI is not parallelized
-        dataset.output = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
-                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, minrot=minrot, aligned_center=aligned_center)
+        dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center)
         #TODO: handling of only a single numbasis
         #derotate all the images
         #first we need to flatten so it's just a 3D array
@@ -823,6 +828,17 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+
+        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+        #if we actually have spectral cubes, let's save those too
+        if np.size(num_wvs) > 1:
+            oldshape = dataset.output.shape
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+            KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, dataset.wcs[0], center=dataset.centers[0])
+
     elif mode == 'SDI':
         print("SDI Not Yet Implemented")
         return

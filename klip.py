@@ -145,7 +145,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     # return sub_img
 
 
-def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wavelengths=None):
+def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wavelengths=None, mode=None):
     """
     Estimates the movement of a hypothetical astrophysical source in ADI and/or SDI at the given radius and
     given reference parallactic angle (parang0) and reference wavelegnth (wavelength0)
@@ -158,6 +158,7 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
         wavelengths: array of length N of the wavelengths of all N images
         NOTE: we expect parang0 and parangs to be either both defined or both None.
                 Same with wavelength0 and wavelengths
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
 
     Output:
         moves: array of length N of the distance an astrophysical source would have moved from the
@@ -167,9 +168,9 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     dtheta = 0 # how much the images moved in theta (polar coordinate)
     scale_fac = 1 # how much the image moved radially (r/radius)
 
-    if parang0 is not None:
+    if (parang0 is not None) & ('ADI' in mode.upper()):
         dtheta = np.radians(parang0 - parangs)
-    if wavelength0 is not None:
+    if (wavelength0 is not None) & ('SDI' in mode.upper()):
         scale_fac = (wavelength0/wavelengths)
 
     #define cartesean coordinate system where astrophysical source is at (x,y) = (r,0)
