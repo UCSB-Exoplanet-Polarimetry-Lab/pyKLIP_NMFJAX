@@ -208,7 +208,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot):
+                            minmove, ref_center, minrot, spectrum):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -226,6 +226,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Outputs:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -279,7 +281,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
                                             wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot,
-                                            PSFsarea_thread_np = PSFsarea_thread_np)
+                                            PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -291,7 +293,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove, minrot, PSFsarea_thread_np = None):
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad,
+                                    numbasis, minmove, minrot, PSFsarea_thread_np = None, spectrum=None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -307,6 +310,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         PSFsarea_thread_np: Ignored if None. Should be the same as ref_psfs but with the sole PSFs.
+        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Outputs:
         return True on success, False on failure.
@@ -318,10 +323,23 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    #check all the PSF selection criterion
+    #enough movement of the astrophyiscal source
+    goodmv = (moves >= minmove)
+    #enough field rotation
     if minrot > 0:
-        file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
-    else:
-        file_ind = np.where(moves >= minmove)
+        goodmv = (goodmv) & (np.abs(pa_imgs - parang) >= minrot)
+    #optimization for different spectrum
+    if spectrum is not None:
+        #NOTE: THIS NEEDS TO BE THE LAST LOGIC STATEMENT BECAUSE OF THE 'OR' LOGIC
+        if spectrum.lower() == "methane":
+            goodmv = (goodmv) | ((wv_index > 1.64) & (wv_index < 1.8))
+    #if minrot > 0:
+    #    file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
+    #else:
+    #    file_ind = np.where(moves >= minmove)
+    #select the good reference PSFs
+    file_ind = np.where(goodmv)
     if np.size(file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
@@ -413,7 +431,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
 
 def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None, minrot=0, PSFs = None,out_PSFs=None):
+                      aligned_center=None, numthreads=None, minrot=0, PSFs = None, out_PSFs=None, spectrum=None):
     """
     KLIP PSF Subtraction using angular differential imaging
 
@@ -436,6 +454,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
               transformation as imgs without influencing the KL-modes.
         out_PSFs: Array of shape similar to sub_imgs (the output of this function). It contains the reduced images of PSFs.
                   It should be defined as out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape).
+        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -538,7 +558,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
-                             ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared), maxtasksperchild=50)
+                             ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared), maxtasksperchild=50)
 
 
     #align and scale the images for each image. Use map to do this asynchronously
@@ -564,7 +584,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot))
+                                                                     aligned_center, minrot, spectrum))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -620,7 +640,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     return sub_imgs
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,calculate_PSFs=False):
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, calculate_PSFs=False, spectrum=None):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -646,11 +666,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                         fileprefix + "-KLmodes-all.fits" but built with the sole PSFs dataset.
                         There are still a couple of hard-coded parameters.
                         This is because this version is not definitive.
+        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Output
         Saved files in the output directory
-        Returns: rot_imgs: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images (N), wavelengths (wv),
-                            and spatial dimensions. Images are derotated.
+        Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
+                            (N), wavelengths (wv), and spatial dimensions. Images are derotated.
     """
     #defaullt numbasis if none
     if numbasis is None:
@@ -715,7 +737,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
                                          numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs)
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum)
         #JB's debug
         #if calculate_PSFs:
         #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
