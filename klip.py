@@ -168,9 +168,9 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     dtheta = 0 # how much the images moved in theta (polar coordinate)
     scale_fac = 1 # how much the image moved radially (r/radius)
 
-    if (parang0 is not None) & ('ADI' in mode.upper()):
+    if (parang0 is not None):
         dtheta = np.radians(parang0 - parangs)
-    if (wavelength0 is not None) & ('SDI' in mode.upper()):
+    if (wavelength0 is not None):
         scale_fac = (wavelength0/wavelengths)
 
     #define cartesean coordinate system where astrophysical source is at (x,y) = (r,0)

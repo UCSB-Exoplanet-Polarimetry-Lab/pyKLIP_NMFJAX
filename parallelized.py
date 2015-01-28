@@ -332,6 +332,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     if minrot > 0:
         goodmv = (goodmv) & (np.abs(pa_imgs - parang) >= minrot)
     #optimization for different spectrum
+    if "SDI" not in mode.upper():
+        goodmv = (goodmv) & (wvs_imgs == wavelength)
     if spectrum is not None:
         #NOTE: THIS NEEDS TO BE THE LAST LOGIC STATEMENT BECAUSE OF THE 'OR' LOGIC
         if spectrum.lower() == "methane":
@@ -831,7 +833,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         #if we actually have spectral cubes, let's save those too
-        if np.size(num_wvs) > 1:
+        if num_wvs > 1:
             oldshape = dataset.output.shape
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
