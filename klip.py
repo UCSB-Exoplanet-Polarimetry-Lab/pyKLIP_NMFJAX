@@ -192,7 +192,9 @@ def calc_scaling(sats, ref_chan=20):
     (hopefully? tbd.) centering-independent way. 
     This method is definitely temporary and will be replaced by better scaling strategies as we come
     up with them.
-    Scaling is calculated as avg( 1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))
+    Scaling is calculated as the average of (1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))), over the two pairs
+    of spots.
+
     Inputs:
         sats: [4 x Nlambda x 2] array of x and y positions for the 4 satellite spots
         ref_chan: reference wavelength for scaling (optional, default = 20)
