@@ -185,6 +185,28 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     moves = np.sqrt((x-x0)**2 + (y-y0)**2)
     return moves
 
+def calc_scaling(sats, ref_chan=20):
+    """
+    Helper function that calculates the wavelength scaling factor from the satellite spot locations.
+    Uses the movement of spots diagonally across from each other, to calculate the scaling in a 
+    (hopefully? tbd.) centering-independent way. 
+    This method is definitely temporary and will be replaced by better scaling strategies as we come
+    up with them.
+    Scaling is calculated as avg( 1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))
+    Inputs:
+        sats: [4 x Nlambda x 2] array of x and y positions for the 4 satellite spots
+        ref_chan: reference wavelength for scaling (optional, default = 20)
+    Outputs:
+        scaling_factors: Nlambda array of scaling factors
+    """
+    pairs = [(0,3), (1,2)] # diagonally-located spots (spot_num - 1 for indexing)
+    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
+                           for p in pairs], 
+                          axis=0) # average over each pair, the first axis
+
+    scaling_factors = separations/separations[ref_chan]
+    return scaling_factors
+
 def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     """
     Helper function that realigns and/or scales the image
