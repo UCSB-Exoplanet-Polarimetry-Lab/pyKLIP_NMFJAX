@@ -337,7 +337,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     if spectrum is not None:
         #NOTE: THIS NEEDS TO BE THE LAST LOGIC STATEMENT BECAUSE OF THE 'OR' LOGIC
         if spectrum.lower() == "methane":
-            goodmv = (goodmv) | ((wv_index > 1.64) & (wv_index < 1.8))
+            goodmv = (goodmv) | ((wv_index > 1.64) & (wv_index < 1.8)) | ((wv_index < 1.19) & (wv_index > 1.1))
     #if minrot > 0:
     #    file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
     #else:
