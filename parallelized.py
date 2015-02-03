@@ -481,7 +481,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
 
     #default aligned_center if none:
     if aligned_center is None:
-        aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
+        #aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
+        aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
@@ -761,10 +762,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         flattend_parangs = np.tile(dataset.PAs, oldshape[0])
         flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
+        #align center to center of image if not specified
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+
         #parallelized rotate images
         print("Derotating Images...")
         rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs)
+                               hdrs=dataset.wcs, new_center=aligned_center)
 
         #reconstruct datacubes, need to obtain wavelength dimension size
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
@@ -813,10 +818,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         flattend_parangs = np.tile(dataset.PAs, oldshape[0])
         flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
+        #align center to center of image if not specified
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+
         #parallelized rotate images
         print("Derotating Images...")
         rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs)
+                               hdrs=dataset.wcs, new_center=aligned_center)
 
         #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])

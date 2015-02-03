@@ -516,6 +516,7 @@ def rescale_wvs(exthdrs, wvs, refwv=18):
     sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in range(0,h['NAXIS3'])]
                           for j in range(0,4)] for h in exthdrs], dtype=np.float)
     sats = sats.mean(axis=0)
+    pairs = [(0,3), (1,2)]
     separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
                            for p in pairs], 
                           axis=0) # average over each pair, the first axis
