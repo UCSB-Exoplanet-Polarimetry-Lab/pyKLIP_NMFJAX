@@ -185,6 +185,54 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     moves = np.sqrt((x-x0)**2 + (y-y0)**2)
     return moves
 
+def rescale_wvs(exthdrs, wvs, refwv=18):
+    """
+    Hack to try to fix wavelength scaling issue. This will calculate the scaling between channels,
+    and adjust the wavelength solution such that the scaling comes out linear in scaling vs wavelength.
+    Finicky - requires that all images in the dataset have the same number of wavelength channels
+    Actually, this method belongs in the GPI instrument class since it relies on GPI-specific
+    FITS keywords.
+    Input:
+        exthdrs: a list of extension headers, from a pyklip.instrument dataset
+        refwv (optional): integer index of the channel to normalize the scaling
+    Output:
+        scaled_wvs: Nlambda array of wavelengths that produce a linear plot of wavelength vs scaling
+    """
+    wvs_mean = wvs.reshape(len(exthdrs), len(wvs)/len(exthdrs)).mean(axis=0)
+    sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in range(0,h['NAXIS3'])]
+                          for j in range(0,4)] for h in exthdrs], dtype=np.float)
+    sats = sats.mean(axis=0)
+    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
+                           for p in pairs], 
+                          axis=0) # average over each pair, the first axis
+    scaling_factors = separations/separations[ref_chan]
+    scaled_wvs = scaling_factors*wvs[refwv]
+    return scaled_wvs
+
+def calc_scaling(sats, refwv=18):
+    """
+    Helper function that calculates the wavelength scaling factor from the satellite spot locations.
+    Uses the movement of spots diagonally across from each other, to calculate the scaling in a 
+    (hopefully? tbd.) centering-independent way. 
+    This method is definitely temporary and will be replaced by better scaling strategies as we come
+    up with them.
+    Scaling is calculated as the average of (1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))), over the two pairs
+    of spots.
+
+    Inputs:
+        sats: [4 x Nlambda x 2] array of x and y positions for the 4 satellite spots
+        refwv: reference wavelength for scaling (optional, default = 20)
+    Outputs:
+        scaling_factors: Nlambda array of scaling factors
+    """
+    pairs = [(0,3), (1,2)] # diagonally-located spots (spot_num - 1 for indexing)
+    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
+                           for p in pairs], 
+                          axis=0) # average over each pair, the first axis
+
+    scaling_factors = separations/separations[refwv]
+    return scaling_factors
+
 def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     """
     Helper function that realigns and/or scales the image
@@ -535,3 +583,28 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
     return sub_imgs
 
 
+def klip_sdi(imgs, centers, scale_factors, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
+             chansep=0):
+    """
+    KLIP PSF Subtraction using angular differential imaging
+
+    Inputs:
+        imgs: array of 2D images for ADI. Shape of array (N,y,x)
+        centers: N by 2 array of (x,y) coordinates of image centers
+        scale_factors: Nlambda length array with the scaling factor for each channel
+        IWA: inner working angle (in pixels)
+        annuli: number of annuli to use for KLIP
+        subsections: number of sections to break each annuli into
+        movement: minimum amount of movement (in pixels) of an astrophysical source
+                  to consider using that image for a reference PSF
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
+        chansep: minimum channel separation to be considered for use as a reference PSF
+
+    Ouput:
+        sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
+                    specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
+                    array stripped away and is shape of (N,y,x).
+    """
+    pass
