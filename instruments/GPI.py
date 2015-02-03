@@ -519,6 +519,6 @@ def rescale_wvs(exthdrs, wvs, refwv=18):
     separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
                            for p in pairs], 
                           axis=0) # average over each pair, the first axis
-    scaling_factors = separations/separations[ref_chan]
+    scaling_factors = separations/separations[refwv]
     scaled_wvs = scaling_factors*wvs[refwv]
     return np.tile(scaled_wvs, len(exthdrs))
