@@ -185,30 +185,6 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     moves = np.sqrt((x-x0)**2 + (y-y0)**2)
     return moves
 
-def rescale_wvs(exthdrs, wvs, refwv=18):
-    """
-    Hack to try to fix wavelength scaling issue. This will calculate the scaling between channels,
-    and adjust the wavelength solution such that the scaling comes out linear in scaling vs wavelength.
-    Finicky - requires that all images in the dataset have the same number of wavelength channels
-    Actually, this method belongs in the GPI instrument class since it relies on GPI-specific
-    FITS keywords.
-    Input:
-        exthdrs: a list of extension headers, from a pyklip.instrument dataset
-        refwv (optional): integer index of the channel to normalize the scaling
-    Output:
-        scaled_wvs: Nlambda array of wavelengths that produce a linear plot of wavelength vs scaling
-    """
-    wvs_mean = wvs.reshape(len(exthdrs), len(wvs)/len(exthdrs)).mean(axis=0)
-    sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in range(0,h['NAXIS3'])]
-                          for j in range(0,4)] for h in exthdrs], dtype=np.float)
-    sats = sats.mean(axis=0)
-    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
-                           for p in pairs], 
-                          axis=0) # average over each pair, the first axis
-    scaling_factors = separations/separations[ref_chan]
-    scaled_wvs = scaling_factors*wvs[refwv]
-    return scaled_wvs
-
 def calc_scaling(sats, refwv=18):
     """
     Helper function that calculates the wavelength scaling factor from the satellite spot locations.
