@@ -284,7 +284,8 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     img_copy[nanpix] = medval
     resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
     if minval >= 0: # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
-        resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
+        #resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
+        resampled_img[np.where(resampled_img_mask <= 0)] = np.nan
     else:
         resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
