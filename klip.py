@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.fft as fft
 import scipy.linalg as la
 import scipy.ndimage as ndimage
 from scipy.stats import t
@@ -442,6 +443,37 @@ def meas_contrast(dat, iwa, owa, resolution):
 
     return (seps, np.array(contrast))
 
+def high_pass_filter(img, filtersize=10):
+    """
+    A FFT implmentation of high pass filter.
+
+    Inputs:
+        img: a 2D image
+        filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
+
+    Outputs:
+        filtered: the filtered image
+    """
+    #mask NaNs
+    nan_index = np.where(np.isnan(img))
+    img[nan_index] = 0
+
+    transform = fft.fft2(img)
+
+    u,v = np.meshgrid(fft.fftfreq(img.shape[1]), fft.fftfreq(img.shape[0]))
+    rho = np.sqrt(u**2 + v**2)
+    #scale rho up so that it has units of pixels in FFT space
+    rho *= transform.shape[0]
+    #create the filter
+    filt = 1 - np.exp(-(rho**2/filtersize**2))
+
+    filtered = np.real(fft.ifft2(transform*filt))
+
+    #restore NaNs
+    filtered[nan_index] = np.nan
+    img[nan_index] = np.nan
+
+    return filtered
 
 
 def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,

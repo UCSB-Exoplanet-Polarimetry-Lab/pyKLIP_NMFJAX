@@ -648,8 +648,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
 
     return sub_imgs
 
-def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, calculate_PSFs=False, spectrum=None):
+def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
+                 numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
+                 calculate_PSFs=False, spectrum=None, highpass=False):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -677,6 +678,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                         This is because this version is not definitive.
         spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
+        highpass: if True, run a high pass filter
 
     Output
         Saved files in the output directory
@@ -695,6 +697,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    if highpass:
+        for index, input_img in enumerate(dataset.input):
+            dataset.input[index] = klip.high_pass_filter(input_img)
 
     #run KLIP
     if mode == 'ADI+SDI':
