@@ -62,6 +62,10 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
 
+    #check if there are negative eignevalues as they will cause NaNs later that we have to remove
+    neg_evals = np.where(evals < 0)
+    check_nans = np.size(neg_evals) > 0
+
     #calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
     #JB question: Why is there this [None, :]? (It adds an empty first dimension)
@@ -99,7 +103,14 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     #TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
     inner_products = np.dot(sci_mean_sub_rows, np.require(kl_basis, requirements=['F']))
     # select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal matrix
-    inner_products = inner_products * np.tril(np.ones([max_basis, max_basis]))
+    lower_tri = np.tril(np.ones([max_basis, max_basis]))
+    inner_products = inner_products * lower_tri
+    # if there are NaNs due to negative eigenvalues, make sure they don't mess up the lower triangular multiplicatoin
+    # by setting the appropriate values to zero
+    if check_nans:
+        needs_to_be_zeroed = np.where(lower_tri == 0)
+        inner_products[needs_to_be_zeroed] = 0
+
     # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
     klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
     # make subtracted image for each number of klip basis
@@ -284,8 +295,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     img_copy[nanpix] = medval
     resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
     if minval >= 0: # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
-        #resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
-        resampled_img[np.where(resampled_img_mask <= 0)] = np.nan
+        resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
     else:
         resampled_img[np.where(resampled_img_mask < minval)] = np.nan
 
