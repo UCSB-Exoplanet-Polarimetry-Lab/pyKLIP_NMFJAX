@@ -435,6 +435,31 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
     return derotated
 
+def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
+    """
+    filters a sequences of images using a FFT
+
+    Inputs:
+        imgs: array of shape (N,y,x) containing N images
+        numthreads: number of threads to be used
+        filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
+
+    Output:
+        filtered: array of shape (N,y,x) containing the filtered images
+    """
+
+    tpool = mp.Pool(processes=numthreads)
+
+
+    tasks = [tpool.apply_async(klip.high_pass_filter, args=(img, filtersize)) for img in imgs]
+
+    #reform back into a giant array
+    filtered = np.array([task.get() for task in tasks])
+
+    tpool.close()
+
+    return filtered
+
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3, numbasis=None,
                       aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None):
@@ -699,8 +724,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array([numbasis])
 
     if highpass:
-        for index, input_img in enumerate(dataset.input):
-            dataset.input[index] = klip.high_pass_filter(input_img)
+        dataset.input = high_pass_filter_imgs(dataset.input)
 
     #run KLIP
     if mode == 'ADI+SDI':
