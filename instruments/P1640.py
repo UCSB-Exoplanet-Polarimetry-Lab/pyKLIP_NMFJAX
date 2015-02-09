@@ -22,10 +22,9 @@ class P1640Data(Data):
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
-        PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         wcs: Array of N wcs astormetry headers for each image.
-        IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        IWA: a floating point scalar (not array). Specifies the inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
 
     Functions:
@@ -53,13 +52,14 @@ class P1640Data(Data):
         lenslet_scale = float(config.get("instrument", "ifs_lenslet_scale"))  # arcsecond/pix
         #get IFS rotation
         ifs_rotation = float(config.get("instrument", "ifs_rotation")) #degrees
+        # P1640 wavelength solution is read in from a file
+        wvsol_file = config.get("instrument","wavelength_solution_file") # microns
         #get some information specific to each band
-        bands = ['Y', 'J', 'H', 'K1', 'K2']
+        bands = ['J', 'H']
         for band in bands:
             centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
             fpm_diam[band] = float(config.get("instrument", "fpm_diam_{0}".format(band))) / lenslet_scale  # pixels
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
-            spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
 
     except ConfigParser.Error as e:
         print("Error reading P1640 configuration file: {0}".format(e.message))
@@ -80,7 +80,6 @@ class P1640Data(Data):
             self._wvs = None
             self._wcs = None
             self._IWA = None
-            self.spot_flux = None
             self.contrast_scaling = None
         else:
             self.readdata(filepaths)
@@ -183,6 +182,7 @@ class P1640Data(Data):
 
             data.append(cube)
             centers.append(center)
+            rot_angles.append(pa)
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
             wcs_hdrs.append(astr_hdrs)
@@ -195,11 +195,10 @@ class P1640Data(Data):
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
-        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation)  # want North Up
+        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation) # want North Up
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
-        spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
         #set these as the fields for the P1640Data object
         self._input = data
@@ -207,11 +206,10 @@ class P1640Data(Data):
         self._filenums = filenums
         self._filenames = filenames
         self._PAs = rot_angles
-        self._wvs = wvs
+        self._wvs = np.genfromtxt(P1640Data.wvsol_file)[:,0]
         self._wcs = wcs_hdrs
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
-        self.spot_flux = spot_fluxes
-        self.contrast_scaling = P1640Data.spot_ratio[ppm_band]/spot_fluxes
+
 
     @staticmethod
     def savedata(filepath, data, astr_hdr=None):
@@ -294,27 +292,15 @@ def _p1640_process_file(filepath):
 
         #grab the astro header
         w = wcs.WCS(header=prihdr, naxis=[1,2])
-        wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
+        wvs = prihdr['CRVAL3'] + prihdr['CD3_3'] * np.arange(channels) #get wavelength solution
         channels = prihdr['NAXIS3']
-        center = []
-        spot_fluxes = []
         #calculate centers from satellite spots
         for i in range(channels):
-            spot0 = prihdr['SATS{wave}_0'.format(wave=i)].split()
-            spot1 = prihdr['SATS{wave}_1'.format(wave=i)].split()
-            spot2 = prihdr['SATS{wave}_2'.format(wave=i)].split()
-            spot3 = prihdr['SATS{wave}_3'.format(wave=i)].split()
             centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
             centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
             center.append([centx, centy])
+     
             
-            spot0flux = prihdr['SATF{wave}_0'.format(wave=i)]
-            spot1flux = prihdr['SATF{wave}_1'.format(wave=i)]
-            spot2flux = prihdr['SATF{wave}_2'.format(wave=i)]
-            spot3flux = prihdr['SATF{wave}_3'.format(wave=i)]
-            spot_fluxes.append(np.mean([spot0flux, spot1flux, spot2flux, spot3flux]))
-            
-            parang = np.repeat(prihdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
     finally:
         hdulist.close()
