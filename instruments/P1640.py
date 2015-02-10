@@ -294,18 +294,20 @@ def _p1640_process_file(filepath):
         w = wcs.WCS(header=prihdr, naxis=[1,2])
 
         channels = prihdr['NAXIS3']
-        # get center x and y shifts, center all channels
-        # at 1/2 the image width
+        center = []
+        scale_factors = []
+        # get center x and y shifts, center all channels at 1/2 the image width
+        # also get scaling factors from header
         for i in range(channels):
-            cent = 0.5*np.array([prihdr['NAXIS1'], prihdr['NAXIS2'])
+            cent = 0.5*np.array([prihdr['NAXIS1'], prihdr['NAXIS2']])
             centx = cent[0]+np.float(prihdr["XSH_{0:d}".format(i)])
             centy = cent[1]+np.float(prihdr["YSH_{0:d}".format(i)])
             center.append([centx, centy])
-     
             
+            scale_factors.append(prihdr['SCALE_{0:d}'.format(i)])
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
     finally:
         hdulist.close()
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, scale_factors
 
