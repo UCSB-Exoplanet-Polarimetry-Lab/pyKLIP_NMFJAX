@@ -11,7 +11,7 @@ if sys.version_info < (3,0):
 else:
     import configparser as ConfigParser
     from pyklip.instruments.Instrument import Data
-from P1640_support import sanitize_cubes
+#from P1640_support import sanitize_cubes
 
 class P1640Data(Data):
     """
@@ -292,12 +292,14 @@ def _p1640_process_file(filepath):
 
         #grab the astro header
         w = wcs.WCS(header=prihdr, naxis=[1,2])
-        wvs = prihdr['CRVAL3'] + prihdr['CD3_3'] * np.arange(channels) #get wavelength solution
+
         channels = prihdr['NAXIS3']
-        #calculate centers from satellite spots
+        # get center x and y shifts, center all channels
+        # at 1/2 the image width
         for i in range(channels):
-            centx = np.mean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
-            centy = np.mean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
+            cent = 0.5*np.array([prihdr['NAXIS1'], prihdr['NAXIS2'])
+            centx = cent[0]+np.float(prihdr["XSH_{0:d}".format(i)])
+            centy = cent[1]+np.float(prihdr["YSH_{0:d}".format(i)])
             center.append([centx, centy])
      
             
