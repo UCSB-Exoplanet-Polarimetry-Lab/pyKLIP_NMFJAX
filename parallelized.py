@@ -337,7 +337,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         goodmv = (goodmv) & (wvs_imgs == wavelength)
     if spectrum is not None:
         if spectrum.lower() == "methane":
-            goodmv = (goodmv) | ((wv_index > 1.64) & (wv_index < 1.8)) | ((wv_index < 1.19) & (wv_index > 1.1))
+            goodmv = (goodmv) | ((wvs_imgs > 1.64) & (wvs_imgs < 1.8)) | ((wvs_imgs < 1.19) & (wvs_imgs > 1.1))
     if "ADI" not in mode.upper():
         goodmv = (goodmv) & (pa_imgs == parang)
     #if minrot > 0:

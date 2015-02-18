@@ -5,7 +5,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import os
 import re
-#different importants depending on if python2.7 or python3
+#different imports depending on if python2.7 or python3
 import sys
 if sys.version_info < (3,0):
     #python 2.7 behavior
