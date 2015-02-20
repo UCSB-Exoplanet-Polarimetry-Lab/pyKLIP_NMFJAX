@@ -628,7 +628,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     for index, out in enumerate(outputs):
         out.wait()
         if (index + 1) % 10 == 0:
-            print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
+            print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
 
 
 
@@ -725,6 +725,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
     if highpass:
         dataset.input = high_pass_filter_imgs(dataset.input)
+
+    #if no outputdir specified, then current working directory (don't want to write to '/'!)
+    if outputdir == "":
+        outputdir = "."
 
     #run KLIP
     if mode == 'ADI+SDI':
