@@ -240,13 +240,13 @@ class GPIData(Data):
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
         # recalculate wavelegnths from satellite spots
-        wvs = rescale_wvs(exthdrs, wvs)
+        wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
         # recaclulate centers from satellite spots and new wavelegnth solution
         wvs_bycube = wvs.reshape([dims[0], dims[1]])
         centers_bycube = centers.reshape([dims[0], dims[1], 2])
         for i, cubewvs in enumerate(wvs_bycube):
             try:
-                centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs)
+                centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
             except KeyError:
                 print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
                       "{0}".format(filenames[i*dims[1]]))
@@ -641,19 +641,24 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     return genpsf
 
 
-def rescale_wvs(exthdrs, wvs, refwv=18):
+def rescale_wvs(exthdrs, wvs, refwv=18, skipslices=None):
     """
     Hack to try to fix wavelength scaling issue. This will calculate the scaling between channels,
     and adjust the wavelength solution such that the scaling comes out linear in scaling vs wavelength.
     Finicky - requires that all images in the dataset have the same number of wavelength channels
     Input:
         exthdrs: a list of extension headers, from a pyklip.instrument dataset
+        wvs: a list of wvs (can repeat. This function will only look at the first cube's wavelenghts)
         refwv (optional): integer index of the channel to normalize the scaling
+        skipslices: list of skipped wavelength slices (needs to be consistent with the ones skipped by wv)
     Output:
         scaled_wvs: Nlambda*Nexthdrs array of wavelengths that produce a linear plot of wavelength vs scaling
     """
     #wvs_mean = wvs.reshape(len(exthdrs), len(wvs)/len(exthdrs)).mean(axis=0)
-    sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in range(0,h['NAXIS3'])]
+    wv_indicies = range(0, exthdrs[0]['NAXIS3'])
+    if skipslices is not None:
+        wv_indicies = np.delete(wv_indicies, skipslices)
+    sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in wv_indicies]
                           for j in range(0,4)] for h in exthdrs], dtype=np.float)
     sats = sats.mean(axis=0)
     pairs = [(0,3), (1,2)]
@@ -733,7 +738,7 @@ def calc_center_least_squares(xpos, ypos, wvs, orderx, ordery, displacement):
     return xcenter, ycenter, adrx, adry
 
 
-def calc_center(prihdr, exthdr, wvs, ignoreslices=None):
+def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
     """
     calcualte the center position of a spectral data cube
 
@@ -743,11 +748,13 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None):
         wvs: wvs of the datacube
         ignoreslices: slices to ignore in the fit. A list of wavelength slice indicies to ignore
                         if none, ignores slices 0,1, len-2, len-1 (first and last two)
+        skipslices: slices that were already skipped in processing
     Outputs:
         centx, centy: star center
     """
+    maxwvs = exthdr['NAXIS3']
     if ignoreslices is None:
-        ignoreslices = np.array([0,1,-2,-1])
+        ignoreslices = np.array([0,1,maxwvs-2,maxwvs-1])
     ignoreslices %= np.size(wvs)
 
     utstart = prihdr['UTSTART']
@@ -788,9 +795,19 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None):
     #get centers from header values inputted by GPI pipeline
     #mask = bin(int(pcenthdr['SATSMASK'],16)) #assume all spot locations are placed in header
     #iterate over headers in cube
-    for i, wv in enumerate(wvs):
+    i = 0
+    for wv in wvs:
         thisfour = []
         n = nMathar(wv, Pressure, Temp) #index of refraction
+
+        # increiment loop index if we need to skip
+        if skipslices is not None:
+            while i in skipslices:
+                i += 1
+                # sanity check in case we get stuck in an infinite loop (hopefully won't)
+                if i >= maxwvs:
+                    print("oops.. infinite loop in skipping wavelenghts")
+                    break
 
         for j in range(4):
             hdr_str = "sats%i_%i" % (i, j)
@@ -821,6 +838,8 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None):
             else:
                 print "LOGIC ERROR: j value in loop somehow got to %f" %(j)
                 continue
+
+        i += 1
 
     spots_posx = np.array(spots_posx)
     spots_posy = np.array(spots_posy)
