@@ -209,7 +209,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot):
+                            minmove, ref_center, minrot, maxrot, spectrum, mode):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -227,6 +227,10 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        maxrot: maximum PA rotation (in degrees) to be considered for use as a reference PSF (temporal variability)
+        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
 
     Outputs:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -279,8 +283,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
-                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot,
-                                            PSFsarea_thread_np = PSFsarea_thread_np)
+                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot, maxrot, mode,
+                                            PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -292,7 +296,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad, numbasis, minmove, minrot, PSFsarea_thread_np = None):
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad,
+                                    numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -307,7 +312,10 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         avg_rad: average radius of this annulus
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         PSFsarea_thread_np: Ignored if None. Should be the same as ref_psfs but with the sole PSFs.
+        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Outputs:
         return True on success, False on failure.
@@ -318,11 +326,27 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     wvs_imgs = _arraytonumpy(img_wv)
     pa_imgs = _arraytonumpy(img_pa)
     #calculate average movement in this section for each PSF reference image w.r.t the science image
-    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
+    #check all the PSF selection criterion
+    #enough movement of the astrophyiscal source
+    goodmv = (moves >= minmove)
+    #enough field rotation
     if minrot > 0:
-        file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
-    else:
-        file_ind = np.where(moves >= minmove)
+        goodmv = (goodmv) & (np.abs(pa_imgs - parang) >= minrot)
+    #optimization for different spectrum
+    if "SDI" not in mode.upper():
+        goodmv = (goodmv) & (wvs_imgs == wavelength)
+    if spectrum is not None:
+        if spectrum.lower() == "methane":
+            goodmv = (goodmv) | ((wvs_imgs > 1.64) & (wvs_imgs < 1.8)) | ((wvs_imgs < 1.19) & (wvs_imgs > 1.1))
+    if "ADI" not in mode.upper():
+        goodmv = (goodmv) & (pa_imgs == parang)
+    #if minrot > 0:
+    #    file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
+    #else:
+    #    file_ind = np.where(moves >= minmove)
+    #select the good reference PSFs
+    file_ind = np.where(goodmv)
     if np.size(file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
@@ -412,11 +436,36 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
     return derotated
 
-
-def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None, minrot=0, PSFs = None,out_PSFs=None):
+def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
     """
-    KLIP PSF Subtraction using angular differential imaging
+    filters a sequences of images using a FFT
+
+    Inputs:
+        imgs: array of shape (N,y,x) containing N images
+        numthreads: number of threads to be used
+        filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
+
+    Output:
+        filtered: array of shape (N,y,x) containing the filtered images
+    """
+
+    tpool = mp.Pool(processes=numthreads)
+
+
+    tasks = [tpool.apply_async(klip.high_pass_filter, args=(img, filtersize)) for img in imgs]
+
+    #reform back into a giant array
+    filtered = np.array([task.get() for task in tasks])
+
+    tpool.close()
+
+    return filtered
+
+
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3, numbasis=None,
+                      aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None):
+    """
+    multithreaded KLIP PSF Subtraction
 
     Inputs:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
@@ -424,6 +473,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
         IWA: inner working angle (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
         movement: minimum amount of movement (in pixels) of an astrophysical source
@@ -433,10 +483,13 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        maxrot: maximum PA rotation (in degrees) to be considered for use as a reference PSF (temporal variability)
         PSFs: Array of shape similar to imgs. It should contain sole PSFs. It will suffer exactly the same
               transformation as imgs without influencing the KL-modes.
         out_PSFs: Array of shape similar to sub_imgs (the output of this function). It contains the reduced images of PSFs.
                   It should be defined as out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape).
+        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
 
     Ouput:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -457,7 +510,8 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     #default aligned_center if none:
     if aligned_center is None:
-        aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
+        #aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
+        aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
@@ -539,7 +593,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
-                             ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared), maxtasksperchild=50)
+                             ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared), maxtasksperchild=50)
 
 
     #align and scale the images for each image. Use map to do this asynchronously
@@ -565,7 +619,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot))
+                                                                     aligned_center, minrot, maxrot, spectrum, mode))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -575,7 +629,7 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
     for index, out in enumerate(outputs):
         out.wait()
         if (index + 1) % 10 == 0:
-            print("{0:.4}% done ({1}/{2} completed)".format(index*100.0/tot_iter, index, tot_iter))
+            print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
 
 
 
@@ -667,7 +721,8 @@ class psfs_management:
         self.planet_spec_filename = planet_spec_filename
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=psfs_management() ):
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=psfs_management(),
+                 spectrum=None, highpass=False ):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -687,11 +742,16 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         psfs_struct: Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
+                        This is because this version is not definitive.
+        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
+                        shape. Currently only supports "methane" in H band.
+        highpass: if True, run a high pass filter
 
     Output
         Saved files in the output directory
-        Returns: rot_imgs: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images (N), wavelengths (wv),
-                            and spatial dimensions. Images are derotated.
+        Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
+                            (N), wavelengths (wv), and spatial dimensions. Images are derotated.
+                            For ADI only, the wv is omitted so only 4D cube
     """
     #defaullt numbasis if none
     if numbasis is None:
@@ -704,6 +764,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    if highpass:
+        dataset.input = high_pass_filter_imgs(dataset.input)
+
+    #if no outputdir specified, then current working directory (don't want to write to '/'!)
+    if outputdir == "":
+        outputdir = "."
 
     #run KLIP
     if mode == 'ADI+SDI':
@@ -749,10 +816,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                         inputflux[37*k:37*(k+1)] = psfs_struct.spectrum*psfs_struct.fake_planet_flux_ratio*(np.mean(dataset.spot_flux[37*k:37*(k+1)])/np.mean(psfs_struct.spectrum))
                 elif np.size(psfs_struct.spectrum) == 0:
                     for k in range(N_cubes):
-                        print()
                         inputflux[37*k:37*(k+1)] = psfs_struct.fake_planet_flux_ratio*dataset.spot_flux[37*k:37*(k+1)]
-                        plt.plot(inputflux)
-                        plt.show()
                 elif np.size(psfs_struct.spectrum) != 0:
                     print("Error size of spectrum in klip_dataset()")
                     return 0
@@ -825,10 +889,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             out_PSFs = None
 
 
-        klipped_imgs = klip_adi_plus_sdi(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
-                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs)
+        klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum)
         #JB's debug
         #if psfs_struct.calculate_PSFs:
         #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
@@ -846,10 +910,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         flattend_parangs = np.tile(dataset.PAs, oldshape[0])
         flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
+        #align center to center of image if not specified
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+
         #parallelized rotate images
         print("Derotating Images...")
         rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs)
+                               hdrs=dataset.wcs, new_center=aligned_center)
 
         #reconstruct datacubes, need to obtain wavelength dimension size
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
@@ -891,9 +959,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                   dataset.wcs[0], center=dataset.centers[0])
     elif mode == 'ADI':
         #ADI is not parallelized
-        dataset.output = klip.klip_adi(dataset.input, dataset.centers, dataset.PAs,
-                                         dataset.IWA, annuli=annuli, subsections=subsections, movement=movement,
-                                         numbasis=numbasis, minrot=minrot, aligned_center=aligned_center)
+        dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center)
+        if calibrate_flux == True:
+            dataset.calibrate_output()
+
         #TODO: handling of only a single numbasis
         #derotate all the images
         #first we need to flatten so it's just a 3D array
@@ -903,10 +975,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         flattend_parangs = np.tile(dataset.PAs, oldshape[0])
         flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
 
+        #align center to center of image if not specified
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+
         #parallelized rotate images
         print("Derotating Images...")
         rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs)
+                               hdrs=dataset.wcs, new_center=aligned_center)
 
         #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
@@ -920,9 +996,66 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+
+        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+        #if we actually have spectral cubes, let's save those too
+        if num_wvs > 1:
+            oldshape = dataset.output.shape
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+            KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, dataset.wcs[0], center=dataset.centers[0])
+
     elif mode == 'SDI':
-        print("SDI Not Yet Implemented")
-        return
+        dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, spectrum=spectrum)
+        if calibrate_flux == True:
+            dataset.calibrate_output()
+
+        #TODO: handling of only a single numbasis
+        #derotate all the images
+        #first we need to flatten so it's just a 3D array
+        oldshape = dataset.output.shape
+        dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+        #we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
+        flattend_parangs = np.tile(dataset.PAs, oldshape[0])
+        flattened_centers = np.tile(dataset.centers.reshape(oldshape[1]*2), oldshape[0]).reshape(oldshape[1]*oldshape[0],2)
+
+        #align center to center of image if not specified
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+
+        #parallelized rotate images
+        print("Derotating Images...")
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                               hdrs=dataset.wcs, new_center=aligned_center)
+
+        #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
+
+        dataset.output = rot_imgs
+
+        #valid output path and write iamges
+        outputdirpath = os.path.realpath(outputdir)
+        print("Writing Images to directory {0}".format(outputdirpath))
+
+        #collapse in time and wavelength to examine KL modes
+        KLmode_cube = np.nanmean(dataset.output, axis=(1))
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+
+        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+        #if we actually have spectral cubes, let's save those too
+        if num_wvs > 1:
+            oldshape = dataset.output.shape
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+            KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, dataset.wcs[0], center=dataset.centers[0])
+
     else:
         print("Invalid mode. Either ADI, SDI, or ADI+SDI")
         return

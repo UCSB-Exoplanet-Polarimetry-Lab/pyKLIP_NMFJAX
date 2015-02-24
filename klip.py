@@ -1,9 +1,11 @@
 import numpy as np
+import numpy.fft as fft
 import scipy.linalg as la
 import scipy.ndimage as ndimage
+from scipy.stats import t
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None, PSFsarea_forklipping=None):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -22,15 +24,13 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
 
     """
-    #import pdb
-
-    #for the science image, subtract the mean and mask bad pixels
+    # for the science image, subtract the mean and mask bad pixels
     sci_mean_sub = sci - np.nanmean(sci)
     # sci_nanpix = np.where(np.isnan(sci_mean_sub))
     # sci_mean_sub[sci_nanpix] = 0
 
-    #do the same for the reference PSFs
-    #playing some tricks to vectorize the subtraction
+    # do the same for the reference PSFs
+    # playing some tricks to vectorize the subtraction
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
 
@@ -39,56 +39,64 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     if PSFsarea_forklipping is not None:
         PSFsarea_forklipping[np.where(np.isnan(PSFsarea_forklipping))] = 0
 
-    #calculate the covariance matrix for the reference PSFs
-    #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
-    #we have to correct for that a few lines down when consturcting the KL 
-    #vectors since that's not part of the equation in the KLIP paper
+    # calculate the covariance matrix for the reference PSFs
+    # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
+    # we have to correct for that a few lines down when consturcting the KL
+    # vectors since that's not part of the equation in the KLIP paper
     if covar_psfs is None:
         covar_psfs = np.cov(ref_psfs_mean_sub)
 
-    #maximum number of KL modes
+    # maximum number of KL modes
     tot_basis = covar_psfs.shape[0]
 
-    #only pick numbasis requested that are valid. We can't compute more KL basis than there are reference PSFs
-    #do numbasis - 1 for ease of indexing since index 0 is using 1 KL basis vector
+    # only pick numbasis requested that are valid. We can't compute more KL basis than there are reference PSFs
+    # do numbasis - 1 for ease of indexing since index 0 is using 1 KL basis vector
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)  # clip values, for output consistency we'll keep duplicates
     max_basis = np.max(numbasis) + 1  # maximum number of eigenvectors/KL basis we actually need to use/calculate
 
-    #calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
+    # calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
     evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
 
-    #scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
-    #we're going to recopy them to hopefully improve caching when doing matrix multiplication
+    # check if there are negative eignevalues as they will cause NaNs later that we have to remove
+    # the eigenvalues are ordered smallest to largest
+    check_nans = evals[-1] < 0
+
+    # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
+    # we're going to recopy them to hopefully improve caching when doing matrix multiplication
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
 
-    #calculate the KL basis vectors
+    # keep an index of the negative eignevalues for future reference if there are any
+    if check_nans:
+        neg_evals = (np.where(evals < 0))[0]
+
+    # calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
-    #JB question: Why is there this [None, :]? (It adds an empty first dimension)
+    # JB question: Why is there this [None, :]? (It adds an empty first dimension)
     kl_basis = kl_basis * (1. / np.sqrt(evals * (np.size(sci) - 1)))[None, :]  #multiply a value for each row
 
-    #sort to KL basis in descending order (largest first)
-    #kl_basis = kl_basis[:,eig_args_all]
+    # sort to KL basis in descending order (largest first)
+    # kl_basis = kl_basis[:,eig_args_all]
 
-    #duplicate science image by the max_basis to do simultaneous calculation for different k_KLIP
+    # duplicate science image by the max_basis to do simultaneous calculation for different k_KLIP
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) # this is the output image which has less rows
 
-    #Do the same for the PFSs (fake planet)
+    # Do the same for the PFSs (fake planet)
     if PSFarea_tobeklipped is not None:
         PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
         PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
 
 
-    #bad pixel mask
-    #do it first for the image we're just doing computations on but don't care about the output
+    # bad pixel mask
+    # do it first for the image we're just doing computations on but don't care about the output
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
     sci_mean_sub_rows[sci_nanpix] = 0
-    #now do it for the output image
+    # now do it for the output image
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
 
-    #Do the same for the PFSs (fake planet)
+    # Do the same for the PFSs (fake planet)
     if PSFarea_tobeklipped is not None:
         PSFarea_tobeklipped_rows[np.where(np.isnan(PSFarea_tobeklipped_rows))] = 0
         solePSFs_nanpix = np.where(np.isnan(PSFarea_tobeklipped_rows_selected))
@@ -96,16 +104,30 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
 
     # do the KLIP equation, but now all the different k_KLIP simultaneously
     # calculate the inner product of science image with each of the different kl_basis vectors
-    #TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
+    # TODO: can we optimize this so it doesn't have to multiply all the rows because in the next lines we only select some of them
     inner_products = np.dot(sci_mean_sub_rows, np.require(kl_basis, requirements=['F']))
     # select the KLIP modes we want for each level of KLIP by multiplying by lower diagonal matrix
-    inner_products = inner_products * np.tril(np.ones([max_basis, max_basis]))
-    # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
-    klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
+    lower_tri = np.tril(np.ones([max_basis, max_basis]))
+    inner_products = inner_products * lower_tri
+    # if there are NaNs due to negative eigenvalues, make sure they don't mess up the matrix multiplicatoin
+    # by setting the appropriate values to zero
+    if check_nans:
+        needs_to_be_zeroed = np.where(lower_tri == 0)
+        inner_products[needs_to_be_zeroed] = 0
+        # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
+        kl_basis[:, neg_evals] = 0
+        klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
+        # for KLIP PSFs that use so many KL modes that they become nans, we have to put nan's back in those
+        badbasis = np.where(numbasis >= np.min(neg_evals)) #use basis with negative eignevalues
+        klip_psf[badbasis[0], :] = np.nan
+    else:
+        # make a KLIP PSF for each amount of klip basis, but only for the amounts of klip basis we actually output
+        klip_psf = np.dot(inner_products[numbasis,:], kl_basis.T)
+
     # make subtracted image for each number of klip basis
     sub_img_rows_selected = sci_rows_selected - klip_psf
 
-    #restore NaNs
+    # restore NaNs
     sub_img_rows_selected[sci_nanpix] = np.nan
 
     # Apply klip similarly but this time on the sole PSFs (The fake planet only)
@@ -123,7 +145,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     return sub_img_rows_selected.transpose()
 
 
-    #old code that only did one number of KL basis for truncation
+    # old code that only did one number of KL basis for truncation
     # #truncation either based on user input or maximum number of PSFs
     # trunc_basis = np.min([numbasis, tot_basis])
     # #eigenvalues are ordered largest first now
@@ -145,7 +167,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None,PSFarea_tobeklipped=None,
     # return sub_img
 
 
-def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wavelengths=None):
+def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wavelengths=None, mode=None):
     """
     Estimates the movement of a hypothetical astrophysical source in ADI and/or SDI at the given radius and
     given reference parallactic angle (parang0) and reference wavelegnth (wavelength0)
@@ -158,6 +180,7 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
         wavelengths: array of length N of the wavelengths of all N images
         NOTE: we expect parang0 and parangs to be either both defined or both None.
                 Same with wavelength0 and wavelengths
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
 
     Output:
         moves: array of length N of the distance an astrophysical source would have moved from the
@@ -167,9 +190,9 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     dtheta = 0 # how much the images moved in theta (polar coordinate)
     scale_fac = 1 # how much the image moved radially (r/radius)
 
-    if parang0 is not None:
+    if (parang0 is not None):
         dtheta = np.radians(parang0 - parangs)
-    if wavelength0 is not None:
+    if (wavelength0 is not None):
         scale_fac = (wavelength0/wavelengths)
 
     #define cartesean coordinate system where astrophysical source is at (x,y) = (r,0)
@@ -183,6 +206,30 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
 
     moves = np.sqrt((x-x0)**2 + (y-y0)**2)
     return moves
+
+def calc_scaling(sats, refwv=18):
+    """
+    Helper function that calculates the wavelength scaling factor from the satellite spot locations.
+    Uses the movement of spots diagonally across from each other, to calculate the scaling in a 
+    (hopefully? tbd.) centering-independent way. 
+    This method is definitely temporary and will be replaced by better scaling strategies as we come
+    up with them.
+    Scaling is calculated as the average of (1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))), over the two pairs
+    of spots.
+
+    Inputs:
+        sats: [4 x Nlambda x 2] array of x and y positions for the 4 satellite spots
+        refwv: reference wavelength for scaling (optional, default = 20)
+    Outputs:
+        scaling_factors: Nlambda array of scaling factors
+    """
+    pairs = [(0,3), (1,2)] # diagonally-located spots (spot_num - 1 for indexing)
+    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
+                           for p in pairs], 
+                          axis=0) # average over each pair, the first axis
+
+    scaling_factors = separations/separations[refwv]
+    return scaling_factors
 
 def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     """
@@ -353,6 +400,95 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
+def meas_contrast(dat, iwa, owa, resolution):
+    """
+    Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
+    thoughput.
+
+    Inputs:
+        dat: 2D image - already flux calibrated
+        iwa: inner working angle
+        owa: outer working angle
+        resolution: size of resolution element in pixels (FWHM or lambda/D)
+
+    Returns:
+        (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
+
+    """
+
+    #figure out how finely to sample the radial profile
+    numseps = int((owa-iwa)/resolution)
+    seps = np.arange(numseps)*resolution + iwa + resolution/2.0 #don't want to start right at the edge of the occulting mask
+    dsep = resolution
+
+    contrast = []
+    #create a coordinate grid
+    x,y = np.meshgrid(np.arange(float(dat.shape[1])), np.arange(float(dat.shape[0])))
+    r = np.sqrt((x-140.)**2 + (y-140.)**2)
+    theta = np.arctan2(y-140, x-140) % 2*np.pi
+    for sep in seps:
+        #make a bunch of circular aperatures at this separation
+        dtheta = dsep/float(sep)
+        thetabins = np.arange(0, 360-dtheta/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
+        specklethetas = []
+        specklefluxes = []
+        for thistheta in thetabins:
+            #measure the flux in this resolution element
+            #first get the position of the center of the element
+            xphot = np.cos(np.radians(thistheta)) * sep + 140.
+            yphot = np.sin(np.radians(thistheta)) * sep + 140.
+            #coordinate system around this resolution element
+            rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
+            sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
+            gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
+            validphotpix = np.where(rphot <= dsep/2)
+            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.sum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
+
+            specklethetas.append(thistheta)
+            specklefluxes.append(speckleflux)
+
+        #find 5 sigma flux using student-t statistics
+        fpf_flux = t.ppf(0.99999942697, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes))
+        contrast.append(fpf_flux)
+
+    return seps, np.array(contrast)
+
+
+def high_pass_filter(img, filtersize=10):
+    """
+    A FFT implmentation of high pass filter.
+
+    Inputs:
+        img: a 2D image
+        filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
+
+    Outputs:
+        filtered: the filtered image
+    """
+    # mask NaNs
+    nan_index = np.where(np.isnan(img))
+    img[nan_index] = 0
+
+    transform = fft.fft2(img)
+
+    # coordinate system in FFT image
+    u,v = np.meshgrid(fft.fftfreq(transform.shape[1]), fft.fftfreq(transform.shape[0]))
+    # scale u,v so it has units of pixels in FFT space
+    rho = np.sqrt((u*transform.shape[1])**2 + (v*transform.shape[0])**2)
+    # scale rho up so that it has units of pixels in FFT space
+    # rho *= transform.shape[0]
+    # create the filter
+    filt = 1. - np.exp(-(rho**2/filtersize**2))
+
+    filtered = np.real(fft.ifft2(transform*filt))
+
+    # restore NaNs
+    filtered[nan_index] = np.nan
+    img[nan_index] = np.nan
+
+    return filtered
+
+
 def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
              minrot=0):
     """
@@ -479,3 +615,28 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
     return sub_imgs
 
 
+def klip_sdi(imgs, centers, scale_factors, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
+             chansep=0):
+    """
+    KLIP PSF Subtraction using angular differential imaging
+
+    Inputs:
+        imgs: array of 2D images for ADI. Shape of array (N,y,x)
+        centers: N by 2 array of (x,y) coordinates of image centers
+        scale_factors: Nlambda length array with the scaling factor for each channel
+        IWA: inner working angle (in pixels)
+        annuli: number of annuli to use for KLIP
+        subsections: number of sections to break each annuli into
+        movement: minimum amount of movement (in pixels) of an astrophysical source
+                  to consider using that image for a reference PSF
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
+        chansep: minimum channel separation to be considered for use as a reference PSF
+
+    Ouput:
+        sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
+                    specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
+                    array stripped away and is shape of (N,y,x).
+    """
+    pass

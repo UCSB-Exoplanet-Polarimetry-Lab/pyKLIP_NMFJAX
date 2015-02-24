@@ -5,17 +5,22 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import os
 import re
+
 import matplotlib.pyplot as plt
-#different importants depending on if python2.7 or python3
+#different imports depending on if python2.7 or python3
 import sys
 from copy import copy
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
     from Instrument import Data
+    from utils.nair import nMathar
 else:
     import configparser as ConfigParser
     from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
+
+
 
 class GPIData(Data):
     """
@@ -52,6 +57,8 @@ class GPIData(Data):
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
+    observatory_latitude = 0.0
+
     ## read in GPI configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
     configfile = package_directory + "/" + "GPI.ini"
@@ -69,7 +76,7 @@ class GPIData(Data):
             fpm_diam[band] = float(config.get("instrument", "fpm_diam_{0}".format(band))) / lenslet_scale  # pixels
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
             spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
-
+        observatory_latitude = float(config.get("observatory", "observatory_lat"))
     except ConfigParser.Error as e:
         print("Error reading GPI configuration file: {0}".format(e.message))
         raise e
@@ -217,6 +224,8 @@ class GPIData(Data):
             #filename[:] = filepath
             filenames.append([filepath for i in range(pa.shape[0])])
 
+
+
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
         data = np.array(data)
@@ -229,6 +238,18 @@ class GPIData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
+
+        # recalculate wavelegnths from satellite spots
+        wvs = rescale_wvs(exthdrs, wvs)
+        # recaclulate centers from satellite spots and new wavelegnth solution
+        wvs_bycube = wvs.reshape([dims[0], dims[1]])
+        centers_bycube = centers.reshape([dims[0], dims[1], 2])
+        for i, cubewvs in enumerate(wvs_bycube):
+            try:
+                centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs)
+            except KeyError:
+                print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
+                      "{0}".format(filenames[i*dims[1]]))
 
         #set these as the fields for the GPIData object
         self._input = data
@@ -462,6 +483,7 @@ class GPIData(Data):
 
         self.psfs = PSF_cube
 
+
 ######################
 ## Static Functions ##
 ######################
@@ -617,3 +639,206 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     genpsf = np.mean(genpsf, axis=0) #average the different psfs together    
 
     return genpsf
+
+
+def rescale_wvs(exthdrs, wvs, refwv=18):
+    """
+    Hack to try to fix wavelength scaling issue. This will calculate the scaling between channels,
+    and adjust the wavelength solution such that the scaling comes out linear in scaling vs wavelength.
+    Finicky - requires that all images in the dataset have the same number of wavelength channels
+    Input:
+        exthdrs: a list of extension headers, from a pyklip.instrument dataset
+        refwv (optional): integer index of the channel to normalize the scaling
+    Output:
+        scaled_wvs: Nlambda*Nexthdrs array of wavelengths that produce a linear plot of wavelength vs scaling
+    """
+    #wvs_mean = wvs.reshape(len(exthdrs), len(wvs)/len(exthdrs)).mean(axis=0)
+    sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in range(0,h['NAXIS3'])]
+                          for j in range(0,4)] for h in exthdrs], dtype=np.float)
+    sats = sats.mean(axis=0)
+    pairs = [(0,3), (1,2)]
+    separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
+                           for p in pairs], 
+                          axis=0) # average over each pair, the first axis
+    scaling_factors = separations/separations[refwv]
+    scaled_wvs = scaling_factors*wvs[refwv]
+    return np.tile(scaled_wvs, len(exthdrs))
+
+
+def calc_center_least_squares(xpos, ypos, wvs, orderx, ordery, displacement):
+    """
+	calcualte the center position, linear least squares fit to 4 parameters
+
+	Inputs: xpos: array of length n of x positions of satellite spots
+			ypos: array of length n of y positions of satellite spots
+			wvs: the wavelength of each pair of positoins
+			orderx: the x order (can be -1 or 1 in this case. -1 is under the center, 1 is above the center)
+			ordery: the y order (e.g. pos0 is at pox=-1, posy=1).
+			displacment: the displacement from zenith
+	Outputs: four fit parameters (xcenter, ycenter, adrx, adry). xcenters = xcenter + ardx * displacement
+	"""
+
+    pos_x = np.matrix(xpos).T
+    pos_y = np.matrix(ypos).T
+
+    #create the B matrix for the transform. See email from James on how to make this
+    Bx = np.append(np.matrix(np.ones(np.size(pos_x))).T, np.matrix(orderx*wvs).T,1)
+    Bx = np.append(Bx,np.matrix(-ordery*wvs).T, 1)
+    Bx = np.append(Bx, np.matrix(displacement).T , 1)
+    Bx = np.append(Bx, np.matrix(np.zeros(np.size(pos_x))).T, 1)
+    Bx = np.append(Bx, np.matrix(np.zeros(np.size(pos_x))).T, 1)
+    By = np.append(np.matrix(np.zeros(np.size(pos_y))).T, np.matrix(ordery*wvs).T, 1)
+    By = np.append(By, np.matrix(orderx*wvs).T, 1)
+    By = np.append(By, np.matrix(np.zeros(np.size(pos_y))).T, 1)
+    By = np.append(By, np.matrix(displacement).T , 1)
+    By = np.append(By, np.matrix(np.ones(np.size(pos_y))).T, 1)
+
+    B = np.append(Bx,By,0)
+
+    #the measured inputs
+    X = np.append(pos_x, pos_y, 0)
+
+    #fit outputs
+    Q = (B.T*B).I * B.T* X
+
+    xcenter = float(Q[0])
+    ycenter = float(Q[5])
+    shift1 = float(Q[1])
+    shift2 = float(Q[2])
+    adrx = float(Q[3])
+    adry = float(Q[4])
+
+    # xcalc = xcenter + orderx*wvs*shift1 - ordery*wvs*shift2 + (adrx)*np.array(displacement)
+    # ycalc = ycenter + ordery*wvs*shift1 + orderx*wvs*shift2 + (adry)*np.array(displacement)
+    #
+    # xres = (xpos - xcalc)
+    # yres = (ypos - ycalc)
+    #
+    #
+    # xcenters = xcenter + (adrx)*np.array(displacement)
+    # ycenters = ycenter + (adry)*np.array(displacement)
+
+    #old code - preserved just in case
+	#one_params1 = np.polyfit(pos_one[:, 0], pos_one[:, 1], 1)
+	#one_params2 = np.polyfit(pos_one[:, 1], pos_oplt.show()ne[:, 0], 1)
+	#
+	#two_params1 = np.polyfit(pos_two[:, 0], pos_two[:, 1], 1)
+	#two_params2 = np.polyfit(pos_two[:, 1], pos_two[:, 0], 1)
+	#
+	#xcenter1 = (two_params1[1] - one_params1[1]) / (one_params1[0] - two_params1[0])
+	#ycenter1 = two_params1[1] + two_params1[0] * xcenter1
+	#ycenter2 = (two_params2[1] - one_params2[1]) / (one_params2[0] - two_params2[0])
+	#xcenter2 = two_params2[1] + two_params2[0] * ycenter2
+
+    return xcenter, ycenter, adrx, adry
+
+
+def calc_center(prihdr, exthdr, wvs, ignoreslices=None):
+    """
+    calcualte the center position of a spectral data cube
+
+    Inputs:
+        prihdr: primary GPI header
+        exthdr: extention GPI header
+        wvs: wvs of the datacube
+        ignoreslices: slices to ignore in the fit. A list of wavelength slice indicies to ignore
+                        if none, ignores slices 0,1, len-2, len-1 (first and last two)
+    Outputs:
+        centx, centy: star center
+    """
+    if ignoreslices is None:
+        ignoreslices = np.array([0,1,-2,-1])
+    ignoreslices %= np.size(wvs)
+
+    utstart = prihdr['UTSTART']
+    utstart = float(utstart[0:2]) + float(utstart[3:5])/60.+float(utstart[6:])/3600. #covert to decimal
+
+    #Grab info for ADR correction
+    #try to get environment parameters but sometimes we need to default
+    #Get HA
+    HA = prihdr['HA']
+    HA_sgn = np.sign(float(HA[0:3]))
+    if HA_sgn == 0:
+        HA_sgn = 1
+    HA = float(HA[0:3]) + HA_sgn*float(HA[4:6])/60. + HA_sgn*float(HA[7:])/3600.
+    HA *= 15*np.pi/180. # rad
+    #Get Temp
+    Temp = prihdr['TAMBIENT'] + 273.15 #Kelvin
+    #Get pressure
+    Pressure = prihdr['PRESSUR2'] #Pascal
+    #Get declination from header and convert to radians
+    dec = exthdr['CRVAL2'] * np.pi/ 180. #rad
+
+    #Calculate angle from zenith, need this for ADR corrections
+    zenith = np.arccos(np.sin(GPIData.observatory_latitude)*np.sin(dec)
+                       + np.cos(GPIData.observatory_latitude)*np.cos(dec)*np.cos(HA))
+
+    spots_posx = []
+    spots_posy = []
+    order_x = []
+    order_y = []
+    displacement = []
+    spot_wvs = []
+    spots_wvs_index = []
+
+    #calculate reference wavelegnth
+    refwv = np.mean(wvs)
+    n0 = nMathar(refwv, Pressure, Temp) #reference index of refrraction
+
+    #get centers from header values inputted by GPI pipeline
+    #mask = bin(int(pcenthdr['SATSMASK'],16)) #assume all spot locations are placed in header
+    #iterate over headers in cube
+    for i, wv in enumerate(wvs):
+        thisfour = []
+        n = nMathar(wv, Pressure, Temp) #index of refraction
+
+        for j in range(4):
+            hdr_str = "sats%i_%i" % (i, j)
+            cents = exthdr[hdr_str]
+            args = cents.split()
+
+            #append this data to the list
+            #calcuate deltaZ effect of ADR
+            displacement.append( (n-n0)/n0 * np.tan(zenith)) #deltaZ calculation
+            spots_posx.append(float(args[0]))
+            spots_posy.append(float(args[1]))
+            spot_wvs.append(wv)
+            spots_wvs_index.append(i)
+
+            #this better account for all cases or this for loop is messed up
+            if j == 0:
+                order_x.append(-1)
+                order_y.append(1)
+            elif j == 1:
+                order_x.append(-1)
+                order_y.append(-1)
+            elif j == 2:
+                order_x.append(1)
+                order_y.append(1)
+            elif j ==3:
+                order_x.append(1)
+                order_y.append(-1)
+            else:
+                print "LOGIC ERROR: j value in loop somehow got to %f" %(j)
+                continue
+
+    spots_posx = np.array(spots_posx)
+    spots_posy = np.array(spots_posy)
+    order_x = np.array(order_x)
+    order_y = np.array(order_y)
+    displacement = np.array(displacement)
+    spot_wvs = np.array(spot_wvs)
+    spots_wvs_index = np.array(spots_wvs_index)
+
+    good = np.where(~np.in1d(spots_wvs_index, ignoreslices))
+
+    x0, y0, adrx, adry = calc_center_least_squares(spots_posx[good], spots_posy[good], spot_wvs[good], order_x[good],
+                                                   order_y[good], displacement[good])
+    centers_x = x0 + adrx*displacement
+    centers_y = y0 + adry*displacement
+    centers = np.array([centers_x, centers_y])
+    # centers are duplicated 4 times (for each sat spot) and the dimensions are flipped. need to remove this...
+    centers = np.swapaxes(centers, 0, 1)
+    centers = centers.reshape([centers.shape[0]/4, 4, 2])
+    centers = centers[:,0,:]
+    return centers
