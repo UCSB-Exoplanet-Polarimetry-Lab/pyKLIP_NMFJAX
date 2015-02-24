@@ -9,6 +9,7 @@ import fakes
 
 import matplotlib.pyplot as plt
 import astropy.io.fits as pyfits
+import spectra_management as spec
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                pa_imgs, wvs_imgs, centers_imgs,ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared):
@@ -619,8 +620,54 @@ def klip_adi_plus_sdi(imgs, centers, parangs, wvs, IWA, annuli=5, subsections=4,
 
     return sub_imgs
 
+
+class psfs_management:
+    """
+    Structure to tune PSFs calculation inside klip. To give as input parameter of klip_dataset().
+
+    TODO: 1/ Specifying fake planets position.
+          2/ It would be good to parameterize the planet spectrum like for the star instead of specifying a file.
+          3/ Make it work for ADI only
+
+    Fields:
+        calculate_PSFs: Integer activating the computation of the PSF through KLIP. It injects fake planets into the
+                        original cubes and apply KLIP normally.
+                            If 0, regular klip without psfs calculation
+                            If 1, psf calculation using satellite spots PSFs
+                            If 2, psf calculation gaussian PSFs (I the sat spots are too noisy)
+                        In addition it creates another set of cubes with the
+                        sole planets (no speckles) and apply the same transformation on this cube as on the first one.
+                        It will create an extra output fileprefix + "-KLmodes-all-PSFs.fits" which is the equivalent of
+                        fileprefix + "-KLmodes-all.fits" but built with the sole PSFs dataset.
+        fake_planet_flux_ratio: Ratio of the flux of the planets over the flux of the satellite spots.
+                        The flux is defined as the integral of the spectrum over the spectral channel (basically a sum
+                        of the spectrum). This ratio is not corrected for transmission. It is the ratio of the flux in
+                        gpi cubes as they appear but not the real ratio of the planet and the star.
+        spectrum: Spectrum of the planet to be included. psfs_management.spectrum is ignored if the spectrum is defined
+                through a template. See the following fields.
+        pipeline_directory: directory of GPI pipeline on your computer.
+        star_type: Type of the star of the dataset. The type is then translated in a temperature using pickles lookup table.
+                Then the temperature is used to interpolate a spectrum using the pickles catalog.
+                The type is ignored if a star_temperature is defined.
+        star_temperature: Temperature of the star of the dataset. Overwrite star_type.
+                        The temperature is used to interpolate a spectrum using the pickles catalog.
+        planet_spec_filename: filename of the planet spectrum to considered. Mark Marley's files should be used.
+
+    Functions:
+    """
+    def __init__(self, calculate_PSFs=0, fake_planet_flux_ratio= 1.0,spectrum = [],pipeline_directory='',star_type = None,star_temperature=None,planet_spec_filename=''):
+        self.calculate_PSFs = calculate_PSFs
+        self.fake_planet_flux_ratio = fake_planet_flux_ratio
+
+        self.spectrum = spectrum # must contain positive values
+
+        self.pipeline_directory = pipeline_directory
+        self.star_type = star_type
+        self.star_temperature = star_temperature
+        self.planet_spec_filename = planet_spec_filename
+
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,calculate_PSFs=False):
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=psfs_management() ):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -639,13 +686,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
-        calculate_PSFs: Boolean activating the computation of the PSF through KLIP. It injects fake planets into the
-                        original cubes and apply KLIP normally. In addition it creates another set of cubes with the
-                        sole planets (no speckles) and apply the same transformation on this cube as on the first one.
-                        It will create an extra output fileprefix + "-KLmodes-all-PSFs.fits" which is the equivalent of
-                        fileprefix + "-KLmodes-all.fits" but built with the sole PSFs dataset.
-                        There are still a couple of hard-coded parameters.
-                        This is because this version is not definitive.
+        psfs_struct: Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
 
     Output
         Saved files in the output directory
@@ -668,9 +709,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
 
-        if calculate_PSFs:
-            #dataset.generate_psfs()
-
+        # If fake planets have to be injected into the datacube for PSFs computation then we do it here
+        if psfs_struct.calculate_PSFs:
             # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
             # We want to inject one planet per section where klip is independently applied.
             dims = dataset.input.shape
@@ -689,6 +729,78 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # Define an array that will contain the reduced PSFs dataset after klip_adi_plus_sdi().
             out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape)
 
+            # Extract the 37 points spectrum for the 37*N_cubes vector dataset.wvs.
+            unique_wvs = np.unique(dataset.wvs)
+            # Shoudl give numwaves=37
+            numwaves = np.size(unique_wvs)
+            # Number of cubes in dataset
+            N_cubes = int(dataset.input.shape[0])/int(numwaves)
+            # Peak value of the fake planet for each slice. To be define below.
+            inputflux = np.zeros(dataset.input.shape[0])
+
+            # Check if the user wants a spectrum from a star and planet template.
+            # ie if the required fields of psfs_struct are defined.
+            spec_from_template = psfs_struct.pipeline_directory !='' and (psfs_struct.star_type != None or psfs_struct.star_temperature != None) and psfs_struct.planet_spec_filename != ''
+
+            # Define the peak value of the fake planet for each slice depending if spectrum is defined
+            if not spec_from_template:
+                if np.size(psfs_struct.spectrum) == 37:
+                    for k in range(N_cubes):
+                        inputflux[37*k:37*(k+1)] = psfs_struct.spectrum*psfs_struct.fake_planet_flux_ratio*(np.mean(dataset.spot_flux[37*k:37*(k+1)])/np.mean(psfs_struct.spectrum))
+                elif np.size(psfs_struct.spectrum) == 0:
+                    for k in range(N_cubes):
+                        print()
+                        inputflux[37*k:37*(k+1)] = psfs_struct.fake_planet_flux_ratio*dataset.spot_flux[37*k:37*(k+1)]
+                        plt.plot(inputflux)
+                        plt.show()
+                elif np.size(psfs_struct.spectrum) != 0:
+                    print("Error size of spectrum in klip_dataset()")
+                    return 0
+
+            # Define the peak value of the fake planet for each slice depending if a star and a planet type is given.
+            filter = dataset.prihdrs[0]['IFSFILT'].split('_')[1]
+            if spec_from_template:
+                # Interpolate a spectrum of the star based on its spectral type/temperature
+                wv,star_sp = spec.get_star_spectrum(psfs_struct.pipeline_directory,filter,psfs_struct.star_type,psfs_struct.star_temperature)
+                # Interpolate the spectrum of the planet based on the given filename
+                wv,planet_sp = spec.get_planet_spectrum(psfs_struct.planet_spec_filename,filter)
+                ratio_spec_models = planet_sp/star_sp
+                for k in range(N_cubes):
+                    inputflux[37*k:37*(k+1)] = dataset.spot_flux[37*k:37*(k+1)]*ratio_spec_models
+                    inputflux[37*k:37*(k+1)] *= psfs_struct.fake_planet_flux_ratio*(np.mean(dataset.spot_flux[37*k:37*(k+1)])/np.mean(inputflux[37*k:37*(k+1)]))
+
+                    if 0: # plot individual spectra for debugging.
+                        if 0:
+                            plt.figure(1)
+                            plt.plot(wv,star_sp,'r')
+                            plt.plot(wv,planet_sp,'g')
+                            ax = plt.gca()
+                            ax.legend(["star","planet"]) #, loc = 'upper left'
+                        plt.figure(2)
+                        plt.plot(wv,dataset.spot_flux[37*k:37*(k+1)],'r')
+                        plt.plot(wv,inputflux[37*k:37*(k+1)],'b')
+                        ax = plt.gca()
+                        ax.legend(["sat spot","planet"]) #, loc = 'upper left'
+                        print('psfs_struct.fake_planet_flux_ratio = ',psfs_struct.fake_planet_flux_ratio)
+                        plt.show()
+
+            # Manage the shape of the PSF.
+            # If psfs_struct.calculate_PSFs then the PSF is calculated from the sat spots.
+            # Otherwise a gaussian PSF will be used later on.
+            if psfs_struct.calculate_PSFs == 1:
+                dataset.generate_psf_cube(20)
+                #peak value of the psfs is normalized to unity.
+                inputpsfs = np.tile(dataset.psfs,(N_cubes,1,1))
+                for l in range(dataset.input.shape[0]):
+                    inputpsfs[l,:,:] *= inputflux[l]
+            elif psfs_struct.calculate_PSFs == 2:
+                # If inputpsfs is a vector and not a cube fakes.inject_planet will know that it has to use gaussian PSFs.
+                inputpsfs = inputflux
+            elif psfs_struct.calculate_PSFs != 0:
+                print("Error calculate_PSFs parameter has invalid value in klip_dataset()")
+                return 0
+
+
             # Loop for injecting fake planets. One planet per section of the image.
             # Too many hard-coded parameters because still work in progress.
             for annuli_id, radius in enumerate(annuli_radii):
@@ -697,15 +809,16 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 delta_th = 360/subsections
                 th_list = np.arange(-180+delta_th/2.,180.1-delta_th/2.,delta_th)
                 pa_list = fakes.covert_polar_to_image_pa(th_list, dataset.wcs[0])
+                #print(annuli_radii,th_list,pa_list)
+                #return
                 for pa_id, pa in enumerate(pa_list):
-                    fakes.inject_planet(PSFs, dataset.centers, dataset.spot_flux/30., dataset.wcs, radius, pa)
-                    fakes.inject_planet(dataset.input, dataset.centers, dataset.spot_flux/30., dataset.wcs, radius, pa)
-                    #fakes.inject_planet(PSFs, dataset.centers, dataset.psfs, dataset.wcs, radius, pa)
-                    #fakes.inject_planet(dataset.input, dataset.centers, dataset.psfs, dataset.wcs, radius, pa)
+                    fakes.inject_planet(PSFs, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
+                    fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
             # Save fits for debugging on JB's computer
-            #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpPSFs.fits", PSFs, clobber=True)
-            #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpINPUT.fits", dataset.input, clobber=True)
-            #return
+            if 0:
+                #print(dataset.spot_flux)
+                pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpPSFs.fits", PSFs, clobber=True)
+                pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpINPUT.fits", dataset.input, clobber=True)
         else:
             # Define the PSFs variables as None so that klip is applied normally without fake planets injections.
             PSFs = None
@@ -717,7 +830,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                          numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs)
         #JB's debug
-        #if calculate_PSFs:
+        #if psfs_struct.calculate_PSFs:
         #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
 
         dataset.output = klipped_imgs
@@ -752,7 +865,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Writing Images to directory {0}".format(outputdirpath))
 
         # apply same transformation on out_PSFs than on dataset.output
-        if calculate_PSFs:
+        if psfs_struct.calculate_PSFs:
             out_PSFs = out_PSFs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
             rot_out_PSFs = rotate_imgs(out_PSFs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
                                    hdrs=dataset.wcs)
@@ -760,6 +873,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             KLmode_cube_PSFs = np.nanmean(rot_out_PSFs, axis=(1,2))
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube_PSFs, dataset.wcs[0], center=dataset.centers[0])
             #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/KLmode_cube_PSFs.fits", KLmode_cube_PSFs, clobber=True)
+
+            #for each KL mode, collapse in time to examine spectra
+            KLmode_spectral_cubes_PSFs = np.nanmean(rot_out_PSFs, axis=1)
+            for KLcutoff, spectral_cube_PSFs in zip(numbasis, KLmode_spectral_cubes_PSFs):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff), spectral_cube_PSFs,
+                                      dataset.wcs[0], center=dataset.centers[0])
 
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1,2))

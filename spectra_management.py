@@ -55,12 +55,26 @@ def get_gpi_filter(pipeline_dir,filter_name):
 
 
 def find_upper_nearest(array,value):
+    """
+    Find the upper nearest element to value in array.
+
+    :param array: Array of value
+    :param value: Value for which one wants the upper value.
+    :return: (up_value, id) with up_value the closest upper value and id its index.
+    """
     diff = array-value
     diff[np.where(diff<0.0)] = np.nan
     idx = np.nanargmin(diff)
     return array[idx], idx
 
 def find_lower_nearest(array,value):
+    """
+    Find the lower nearest element to value in array.
+
+    :param array: Array of value
+    :param value: Value for which one wants the lower value.
+    :return: (low_value, id) with low_value the closest lower value and id its index.
+    """
     diff = array-value
     diff[np.where(diff>0.0)] = np.nan
     idx = np.nanargmax(diff)
@@ -76,8 +90,13 @@ def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = N
     Inputs:
         pipeline_dir: Directory of the gpi pipeline.
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
+        star_type: 'A5','F4',... Assume type V star. Is ignored of temperature is defined.
+        temperature: temperature of the star. Overwrite star_type if defined.
 
-    Output
+    Output:
+        (wavelengths, spectrum) where
+            wavelengths: is the gpi sampling of the considered band in mum.
+            spectrum: is the spectrum of the star for the given band.
     """
 
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
@@ -195,8 +214,12 @@ def get_planet_spectrum(filename,filter_name):
         filename: Directory of the gpi pipeline.
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
 
-    Output
+    Output:
+        (wavelengths, spectrum) where
+            wavelengths: is the gpi sampling of the considered band in mum.
+            spectrum: is the spectrum of the planet for the given band.
     """
+
 
     spec_data = []
     with open(filename, 'r') as f:
