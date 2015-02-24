@@ -5,8 +5,10 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import os
 import re
+import matplotlib.pyplot as plt
 #different importants depending on if python2.7 or python3
 import sys
+from copy import copy
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
@@ -344,6 +346,121 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
+    def generate_psf_cube(self, boxw=14):
+        """
+        Generates an average PSF from all frames of input data. Only works on spectral mode data.
+        Peak value normalized to one in each slice.
+        Currently hard coded assuming 37 spectral channels!!!
+
+        Inputs:
+            boxw: the width the extracted PSF (in pixels). Should be bigger than 12
+
+        Outputs:
+            A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
+        """
+
+        n_frames,ny,nx = self.input.shape
+        x_grid, y_grid = np.meshgrid(np.arange(ny), np.arange(nx))
+        unique_wvs = np.unique(self.wvs)
+        numwaves = np.size(np.unique(self.wvs))
+
+        psfs = np.zeros((numwaves,boxw,boxw,n_frames,4))
+
+
+        for lambda_ref_id, lambda_ref in enumerate(unique_wvs):
+            for i,frame in enumerate(self.input):
+                #figure out which header and which wavelength slice
+                hdrindex = int(i)/int(numwaves)
+                slice = i % numwaves
+                lambda_curr = unique_wvs[slice]
+                #now grab the values from them by parsing the header
+                hdr = self.exthdrs[hdrindex]
+                spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
+                spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
+                spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
+                spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
+
+                #put all the sat spot info together
+                spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
+                         [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+
+                #mask nans
+                cleaned = np.copy(frame)
+                cleaned[np.where(np.isnan(cleaned))] = 0
+
+                for loc_id, loc in enumerate(spots):
+                    #grab satellite spot positions
+                    spotx = loc[0]
+                    spoty = loc[1]
+                    xarr_spot = np.round(spotx)
+                    yarr_spot = np.round(spoty)
+                    stamp = cleaned[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
+                    #x_stamp = x_grid[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
+                    #y_stamp = y_grid[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
+                    #print(spotx,spoty)
+                    #print(stamp_x+ spotx-xarr_spot,stamp_y+spoty-yarr_spot)
+                    stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
+                    stamp_x += spotx-xarr_spot
+                    stamp_y += spoty-yarr_spot
+
+
+
+                    #mask the central blob to calculate background median
+                    stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
+                    stamp_masked = copy(stamp)
+                    stamp_x_masked = copy(stamp_x)
+                    stamp_y_masked = copy(stamp_y)
+                    stamp_center = np.where(stamp_r<4)
+                    stamp_masked[stamp_center] = np.nan
+                    stamp_x_masked[stamp_center] = np.nan
+                    stamp_y_masked[stamp_center] = np.nan
+                    background_med =  np.nanmedian(stamp_masked)
+                    stamp_masked -= background_med
+                    #Solve 2d linear fit to remove background
+                    xx = np.nansum(stamp_x_masked**2)
+                    yy = np.nansum(stamp_y_masked**2)
+                    xy = np.nansum(stamp_y_masked*stamp_x_masked)
+                    xz = np.nansum(stamp_masked*stamp_x_masked)
+                    yz = np.nansum(stamp_y_masked*stamp_masked)
+                    #Cramer's rule
+                    a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
+                    b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
+                    stamp -= a*stamp_x+b*stamp_y + background_med
+                    #stamp -= background_med
+
+                    #rescale to take into account wavelength widening
+                    if 1:
+                        stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
+                        stamp_th = np.arctan2(stamp_x-boxw/2,stamp_y-boxw/2)
+                        stamp_r /= lambda_ref/lambda_curr
+                        stamp_x = stamp_r*np.cos(stamp_th)+boxw/2
+                        stamp_y = stamp_r*np.sin(stamp_th)+boxw/2
+                        #print(stamp_x,stamp_y)
+
+                    stamp = ndimage.map_coordinates(stamp, [stamp_y, stamp_x])
+                    #print(stamp)
+                    psfs[lambda_ref_id,:,:,i,loc_id] = stamp
+
+
+        #PSF_cube = np.mean(psfs[:,:,:,:,0],axis=(3))
+        PSF_cube = np.mean(psfs,axis=(3,4))
+
+        #stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
+        #stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
+        #stamp_center = np.where(stamp_r<3)
+        for l in range(numwaves):
+            #PSF_cube[l,:,:] -= np.nanmedian(PSF_cube[l,:,:][stamp_center])
+            PSF_cube[l,:,:] /= np.nanmax(PSF_cube[l,:,:])
+            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])<0.05)] = 0.0
+
+        if 0: # for debugging purposes
+            plt.figure(1)
+            plt.imshow(PSF_cube[0,:,:],interpolation = 'nearest')
+            plt.figure(2)
+            plt.imshow(PSF_cube[36,:,:],interpolation = 'nearest')
+            plt.show()
+
+        self.psfs = PSF_cube
 
 ######################
 ## Static Functions ##
