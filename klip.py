@@ -283,32 +283,61 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     if mod_flag == 0:
         return np.copy(img)
 
-    #resample image based on new coordinates
-    #scipy uses y,x convention when meshgrid uses x,y
-    #stupid scipy functions can't work with masked arrays (NANs)
-    #and trying to use interp2d with sparse arrays is way to slow
-    #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-    minval = np.min([np.nanmin(img), 0.0])
+    #Old code to do nans
+
+
+        ##resample image based on new coordinates
+        ##scipy uses y,x convention when meshgrid uses x,y
+        ##stupid scipy functions can't work with masked arrays (NANs)
+        ##and trying to use interp2d with sparse arrays is way to slow
+        ##hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
+        
+        #minval = np.min([np.nanmin(img), 0.0])
+        #nanpix = np.where(np.isnan(img))
+        #medval = np.median(img[np.where(~np.isnan(img))])
+        #img_copy = np.copy(img)
+        
+        ## JB question: Doesn't it work only if min<0?
+        ## JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
+        #    # JB: I think my code should work in both cases so waiting for Jason's approval
+        
+        #if minval >= 0:
+        #    minval2 = -np.nanmax(abs(img))
+        #    img_copy[nanpix] = minval2*100.
+        #    resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval2*100.)
+        #else:
+        #    img_copy[nanpix] = minval * 5.0
+        #    resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
+        #img_copy[nanpix] = medval
+        #resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
+        #if minval >= 0: # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
+        #    resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
+        #else:
+        #    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
+
+    #Code using position of nans in original image, and padding by nan_pad pixels
+    nan_pad = 3.0 #should be a round number
+    nan_mask = np.copy(img) * 0.0
+
+    xround = np.round(x).astype(np.int)
+    yround = np.round(y).astype(np.int)
+
+    vals = np.array([-nan_pad, nan_pad], dtype=np.int)
+
+    for nan_i in xrange(0, 2):
+        for nan_j in xrange(0, 2):
+            xx = (xround + vals[nan_i]).clip(min = 0, max = (dims[1]-1))
+            yy = (yround + vals[nan_j]).clip(min = 0, max = (dims[0]-1))
+
+            nan_mask[np.where(np.isnan(img[np.array(yy), np.array(xx)]))] = 1
+
     nanpix = np.where(np.isnan(img))
     medval = np.median(img[np.where(~np.isnan(img))])
     img_copy = np.copy(img)
-    # JB question: Doesn't it work only if min<0?
-    # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
-    # JB: I think my code should work in both cases so waiting for Jason's approval
-    #
-    if minval >= 0:
-        minval2 = -np.nanmax(abs(img))
-        img_copy[nanpix] = minval2*100.
-        resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval2*100.)
-    else:
-        img_copy[nanpix] = minval * 5.0
-        resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
     img_copy[nanpix] = medval
-    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval=np.nan)
-    if minval >= 0: # JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
-        resampled_img[np.where(resampled_img_mask < 1.5*minval2)] = np.nan
-    else:
-        resampled_img[np.where(resampled_img_mask < minval)] = np.nan
+
+    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval = np.nan)
+    resampled_img[np.where(nan_mask == 1)] = np.nan
 
     #broken attempt at using sparse arrays with interp2d. Warning: takes forever to run
     #good_dat = np.where(~(np.isnan(img)))
