@@ -279,7 +279,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     covar_psfs = np.cov(ref_psfs_mean_sub)
     #also calculate correlation matrix since we'll use that to select reference PSFs
     covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
-    corr_psfs = covar_diag * covar_psfs * covar_diag
+    corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
 
     #grab the parangs
     parangs = _arraytonumpy(img_pa)
