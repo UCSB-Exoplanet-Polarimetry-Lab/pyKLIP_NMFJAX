@@ -277,13 +277,17 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
+    #also calculate correlation matrix since we'll use that to select reference PSFs
+    covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+    corr_psfs = covar_diag * covar_psfs * covar_diag
 
     #grab the parangs
     parangs = _arraytonumpy(img_pa)
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
-            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, parang, wavelength,
-                                            wv_index, (radstart + radend) / 2.0, numbasis, minmove, minrot, maxrot, mode,
+            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
+                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
+                                            minrot, maxrot, mode,
                                             PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
@@ -296,7 +300,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, parang, wavelength, wv_index, avg_rad,
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
                                     numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
@@ -306,6 +310,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
         section_ind: np.where(pixels are in this section of the image). Note: coordinate system is collapsed into 1D
         ref_psfs: reference psf images of this section
         covar: the covariance matrix of the reference PSFs. Shape of (N,N)
+        corr: the correlation matrix of the refernece PSFs. Shape of (N,N)
         parang: PA of science iamge
         wavelength: wavelength of science image
         wv_index: array index of the wavelength of the science image
@@ -358,7 +363,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar, paran
     maxbasis_requested = np.max(numbasis)
     maxbasis_possible = np.size(file_ind)
     if maxbasis_possible > maxbasis_requested:
-        xcorr = covar[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
+        xcorr = corr[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxbasis_requested:]  # sorted smallest first so need to grab from the end
         # grab the new and smaller covariance matrix
@@ -637,6 +642,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     print("Closing threadpool")
     tpool.close()
     tpool.join()
+
+    #save intemediate steps
+    import astropy.io.fits as fits
+    aligned_imgs = _arraytonumpy(recentered_imgs, recentered_imgs_shape)
+    picked = np.where((wvs == wvs[8]) | (wvs == wvs[30]))
+    for aligned_index in range(recentered_imgs_shape[0]):
+        fits.writeto("./aligned_cube_refwv{0}-slices8+30.fits".format(aligned_index), aligned_imgs[aligned_index, picked[0], :, :], clobber=True, output_verify=False)
 
     #finished. Let's reshape the output images
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
