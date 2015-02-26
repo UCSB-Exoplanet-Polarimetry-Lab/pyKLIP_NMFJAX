@@ -643,13 +643,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     tpool.close()
     tpool.join()
 
-    #save intemediate steps
-    import astropy.io.fits as fits
-    aligned_imgs = _arraytonumpy(recentered_imgs, recentered_imgs_shape)
-    picked = np.where((wvs == wvs[8]) | (wvs == wvs[30]))
-    for aligned_index in range(recentered_imgs_shape[0]):
-        fits.writeto("./aligned_cube_refwv{0}-slices8+30.fits".format(aligned_index), aligned_imgs[aligned_index, picked[0], :, :], clobber=True, output_verify=False)
-
     #finished. Let's reshape the output images
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
