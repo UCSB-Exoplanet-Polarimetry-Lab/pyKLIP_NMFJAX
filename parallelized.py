@@ -930,8 +930,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
 
-
+        #save modified data and centers
         dataset.output = rot_imgs
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         #valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
