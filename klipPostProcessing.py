@@ -965,16 +965,24 @@ def planet_detection_in_dir_per_file_star(params):
 def planet_detection_in_dir(pipeline_dir,directory = "./",filename_prefix_is = '', outputDir = '',
                             spectrum_model = "", star_type = "", star_temperature = None,threads = False):
     '''
-    Apply the planet detection algorithm for all pyklip reduced cube in a given folder.
+    Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
+    By default the filename filter used is pyklip-*-KL*-speccube.fits.
     It will look for a PSF file like pyklip-*-KL*-speccube-solePSFs.fits to extract a klip reduced PSF.
         Note: If you want to include a spectrum it can be already included in the PSF when reducing it with klip.
             The other option if there is no psf available for example is to give a spectrum to
-    If no pyklip-*-KL*-speccube-solePSFs.fits is found it will for a pyklip-*-original_PSF_cube.fits which is a PSF
+    If no pyklip-*-KL*-speccube-solePSFs.fits is found it will for a pyklip-*-original_radial_PSF_cube.fits which is a PSF
     built from the sat spots but not klipped.
 
     Inputs:
+        pipeline_dir: GPI pipeline directory. E.g. "/Users/jruffio/gpi/pipeline/".
         directory: directory in which the function will look for suitable fits files and run the planet detection algorithm.
-        filename_filter: Look for file containing of the form "/*"+filename_filter+"-KL*-speccube.fits"
+        filename_prefix_is: Look for file containing of the form "/"+filename_filter+"-KL*-speccube.fits"
+        outputDir: Directory to where to save the output folder. By default it is saved in directory.
+        spectrum_model: Mark Marley's spectrum filename. E.g. "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
+        star_type: Spectral type of the star (works only for type V). E.g. "G5" for G5V type.
+        star_temperature: Temperature of the star. (replace star_type)
+        threads: If true, parallel computation of several files (no prints in the console).
+                Otherwise sequential with bunch of prints (for debugging).
 
     Outputs:
         For each file an output folder is created:
@@ -1036,15 +1044,15 @@ if __name__ == "__main__":
     star_type = ''
 
     #inputDir = "/Users/jruffio/gpi/pyklip/outputs/baade"
-    #inputDir = "/Users/jruffio/gpi/pyklip/outputs/test_detec_folder"
-    inputDir = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
-    #outputDir = "/Users/jruffio/gpi/pyklip/outputs/dropbox_prior_test/"
-    outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
+    inputDir = "/Users/jruffio/gpi/pyklip/outputs/test_detec_folder"
+    #inputDir = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
     #inputDir = "/Users/jruffio/gpi/pyklip/outputs/Baade_5im"
-    filename_filter = "pyklip-S20141218-k100a7s4m3"
-    #filename_filter = "*baade*"
+    outputDir = "/Users/jruffio/gpi/pyklip/outputs/dropbox_prior_test/"
+    #outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
+    #filename_filter = "pyklip-S20141218-k100a7s4m3"
+    filename_filter = "*baade*"
     spectrum_model = "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
-    #star_type = "G4"
+    star_type = "G4"
     pipeline_dir = "/Users/jruffio/gpi/pipeline/"
     planet_detection_in_dir(pipeline_dir,
                             inputDir,
@@ -1053,16 +1061,6 @@ if __name__ == "__main__":
                             spectrum_model=spectrum_model,
                             star_type=star_type,
                             threads = True)
-
-
-
-
-
-
-
-
-
-
 
 
 

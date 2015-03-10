@@ -268,7 +268,7 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, klipparams, center=None, astr_hdr=None):
+    def savedata(self, filepath, data, klipparams = None, center=None, astr_hdr=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -601,7 +601,7 @@ class GPIData(Data):
 
 
             if save != "":
-                self.savedata(save+"-original_radial_PSF_cube.fits", rad_psf_cube, self.wcs[0])
+                self.savedata(save+"-original_radial_PSF_cube.fits", rad_psf_cube)
 
             return rad_psf_cube
 
