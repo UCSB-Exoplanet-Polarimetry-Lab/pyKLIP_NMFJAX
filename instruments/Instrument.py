@@ -15,6 +15,7 @@ class Data(object):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         creator: string for creator of the data (used to identify pipelines that call pyklip)
+        klipparams: a string that saves the most recent KLIP parameters
 
     Functions:
         readdata(): reread in the dadta
@@ -26,6 +27,8 @@ class Data(object):
     def __init__(self):
         # set field for the creator of the data (used for pipeline work)
         self.creator = None
+        # set field for klip parameters
+        self.klipparams = None
 
 
     ###################################

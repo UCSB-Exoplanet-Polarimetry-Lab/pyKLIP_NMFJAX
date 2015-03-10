@@ -783,6 +783,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass)
+    dataset.klipparams = klipparams
 
     #run KLIP
     if mode == 'ADI+SDI':
