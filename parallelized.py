@@ -784,6 +784,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if outputdir == "":
         outputdir = "."
 
+    #save klip parameters as a string
+    klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
+                 "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
+                 "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
+                                              numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
+                                              calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass)
+    dataset.klipparams = klipparams
+
     #run KLIP
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
@@ -953,8 +961,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
 
-
+        #save modified data and centers
         dataset.output = rot_imgs
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         #valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
@@ -962,7 +972,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         if sat_spot_psf or psfs_struct.calculate_PSFs == 1:
             # Save the original PSF calculated from combining the sat spots
-            dataset.savedata(outputdirpath + '/' + fileprefix+"-original_PSF_cube.fits", dataset.psfs, dataset.wcs[0])
+            dataset.savedata(outputdirpath + '/' + fileprefix+"-original_PSF_cube.fits", dataset.psfs,
+                                      klipparams.format(numbasis=str(numbasis)),
+                                      astr_hdr=dataset.wcs[0])
             # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
             dataset.get_radial_psf(save = outputdirpath + '/' + fileprefix)
 
@@ -973,34 +985,41 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                    hdrs=dataset.wcs,disable_wcs_rotation = True)
             rot_out_PSFs = rot_out_PSFs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_cube_PSFs = np.nanmean(rot_out_PSFs, axis=(1,2))
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-solePSFs.fits", KLmode_cube_PSFs, dataset.wcs[0], center=dataset.centers[0])
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-solePSFs.fits", KLmode_cube_PSFs,
+                                      klipparams.format(numbasis=str(numbasis)),
+                                      astr_hdr=dataset.wcs[0], center=dataset.centers[0])
             #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/KLmode_cube_PSFs.fits", KLmode_cube_PSFs, clobber=True)
 
             #for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes_PSFs = np.nanmean(rot_out_PSFs, axis=1)
             for KLcutoff, spectral_cube_PSFs in zip(numbasis, KLmode_spectral_cubes_PSFs):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-solePSFs.fits".format(KLcutoff), spectral_cube_PSFs,
-                                      dataset.wcs[0], center=dataset.centers[0])
+                                      klipparams.format(numbasis=str(numbasis)),
+                                      astr_hdr=dataset.wcs[0], center=dataset.centers[0])
 
             #collapse in time and wavelength to examine KL modes
             KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube,
+                                      klipparams.format(numbasis=str(numbasis)),
+                                      astr_hdr=dataset.wcs[0], center=dataset.centers[0])
 
             #for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff), spectral_cube,
-                                      dataset.wcs[0], center=dataset.centers[0])
+                                      klipparams.format(numbasis=str(numbasis)),
+                                      astr_hdr=dataset.wcs[0], center=dataset.centers[0])
         else:
             #collapse in time and wavelength to examine KL modes
             KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+                             klipparams.format(numbasis=str(numbasis)))
 
             #for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                                      dataset.wcs[0], center=dataset.centers[0])
+                                      klipparams.format(numbasis=KLcutoff))
     elif mode == 'ADI':
         #ADI is not parallelized
         dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
@@ -1039,7 +1058,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+                         klipparams.format(numbasis=str(numbasis)))
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         #if we actually have spectral cubes, let's save those too
@@ -1048,8 +1068,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
-                                 spectral_cube, dataset.wcs[0], center=dataset.centers[0])
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                                  klipparams.format(numbasis=KLcutoff))
 
     elif mode == 'SDI':
         dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
@@ -1088,7 +1108,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         #collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+                         klipparams.format(numbasis=str(numbasis)))
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         #if we actually have spectral cubes, let's save those too
@@ -1097,8 +1118,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
-                                 spectral_cube, dataset.wcs[0], center=dataset.centers[0])
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                                  klipparams.format(numbasis=KLcutoff))
 
     else:
         print("Invalid mode. Either ADI, SDI, or ADI+SDI")

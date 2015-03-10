@@ -1,2 +1,5 @@
-Jonathan Aguilar
-Jason Wang
+Jonathan Aguilar: writing the p1640 interface, implemented satellite spot scaling
+Jason Wang: wrote the GPI interface, wrote the bulk of the KLIP implementation and parallelized it
+JB Ruffio: wrote the autodetection code, projecting the KL basis on PSFs, and improved fake injection
+Rob de Rosa: tested the code and wrote the nan interpolation checking
+Schuyler Wolff: tested the code and debugged the ADI functionality
