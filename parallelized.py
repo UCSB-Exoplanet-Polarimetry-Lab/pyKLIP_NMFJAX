@@ -402,7 +402,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     return True
 
 
-def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None):
+def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,disable_wcs_rotation = False):
     """
     derotate a sequences of images by their respective angles
 
@@ -432,7 +432,8 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
                  for img, angle, center in zip(imgs, angles, centers)]
         #lazy hack around the fact that wcs objects don't preserve wcs.cd fields when sent to other processes
         #so let's just do it manually outside of the rotation
-        [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx) for angle, astr_hdr in zip(angles, hdrs)]
+        if not disable_wcs_rotation:
+            [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx) for angle, astr_hdr in zip(angles, hdrs)]
 
     #reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
@@ -726,7 +727,8 @@ class psfs_management:
         self.planet_spec_filename = planet_spec_filename
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=psfs_management(),
+                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
+                psfs_struct=None, sat_spot_psf = False,
                  spectrum=None, highpass=False ):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
@@ -748,6 +750,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                         registration
         psfs_struct: Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
                         This is because this version is not definitive.
+        sat_spot_psf: Save a original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
         spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
         highpass: if True, run a high pass filter
@@ -773,6 +776,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if highpass:
         dataset.input = high_pass_filter_imgs(dataset.input)
 
+    # Default value of psfs_struct. Don't do anything
+    if psfs_struct is None:
+        psfs_struct = psfs_management()
+
     #if no outputdir specified, then current working directory (don't want to write to '/'!)
     if outputdir == "":
         outputdir = "."
@@ -780,6 +787,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     #run KLIP
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
+
+        if sat_spot_psf or psfs_struct.calculate_PSFs == 1:
+            dataset.generate_psf_cube(20)
+            ## TODO remove next lines because it is already done at the end of klip (down several lines on this page)
+            #dataset.get_radial_psf(save =  os.path.realpath(outputdir) + '/' + fileprefix) #outputdirpath
+            #print("coucou")
+            #return
 
         # If fake planets have to be injected into the datacube for PSFs computation then we do it here
         if psfs_struct.calculate_PSFs:
@@ -825,6 +839,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 elif np.size(psfs_struct.spectrum) != 0:
                     print("Error size of spectrum in klip_dataset()")
                     return 0
+                if 0: # plot individual spectra for debugging.
+                    plt.figure(2)
+                    plt.plot(dataset.spot_flux[37*k:37*(k+1)],'r')
+                    plt.plot(inputflux[37*k:37*(k+1)],'b')
+                    ax = plt.gca()
+                    ax.legend(["sat spot","planet"]) #, loc = 'upper left'
+                    print('psfs_struct.fake_planet_flux_ratio = ',psfs_struct.fake_planet_flux_ratio)
+                    plt.show()
 
             # Define the peak value of the fake planet for each slice depending if a star and a planet type is given.
             filter = dataset.prihdrs[0]['IFSFILT'].split('_')[1]
@@ -857,10 +879,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # If psfs_struct.calculate_PSFs then the PSF is calculated from the sat spots.
             # Otherwise a gaussian PSF will be used later on.
             if psfs_struct.calculate_PSFs == 1:
-                dataset.generate_psf_cube(20)
-                #peak value of the psfs is normalized to unity.
                 inputpsfs = np.tile(dataset.psfs,(N_cubes,1,1))
                 for l in range(dataset.input.shape[0]):
+                    #peak value of the psfs is normalized to unity.
+                    inputpsfs[l,:,:] /= np.nanmax(inputpsfs[l,:,:])
+                    # then multiplied by the peak flux
                     inputpsfs[l,:,:] *= inputflux[l]
             elif psfs_struct.calculate_PSFs == 2:
                 # If inputpsfs is a vector and not a cube fakes.inject_planet will know that it has to use gaussian PSFs.
@@ -937,31 +960,47 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         outputdirpath = os.path.realpath(outputdir)
         print("Writing Images to directory {0}".format(outputdirpath))
 
+        if sat_spot_psf or psfs_struct.calculate_PSFs == 1:
+            # Save the original PSF calculated from combining the sat spots
+            dataset.savedata(outputdirpath + '/' + fileprefix+"-original_PSF_cube.fits", dataset.psfs, dataset.wcs[0])
+            # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
+            dataset.get_radial_psf(save = outputdirpath + '/' + fileprefix)
+
         # apply same transformation on out_PSFs than on dataset.output
         if psfs_struct.calculate_PSFs:
             out_PSFs = out_PSFs.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
             rot_out_PSFs = rotate_imgs(out_PSFs, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                                   hdrs=dataset.wcs)
+                                   hdrs=dataset.wcs,disable_wcs_rotation = True)
             rot_out_PSFs = rot_out_PSFs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_cube_PSFs = np.nanmean(rot_out_PSFs, axis=(1,2))
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube_PSFs, dataset.wcs[0], center=dataset.centers[0])
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-solePSFs.fits", KLmode_cube_PSFs, dataset.wcs[0], center=dataset.centers[0])
             #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/KLmode_cube_PSFs.fits", KLmode_cube_PSFs, clobber=True)
 
             #for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes_PSFs = np.nanmean(rot_out_PSFs, axis=1)
             for KLcutoff, spectral_cube_PSFs in zip(numbasis, KLmode_spectral_cubes_PSFs):
-                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff), spectral_cube_PSFs,
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-solePSFs.fits".format(KLcutoff), spectral_cube_PSFs,
                                       dataset.wcs[0], center=dataset.centers[0])
 
-        #collapse in time and wavelength to examine KL modes
-        KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
-        dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+            #collapse in time and wavelength to examine KL modes
+            KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
 
-        #for each KL mode, collapse in time to examine spectra
-        KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
-        for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
-                                  dataset.wcs[0], center=dataset.centers[0])
+            #for each KL mode, collapse in time to examine spectra
+            KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff), spectral_cube,
+                                      dataset.wcs[0], center=dataset.centers[0])
+        else:
+            #collapse in time and wavelength to examine KL modes
+            KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube, dataset.wcs[0], center=dataset.centers[0])
+
+            #for each KL mode, collapse in time to examine spectra
+            KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
+                                      dataset.wcs[0], center=dataset.centers[0])
     elif mode == 'ADI':
         #ADI is not parallelized
         dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,

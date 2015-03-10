@@ -2,6 +2,7 @@ import numpy as np
 from scipy import optimize
 import scipy.ndimage as ndimage
 import scipy.interpolate as interp
+import matplotlib.pyplot as plt
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -117,14 +118,15 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             #shift psf so that center is aligned
             #calculate center of box
             boxsize = inputpsf.shape[0]
-            boxcent = (boxsize-1)/2
+            #boxcent = (boxsize-1)/2
+            #Using JB's array convention instead.
+            boxcent = boxsize/2
             #create coordinates to align PSF with image
             xpsf,ypsf = np.meshgrid(np.arange(frame.shape[1]), np.arange(frame.shape[0]))
             xpsf = xpsf - x_pl + boxcent
             ypsf = ypsf - y_pl + boxcent
             #inject into frame
             frame += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
-
         else:
             frame = _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm)
 

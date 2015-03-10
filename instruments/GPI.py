@@ -20,6 +20,7 @@ else:
     from pyklip.instruments.Instrument import Data
     from pyklip.instruments.utils.nair import nMathar
 
+from scipy.interpolate import interp1d
 
 
 class GPIData(Data):
@@ -370,11 +371,16 @@ class GPIData(Data):
     def generate_psf_cube(self, boxw=14):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
-        Peak value normalized to one in each slice.
+        Overall cube normalized to unity with norm 2.
         Currently hard coded assuming 37 spectral channels!!!
 
+        The center of the PSF is exactly on the central pixel of the PSF.
+        (If even width of the array it is the middle pixel with the highest row and column index.)
+        The center pixel index is always (nx/2,nx/2) assuming integer division.
+
         Inputs:
-            boxw: the width the extracted PSF (in pixels). Should be bigger than 12
+            boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
+                of the background by a plane which is then subtracted to remove linear biases.
 
         Outputs:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
@@ -415,22 +421,27 @@ class GPIData(Data):
                     spoty = loc[1]
                     xarr_spot = np.round(spotx)
                     yarr_spot = np.round(spoty)
-                    stamp = cleaned[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
+                    stamp = cleaned[(yarr_spot-np.floor(boxw/2.0)):(yarr_spot+np.ceil(boxw/2.0)),(xarr_spot-np.floor(boxw/2.0)):(xarr_spot+np.ceil(boxw/2.0))]
                     #x_stamp = x_grid[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
                     #y_stamp = y_grid[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
                     #print(spotx,spoty)
                     #print(stamp_x+ spotx-xarr_spot,stamp_y+spoty-yarr_spot)
                     stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
-                    stamp_x += spotx-xarr_spot
-                    stamp_y += spoty-yarr_spot
+                    dx = spotx-xarr_spot
+                    dy = spoty-yarr_spot
+                    #stamp_x += spotx-xarr_spot
+                    #stamp_y += spoty-yarr_spot
+                    #stamp_x -= spotx-xarr_spot
+                    #stamp_y -= spoty-yarr_spot
+                    #print(spotx-xarr_spot,spoty-yarr_spot)
 
 
 
                     #mask the central blob to calculate background median
-                    stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
+                    stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
                     stamp_masked = copy(stamp)
-                    stamp_x_masked = copy(stamp_x)
-                    stamp_y_masked = copy(stamp_y)
+                    stamp_x_masked = stamp_x-dx
+                    stamp_y_masked = stamp_y-dy
                     stamp_center = np.where(stamp_r<4)
                     stamp_masked[stamp_center] = np.nan
                     stamp_x_masked[stamp_center] = np.nan
@@ -446,19 +457,19 @@ class GPIData(Data):
                     #Cramer's rule
                     a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
                     b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
-                    stamp -= a*stamp_x+b*stamp_y + background_med
+                    stamp -= a*(stamp_x-dx)+b*(stamp_y-dy) + background_med
                     #stamp -= background_med
 
                     #rescale to take into account wavelength widening
                     if 1:
-                        stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
-                        stamp_th = np.arctan2(stamp_x-boxw/2,stamp_y-boxw/2)
+                        stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
+                        stamp_th = np.arctan2(stamp_x-dx-boxw/2,stamp_y-dy-boxw/2)
                         stamp_r /= lambda_ref/lambda_curr
                         stamp_x = stamp_r*np.cos(stamp_th)+boxw/2
                         stamp_y = stamp_r*np.sin(stamp_th)+boxw/2
                         #print(stamp_x,stamp_y)
 
-                    stamp = ndimage.map_coordinates(stamp, [stamp_y, stamp_x])
+                    stamp = ndimage.map_coordinates(stamp, [stamp_y+dx, stamp_x+dy])
                     #print(stamp)
                     psfs[lambda_ref_id,:,:,i,loc_id] = stamp
 
@@ -466,14 +477,29 @@ class GPIData(Data):
         #PSF_cube = np.mean(psfs[:,:,:,:,0],axis=(3))
         PSF_cube = np.mean(psfs,axis=(3,4))
 
+
+        #Build the spectrum of the sat spots
+        # Number of cubes in dataset
+        N_cubes = int(self.input.shape[0])/int(numwaves)
+        all_sat_spot_spec = np.zeros((37,N_cubes))
+        for k in range(N_cubes):
+            all_sat_spot_spec[:,k] = self.spot_flux[37*k:37*(k+1)]
+        sat_spot_spec = np.nanmean(all_sat_spot_spec,axis=1)
+
         #stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
         #stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
         #stamp_center = np.where(stamp_r<3)
+        PSF_cube /= np.sqrt(np.nansum(PSF_cube**2))
         for l in range(numwaves):
             #PSF_cube[l,:,:] -= np.nanmedian(PSF_cube[l,:,:][stamp_center])
-            PSF_cube[l,:,:] /= np.nanmax(PSF_cube[l,:,:])
-            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])<0.05)] = 0.0
+            PSF_cube[l,:,:] *= sat_spot_spec[l]/np.nanmax(PSF_cube[l,:,:])
+            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])/np.nanmax(abs(PSF_cube[l,:,:]))<0.05)] = 0.0
 
+        if 0:
+            plt.figure(1)
+            plt.plot(sat_spot_spec,'or')
+            plt.plot(np.nanmax(PSF_cube,axis=(1,2)),"--b")
+            plt.show()
         if 0: # for debugging purposes
             plt.figure(1)
             plt.imshow(PSF_cube[0,:,:],interpolation = 'nearest')
@@ -483,6 +509,75 @@ class GPIData(Data):
 
         self.psfs = PSF_cube
 
+    def get_radial_psf(self,save = ""):
+        """
+        Return a pure radial PSF by averaging the original psf. The new PSF is invariant by rotation.
+        A call to generate_psf_cube() is required prior to calling this function.
+        The center pixel index is always (nx/2,nx/2) assuming integer division.
+
+        Inputs:
+            save: Optionally automatically save the radial psf cube as a fits file with filename:
+                    save+"-original_radial_PSF_cube.fits"
+
+        Outputs:
+            rad_psf_cube: a (37,nx,nx) cube with the radial psf.
+
+        """
+        if np.size(np.shape(self.psfs)) == 3 and np.shape(self.psfs)[0] == 37:
+            nl,ny,nx = self.psfs.shape
+            # We should have nx = ny
+
+            sat_spot_spec = np.nanmax(self.psfs,axis=(1,2))
+
+            k_hd=4 # should be even
+            nx_hd = k_hd*(nx-1) + 1
+            hd_psf = np.zeros((nl,nx_hd,nx_hd))
+
+            rad_psf_cube = np.zeros((nl,nx,nx))
+            #current_slice = np.zeros((nx,nx))
+
+            stamp_x, stamp_y = np.meshgrid(np.arange(nx, dtype=np.float32), np.arange(nx, dtype=np.float32))
+            stamp_r = np.sqrt((stamp_x - nx/2)**2+(stamp_y - nx/2)**2)
+            stamp_x_hd, stamp_y_hd = np.meshgrid(np.arange(nx_hd, dtype=np.float32)/(nx_hd-1)*(nx-1), np.arange(nx_hd, dtype=np.float32)/(nx_hd-1)*(nx-1))
+            for l in range(nl):
+                hd_psf[l,:,:] = ndimage.map_coordinates(self.psfs[l,:,:], [stamp_y_hd, stamp_x_hd])
+                #hd_psf[l,nx/2*k_hd,nx/2*k_hd] = 0. # center
+            stamp_r_hd = np.sqrt((stamp_x_hd-stamp_x_hd[nx/2*k_hd,nx/2*k_hd])**2+(stamp_y_hd-stamp_y_hd[nx/2*k_hd,nx/2*k_hd])**2)
+
+            dr = 1.0/k_hd
+            Dr = 2.0/k_hd
+            r_samp = np.arange(0,np.max(stamp_r_hd)+dr,dr)
+
+            radial_val = np.zeros((nl,np.size(r_samp)))
+
+            for r_id, r_it in enumerate(r_samp):
+                selec_pix = np.where( ((r_it-Dr/2.0) < stamp_r_hd) * (stamp_r_hd < (r_it+Dr/2.0)) )
+                selec_y, selec_x = selec_pix
+                radial_val[:,r_id] = np.nanmean(hd_psf[:,selec_y, selec_x],1)
+
+            for l_id in np.arange(nl):
+                f = interp1d(r_samp, radial_val[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
+                rad_psf_cube[l_id,:,:] = f(stamp_r.reshape(nx*nx)).reshape(nx,nx)
+                rad_psf_cube[l_id,:,:] *= sat_spot_spec[l_id]/np.nanmax(rad_psf_cube[l_id,:,:])
+
+                if 0:
+                    print(rad_psf_cube[l_id,0,0])
+                    plt.figure(1)
+                    plt.imshow(rad_psf_cube[l_id,:,:],interpolation = 'nearest')
+                    plt.figure(2)
+                    plt.plot(np.nanmax(self.psfs,axis=(1,2)))
+                    plt.show()
+
+
+
+            if save != "":
+                self.savedata(save+"-original_radial_PSF_cube.fits", rad_psf_cube, self.wcs[0])
+
+            return rad_psf_cube
+
+        else:
+            print("Wrong size of the PSFs stored in gpi dataset structure when calling get_radial_psf. Return 0")
+            return 0
 
 ######################
 ## Static Functions ##
