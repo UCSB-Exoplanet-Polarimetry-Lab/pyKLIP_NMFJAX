@@ -14,12 +14,19 @@ class Data(object):
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        creator: string for creator of the data (used to identify pipelines that call pyklip)
 
     Functions:
         readdata(): reread in the dadta
         savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
+        calibrate_output(): flux calibrate the output data
     """
     __metaclass__ = abc.ABCMeta
+
+    def __init__(self):
+        # set field for the creator of the data (used for pipeline work)
+        self.creator = None
+
 
     ###################################
     ### Required Instance Variances ###
@@ -136,7 +143,7 @@ class Data(object):
 
     @staticmethod
     @abc.abstractmethod
-    def savedata(filepath, data):
+    def savedata(filepath, data, klipparams):
         """
         Saves data for this instrument
         """

@@ -5,6 +5,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import os
 import re
+import subprocess
 
 import matplotlib.pyplot as plt
 #different imports depending on if python2.7 or python3
@@ -93,6 +94,7 @@ class GPIData(Data):
             filepaths: list of filepaths to files
             skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         """
+        super(GPIData, self).__init__()
         self._output = None
         if filepaths is None:
             self._input = None
@@ -265,7 +267,7 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, astr_hdr=None, center=None):
+    def savedata(self, filepath, data, klipparams, center=None, astr_hdr=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -275,11 +277,13 @@ class GPIData(Data):
             astr_hdr: wcs astrometry header
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
+            klipparams: a string of klip parameters
         """
         hdulist = pyfits.HDUList()
         hdulist.append(pyfits.PrimaryHDU(header=self.prihdrs[0]))
         hdulist.append(pyfits.ImageHDU(header=self.exthdrs[0], data=data, name="Sci"))
 
+        #save all the files we used in the reduction
         #we'll assume you used all the input files
         #remove duplicates from list
         filenames = np.unique(self.filenames)
@@ -293,6 +297,28 @@ class GPIData(Data):
             filename = matches.group(0)
             hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
+        #write out psf subtraction parameters
+        #get pyKLIP revision number
+        pykliproot = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+        pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot).strip()
+        hdulist[0].header['PSFSUB'] = "pyKLIP"
+        hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
+        if self.creator is None:
+            hdulist[0].header['CREATOR'] = "pyKLIP-{0}".format(pyklipver)
+        else:
+            hdulist[0].header['CREATOR'] = self.creator
+            hdulist[0].header.add_history("Reduced by {0}".self.creator)
+
+        #store commit number for pyklip
+        hdulist[0].header['pyklipv'] = pyklipver
+
+        if klipparams is not None:
+            hdulist[0].header['PSFPARAM'] = klipparams
+            hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
+
+        #use the dataset astr hdr if none was passed in
+        if astr_hdr is None:
+            astr_hdr = self.wcs[0]
         if astr_hdr is not None:
             #update astro header
             #I don't have a better way doing this so we'll just inject all the values by hand
@@ -309,10 +335,14 @@ class GPIData(Data):
             exthdr.remove('CD2_2')
             exthdr['CDELT1'] = 1
             exthdr['CDELT2'] = 1
-            
 
+        #use the dataset center if none was passed in
+        if center is None:
+            center = self.centers[0]
         if center is not None:
             hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+            hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
+            hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
