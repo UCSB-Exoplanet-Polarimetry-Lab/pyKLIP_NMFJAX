@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import multiprocessing as mp
 import itertools
+import glob, os
 
 import spectra_management as spec
 
@@ -994,6 +995,8 @@ def planet_detection_in_dir(pipeline_dir,directory = "./",filename_prefix_is = '
         filelist_klipped_cube = glob.glob(directory+"/pyklip-*-KL*-speccube.fits")
     else:
         filelist_klipped_cube = glob.glob(directory+"/"+filename_prefix_is+"-KL*-speccube.fits")
+        print(directory+"/"+filename_prefix_is+"-KL*-speccube.fits")
+        print(filelist_klipped_cube)
 
     if threads:
         N_threads = np.size(filelist_klipped_cube)
