@@ -242,17 +242,19 @@ class GPIData(Data):
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
-        # recalculate wavelegnths from satellite spots
-        wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
-        # recaclulate centers from satellite spots and new wavelegnth solution
-        wvs_bycube = wvs.reshape([dims[0], dims[1]])
-        centers_bycube = centers.reshape([dims[0], dims[1], 2])
-        for i, cubewvs in enumerate(wvs_bycube):
-            try:
-                centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
-            except KeyError:
-                print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
-                      "{0}".format(filenames[i*dims[1]]))
+        #only do the wavelength solution and center recalculation if it isn't broadband imaging
+        if np.size(np.unique(wvs)) > 1:
+            # recalculate wavelegnths from satellite spots
+            wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
+            # recaclulate centers from satellite spots and new wavelegnth solution
+            wvs_bycube = wvs.reshape([dims[0], dims[1]])
+            centers_bycube = centers.reshape([dims[0], dims[1], 2])
+            for i, cubewvs in enumerate(wvs_bycube):
+                try:
+                    centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
+                except KeyError:
+                    print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
+                          "{0}".format(filenames[i*dims[1]]))
 
         #set these as the fields for the GPIData object
         self._input = data
