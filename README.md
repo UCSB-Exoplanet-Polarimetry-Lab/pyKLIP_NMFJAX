@@ -1,4 +1,6 @@
-# README #
+# pyKLIP README #
+
+A python library for PSF subtraction. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, and Schuyler Wolff.
 
 ### Overview ###
 
@@ -12,7 +14,7 @@
 * scipy
 * astropy
 * python2.7 or python3
-* Recommended: a computer with lots of cores (16+) and lots of memory (~100 GB?)
+* Recommended: a computer with lots of cores (16+) and lots of memory (40 GB for a standard GPI 1hr sequence)
 
 ### Installation ###
 
