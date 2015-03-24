@@ -509,7 +509,6 @@ class GPIData(Data):
         #PSF_cube = np.mean(psfs[:,:,:,:,0],axis=(3))
         PSF_cube = np.mean(psfs,axis=(3,4))
 
-
         #Build the spectrum of the sat spots
         # Number of cubes in dataset
         N_cubes = int(self.input.shape[0])/int(numwaves)

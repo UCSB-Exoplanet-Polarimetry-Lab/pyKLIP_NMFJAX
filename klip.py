@@ -5,7 +5,7 @@ import scipy.ndimage as ndimage
 from scipy.stats import t
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -18,6 +18,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped.
         PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
                               the klipping. ie from which the modes are calculated.
+        return_basis: If true, return KL basis vectors (used when onesegment==True)
 
     Outputs:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
@@ -142,7 +143,10 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         # need to flip them so the output is shaped (p,b)
         return sub_img_rows_selected.transpose(), PSFarea_tobeklipped_rows_selected.transpose()
 
-    return sub_img_rows_selected.transpose()
+    if return_basis is True:
+        return sub_img_rows_selected.transpose(), kl_basis.transpose()
+    else:
+        return sub_img_rows_selected.transpose()
 
 
     # old code that only did one number of KL basis for truncation
