@@ -268,7 +268,7 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, klipparams = None, center=None, astr_hdr=None):
+    def savedata(self, filepath, data, klipparams = None, center=None, astr_hdr=None,fakePlparams = None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -316,6 +316,10 @@ class GPIData(Data):
         if klipparams is not None:
             hdulist[0].header['PSFPARAM'] = klipparams
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
+
+        if fakePlparams is not None:
+            hdulist[0].header['FAKPLPAR'] = fakePlparams
+            hdulist[0].header.add_history("pyKLIP reduction with fake planet injection parameters {0}".format(fakePlparams))
 
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:

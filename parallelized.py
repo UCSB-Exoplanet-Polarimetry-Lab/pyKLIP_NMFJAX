@@ -715,9 +715,17 @@ class psfs_management:
 
     Functions:
     """
-    def __init__(self, calculate_PSFs=0, fake_planet_flux_ratio= 1.0,spectrum = [],pipeline_directory='',star_type = None,star_temperature=None,planet_spec_filename=''):
+    def __init__(self, calculate_PSFs=0,
+                 fake_planet_flux_ratio= 1.0,
+                 spectrum = [],
+                 pipeline_directory='',
+                 star_type = None,
+                 star_temperature=None,
+                 planet_spec_filename='',
+                 angle_offset = 0.0):
         self.calculate_PSFs = calculate_PSFs
         self.fake_planet_flux_ratio = fake_planet_flux_ratio
+        self.angle_offset = angle_offset
 
         self.spectrum = spectrum # must contain positive values
 
@@ -797,6 +805,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Beginning ADI+SDI KLIP")
 
         if sat_spot_psf or psfs_struct.calculate_PSFs == 1:
+            print("Calculating the planet PSF from the satellite spots...")
             dataset.generate_psf_cube(20)
             ## TODO remove next lines because it is already done at the end of klip (down several lines on this page)
             #dataset.get_radial_psf(save =  os.path.realpath(outputdir) + '/' + fileprefix) #outputdirpath
@@ -805,6 +814,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # If fake planets have to be injected into the datacube for PSFs computation then we do it here
         if psfs_struct.calculate_PSFs:
+            print("Injecting fake planets...")
+
             # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
             # We want to inject one planet per section where klip is independently applied.
             dims = dataset.input.shape
@@ -814,7 +825,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             dr = float(OWA - dataset.IWA) / (annuli)
 
             # calculate the annuli mean radius where the fake planets are going to be.
-            annuli_radii = [dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)]
+            annuli_radii = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
             # No PSFs in the last annulus which will emcompass everything
 
             # New array for data with sole PSFs
@@ -901,16 +912,17 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 return 0
 
 
+            # Get parallactic angle of where to put fake planets
+            #PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
+            #delta_pa = 180/np.pi*PSF_dist/radius
+            delta_th = 360/subsections
+            th_list = np.arange(-180+delta_th/2.,180.1-delta_th/2.,delta_th) + psfs_struct.angle_offset
+            pa_list = fakes.covert_polar_to_image_pa(th_list, dataset.wcs[0])
+            #print(annuli_radii,th_list,pa_list)
+            #return
             # Loop for injecting fake planets. One planet per section of the image.
             # Too many hard-coded parameters because still work in progress.
             for annuli_id, radius in enumerate(annuli_radii):
-                #PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
-                #delta_pa = 180/np.pi*PSF_dist/radius
-                delta_th = 360/subsections
-                th_list = np.arange(-180+delta_th/2.,180.1-delta_th/2.,delta_th)
-                pa_list = fakes.covert_polar_to_image_pa(th_list, dataset.wcs[0])
-                #print(annuli_radii,th_list,pa_list)
-                #return
                 for pa_id, pa in enumerate(pa_list):
                     fakes.inject_planet(PSFs, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
                     fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
@@ -919,10 +931,29 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 #print(dataset.spot_flux)
                 pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpPSFs.fits", PSFs, clobber=True)
                 pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/tmpINPUT.fits", dataset.input, clobber=True)
+
+
+            fakePlparams = "fake_planet_flux_ratio={pfake_planet_flux_ratio};" \
+                           "angle_offset={pangle_offset};" \
+                           "spectrum={pspectrum};" \
+                           "star_type={pstar_type};" \
+                           "star_temperature={pstar_temperature};" \
+                           "planet_spec_filename={pplanet_spec_filename};" \
+                           "planet_angles={pplanet_angles};" \
+                           "planet_radii={pplanet_radii}".format(pfake_planet_flux_ratio=psfs_struct.fake_planet_flux_ratio,
+                                                                  pangle_offset=psfs_struct.angle_offset,
+                                                                  pspectrum=str(psfs_struct.spectrum),
+                                                                  pstar_type=psfs_struct.star_type,
+                                                                  pstar_temperature=psfs_struct.star_temperature,
+                                                                  pplanet_spec_filename=psfs_struct.planet_spec_filename,
+                                                                  pplanet_angles=str((90.+pa_list).tolist()),
+                                                                  pplanet_radii=str(annuli_radii.tolist()))
+            print(fakePlparams)
         else:
             # Define the PSFs variables as None so that klip is applied normally without fake planets injections.
             PSFs = None
             out_PSFs = None
+            fakePlparams = None
 
 
         klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
@@ -973,7 +1004,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if sat_spot_psf or psfs_struct.calculate_PSFs == 1:
             # Save the original PSF calculated from combining the sat spots
             dataset.savedata(outputdirpath + '/' + fileprefix+"-original_PSF_cube.fits", dataset.psfs,
-                                      klipparams.format(numbasis=str(numbasis)),
                                       astr_hdr=dataset.wcs[0])
             # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
             dataset.get_radial_psf(save = outputdirpath + '/' + fileprefix)
@@ -986,7 +1016,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             rot_out_PSFs = rot_out_PSFs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_cube_PSFs = np.nanmean(rot_out_PSFs, axis=(1,2))
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-solePSFs.fits", KLmode_cube_PSFs,
-                                      klipparams.format(numbasis=str(numbasis)),
+                                      klipparams.format(numbasis=str(numbasis)), fakePlparams = fakePlparams,
                                       astr_hdr=dataset.wcs[0], center=dataset.centers[0])
             #pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/KLmode_cube_PSFs.fits", KLmode_cube_PSFs, clobber=True)
 
@@ -994,20 +1024,20 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             KLmode_spectral_cubes_PSFs = np.nanmean(rot_out_PSFs, axis=1)
             for KLcutoff, spectral_cube_PSFs in zip(numbasis, KLmode_spectral_cubes_PSFs):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-solePSFs.fits".format(KLcutoff), spectral_cube_PSFs,
-                                      klipparams.format(numbasis=str(numbasis)),
+                                      klipparams.format(numbasis=str(numbasis)), fakePlparams = fakePlparams,
                                       astr_hdr=dataset.wcs[0], center=dataset.centers[0])
 
             #collapse in time and wavelength to examine KL modes
             KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube,
-                                      klipparams.format(numbasis=str(numbasis)),
+                                      klipparams.format(numbasis=str(numbasis)), fakePlparams = fakePlparams,
                                       astr_hdr=dataset.wcs[0], center=dataset.centers[0])
 
             #for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff), spectral_cube,
-                                      klipparams.format(numbasis=str(numbasis)),
+                                      klipparams.format(numbasis=str(numbasis)), fakePlparams = fakePlparams,
                                       astr_hdr=dataset.wcs[0], center=dataset.centers[0])
         else:
             #collapse in time and wavelength to examine KL modes

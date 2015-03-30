@@ -1,5 +1,4 @@
 import numpy as np
-#import cmath
 from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
 from scipy.signal import convolve
@@ -13,45 +12,101 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import multiprocessing as mp
 import itertools
+from astropy import wcs
+import glob
+import os
+import sys
+import cmath
+import time
+from scipy.interpolate import griddata
+from scipy.interpolate import bisplrep
+from scipy.interpolate import bisplev
+from sys import stdout
+import numexpr as ne
+
 
 import spectra_management as spec
 
 
-def extract_PSFs(filename, radii, thetas, stamp_width = 10):
+def extract_PSFs(filename, stamp_width = 10, mute = False):
+    '''
+    Extract the PSFs in a pyklip reduced cube in which fake planets have been injected.
+    The position of the fake planets is stored in the headers when pyklip is used.
+    A cube stamp is extracted for each radius and angle and they are all sorted in the out_stamp_PSFs array.
+
+    /!\ The cube is normalized following cube /= np.nanstd(cube[10,:,:])
+    This is because I don't want the very small numbers in Jason's output as he uses contrast units
+
+    :param filename: Name of the file from which the fake planets cube stamps should be extracted.
+    :param stamp_width: Spatial width of the stamps to be extracted around each fake planets.
+    :param mute: If true print some text in the console.
+    :return out_stamp_PSFs: A (nl,stamp_width,stamp_width,nth,nr) array with nl the number of wavelength of the cube,
+            nth the number of section in the klip reduction and nr the number of annuli. Therefore the cube defined by
+            out_stamp_PSFs[:,:,:,0,2] is a cube stamp of the planet in the first section of the third annulus. In order
+            to know what position it exactly corresponds to please look at the FAKPLPAR keyword in the primary headers.
+    '''
     hdulist = pyfits.open(filename)
     cube = hdulist[1].data
+    cube /= np.nanstd(cube[10,:,:])
     if np.size(cube.shape) == 3:
         nl,ny,nx = cube.shape
     elif np.size(cube.shape) == 2:
         ny,nx = cube.shape
         cube = cube[None,:]
         nl = 1
-    nth = np.size(thetas)
-    nr = np.size(radii)
     #slice = hdulist[1].data[2,:,:]
     #ny,nx = slice.shape
     prihdr = hdulist[0].header
     exthdr = hdulist[1].header
-    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+
+    try:
+        # Retrieve the center of the image from the fits keyword.
+        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    except:
+        # If the keywords could not be found.
+        if not mute:
+            print("Couldn't find PSFCENTX and PSFCENTY keywords.")
+        center = [(nx-1)/2,(ny-1)/2]
+
+    try:
+        # Retrieve the position of the fake planets from the fits keyword.
+        fakePlparams_str = prihdr['FAKPLPAR']
+    except:
+        # If the keywords could not be found.
+        if not mute:
+            print("ERROR. Couldn't find FAKPLPAR (Fake planets parameters) keyword. Has to quit extract_PSFs().")
+        return 0
+
+    fakePlparams_splitted_str = fakePlparams_str.split(";")
+    planet_angles_str = fakePlparams_splitted_str[6]
+    planet_radii_str = fakePlparams_splitted_str[7]
+    planet_angles =eval(planet_angles_str.split("=")[1])
+    planet_radii =eval(planet_radii_str.split("=")[1])
+
+    nth = np.size(planet_angles)
+    nr = np.size(planet_radii)
 
     x, y = np.meshgrid(np.arange(nx), np.arange(ny))
     #x.shape = (x.shape[0] * x.shape[1])
     #y.shape = (y.shape[0] * y.shape[1])
     x -= center[0]
     y -= center[1]
-    x_planets = np.dot(np.array([radii]).transpose(),np.array([np.cos(np.radians(thetas))]))
-    y_planets = np.dot(np.array([radii]).transpose(),np.array([np.sin(np.radians(thetas))]))
+    x_planets = np.dot(np.array([planet_radii]).transpose(),np.array([np.cos(np.radians(planet_angles))]))
+    y_planets = np.dot(np.array([planet_radii]).transpose(),np.array([np.sin(np.radians(planet_angles))]))
+    #print(x_planets+center[0])
+    #print(y_planets+center[1])
 
-    dn = stamp_width
-    out_stamp_PSFs = np.zeros((nl,dn,dn,nth,nr))
+    out_stamp_PSFs = np.zeros((nl,stamp_width,stamp_width,nth,nr))
 
     for l_id in range(nl):
-        for r_id,r_it in enumerate(radii):
-            for th_id, th_it in enumerate(thetas):
+        for r_id,r_it in enumerate(planet_radii):
+            for th_id, th_it in enumerate(planet_angles):
                 x_plnt = np.round(x_planets[r_id,th_id]+center[0])
                 y_plnt = np.round(y_planets[r_id,th_id]+center[1])
 
-                out_stamp_PSFs[l_id,:,:,th_id,r_id] = cube[l_id,(y_plnt-np.floor(dn/2.)):(y_plnt+np.ceil(dn/2.)),(x_plnt-np.floor(dn/2.)):(x_plnt+np.ceil(dn/2.))]
+                out_stamp_PSFs[l_id,:,:,th_id,r_id] = cube[l_id,
+                                                            (y_plnt-np.floor(stamp_width/2.)):(y_plnt+np.ceil(stamp_width/2.)),
+                                                            (x_plnt-np.floor(stamp_width/2.)):(x_plnt+np.ceil(stamp_width/2.))]
 
         #print(l_id,r_id,r_it,th_id, th_it,x_plnt,y_plnt)
         #plt.imshow(out_stamp_PSFs[:,:,l_id,th_id,r_id],interpolation = 'nearest')
@@ -147,11 +202,28 @@ def subtract_radialMed(image,w,l,center):
     return image
 
 
-def radialStd(cube,dr,Dr,centroid = None, r = None, r_samp = None):
+def radialStd(cube,dr,Dr,centroid = None, rejection = False):
     '''
-    Return the standard deviation with respect to the radius computed in annuli of radial width Dr separated by dr.
+    Return the standard deviation with respect to the radius on an image.
+    It cuts annuli of radial width Dr separated by dr and calculate the standard deviation in them.
+
+    Note: This function should work on cubes however JB has never really used it... So no guarantee
+
+    Inputs:
+        cube: 2D (ny,nx) or 3D (nl,ny,nx) array in which to calculate
+        dr: Sampling of the radial axis for calculating the standard deviation
+        Dr: width of the annuli used to calculate the standard deviation
+        centroid: [col,row] with the coordinates of the center of the image.
+        rejection: reject 3 sigma values
+
+    Outputs:
+        radial_std: Vector containing the standard deviation for each radii
+        r: Map with the distance of each pixel to the center.
+        r_samp: Radial sampling used for radial_std based on dr.
+
     :return:
     '''
+    # Get dimensions of the image
     if np.size(cube.shape) == 3:
         nl,ny,nx = cube.shape
     elif np.size(cube.shape) == 2:
@@ -159,112 +231,73 @@ def radialStd(cube,dr,Dr,centroid = None, r = None, r_samp = None):
         cube = cube[None,:]
         nl = 1
 
-    if r is None:
-        r = [np.nan]
-    if r_samp is None:
-        r_samp = [np.nan]
-
+    # Get the center of the image
     #TODO centroid should be different for each slice?
     if centroid is None :
         x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
     else:
         x_cen, y_cen = centroid
 
+    # Build the x and y coordinates grids
     x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    r[0] = abs(x +y*1j)
-    #r_samp[0] = np.arange(dr,max(r[0].reshape(np.size(r[0]))),dr)
-    r_samp[0] = np.arange(0,max(r[0].reshape(np.size(r[0]))),dr)
 
-    radial_std = np.zeros((nl,np.size(r_samp[0])))
+    # Calculate the radial distance of each pixel
+    r = abs(x +y*1j)
+    r_samp = np.arange(0,max(r.reshape(np.size(r))),dr)
 
-    bins = np.arange(-3,3,0.1)
-    #print(r_samp[0])
-    #print(r_samp[0].size)
-    histo = np.zeros([bins.size-1,r_samp[0].size])
+    # Declare the output array that will contain the std values
+    radial_std = np.zeros((nl,np.size(r_samp)))
 
-    for r_id, r_it in enumerate(r_samp[0]):
-        selec_pix = np.where( ((r_it-Dr/2.0) < r[0]) * (r[0] < (r_it+Dr/2.0)) )
+
+    for r_id, r_it in enumerate(r_samp):
+        # Get the coordinates of the pixels inside the current annulus
+        selec_pix = np.where( ((r_it-Dr/2.0) < r) * (r < (r_it+Dr/2.0)) )
         selec_y, selec_x = selec_pix
+        # Extract the pixels inside the current annulus
         data = cube[:,selec_y, selec_x]
-        '''
-            print(data)
-            plt.figure(1)
-            plt.show()
-            mn_data = np.nanmean(data)
-            std_data = np.nanstd(data)
-            data[abs(data - mn_data) > 3 * std_data] = np.nan
-            #print(data.shape)
-            radial_std[:,r_id] = np.nanstd(data,1)
-        '''
         for l_it in np.arange(nl):
             data_slice = data[l_it,:]
             # Check that everything is not Nan
             if np.size(np.where(np.isnan(data_slice))) != data_slice.size:
-                mn_data = np.nanmean(data_slice)
-                std_data = np.nanstd(data_slice)
-                # Remove nans from the array but ensure they be put back afterwards
-                data_slice[np.where(np.isnan(data_slice))] = mn_data + 10 * std_data
-                out_3sig = np.where((data_slice-mn_data)>(3.*std_data))
-                if out_3sig is not ():
-                    data[l_it,out_3sig] = np.nan
+                # 3 sigma rejection if required
+                if rejection:
+                    mn_data = np.nanmean(data_slice)
+                    std_data = np.nanstd(data_slice)
+                    # Remove nans from the array but ensure they be put back afterwards
+                    data_slice[np.where(np.isnan(data_slice))] = mn_data + 10 * std_data
+                    out_3sig = np.where((data_slice-mn_data)>(3.*std_data))
+                    if out_3sig is not ():
+                        data[l_it,out_3sig] = np.nan
+
+                # Calculate the standard deviation on the annulus.
                 radial_std[l_it,r_id] = np.nanstd(data[l_it,:])
             else:
                 radial_std[l_it,r_id] = np.nan
 
-
-        # Study histogram of the pixels
-        if 0 and r_it>30 and r_it<80:
-            #print(data.shape)
-            data_histo = np.histogram(data[np.where(np.isfinite(data))], bins=bins)
-            #print(a.shape)
-            histo[:,r_id] = data_histo[0]
-
-            # Definition of a 2D gaussian fitting to be used on the stamp.
-            g_init = models.Gaussian1D(amplitude=100., mean=10, stddev=5.)
-            # JB Todo: look at the different fitting methods.
-            fit_g = fitting.LevMarLSQFitter()
-
-            # Fit the 2d Gaussian to the stamp
-            # Ignore model linearity warning from the fitter
-            warnings.simplefilter('ignore')
-            g = fit_g(g_init, bins[0:bins.size-1], histo[:,r_id])
-
-            plt.figure(10)
-            #print(bins[0:bins.size-1].shape,histo[:,50].shape,g.shape)
-            plt.plot(bins[0:bins.size-1],histo[:,r_id],'rx',bins[0:bins.size-1],g(bins[0:bins.size-1]),'bo')
-            plt.show()
-
+    # Remove singleton dimension if the input is 2D.
     radial_std = np.squeeze(radial_std)
 
-    if 0:
-        # Definition of a 2D gaussian fitting to be used on the stamp.
-        g_init = models.Gaussian1D(amplitude=100., mean=10, stddev=5.)
-        # JB Todo: look at the different fitting methods.
-        fit_g = fitting.LevMarLSQFitter()
+    return radial_std,r_samp,r
 
-        # Fit the 2d Gaussian to the stamp
-        # Ignore model linearity warning from the fitter
-        warnings.simplefilter('ignore')
-        g = fit_g(g_init, bins[0:bins.size-1], histo[:,50])
-
-        plt.figure(10)
-        #print(bins[0:bins.size-1].shape,histo[:,50].shape,g.shape)
-        plt.plot(bins[0:bins.size-1],histo[:,50],'rx',bins[0:bins.size-1],g(bins[0:bins.size-1]),'bo')
-        plt.show()
-
-
-    return radial_std
-
-def radialStdMap(cube,dr,Dr,centroid = None,treshold=10**(-6)):
+def radialStdMap(cube,dr,Dr,centroid = None, rejection = False,treshold=10**(-6)):
     '''
-    Return an cube of the same size as cube on which the value for each pixel is the standard deviation of the original
-    cube inside an annulus of width Dr.
-    :return:
+    Return a cube of the same size as input cube with the radial standard deviation value. The pixels falling at same
+    radius will have the same value.
+
+    Inputs:
+        cube: 2D (ny,nx) or 3D (nl,ny,nx) array in which to calculate
+        dr: Sampling of the radial axis for calculating the standard deviation
+        Dr: width of the annuli used to calculate the standard deviation
+        centroid: [col,row] with the coordinates of the center of the image.
+        rejection: reject 3 sigma values
+        treshold: Set to nans the values of cube below the treshold.
+
+    Output:
+        cube_std: The standard deviation map.
     '''
 
-    r = [np.nan]
-    r_samp = [np.nan]
-    radial_std = radialStd(cube,dr,Dr,centroid, r = r, r_samp = r_samp)
+    # Get the standard deviation function of radius
+    radial_std,r_samp,r = radialStd(cube,dr,Dr,centroid,rejection = rejection)
 
     if np.size(cube.shape) == 3:
         nl,ny,nx = cube.shape
@@ -273,18 +306,22 @@ def radialStdMap(cube,dr,Dr,centroid = None,treshold=10**(-6)):
         radial_std = radial_std[None,:]
         nl = 1
 
+    # Interpolate the standard deviation function on each point of the image.
     cube_std = np.zeros((nl,ny,nx))
     radial_std_nans = np.isnan(radial_std)
     radial_std[radial_std_nans] = 0.0
     for l_id in np.arange(nl):
-        f = interp1d(r_samp[0], radial_std[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
-        a = f(r[0].reshape(nx*ny))
+        #f = interp1d(r_samp, radial_std[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
+        #a = f(r[0].reshape(nx*ny))
+        f = interp1d(r_samp, radial_std[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
+        a = f(r.reshape(nx*ny))
         cube_std[l_id,:,:] = a.reshape(ny,nx)
 
     # Remove nans from the array but ensure they be put back afterwards
     cube_std[np.where(np.isnan(cube_std))] = 0.0
     cube_std[np.where(cube_std < treshold)] = np.nan
 
+    # Remove singleton dimension if the input is 2D.
     cube_std = np.squeeze(cube_std)
 
     return cube_std
@@ -333,10 +370,15 @@ def candidate_detection(filename,
     hdulist = pyfits.open(filename)
 
     #grab the data and headers
-    cube = hdulist[1].data
-    scaled_cube = copy(cube)
-    exthdr = hdulist[1].header
-    prihdr = hdulist[0].header
+    try:
+        cube = hdulist[1].data
+        exthdr = hdulist[1].header
+        prihdr = hdulist[0].header
+    except:
+        print("Couldn't read the fits file normally. Try another way.")
+        cube = hdulist[0].data
+        prihdr = hdulist[0].header
+
 
 
 
@@ -429,7 +471,6 @@ def candidate_detection(filename,
             PSF /= np.sqrt(np.sum(PSF**2))
 
 
-
     try:
         # Retrieve the center of the image from the fits keyword.
         center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
@@ -445,8 +486,9 @@ def candidate_detection(filename,
     # Smoothing of the image. Remove the median of an arc centered on each pixel.
     # Actually don't do pixel per pixel but consider small boxes.
     # This function has to be cleaned.
-    flat_cube = subtract_radialMed(flat_cube,2,20,center)
+    #flat_cube = subtract_radialMed(flat_cube,2,20,center)
     flat_cube_cpy = copy(flat_cube)
+    flat_cube_nans = np.where(np.isnan(flat_cube))
 
 
     # Build as grids of x,y coordinates.
@@ -472,56 +514,10 @@ def candidate_detection(filename,
     # Calculate the standard deviation map.
     # the standard deviation is calculated on annuli of width Dr. There is an annulus centered every dr.
     dr = 2 ; Dr = 5 ;
-    flat_cube_std = radialStdMap(flat_cube,dr,Dr, centroid=center, treshold=10**(-3))
-
+    flat_cube_std = radialStdMap(flat_cube,dr,Dr, centroid=center)
 
     # Divide the convolved flat cube by the standard deviation map to get the SNR.
     flat_cube_SNR = flat_cube/flat_cube_std
-
-
-
-    criterion_map = -np.ones((ny,nx))
-        #ortho_criterion_map = np.zeros((ny,nx))
-    row_m = np.floor(ny_PSF/2.0)
-    row_p = np.ceil(ny_PSF/2.0)
-    col_m = np.floor(nx_PSF/2.0)
-    col_p = np.ceil(nx_PSF/2.0)
-
-    # Calculate the criterion map.
-    # For each pixel calculate the dot product of a stamp around it with the PSF.
-    # We use the PSF cube to consider also the spectrum of the planet we are looking for.
-    if not mute:
-        print("Calculate the criterion map. It is done pixel per pixel so it might take a while...")
-    if nl !=1:
-        for k in np.arange(10,ny-10):
-            for l in np.arange(10,nx-10):
-                stamp_cube = cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-                ampl = np.nansum(PSF_cube*stamp_cube)
-                if ampl != 0.0:
-                    square_norm_stamp = np.nansum(stamp_cube**2)
-                    criterion_map[k,l] = np.sign(ampl)*ampl**2/square_norm_stamp
-                else:
-                    criterion_map[k,l] = -1.0
-                #ortho_criterion_map[k,l] = np.nansum((stamp_cube-ampl*PSF_cube)**2)/square_norm_stamp
-    else:
-        for k in np.arange(10,ny-10):
-            for l in np.arange(10,nx-10):
-                stamp = cube[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-                ampl = np.nansum(PSF*stamp)
-                if ampl != 0.0:
-                    square_norm_stamp = np.nansum(stamp**2)
-                    criterion_map[k,l] = np.sign(ampl)*ampl**2/square_norm_stamp
-                else:
-                    criterion_map[k,l] = -1.0
-                #ortho_criterion_map[k,l] = np.nansum((stamp_cube-ampl*PSF_cube)**2)/square_norm_stamp
-
-
-        ## ortho_criterion is actually the sine between the two vectors
-        # ortho_criterion_map = 1 - criterion_map
-    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
-    criterion_map = np.sign(criterion_map)*np.sqrt(abs(criterion_map))
-    #Save a copy of the flat cube because we will mask the detected spots as the algorithm goes.
-    criterion_map_cpy = copy(criterion_map)
 
 
     # Definition of the different masks used in the following.
@@ -535,6 +531,79 @@ def candidate_detection(filename,
     stamp_mask_small = np.ones((stamp_nrow,stamp_ncol))
     stamp_mask_small[np.where(r_stamp < 2.0)] = 0.0
     stamp_cube_small_mask = np.tile(stamp_mask_small[None,:,:],(nl,1,1))
+
+
+
+
+    shape_crit_map = -np.ones((ny,nx))
+        #ortho_criterion_map = np.zeros((ny,nx))
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+
+    # Calculate the criterion map.
+    # For each pixel calculate the dot product of a stamp around it with the PSF.
+    # We use the PSF cube to consider also the spectrum of the planet we are looking for.
+    if not mute:
+        print("Calculate the criterion map. It is done pixel per pixel so it might take a while...")
+    if nl !=1:
+        stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF/2,np.arange(0,ny_PSF,1)-ny_PSF/2)
+        stamp_PSF_mask = np.ones((nl,ny_PSF,nx_PSF))
+        r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
+        #r_PSF_stamp = np.tile(r_PSF_stamp,(nl,1,1))
+        stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
+
+        #plt.figure(1)
+        #plt.imshow(stamp_PSF_mask[5,:,:], interpolation="nearest")
+        #plt.show()
+
+        stdout.write("\r%d" % 0)
+        for k in np.arange(10,ny-10):
+            stdout.flush()
+            stdout.write("\r%d" % k)
+
+            for l in np.arange(10,nx-10):
+                stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+                for slice_id in range(nl):
+                    stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+                ampl = np.nansum(PSF_cube*stamp_cube)
+                if ampl != 0.0:
+                    square_norm_stamp = np.nansum(stamp_cube**2)
+                    shape_crit_map[k,l] = np.sign(ampl)*ampl**2/square_norm_stamp
+                    #shape_crit_map[k,l] = ampl
+                else:
+                    shape_crit_map[k,l] = -1.0
+                #ortho_criterion_map[k,l] = np.nansum((stamp_cube-ampl*PSF_cube)**2)/square_norm_stamp
+    else:
+        print("planet detection Not ready for 2D images to be corrected first")
+        return
+        for k in np.arange(10,ny-10):
+            for l in np.arange(10,nx-10):
+                stamp = cube[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+                ampl = np.nansum(PSF*stamp)
+                if ampl != 0.0:
+                    square_norm_stamp = np.nansum(stamp**2)
+                    shape_crit_map[k,l] = np.sign(ampl)*ampl**2/square_norm_stamp
+                else:
+                    shape_crit_map[k,l] = -1.0
+                #ortho_criterion_map[k,l] = np.nansum((stamp_cube-ampl*PSF_cube)**2)/square_norm_stamp
+
+
+        ## ortho_criterion is actually the sine between the two vectors
+        # ortho_criterion_map = 1 - criterion_map
+    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
+    shape_crit_map = np.sign(shape_crit_map)*np.sqrt(abs(shape_crit_map))
+    #Save a copy of the flat cube because we will mask the detected spots as the algorithm goes.
+
+    ratio_shape_SNR = 10
+
+    #criterion_map = np.minimum(ratio_shape_SNR*shape_crit_map,flat_cube_SNR)
+    criterion_map = shape_crit_map/radialStdMap(shape_crit_map,dr,Dr, centroid=center)
+    #criterion_map = flat_cube_SNR
+    criterion_map[flat_cube_nans] = np.nan
+    #criterion_map /= radialStdMap(flat_cube,dr,Dr, centroid=center)
+    criterion_map_cpy = copy(criterion_map)
 
     # List of local maxima
     checked_spots_list = []
@@ -563,14 +632,15 @@ def candidate_detection(filename,
                 "# 1/ Index \n" +\
                 "# 2/ Boolean. True if the local maximum is a valid candidate. \n" +\
                 "# 3/ Value of the criterion at this local maximum. \n"+\
+                "# 3/ Value of the shape criterion at this local maximum. \n"+\
+                "# 3/ Value of the SNR at this local maximum. \n"+\
                 "# 4/ Error check of the gaussian fit. \n"+\
                 "# 5/ Distance between the fitted centroid and the original max position. \n"+\
                 "# 6/ x-axis width of the gaussian. \n"+\
                 "# 7/ y-axis width of the gaussian. \n"+\
                 "# 8/ Amplitude of the gaussian. \n"+\
                 "# 9/ Row index of the maximum. (y-coord in DS9) \n"+\
-                "# 10/ Column index of the maximum. (x-coord in DS9) \n"+\
-                "# 11/ SNR at the position of the max. \n"
+                "# 10/ Column index of the maximum. (x-coord in DS9) \n"
         logFile_all.write(myStr)
 
         myStr2 = "# Log some values for each valid candidates. \n" +\
@@ -578,34 +648,45 @@ def candidate_detection(filename,
                 "# 1/ Index \n" +\
                 "# 2/ Boolean. True if the centroid of the maximum is stable-ish. \n" +\
                 "# 3/ Value of the criterion at this local maximum. \n"+\
+                "# 3/ Value of the shape criterion at this local maximum. \n"+\
+                "# 3/ Value of the SNR at this local maximum. \n"+\
                 "# 4/ Error check of the gaussian fit. \n"+\
                 "# 5/ Distance between the fitted centroid and the original max position. \n"+\
                 "# 6/ x-axis width of the gaussian. \n"+\
                 "# 7/ y-axis width of the gaussian. \n"+\
                 "# 8/ Amplitude of the gaussian. \n"+\
                 "# 9/ Row index of the maximum. (y-coord in DS9) \n"+\
-                "# 10/ Column index of the maximum. (x-coord in DS9) \n"+\
-                "# 11/ SNR at the position of the max. \n"
+                "# 10/ Column index of the maximum. (x-coord in DS9) \n"
         logFile_candidates.write(myStr2)
 
 
-    flat_cube[np.where(np.isnan(flat_cube))] = 0.0
+    flat_cube[flat_cube_nans] = 0.0
 
     # Count the number of valid detected candidates.
     N_candidates = 0.0
+
     # Maximum number of iterations on local maxima.
-    max_attempts = 100
-    # START FOR LOOP.
-    # Each iteration looks at one local maximum in the criterion map.
-    # Then it verifies some other criteria to check if it is worse looking at.
-    for k in np.arange(max_attempts):
+    max_attempts = 60
+                ## START FOR LOOP.
+                ## Each iteration looks at one local maximum in the criterion map.
+                ## Then it verifies some other criteria to check if it is worse looking at.
+                #for k in np.arange(max_attempts):
+    k = 0
+    max_val_criter = np.nanmax(criterion_map)
+    while max_val_criter >= 2.0 and k <= max_attempts:
+        k += 1
         # Find the maximum value in the current SNR map. At each iteration the previous maximum is masked out.
         max_val_criter = np.nanmax(criterion_map)
         # Locate the maximum by retrieving its coordinates
         max_ind = np.where( criterion_map == max_val_criter )
         row_id,col_id = max_ind[0][0],max_ind[1][0]
         x_max_pos, y_max_pos = x_grid[row_id,col_id],y_grid[row_id,col_id]
-        max_val = flat_cube_SNR[row_id,col_id]
+
+        # Check if the maximum is next to a nan. If so it should not be considered.
+        if not np.isnan(np.sum(criterion_map[(row_id-1):(row_id+2), (col_id-1):(col_id+2)])):
+            valid_potential_planet = max_val_criter > 3.0
+        else:
+            valid_potential_planet = False
 
         #Extract a stamp around the maximum in the flat cube (without the convolution)
         row_m = np.floor(stamp_nrow/2.0)
@@ -613,13 +694,15 @@ def candidate_detection(filename,
         col_m = np.floor(stamp_ncol/2.0)
         col_p = np.ceil(stamp_ncol/2.0)
         stamp = copy(flat_cube[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)])
-        stamp_SNR = copy(criterion_map[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)])
+        stamp_SNR = copy(flat_cube_SNR[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)])
         stamp_x_grid = x_grid[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
         stamp_y_grid = y_grid[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
+        max_val_SNR = np.nanmax(flat_cube_SNR[(row_id-2):(row_id+3), (col_id-2):(col_id+3)])
 
+        stamp[np.where(np.isnan(stamp))] = 0.0
 
         # Definition of a 2D gaussian fitting to be used on the stamp.
-        g_init = models.Gaussian2D(max_val,x_max_pos,y_max_pos,1.5,1.5)
+        g_init = models.Gaussian2D(max_val_SNR,x_max_pos,y_max_pos,1.5,1.5)
         fit_g = fitting.LevMarLSQFitter()
         # Fit the 2d Gaussian to the stamp
         # Ignore model linearity warning from the fitter
@@ -631,7 +714,7 @@ def candidate_detection(filename,
             #khi = np.sign(ampl)*ampl**2/(np.nansum(stamp**2)*np.nansum(g(stamp_x_grid, stamp_y_grid)**2))
 
         # JB Todo: Should explore the meaning of 'ierr' but I can't find a good clear documentation of astropy.fitting
-        sig_min = 0.5 ; sig_max = 3.5 ;
+        sig_min = 1.0 ; sig_max = 3.0 ;
         # The condition for a local maximum to be considered as a candidate are:
         #       - Positive criterion. Always verified because we are looking at maxima...
         #       - Reasonable SNR. ie greater than one.
@@ -640,19 +723,18 @@ def candidate_detection(filename,
         #       - Reasonable width of the gaussian. Not wider than 3.5pix and not smaller than 0.5pix in both axes.
         #       - Centroid of the Gaussian fit not too far from the center of the stamp.
         #       - Amplitude of the Gaussian fit should be positive.
-        valid_potential_planet = (max_val_criter > 0.0 and
-                                 flat_cube_SNR[row_id,col_id] > 1.0 and
-                                 fit_g.fit_info['ierr'] <= 3 and
+        valid_gaussian = (flat_cube_SNR[row_id,col_id] > 1.0 and
+                                 #fit_g.fit_info['ierr'] <= 3 and
                                  sig_min < g.x_stddev < sig_max and
                                  sig_min < g.y_stddev < sig_max and
                                  np.sqrt((g.x_mean-x_max_pos)**2+(g.y_mean-y_max_pos)**2)<1.5 and
                                  g.amplitude > 0.0)
-                                    #khi/khi0 < 1.0 and # Check that the fit was good enough. Not a weird looking speckle.
+                                        #khi/khi0 < 1.0 and # Check that the fit was good enough. Not a weird looking speckle.
 
         #fit_g.fit_info['ierr'] == 1 and # Check that the fitting actually occured. Actually I have no idea what the number mean but it looks like when it succeeds it is 1.
 
         # If the spot verifies the conditions above it is considered as a valid candidate.
-        checked_spots_list.append((k,row_id,col_id,max_val,x_max_pos,y_max_pos,g))
+        checked_spots_list.append((k,row_id,col_id,max_val_criter,max_val_SNR,x_max_pos,y_max_pos,g))
 
         # Mask the spot around the maximum we just found.
         criterion_map[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
@@ -660,8 +742,8 @@ def candidate_detection(filename,
 
         # Todo: Remove prints, for debugging purpose only
         if not mute:
-            print(k,row_id,col_id,x_max_pos,y_max_pos,max_val_criter,max_val, g.x_stddev+0.0, g.y_stddev+0.0,g.x_mean-x_max_pos,g.y_mean-y_max_pos,flat_cube_SNR[row_id,col_id])
-        if k == 79 and 0:
+            print(k,row_id,col_id,max_val_criter,ratio_shape_SNR*shape_crit_map[row_id,col_id],max_val_SNR, g.x_stddev+0.0, g.y_stddev+0.0,g.x_mean-x_max_pos,g.y_mean-y_max_pos,flat_cube_SNR[row_id,col_id])
+        if k == 79 or 0:
             plt.figure(1)
             plt.imshow(stamp, interpolation="nearest")
             plt.figure(2)
@@ -674,14 +756,15 @@ def candidate_detection(filename,
             myStr = str(k)+', '+\
                     str(valid_potential_planet)+', '+\
                     str(max_val_criter)+', '+\
+                    str(ratio_shape_SNR*shape_crit_map[row_id,col_id])+', '+\
+                    str(max_val_SNR)+', '+\
                     str(fit_g.fit_info['ierr'])+', '+\
                     str(np.sqrt((g.x_mean-x_max_pos)**2+(g.y_mean-y_max_pos)**2))+', '+\
                     str(g.x_stddev+0.0)+', '+\
                     str(g.y_stddev+0.0)+', '+\
                     str(g.amplitude+0.0)+', '+\
                     str(row_id)+', '+\
-                    str(col_id)+', '+\
-                    str(max_val)+'\n'
+                    str(col_id)+'\n'
             logFile_all.write(myStr)
 
         # If the spot is a valid candidate we add it to the candidates list
@@ -748,14 +831,15 @@ def candidate_detection(filename,
                 myStr = str(k)+', '+\
                         str(stable_cent)+', '+\
                         str(max_val_criter)+', '+\
+                        str(ratio_shape_SNR*shape_crit_map[row_id,col_id])+', '+\
+                        str(max_val_SNR)+', '+\
                         str(fit_g.fit_info['ierr'])+', '+\
                         str(np.sqrt((g.x_mean-x_max_pos)**2+(g.y_mean-y_max_pos)**2))+', '+\
                         str(g.x_stddev+0.0)+', '+\
                         str(g.y_stddev+0.0)+', '+\
                         str(g.amplitude+0.0)+', '+\
                         str(row_id)+', '+\
-                        str(col_id)+', '+\
-                        str(max_val)+'\n'
+                        str(col_id)+'\n'
                 logFile_candidates.write(myStr)
 
 
@@ -780,7 +864,7 @@ def candidate_detection(filename,
             # Increment the number of detected candidates
             N_candidates += 1
             # Append the useful things about the candidate in the list.
-            candidates_list.append((k,stable_cent,row_id,col_id,max_val,g))
+            candidates_list.append((k,valid_gaussian,stable_cent,x_max_pos, y_max_pos,max_val_criter,max_val_SNR,g))
 
     # END FOR LOOP
 
@@ -792,65 +876,98 @@ def candidate_detection(filename,
 
     # START IF STATEMENT
     if toDraw or toPNG:
-        # Highlight the detected candidates in the 2d flat cube.
+        # Highlight the detected candidates in the criterion map
         if not mute:
             print(N_candidates)
-        z = criterion_map
+        criterion_map_checkedArea = criterion_map_cpy
         plt.figure(3,figsize=(16,16))
         #*flat_cube_mask[::-1,:]
-        plt.imshow(flat_cube_cpy[::-1,:]/flat_cube_std[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+        plt.imshow(criterion_map_checkedArea[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
         ax = plt.gca()
         for candidate in candidates_list:
-            candidate_it,stable_cent,row_id,col_id,max_val,g = candidate
-            if not stable_cent:
-                color = 'red'
+            candidate_it,valid_gaussian,stable_cent,x_max_pos, y_max_pos,max_val_criter,max_val_SNR,g = candidate
+            if valid_gaussian:
+                color = 'green'
+                if not stable_cent:
+                    color = 'red'
             else:
                 color = 'black'
 
-            ax.annotate(str(candidate_it), fontsize=20, color = color, xy=(g.x_mean+0.0, g.y_mean+0.0),
-                    xycoords='data', xytext=(g.x_mean+15, g.y_mean-15),
+            ax.annotate(str(candidate_it)+","+"{0:02.1f}".format(max_val_criter)+","+"{0:02.1f}".format(max_val_SNR), fontsize=20, color = color, xy=(x_max_pos+0.0, y_max_pos+0.0),
+                    xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
                     textcoords='data',
                     arrowprops=dict(arrowstyle="->",
                                     linewidth = 1.,
                                     color = 'black')
                     )
 
-        # Shouw the local maxima in the SNR map
-        criterion_map_checkedArea = criterion_map_cpy #np.log10(abs(flat_cube))
+        # Show the local maxima in the criterion map
         plt.figure(4,figsize=(16,16))
         plt.imshow(criterion_map_checkedArea[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
         ax = plt.gca()
         for spot in checked_spots_list:
-            spot_it,row_id,col_id,max_val,x_max_pos,y_max_pos,g = spot
-            ax.annotate(str(spot_it), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
-                    xycoords='data', xytext=(x_max_pos+15, y_max_pos-15),
+            spot_it,row_id,col_id,max_val_criter,max_val_SNR,x_max_pos,y_max_pos,g = spot
+            ax.annotate(str(spot_it)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
+                    xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
                     textcoords='data',
                     arrowprops=dict(arrowstyle="->",
                                     linewidth = 1.,
                                     color = 'black')
                     )
+
     # END IF STATEMENT
 
     if toPNG:
         plt.figure(3,figsize=(16,16))
+        plt.clim(-5.,10.0)
         plt.savefig(outputDir+folderName+toPNG+'_candidates_SNR.png', bbox_inches='tight')
+        plt.clf()
+        plt.close(3)
         plt.figure(4,figsize=(16,16))
+        plt.clim(-5.,10.0)
         plt.savefig(outputDir+folderName+toPNG+'_allSpots_criterion.png', bbox_inches='tight')
+        plt.clf()
+        plt.close(4)
+        plt.figure(5,figsize=(16,16))
+        where_shape_bigger_than_SNR = np.zeros((ny,nx))
+        where_shape_bigger_than_SNR[np.where(ratio_shape_SNR*shape_crit_map > flat_cube_SNR)] = 1
+        plt.imshow(where_shape_bigger_than_SNR[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+        plt.savefig(outputDir+folderName+toPNG+'_shape_biggerThan_SNR.png', bbox_inches='tight')
+        plt.clf()
+        plt.close(5)
 
 
     if toFits:
         hdulist2 = pyfits.HDUList()
-        hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
-        hdulist2.append(pyfits.ImageHDU(header=exthdr, data=criterion_map_cpy, name="Sci"))
-        hdulist2.writeto(outputDir+folderName+toFits+'-criterion.fits', clobber=True)
-        hdulist2[1].data = flat_cube_cpy
-        hdulist2.writeto(outputDir+folderName+toFits+'-flatCube.fits', clobber=True)
-        hdulist2[1].data = flat_cube_SNR
-        hdulist2.writeto(outputDir+folderName+toFits+'-SNR.fits', clobber=True)
+        try:
+            hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
+            hdulist2.append(pyfits.ImageHDU(header=exthdr, data=criterion_map_cpy, name="Sci"))
+            hdulist2.writeto(outputDir+folderName+toFits+'-criterion.fits', clobber=True)
+            hdulist2[1].data = flat_cube_cpy
+            hdulist2.writeto(outputDir+folderName+toFits+'-flatCube.fits', clobber=True)
+            hdulist2[1].data = shape_crit_map
+            hdulist2.writeto(outputDir+folderName+toFits+'-shape.fits', clobber=True)
+            hdulist2[1].data = flat_cube_SNR
+            hdulist2.writeto(outputDir+folderName+toFits+'-SNR.fits', clobber=True)
+        except:
+            print("Couldn't save using the normal way so trying something else.")
+            hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
+            hdulist2[0].data = criterion_map_cpy
+            hdulist2.writeto(outputDir+folderName+toFits+'-criterion.fits', clobber=True)
+            hdulist2[0].data = flat_cube_cpy
+            hdulist2.writeto(outputDir+folderName+toFits+'-flatCube.fits', clobber=True)
+            hdulist2[0].data = shape_crit_map
+            hdulist2.writeto(outputDir+folderName+toFits+'-shape.fits', clobber=True)
+            hdulist2[0].data = flat_cube_SNR
+            hdulist2.writeto(outputDir+folderName+toFits+'-SNR.fits', clobber=True)
         hdulist2.close()
 
 
     if toDraw:
+        plt.figure(3,figsize=(16,16))
+        plt.clim(-5.,10.0)
+        plt.figure(4,figsize=(16,16))
+        plt.clim(-5.,10.0)
         plt.show()
 
     return 1
@@ -892,9 +1009,9 @@ def planet_detection_in_dir_per_file(filename,pipeline_dir,directory = "./", out
     if np.size(filelist_klipped_PSFs_cube) == 1:
         # We found a PSF klip reduction
         # Hard coded position of the planets... Not great but I don't want to really think about it right now.
-        thetas = 90+np.array([54.7152978, -35.2847022, -125.2847022, -215.2847022])
-        radii = np.array([16.57733255996081, 32.33454364876502, 48.09175473756924, 63.84896582637346, 79.60617691517767])
-        all_PSFs = extract_PSFs(filelist_klipped_PSFs_cube[0], radii, thetas, stamp_width = 20)
+        #thetas = 90+np.array([54.7152978, -35.2847022, -125.2847022, -215.2847022])
+        #radii = np.array([16.57733255996081, 32.33454364876502, 48.09175473756924, 63.84896582637346, 79.60617691517767])
+        all_PSFs = extract_PSFs(filelist_klipped_PSFs_cube[0], stamp_width = 20)
 
         # merge the PSFs that have different radii and angles but same wavelength
         PSF_cubes = np.nanmean(all_PSFs, axis = (3,4))
@@ -929,6 +1046,8 @@ def planet_detection_in_dir_per_file(filename,pipeline_dir,directory = "./", out
         return 0
 
     if spectrum_model != "":
+        if not mute:
+            print("spectrum model: "+spectrum_model)
         # Interpolate the spectrum of the planet based on the given filename
         wv,planet_sp = spec.get_planet_spectrum(spectrum_model,filter)
 
@@ -1021,277 +1140,3 @@ def planet_detection_in_dir(pipeline_dir,directory = "./",filename_prefix_is = '
 
 
 
-
-if __name__ == "__main__":
-    import astropy.io.fits as pyfits
-    import glob
-    import numpy as np
-    from astropy import wcs
-    import os
-    #different importants depending on if python2.7 or python3
-    import sys
-    import cmath
-    import time
-    from scipy.interpolate import interp1d
-    import astropy.io.fits as pyfits
-
-    from scipy.interpolate import griddata
-    from scipy.interpolate import bisplrep
-    from scipy.interpolate import bisplev
-
-
-    outputDir = ''
-    star_type = ''
-
-    #inputDir = "/Users/jruffio/gpi/pyklip/outputs/baade"
-    inputDir = "/Users/jruffio/gpi/pyklip/outputs/test_detec_folder"
-    #inputDir = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
-    #inputDir = "/Users/jruffio/gpi/pyklip/outputs/Baade_5im"
-    outputDir = "/Users/jruffio/gpi/pyklip/outputs/dropbox_prior_test/"
-    #outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
-    #filename_filter = "pyklip-S20141218-k100a7s4m3"
-    filename_filter = "*baade*"
-    spectrum_model = "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
-    star_type = "G4"
-    pipeline_dir = "/Users/jruffio/gpi/pipeline/"
-    planet_detection_in_dir(pipeline_dir,
-                            inputDir,
-                            outputDir=outputDir,
-                            filename_prefix_is=filename_filter,
-                            spectrum_model=spectrum_model,
-                            star_type=star_type,
-                            threads = True)
-
-
-
-####################################################################################
-####################### CODE GARBAGE ###############################################
-####################################################################################
-
-
-'''
-    thetas = 90+np.array([54.7152978, -35.2847022, -125.2847022, -215.2847022])
-    radii = np.array([16.57733255996081, 32.33454364876502, 48.09175473756924, 63.84896582637346, 79.60617691517767])
-    filename_PSFs = "/Users/jruffio/gpi/pyklip/outputs/baade-PSFs-KLmodes-all-PSFs.fits"
-    #filename_PSFs = "/Users/jruffio/gpi/pyklip/outputs/baade-PSFs2-KLmodes-all-PSFs.fits"
-    #filename_PSFs = "/Users/jruffio/gpi/pyklip/outputs/baade-PSFs15-KLmodes-all-PSFs.fits"
-    #filename_PSFs = "/Users/jruffio/gpi/pyklip/outputs/baade-PSFs20-KLmodes-all-PSFs.fits"
-    if 0:
-        PSF = extract_merge_PSFs(filename_PSFs, radii, thetas)
-    #print(PSF.shape)
-    #plt.figure(20)
-    #plt.imshow(PSF,interpolation = 'nearest')
-    #plt.show()
-
-
-    #filelist = glob.glob("/Users/jruffio/gpi/pyklip/outputs/HD114174-KL20-speccube.fits")
-
-    #dataset = GPI.GPIData(filelist)
-
-
-    filename = "/Users/jruffio/gpi/pyklip/outputs/baade/baade-h-k300a7s4m3-KL20-speccube.fits"
-    filename = "/Users/jruffio/Dropbox/GPIDATA/c_Eri/autoreduced/pyklip-S20141218-k100a5s4m3-KL20-speccube.fits"
-
-    tofits = ''
-    outputDir = "/Users/jruffio/gpi/pyklip/outputs/"
-    folderName = "/baade_out"
-    folderName = "/c_Eri"
-    tofits = folderName
-    spectrumHEri = np.array([141.9296769,   198.73423838 , 242.22243818,  299.85427039,  335.37585698, # spec c_eri H
-  370.88441648 , 398.06479267 , 411.32024875 , 424.47542857,  429.61704089,
-  421.74684239 , 377.85252056 , 305.35767397 , 247.08267071, 196.72520657,
-  138.06660696 , 104.14917438 , 104.38252497 ,  95.81786937 ,  73.66560944,
-   37.55078903 ,  37.32665492  , 46.10064065  , 35.90442611  , 18.09452635,
-   25.52058438  , 34.30831346  , 13.11016915  ,  0.95286082  ,  7.54171253,
-   10.2595994 ,   10.93531723  , 15.62122062 ,   7.88143819   , 4.68372895])
-    spectrumH = np.array([0.0,141.9296769,   198.73423838 , 242.22243818,  299.85427039,  335.37585698, # spec c_eri H
-  370.88441648 , 398.06479267 , 411.32024875 , 424.47542857,  429.61704089,
-  421.74684239 , 377.85252056 , 305.35767397 , 247.08267071, 196.72520657,
-  138.06660696 , 104.14917438 , 104.38252497 ,  95.81786937 ,  73.66560944,
-   37.55078903 ,  37.32665492  , 46.10064065  , 35.90442611  , 18.09452635,
-   25.52058438  , 34.30831346  , 13.11016915  ,  0.95286082  ,  7.54171253,
-   10.2595994 ,   10.93531723  , 15.62122062 ,   7.88143819   , 4.68372895,0.0])
-    spectrumJ = np.array([ -0.11320329 , -0.07596916 , -2.7990458 ,  -3.79993844 , -4.38923454,  # spec c_eri J
-  -5.78503418 , -6.53705502 , -4.93471336 , -4.2245512 ,  -2.4959271,
-   0.46197677 ,  0.99514222 ,  4.06949472 , 10.77979755 , 11.6944828,
-  20.47476196 , 20.85378075 , 19.65199089 , 24.29648018 , 27.36954117,
-  34.65512085 , 40.13297653 , 35.40809631 , 31.18817902 , 32.92845154,
-  36.96004486 , 39.82872009 , 41.06404877 , 35.63868332 , 30.73090744,
-  27.26691818 , 23.48490906 , 21.04096222 , 14.74596024 ,  8.45730782,
-   3.58565426 ,  0.78945696])
-    #spectrum_flat = np.ones(37)
-    #spectrum = spectrum[1:36]
-    #spectrum = np.ones(5)
-    #spectrum[0] = 0.0
-
-    #candidate_detection(filename, outputDir = outputDir, folderName = folderName, PSF = None, toDraw=True, toFits=tofits,toPNG=tofits,logFile=tofits, spectrum=spectrumHEri)#toPNG="Baade", logFile='Baade')
-        #candidate_detection(filename,PSF = None, toDraw=True, toFits="HD114174")#toPNG="HD114174", logFile='HD114174')
-'''
-
-
-def flatten_annulus(im,rad_bounds,center):
-    ny,nx = im.shape
-
-    x, y = np.meshgrid(np.arange(ny), np.arange(nx))
-    #x.shape = (x.shape[0] * x.shape[1])
-    #y.shape = (y.shape[0] * y.shape[1])
-    r = np.sqrt((x - center[0])**2 + (y - center[1])**2)
-    phi = np.arctan2(y - center[1], x - center[0])
-
-    r_min, r_max = rad_bounds
-    annulus_indices = np.where((r >= r_min) & (r < r_max))
-    ann_y_id = annulus_indices[0]
-    ann_x_id = annulus_indices[1]
-
-    annulus_pix = slice_PSFs[ann_y_id,ann_x_id]
-    annulus_x = x[ann_y_id,ann_x_id] - center[0]
-    annulus_y = y[ann_y_id,ann_x_id]- center[1]
-    annulus_r = r[ann_y_id,ann_x_id]
-    annulus_phi = phi[ann_y_id,ann_x_id]
-
-    annulus_pix = annulus_pix.reshape(np.size(annulus_pix))
-    annulus_x = annulus_x.reshape(np.size(annulus_pix))
-    annulus_y = annulus_y.reshape(np.size(annulus_pix))
-    annulus_r = annulus_r.reshape(np.size(annulus_pix))
-    annulus_phi = annulus_phi.reshape(np.size(annulus_pix))
-
-    #slice_PSFs[ann_y_id,ann_x_id] = 100
-    #plt.imshow(slice_PSFs,interpolation = 'nearest')
-    #plt.show()
-
-    n_phi = np.floor(2*np.pi*r_max)
-    dphi = 2*np.pi/n_phi
-    #r_arr, phi_arr = np.meshgrid(np.arange(np.ceil(r_min),np.ceil(r_min)+n_r,0.01),np.arange(-np.pi,np.pi,dphi))
-    r_arr, phi_arr = np.meshgrid(np.arange(np.min(annulus_r),np.max(annulus_r),1),np.arange(-np.pi,np.pi,dphi))
-
-    points = np.array([annulus_r,(r_max+r_min)/2.*annulus_phi])
-    points = points.transpose()
-    grid_z2 = griddata(points, annulus_pix, (r_arr, (r_max+r_min)/2.*phi_arr), method='cubic')
-
-    '''
-    tck = bisplrep(annulus_x, annulus_y, annulus_pix)
-    nrow, ncol = r_arr.shape
-    #znew = bisplev(35, 35, tck)
-    #print(znew)
-    #print(np.min(annulus_x))
-    #print(np.max(annulus_x))
-    znew = np.zeros([nrow, ncol])
-    for i_it in range(nrow):
-        for j_it in range(ncol):
-            xp = r_arr[i_it,j_it]*np.cos(phi_arr[i_it,j_it])
-            yp = r_arr[i_it,j_it]*np.sin(phi_arr[i_it,j_it])
-            znew[i_it,j_it] = bisplev(xp, yp, tck)
-    #xnew, ynew = np.meshgrid(np.arange(np.min(annulus_x),np.max(annulus_x),1), np.arange(np.min(annulus_x),np.max(annulus_x),1))
-    #znew = bisplev(xnew[:,0], ynew[0,:], tck)
-    '''
-
-    plt.figure(2)
-    plt.imshow(grid_z2.transpose(),interpolation = 'nearest',extent=[-np.pi*((r_max+r_min)/2.),np.pi*((r_max+r_min)/2.),np.min(annulus_r),np.max(annulus_r)], origin='lower')
-    plt.plot(points[:,1], points[:,0],'b.')
-    #plt.imshow(znew,interpolation = 'nearest')
-    plt.show()
-
-    return grid_z2
-
-def badPixelFilter(cube,scale = 2,maxDeviation = 10):
-
-    cube_cpy = cube[:]
-
-    if np.size(cube_cpy.shape) == 3:
-        nl,ny,nx = cube_cpy.shape
-    elif np.size(cube_cpy.shape) == 2:
-        ny,nx = cube_cpy.shape
-        cube_cpy = cube_cpy[None,:]
-        nl = 1
-
-    smooth_cube = np.zeros((nl,ny,nx))
-
-    ker = np.ones((3,3))/8.0
-    n_bad = np.zeros((nl,))
-    ker[1,1] = 0.0
-    for l_id in np.arange(nl):
-        smooth_cube[l_id,:,:] = convolve2d(cube_cpy[l_id,:,:], ker, mode='same')
-        slice_diff = cube_cpy[l_id,:,:] - smooth_cube[l_id,:,:]
-        stdmap = radialStdMap(slice_diff,2,10)
-        bad_pixs = np.where(abs(slice_diff) > maxDeviation*stdmap)
-        n_bad[l_id] = np.size(bad_pixs)
-        bad_pixs_x, bad_pixs_y = bad_pixs
-        cube_cpy[l_id,bad_pixs_x, bad_pixs_y] = np.nan ;
-
-    return cube_cpy,bad_pixs
-
-def radialMed(cube,dr,Dr,centroid = None, r = None, r_samp = None):
-    '''
-    Return the mean with respect to the radius computed in annuli of radial width Dr separated by dr.
-    :return:
-    '''
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    if r is None:
-        r = [np.nan]
-    if r_samp is None:
-        r_samp = [np.nan]
-
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    r[0] = abs(x +y*1j)
-    r_samp[0] = np.arange(dr,max(r[0].reshape(np.size(r[0]))),dr)
-
-    radial_std = np.zeros((nl,np.size(r_samp[0])))
-
-    for r_id, r_it in enumerate(r_samp[0]):
-        selec_pix = np.where( ((r_it-Dr/2.0) < r[0]) * (r[0] < (r_it+Dr/2.0)) )
-        selec_y, selec_x = selec_pix
-        radial_std[:,r_id] = nanmedian(cube[:,selec_y, selec_x],1)
-
-    radial_std = np.squeeze(radial_std)
-
-    return radial_std
-
-
-def radialMean(cube,dr,Dr,centroid = None, r = None, r_samp = None):
-    '''
-    Return the mean with respect to the radius computed in annuli of radial width Dr separated by dr.
-    :return:
-    '''
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-
-    #TODO centroid should be different for each slice?
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    if r is None:
-        r = [np.nan]
-    if r_samp is None:
-        r_samp = [np.nan]
-
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    r[0] = abs(x +y*1j)
-    r_samp[0] = np.arange(dr,max(r[0].reshape(np.size(r[0]))),dr)
-
-    radial_std = np.zeros((nl,np.size(r_samp[0])))
-
-    for r_id, r_it in enumerate(r_samp[0]):
-        selec_pix = np.where( ((r_it-Dr/2.0) < r[0]) * (r[0] < (r_it+Dr/2.0)) )
-        selec_y, selec_x = selec_pix
-        radial_std[:,r_id] = np.nanmean(cube[:,selec_y, selec_x],1)
-
-    radial_std = np.squeeze(radial_std)
-
-    return radial_std
