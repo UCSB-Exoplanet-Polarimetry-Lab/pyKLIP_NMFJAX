@@ -685,7 +685,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegme
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
                              ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared, seg_index_shared, seg_basis_shared, seg_shape_shared), maxtasksperchild=50)
 
