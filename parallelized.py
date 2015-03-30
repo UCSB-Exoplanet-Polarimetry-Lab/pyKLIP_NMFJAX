@@ -12,7 +12,7 @@ import astropy.io.fits as pyfits
 import spectra_management as spec
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
-               pa_imgs, wvs_imgs, centers_imgs,ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared):
+               pa_imgs, wvs_imgs, centers_imgs,ori_PSFs_shared,rec_PSFs_shared,out_PSFs_shared, seg_index_shared, seg_basis_shared, seg_shape_shared):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array).
@@ -30,7 +30,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         rec_PSFs_shared: aligned and scaled images of the sole PSFs for processing. Same shape as aligned.
         out_PSFs_shared: output images of the sole PSFs after KLIP processing. Same shape as output_imgs.
     """
-    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, ori_PSFs_thread,rec_PSFs_thread,out_PSFs_thread
+    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, ori_PSFs_thread,rec_PSFs_thread,out_PSFs_thread, seg_index, seg_basis, seg_shape
     #original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -49,6 +49,10 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     rec_PSFs_thread = rec_PSFs_shared
     out_PSFs_thread = out_PSFs_shared
 
+    #array for basis vectors
+    seg_index = seg_index_shared
+    seg_basis = seg_basis_shared
+    seg_shape = seg_shape_shared
 
 def _arraytonumpy(shared_array, shape=None):
     """
@@ -209,7 +213,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot, maxrot, spectrum, mode):
+                            minmove, ref_center, minrot, maxrot, spectrum, mode, onesegment, companion_theta):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -239,7 +243,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
-    x.shape = (x.shape[0] * x.shape[1])
+    x.shape = (x.shape[0] * x.shape[1]) #Flatten
     y.shape = (y.shape[0] * y.shape[1])
     r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
     phi = np.arctan2(y - ref_center[1], x - ref_center[0])
@@ -283,15 +287,43 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
     #grab the parangs
     parangs = _arraytonumpy(img_pa)
-    for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
-        try:
-            _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
-                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
-                                            minrot, maxrot, mode,
-                                            PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
-        except (ValueError, RuntimeError, TypeError) as err:
-            print("({0}): {1}".format(err.errno, err.strerror))
-            return False
+    if onesegment is not True:
+        for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+            try:
+                _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
+                                                parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
+                                                minrot, maxrot, mode,
+                                                PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
+            except (ValueError, RuntimeError, TypeError) as err:
+                print("({0}): {1}".format(err.errno, err.strerror))
+                return False
+    else:
+        # section_ind must be re-defined for each image due to rotation of astrophysical source
+        for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+            try:
+                this_phi = ((phi + (np.pi - (((-1.0* parang) * (np.pi/180.0))- (companion_theta + np.pi)))) % (2.0 * np.pi)) - np.pi
+                section_ind = np.where((r >= radstart) & (r < radend) & (this_phi >= phistart) & (this_phi < phiend))
+
+                aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+                ref_psfs = aligned_imgs[:,  section_ind[0]]
+   
+                PSFsarea_thread_np = None
+
+                ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+                ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
+
+                covar_psfs = np.cov(ref_psfs_mean_sub)
+                covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+                corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+
+                _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
+                                                parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
+                                                minrot, maxrot, mode,
+                                                PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum, onesegment=onesegment)
+
+            except (ValueError, RuntimeError, TypeError) as err:
+                print("({0}): {1}".format(err.errno, err.strerror))
+                return False
 
  #   [_klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
   #                                   parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
@@ -301,7 +333,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
 
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
-                                    numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None):
+                                    numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None, onesegment=False):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -355,7 +387,6 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     if np.size(file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
-
     #pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
     covar_files = covar[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
 
@@ -384,21 +415,34 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     if rec_PSFs_thread is not None:
         rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
         out_PSFs_threads_np = _arraytonumpy(out_PSFs_thread, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
+    if onesegment is True:
+        seg_basis_np = _arraytonumpy(seg_basis, seg_shape)
+        seg_index_np = _arraytonumpy(seg_index, (seg_shape[0], seg_shape[2]))
+        seg_basis_np[img_num,:] = -9
+        seg_index_np[img_num,:] = -9
+        seg_index_np[img_num, 0:np.size(section_ind[0])] = section_ind[0]
     #run KLIP
     try:
         if rec_PSFs_thread is not None:
-            klipped,klipped_solePSFs = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files,
+            klipped,klipped_solePSFs = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files,
                                      PSFarea_tobeklipped=rec_PSFs_thread_np[img_num, section_ind[0]], PSFsarea_forklipping=PSFsarea_thread_np_selected)
         else:
-            klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_files)
+            if onesegment is True:
+                klipped, basis = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, return_basis=True)
+            else:
+                klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
         return False
 
     #write to output
     output_imgs[img_num, section_ind[0], :] = klipped
+    if onesegment is True:
+        seg_basis_np[img_num, :, 0:np.size(section_ind[0])] = basis
+    
     if rec_PSFs_thread is not None:
         out_PSFs_threads_np[img_num, section_ind[0], :] = klipped_solePSFs
+
     return True
 
 
@@ -468,8 +512,9 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
     return filtered
 
 
-def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None):
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegment=False, annuli=5, subsections=4, movement=3, numbasis=None,
+                      aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None,
+                      companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -535,15 +580,40 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
 
     #error checking for too small of annuli go here
 
-    #calculate the annuli
-    rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
-    #last annulus should mostly emcompass everything
-    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    if onesegment == False:
+        #calculate the annuli
+        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+        #last annulus should mostly emcompass everything
+        rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
 
-    #divide annuli into subsections
-    dphi = 2 * np.pi / subsections
-    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
-    phi_bounds[-1][1] = 2. * np.pi
+        #divide annuli into subsections
+        dphi = 2 * np.pi / subsections
+        phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+        phi_bounds[-1][1] = 2. * np.pi
+    else:
+        # Only one segment, define bounds according companion_rho, _theta, segment_dr, _dt
+        rad_bounds = [(np.around(companion_rho - (segment_dr / 2.0)), np.around(companion_rho + (segment_dr / 2.0)))]
+        # For phi, need to take into account how PA translated to python arctan2 coordinates
+        # I think we have to subtract 270 degrees from the PA, and wrap it to -180 -> 180
+        companion_theta_corrected = companion_theta - 270.0
+        if companion_theta_corrected < -180:
+            companion_theta_corrected += 360.0
+        #Convert to radians
+        companion_theta = companion_theta_corrected * (np.pi/180.0)
+        segment_dt *= (np.pi/180.0)
+        phi_bounds = [(((-1.0)*(segment_dt/2.0)), segment_dt/2.0)]
+        # will need to redefine phi in klip_multifile so that the discontinuity occurs at companion_theta_corrected + pi
+        # phi will be ((phi + (np.pi - (companion_theta_corrected + parallactic_angle))) % (2.0 * np.pi)) - np.pi
+
+        #Also work out how big this segment will be to create the basis and index arrays
+        x_tmp, y_tmp = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+        x_tmp.shape = (x_tmp.shape[0] * x_tmp.shape[1]) #Flatten
+        y_tmp.shape = (y_tmp.shape[0] * y_tmp.shape[1])
+        r_tmp = np.sqrt((x_tmp - aligned_center[0])**2 + (y_tmp - aligned_center[1])**2)
+        phi_tmp = np.arctan2(y_tmp - aligned_center[1], x_tmp - aligned_center[0])
+        section_ind_size = np.size(np.where((r_tmp >= rad_bounds[0][0]) & (r_tmp < rad_bounds[0][1]) & (phi_tmp >= phi_bounds[0][0]) & (phi_tmp < phi_bounds[0][1])))
+        section_ind_size = int(np.round(section_ind_size * 1.1))
+
 
     #calculate how many iterations we need to do
     global tot_iter
@@ -579,6 +649,23 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
     centers_imgs_np[:] = centers
 
+    if onesegment is True:
+        #Create arrays storing the basis vectors and index
+        #seg_index_shared size (N, s), as is same for all numbasis
+        #seg_basis_shared size (N, b, s)
+        seg_shape_shared = (np.size(wvs), np.max(numbasis), section_ind_size)
+
+        seg_index_shared = mp.Array(ctypes.c_double, (np.size(wvs) * section_ind_size))
+        #seg_index_np = _arraytonumpy(seg_index_shared, (seg_shape_shared[0], seg_shape_shared[2]))
+
+        seg_basis_shared = mp.Array(ctypes.c_double, (np.size(wvs) * np.max(numbasis) * section_ind_size))
+        #print (np.size(wvs) * np.max(numbasis) * section_ind_size)), seg_shape_shared
+        #seg_basis_np = _arraytonumpy(seg_basis_shared, seg_shape_shared)
+    else:
+        seg_index_shared = None
+        seg_basis_shared = None
+        seg_shape_shared = None
+
     if PSFs is not None:
         # ori_PSFs_shared are the sole PSFs images. It corresponds to input set of images.
         ori_PSFs_shared = mp.Array(ctypes.c_double, np.size(imgs))
@@ -596,11 +683,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         rec_PSFs_shared = None
         out_PSFs_shared = None
 
-    tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                   initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
-                             ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared), maxtasksperchild=50)
-
+        tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
+                       initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                                 output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
+                                 ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared, seg_index_shared, seg_basis_shared, seg_shape_shared), maxtasksperchild=50)
 
     #align and scale the images for each image. Use map to do this asynchronously
     print("Begin align and scale images for each wavelength")
@@ -625,7 +711,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, maxrot, spectrum, mode))
+                                                                     aligned_center, minrot, maxrot, spectrum, mode, onesegment, companion_theta))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -678,7 +764,12 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     if PSFs is not None:
         out_PSFs[:] = out_PSFs_shared_np
 
-    return sub_imgs
+    if onesegment is not True:
+        return sub_imgs, None, None
+    else:
+        seg_basis_np = _arraytonumpy(seg_basis_shared, seg_shape_shared)
+        seg_index_np = _arraytonumpy(seg_index_shared, (seg_shape_shared[0], seg_shape_shared[2]))
+        return sub_imgs, seg_basis_np, seg_index_np
 
 
 class psfs_management:
@@ -734,34 +825,41 @@ class psfs_management:
         self.star_temperature = star_temperature
         self.planet_spec_filename = planet_spec_filename
 
-def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3, numbasis=None,
-                 numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
-                psfs_struct=None, sat_spot_psf = False,
-                 spectrum=None, highpass=False ):
+def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", fileprefix="",
+                 annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None,
+                 minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=None,
+                 sat_spot_psf = False,spectrum=None, highpass=False,
+                 companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
     Inputs:
-        dataset: an implementation of Instrument.Data (see instruments/ subfolder)
-        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
-        outputdir: directory to save output files
-        fileprefix: filename prefix for saved files
-        anuuli: number of annuli to use for KLIP
-        subsections: number of sections to break each annuli into
-        movement: minimum amount of movement (in pixels) of an astrophysical source
-                  to consider using that image for a refernece PSF
-        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-        numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
-        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        dataset:        an implementation of Instrument.Data (see instruments/ subfolder)
+        mode:           one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        onesegment:     False (default) - pefrom KLIP on entire image, True - perform KLIP on one segment defined
+                        by segment_dr, segment_dt, centered on (companion_rho, companion_theta). ONLY WORKS ON ADI+SDI
+        outputdir:      directory to save output files
+        fileprefix:     filename prefix for saved files
+        anuuli:         number of annuli to use for KLIP
+        subsections:    number of sections to break each annuli into
+        movement:       minimum amount of movement (in pixels) of an astrophysical source
+                        to consider using that image for a refernece PSF
+        numbasis:       number of KL basis vectors to use (can be a scalar or list like). Length of b
+        numthreads:     number of threads to use. If none, defaults to using all the cores of the cpu
+        minrot:         minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
-        psfs_struct: Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
+        psfs_struct:    Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
                         This is because this version is not definitive.
-        sat_spot_psf: Save a original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
-        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
+        sat_spot_psf:   Save a original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
+                        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
-        highpass: if True, run a high pass filter
+        highpass:       if True, run a high pass filter
+        companion_rho:  Separation of known companion (pixels, used if onesegment==True)
+        companion_theta: PA of known companion (degrees, used if onesegment==True)
+        segment_dr:     Radial width of segment (pixels)
+        segment_dt:     Azimuthal width of segment (degrees)
 
     Output
         Saved files in the output directory
@@ -955,14 +1053,20 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             out_PSFs = None
             fakePlparams = None
 
-
-        klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        klipped_imgs, seg_basis_array, seg_index_array = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum)
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt)
         #JB's debug
         #if psfs_struct.calculate_PSFs:
         #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
+
+
+        if onesegment is True:
+            #Save basis vectors, indicies to disk
+            pyfits.writeto("test_seg_basis.fits", seg_basis_array, clobber=True)
+            pyfits.writeto("test_seg_index.fits", seg_index_array, clobber=True)
 
         dataset.output = klipped_imgs
         if calibrate_flux == True:

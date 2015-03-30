@@ -242,17 +242,19 @@ class GPIData(Data):
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
-        # recalculate wavelegnths from satellite spots
-        wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
-        # recaclulate centers from satellite spots and new wavelegnth solution
-        wvs_bycube = wvs.reshape([dims[0], dims[1]])
-        centers_bycube = centers.reshape([dims[0], dims[1], 2])
-        for i, cubewvs in enumerate(wvs_bycube):
-            try:
-                centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
-            except KeyError:
-                print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
-                      "{0}".format(filenames[i*dims[1]]))
+        #only do the wavelength solution and center recalculation if it isn't broadband imaging
+        if np.size(np.unique(wvs)) > 1:
+            # recalculate wavelegnths from satellite spots
+            wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
+            # recaclulate centers from satellite spots and new wavelegnth solution
+            wvs_bycube = wvs.reshape([dims[0], dims[1]])
+            centers_bycube = centers.reshape([dims[0], dims[1], 2])
+            for i, cubewvs in enumerate(wvs_bycube):
+                try:
+                    centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
+                except KeyError:
+                    print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
+                          "{0}".format(filenames[i*dims[1]]))
 
         #set these as the fields for the GPIData object
         self._input = data
@@ -511,7 +513,6 @@ class GPIData(Data):
         #PSF_cube = np.mean(psfs[:,:,:,:,0],axis=(3))
         PSF_cube = np.mean(psfs,axis=(3,4))
 
-
         #Build the spectrum of the sat spots
         # Number of cubes in dataset
         N_cubes = int(self.input.shape[0])/int(numwaves)
@@ -699,7 +700,7 @@ def _gpi_process_file(filepath, skipslices=None):
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
-            wvs = [None]
+            wvs = [1.0]
             cube = np.sum(cube, axis=0)  #sum to total intensity
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
