@@ -789,7 +789,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
         out_PSFs[:] = out_PSFs_shared_np
 
     if onesegment is not True:
-        return sub_imgs, None, None
+        return sub_imgs
     else:
         seg_basis_np = _arraytonumpy(seg_basis_shared, seg_shape_shared)
         seg_index_np = _arraytonumpy(seg_index_shared, (seg_shape_shared[0], seg_shape_shared[2]))
@@ -1049,7 +1049,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegme
         out_PSFs[:] = out_PSFs_shared_np
 
     if onesegment is not True:
-        return sub_imgs, None, None
+        return sub_imgs
     else:
         seg_basis_np = _arraytonumpy(seg_basis_shared, seg_shape_shared)
         seg_index_np = _arraytonumpy(seg_index_shared, (seg_shape_shared[0], seg_shape_shared[2]))
@@ -1337,7 +1337,14 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
             out_PSFs = None
             fakePlparams = None
 
-        klipped_imgs, seg_basis_array, seg_index_array = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        if onesegment:
+            klipped_imgs, seg_basis_array, seg_index_array = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt)
+        else:
+            klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
