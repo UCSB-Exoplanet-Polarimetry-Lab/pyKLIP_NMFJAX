@@ -71,6 +71,27 @@ def _arraytonumpy(shared_array, shape=None):
     return numpy_array
 
 
+def _align_and_scale_per_image(img_index, aligned_center, ref_wv):
+    """
+    Aligns and scales the an individual image (used for pyklip lite)
+
+    Inputs: 
+        img_index: index of image for the shared arrays
+        algined_center: center to align things to
+        ref_wv: wavelength to scale images to
+
+    Output:
+        None
+    """
+    original_imgs = _arraytonumpy(original, original_shape)
+    wvs_imgs = _arraytonumpy(img_wv)
+    centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2))
+    aligned_imgs = _arraytonumpy(aligned, aligned_shape)
+
+    aligned_imgs[img_index,:,:] = klip.align_and_scale(original_imgs[img_index], aligned_center, centers_imgs[img_index], ref_wv/wvs_imgs[img_index]) 
+    return
+        
+
 def _align_and_scale(iterable_arg):
     """
     Aligns and scales the set of original images about a reference center and scaled to a reference wavelength.
@@ -213,7 +234,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot, maxrot, spectrum, mode, onesegment, companion_theta, lite):
+                            minmove, ref_center, minrot, maxrot, spectrum, mode, onesegment, companion_theta, lite=False):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -263,6 +284,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]))
     else:
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+
+
     ref_psfs = aligned_imgs[:,  section_ind[0]]
     # Do the same for the sole PSFs (~fake planet)
     if rec_PSFs_thread is not None:
@@ -298,7 +321,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
                 _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
                                                 parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
                                                 minrot, maxrot, mode,
-                                                PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum)
+                                                PSFsarea_thread_np = PSFsarea_thread_np, spectrum=spectrum, lite=lite)
             except (ValueError, RuntimeError, TypeError) as err:
                 print("({0}): {1}".format(err.errno, err.strerror))
                 return False
@@ -338,7 +361,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
 
 
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
-                                    numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None, onesegment=False):
+                                    numbasis, minmove, minrot, maxrot, mode, PSFsarea_thread_np = None, spectrum=None, onesegment=False, lite=False):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -415,7 +438,11 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             PSFsarea_thread_np_selected = PSFsarea_thread_np[file_ind[0], :]
 
     #load input/output data
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
+    if lite:
+        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]))
+    else:
+        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    #aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
     if rec_PSFs_thread is not None:
         rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
@@ -694,7 +721,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
                              ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared, seg_index_shared, seg_basis_shared, seg_shape_shared), maxtasksperchild=50)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
-    jobs_completed = 0
+    jobs_complete = 0
     #align and scale the images for each image. Use map to do this asynchronously
     for wv_index, this_wv in enumerate(np.unique(wvs)):
         print("Begin processing of wv {0:.4} with index {1}".format(this_wv, wv_index))
@@ -702,25 +729,25 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape) 
         
         #multitask this
-        tasks = [tpool.apply_async(klip.align_and_scale, args=(img, aligned_center, old_center, this_wv/old_wv)) 
-                                        for img, old_center, old_wv in zip(imgs, centers, wvs)]
+        tasks = [tpool.apply_async(_align_and_scale_per_image, args=(img_index, aligned_center, this_wv)) 
+                                        for img_index in range(recentered_imgs_shape[0])]
 
         #save it to shared memory
         for img_index, aligned_img_task in enumerate(tasks):
-            recentered_imgs_np[img_index,:,:] = aligned_img_task.get()
+            aligned_img_task.wait()
         
         # Apply align and scale to the sole PSFs as well. 
         # Not parallelized..
-        if ori_PSFs_thread is not None:
-            ori_PSFs_thread_np = _arraytonumpy(ori_PSFs_thread, original_shape)
-            rec_PSFs_thread_np = _arraytonumpy(rec_PSFs_thread, aligned_shape)
-            rec_PSFs_thread_np[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame_PSF, ref_center, old_center, ref_wv/old_wv)
-                                            for frame_PSF, old_center, old_wv in zip(ori_PSFs_thread_np, centers_imgs, wvs_imgs)])
+        if ori_PSFs_shared is not None:
+            ori_PSFs_shared_np = _arraytonumpy(ori_PSFs_shared, original_shape)
+            rec_PSFs_shared_np = _arraytonumpy(rec_PSFs_shared, aligned_shape)
+            rec_PSFs_shared_np[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame_PSF, aligned_center, old_center, this_wv/old_wv)
+                                            for frame_PSF, old_center, old_wv in zip(ori_PSFs_shared_np, centers, wvs)])
 
         #list to store each threadpool task
         outputs = []
     
-        print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
+        print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, this_wv))
 
         #pick out the science images that need PSF subtraction for this wavelength
         scidata_indicies = np.where(wvs == this_wv)[0]
@@ -747,6 +774,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
             if (jobs_complete + 1) % 10 == 0:
                 print("{0:.4}% done ({1}/{2} completed)".format((jobs_complete+1)*100.0/tot_iter, jobs_complete, tot_iter))
             jobs_complete += 1
+
 
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
@@ -1113,7 +1141,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                  annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None,
                  minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=None,
                  sat_spot_psf = False,spectrum=None, highpass=False,
-                 companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0):
+                 companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0, lite=False):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1144,7 +1172,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         companion_theta: PA of known companion (degrees, used if onesegment==True)
         segment_dr:     Radial width of segment (pixels)
         segment_dt:     Azimuthal width of segment (degrees)
-
+        lite:           if True, run a low memory version of the alogirhtm
     Output
         Saved files in the output directory
         Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
@@ -1173,6 +1201,13 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
     #if no outputdir specified, then current working directory (don't want to write to '/'!)
     if outputdir == "":
         outputdir = "."
+        
+    # select memory-lite version if requested
+    if lite:
+        klip_function = klip_parallelized_lite
+    else:
+        klip_function = klip_parallelized
+
 
     #save klip parameters as a string
     klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
@@ -1338,13 +1373,13 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
             fakePlparams = None
 
         if onesegment:
-            klipped_imgs, seg_basis_array, seg_index_array = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+            klipped_imgs, seg_basis_array, seg_index_array = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
                                          companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt)
         else:
-            klipped_imgs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+            klipped_imgs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
@@ -1447,7 +1482,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                                       klipparams.format(numbasis=KLcutoff))
     elif mode == 'ADI':
         #ADI is not parallelized
-        dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center)
@@ -1497,7 +1532,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                                   klipparams.format(numbasis=KLcutoff))
 
     elif mode == 'SDI':
-        dataset.output = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, spectrum=spectrum)
