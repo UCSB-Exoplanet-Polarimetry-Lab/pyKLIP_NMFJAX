@@ -332,9 +332,13 @@ class GPIData(Data):
             astroheader = astr_hdr.to_header()
             exthdr = hdulist[1].header
             exthdr['PC1_1'] = astroheader['PC1_1']
-            exthdr['PC1_2'] = astroheader['PC1_2']
-            exthdr['PC2_1'] = astroheader['PC2_1']
             exthdr['PC2_2'] = astroheader['PC2_2']
+            try:
+                exthdr['PC1_2'] = astroheader['PC1_2']
+                exthdr['PC2_1'] = astroheader['PC2_1']
+            except KeyError:
+                exthdr['PC1_2'] = 0.0
+                exthdr['PC2_1'] = 0.0
             #remove CD values as those are confusing
             exthdr.remove('CD1_1')
             exthdr.remove('CD1_2')
