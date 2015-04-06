@@ -403,7 +403,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         goodmv = (goodmv) & (wvs_imgs == wavelength)
     if spectrum is not None:
         if spectrum.lower() == "methane":
-            goodmv = (goodmv) | ((wvs_imgs > 1.64) & (wvs_imgs < 1.8)) | ((wvs_imgs < 1.19) & (wvs_imgs > 1.1))
+            goodmv = ((goodmv) | ((wvs_imgs > 1.64) & (wvs_imgs < 1.8)) | ((wvs_imgs < 1.19) & (wvs_imgs > 1.1))) & (wvs_imgs != wavelength)
     if "ADI" not in mode.upper():
         goodmv = (goodmv) & (pa_imgs == parang)
     #if minrot > 0:
@@ -741,7 +741,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
         if ori_PSFs_shared is not None:
             ori_PSFs_shared_np = _arraytonumpy(ori_PSFs_shared, original_shape)
             rec_PSFs_shared_np = _arraytonumpy(rec_PSFs_shared, aligned_shape)
-            rec_PSFs_shared_np[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame_PSF, aligned_center, old_center, this_wv/old_wv)
+            rec_PSFs_shared_np[wv_index, :, :, :] =  np.array([klip.align_and_scale(frame_PSF, aligned_center, old_center, this_wv/old_wv)
                                             for frame_PSF, old_center, old_wv in zip(ori_PSFs_shared_np, centers, wvs)])
 
         #list to store each threadpool task
