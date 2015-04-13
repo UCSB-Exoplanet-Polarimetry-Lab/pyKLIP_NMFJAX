@@ -1167,7 +1167,8 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         sat_spot_psf:   Save a original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
                         spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
                         shape. Currently only supports "methane" in H band.
-        highpass:       if True, run a high pass filter
+        highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                            can also be a number specifying FWHM of box in pixel units
         companion_rho:  Separation of known companion (pixels, used if onesegment==True)
         companion_theta: PA of known companion (degrees, used if onesegment==True)
         segment_dr:     Radial width of segment (pixels)
@@ -1191,8 +1192,14 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         else:
             numbasis = np.array([numbasis])
 
-    if highpass:
-        dataset.input = high_pass_filter_imgs(dataset.input)
+    if isinstance(highpass, bool):
+        if highpass:
+            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads)
+    else:
+        #should be a number
+        if isinstance(highpass, (float, int)):
+            fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
 
     # Default value of psfs_struct. Don't do anything
     if psfs_struct is None:
