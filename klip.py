@@ -462,7 +462,7 @@ def meas_contrast(dat, iwa, owa, resolution):
     for sep in seps:
         #make a bunch of circular aperatures at this separation
         dtheta = dsep/float(sep)
-        thetabins = np.arange(0, 360-dtheta/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
+        thetabins = np.arange(0, 360-np.degrees(dtheta)/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
         specklethetas = []
         specklefluxes = []
         for thistheta in thetabins:
