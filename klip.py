@@ -481,7 +481,7 @@ def meas_contrast(dat, iwa, owa, resolution):
             specklefluxes.append(speckleflux)
 
         #find 5 sigma flux using student-t statistics
-        fpf_flux = t.ppf(0.99999942697, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes))
+        fpf_flux = t.ppf(0.99999942697, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes, ddof=1))
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)
