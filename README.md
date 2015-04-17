@@ -1,11 +1,15 @@
 # pyKLIP README #
 
-A python library for PSF subtraction. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, and Schuyler Wolff.
+A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo.  
 
 ### Overview ###
 
 * Implementation of [KLIP](http://arxiv.org/abs/1207.4197) in Python
-* Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and [GPI](http://planetimager.org/) data reduction
+* Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
+* Parallelized with both a quick memory-intensive mdoe and a slower memory-lite mode
+* Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
+[GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
+* If confused about what a function is doing, read the docstring for it.
 * Version 0.1
 
 ### Dependencies ###
@@ -20,14 +24,11 @@ A python library for PSF subtraction. Development led by Jason Wang. Contributio
 
 Put all of the files into a folder called *pyklip* and put the *pyklip* folder into either the directory in which your python script that will call ``pyklip`` resies or into a directory that is in your ``PYTHONPATH``.
 
-### TODO ###
+### Bugs/Feature Requests ###
 
-* Post processing analysis functions
-* Option to optimize for Methane planets
-* Algorithm throughput calibration
-* Spectral Recovery
+Please use the Bitbucket Issue Tracker to submit bugs and new feature requests
 
-### GPI Example ###
+### GPI Tutorial ###
 
 You'll need some GPI reduced spectral datacubes to start (with satellite spots located). First we need to parse through the data. This is done with the ``readdata`` module.
 
