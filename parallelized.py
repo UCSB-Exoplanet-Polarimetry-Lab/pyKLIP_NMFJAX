@@ -1477,7 +1477,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff),
-                                 spectral_cube, klipparpams=klipparams.format(numbasis=str(numbasis)),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=str(numbasis)),
                                  filetype="PSF Subtracted Spectral Cube", fakePlparams = fakePlparams,
                                  astr_hdr=dataset.wcs[0], center=dataset.centers[0])
         else:
@@ -1491,7 +1491,7 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
-                                 spectral_cube, klipparapms=klipparams.format(numbasis=KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                                  filetype="PSF Subtracted Spectral Cube")
     elif mode == 'ADI':
         #ADI is not parallelized
