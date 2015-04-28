@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 
-import matplotlib.pyplot as plt
+
 #different imports depending on if python2.7 or python3
 import sys
 from copy import copy
@@ -270,17 +270,22 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, klipparams = None, center=None, astr_hdr=None,fakePlparams = None):
+    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
+                 fakePlparams = None,):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
         Inputs:
             filepath: path to file to output
             data: 2D or 3D data to save
+            klipparams: a string of klip parameters
+            filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
+            zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             astr_hdr: wcs astrometry header
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
-            klipparams: a string of klip parameters
+            fakePlparams: fake planet params
+
         """
         hdulist = pyfits.HDUList()
         hdulist.append(pyfits.PrimaryHDU(header=self.prihdrs[0]))
@@ -322,6 +327,17 @@ class GPIData(Data):
         if fakePlparams is not None:
             hdulist[0].header['FAKPLPAR'] = fakePlparams
             hdulist[0].header.add_history("pyKLIP reduction with fake planet injection parameters {0}".format(fakePlparams))
+
+        if filetype is not None:
+            hdulist[0].header['FILETYPE'] = filetype
+
+        if zaxis is not None:
+            #Writing a KL mode Cube
+            if "KL Mode" in filetype:
+                hdulist[1].header['CTYPE3'] = 'KLMODES'
+                #write them individually
+                for i, klmode in enumerate(zaxis):
+                    hdulist[1].header['KLMODE{0}'.format(i)] = klmode
 
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:
@@ -535,11 +551,13 @@ class GPIData(Data):
             PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])/np.nanmax(abs(PSF_cube[l,:,:]))<0.05)] = 0.0
 
         if 0:
+            import matplotlib.pyplot as plt
             plt.figure(1)
             plt.plot(sat_spot_spec,'or')
             plt.plot(np.nanmax(PSF_cube,axis=(1,2)),"--b")
             plt.show()
         if 0: # for debugging purposes
+            import matplotlib.pyplot as plt
             plt.figure(1)
             plt.imshow(PSF_cube[0,:,:],interpolation = 'nearest')
             plt.figure(2)
@@ -600,6 +618,7 @@ class GPIData(Data):
                 rad_psf_cube[l_id,:,:] *= sat_spot_spec[l_id]/np.nanmax(rad_psf_cube[l_id,:,:])
 
                 if 0:
+                    import matplotlib.pyplot as plt
                     print(rad_psf_cube[l_id,0,0])
                     plt.figure(1)
                     plt.imshow(rad_psf_cube[l_id,:,:],interpolation = 'nearest')

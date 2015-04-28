@@ -146,9 +146,16 @@ class Data(object):
 
     @staticmethod
     @abc.abstractmethod
-    def savedata(filepath, data, klipparams):
+    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None):
         """
         Saves data for this instrument
+
+        Input:
+            filepath: filepath to save to
+            data: data to save
+            klipparams: a string of KLIP parameters. Write it to the 'PSFPARAM' keyword
+            filtype: type of file (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube"). Wrriten to 'FILETYPE' keyword
+            zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
         """
         return NotImplementedError("Subclass needs to implement this!")
 
