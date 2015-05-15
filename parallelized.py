@@ -6,6 +6,7 @@ import cProfile
 import os
 import itertools
 import fakes
+import copy
 
 import matplotlib.pyplot as plt
 import astropy.io.fits as pyfits
@@ -545,7 +546,7 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
 
 
 def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegment=False, annuli=5, subsections=4, movement=3, numbasis=None,
-                      aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None,
+                      aligned_center = None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None,
                       companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0):
     """
     multithreaded KLIP PSF Subtraction, has a smaller memory foot print than the original
@@ -826,7 +827,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', one
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegment=False, annuli=5, subsections=4, movement=3, numbasis=None,
                       aligned_center=None, numthreads=None, minrot=0, maxrot=360, PSFs = None, out_PSFs=None, spectrum=None,
-                      companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0):
+                      companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0,
+                      save_aligned = False, restored_aligned = None):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -995,14 +997,22 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegme
         rec_PSFs_shared = None
         out_PSFs_shared = None
 
+    if restored_aligned is not None:
+        recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape) 
+        recentered_imgs_np[:] = restored_aligned
+
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs,
                              ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared, seg_index_shared, seg_basis_shared, seg_shape_shared), maxtasksperchild=50)
 
-    #align and scale the images for each image. Use map to do this asynchronously
-    print("Begin align and scale images for each wavelength")
-    realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center)))
+    if restored_aligned is None:
+        #align and scale the images for each image. Use map to do this asynchronously
+        print("Begin align and scale images for each wavelength")
+        realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center)))
+    else:
+        #align and scale the images for each image. Use map to do this asynchronously
+        realigned_index = enumerate(unique_wvs)
 
     #list to store each threadpool task
     outputs = []
@@ -1076,12 +1086,21 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', onesegme
     if PSFs is not None:
         out_PSFs[:] = out_PSFs_shared_np
 
+    if save_aligned is True:
+        aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape)
+
     if onesegment is not True:
-        return sub_imgs
+        if save_aligned is not True:
+            return sub_imgs
+        else:
+            return sub_imgs, aligned_and_scaled
     else:
         seg_basis_np = _arraytonumpy(seg_basis_shared, seg_shape_shared)
         seg_index_np = _arraytonumpy(seg_index_shared, (seg_shape_shared[0], seg_shape_shared[2]))
-        return sub_imgs, seg_basis_np, seg_index_np
+        if save_aligned is not True:	
+            return sub_imgs, seg_basis_np, seg_index_np
+        else:
+            return sub_imgs, aligned_and_scaled, seg_basis_np, seg_index_np
 
 
 class psfs_management:
@@ -1141,7 +1160,8 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                  annuli=5, subsections=4, movement=3, numbasis=None, numthreads=None,
                  minrot=0, calibrate_flux=False, aligned_center=None, psfs_struct=None,
                  sat_spot_psf = False,spectrum=None, highpass=False,
-                 companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0, lite=False):
+                 companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0, segment_dt = 90.0, lite=False,
+                 save_aligned = False, restored_aligned = None):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1174,6 +1194,9 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         segment_dr:     Radial width of segment (pixels)
         segment_dt:     Azimuthal width of segment (degrees)
         lite:           if True, run a low memory version of the alogirhtm
+        save_aligned	Save the aligned and scaled images (as well as various wcs information), True/False
+        restore_aligned The aligned and scaled images from a previous run of klip_dataset
+        				(usually restored_aligned = dataset.aligned_and_scaled)
     Output
         Saved files in the output directory
         Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
@@ -1192,14 +1215,27 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         else:
             numbasis = np.array([numbasis])
 
-    if isinstance(highpass, bool):
-        if highpass:
-            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads)
+    #Save the WCS and centers info, incase we need it again!
+    if save_aligned is True:
+        dataset.old_wcs = copy.deepcopy(dataset.wcs)
+        dataset.old_centers = copy.deepcopy(dataset.centers)
+        dataset.old_PAs = copy.deepcopy(dataset.PAs)
+
+    #If re-running KLIP with same data, restore centers to old value
+   	#We don't need to highpass the data if the aligned and scaled images are being restored
+    if restored_aligned is not None:
+        dataset.centers = copy.deepcopy(dataset.old_centers)
+        dataset.wcs = copy.deepcopy(dataset.old_wcs)
+        dataset.PAs = copy.deepcopy(dataset.old_PAs)
     else:
-        #should be a number
-        if isinstance(highpass, (float, int)):
-            fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
-            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
+        if isinstance(highpass, bool):
+            if highpass:
+                dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads)
+        else:
+            #should be a number
+            if isinstance(highpass, (float, int)):
+                fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+                dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
 
     # Default value of psfs_struct. Don't do anything
     if psfs_struct is None:
@@ -1210,8 +1246,13 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         outputdir = "."
         
     # select memory-lite version if requested
+    #If lite, force save_aligned to be False and restored_aligned to be None
     if lite:
         klip_function = klip_parallelized_lite
+        if (save_aligned is True) or (restored_aligned is True):
+        	print 'save_aligned and restored_aligned are not compatible with lite mode'
+        save_aligned = False
+        restored_aligned = None
     else:
         klip_function = klip_parallelized
 
@@ -1379,19 +1420,37 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
             out_PSFs = None
             fakePlparams = None
 
-        if onesegment:
-            klipped_imgs, seg_basis_array, seg_index_array = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        if onesegment is not True:
+            if save_aligned is not True:
+                klipped_imgs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
-                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt)
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt,
+                                         save_aligned = save_aligned, restored_aligned = restored_aligned)
+            else:
+                klipped_imgs, dataset.aligned_and_scaled = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt,
+                                         save_aligned = save_aligned, restored_aligned = restored_aligned)
         else:
-            klipped_imgs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+            if save_aligned is not True:
+                klipped_imgs, seg_basis_array, seg_index_array = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
-                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt)
-        #JB's debug
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt,
+                                         save_aligned = save_aligned, restored_aligned = restored_aligned)
+            else:
+                klipped_imgs, dataset.aligned_and_scaled, seg_basis_array, seg_index_array = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, PSFs = PSFs,out_PSFs=out_PSFs, spectrum=spectrum, onesegment=onesegment,
+                                         companion_rho = companion_rho, companion_theta = companion_theta, segment_dr = segment_dr, segment_dt = segment_dt,
+                                         save_aligned = save_aligned, restored_aligned = restored_aligned)
+    #JB's debug
         #if psfs_struct.calculate_PSFs:
         #    pyfits.writeto("/Users/jruffio/gpi/pyklip/outputs/solePSFs.fits", out_PSFs, clobber=True)
 
@@ -1495,10 +1554,17 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                                  filetype="PSF Subtracted Spectral Cube")
     elif mode == 'ADI':
         #ADI is not parallelized
-        dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
-                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
-                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center)
+        if save_aligned is True:
+	        dataset.output, dataset.aligned_and_scaled = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+    	                                     dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+        	                                 movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+            	                             aligned_center=aligned_center, save_aligned = save_aligned, restored_aligned = restored_aligned)
+        else:
+        	dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+    	                                     dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+        	                                 movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+            	                             aligned_center=aligned_center, save_aligned = save_aligned, restored_aligned = restored_aligned)
+
         if calibrate_flux == True:
             dataset.calibrate_output()
 
@@ -1524,6 +1590,8 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
 
         dataset.output = rot_imgs
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         #valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
@@ -1545,10 +1613,16 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
                                   klipparams=klipparams.format(numbasis=KLcutoff), filetype="PSF Subtracted Spectral Cube")
 
     elif mode == 'SDI':
-        dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+        if save_aligned is True:
+            dataset.output, dataset.aligned_and_scaled = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center, spectrum=spectrum)
+                                         aligned_center=aligned_center, spectrum=spectrum, save_aligned = save_aligned, restored_aligned = restored_aligned)
+        else:
+            dataset.output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
+                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                         aligned_center=aligned_center, spectrum=spectrum, save_aligned = save_aligned, restored_aligned = restored_aligned)
         if calibrate_flux == True:
             dataset.calibrate_output()
 
@@ -1574,6 +1648,8 @@ def klip_dataset(dataset, mode='ADI+SDI', onesegment=False, outputdir=".", filep
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
 
         dataset.output = rot_imgs
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         #valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
