@@ -917,9 +917,11 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
     #try to get environment parameters but sometimes we need to default
     #Get HA
     HA = prihdr['HA']
-    HA_sgn = np.sign(float(HA[0:3]))
-    if HA_sgn == 0:
+    HA_sgn = HA[0]
+    if HA_sgn == '+':
         HA_sgn = 1
+    else:
+        HA_sgn = -1
     HA = float(HA[0:3]) + HA_sgn*float(HA[4:6])/60. + HA_sgn*float(HA[7:])/3600.
     HA *= 15*np.pi/180. # rad
     #Get Temp
