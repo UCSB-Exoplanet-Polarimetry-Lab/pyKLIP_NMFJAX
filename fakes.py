@@ -213,7 +213,7 @@ def gauss2d(x0, y0, peak, sigma):
         sigma: stddev in both x and y directions
     '''
     sigma *= 1.0
-    return lambda x,y: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
+    return lambda y,x: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
 
 def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, refinefit=True):
     """
