@@ -3,7 +3,6 @@ __author__ = 'jruffio'
 import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
-import matplotlib.pyplot as plt
 
 
 # First and last wavelength of each band
@@ -45,11 +44,11 @@ def get_gpi_filter(pipeline_dir,filter_name):
     counts_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spectrum)
     N_samples_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=None)
 
-    if 0:
-        plt.figure(1)
-        plt.plot(wavelengths,spectrum,'b')
-        plt.plot(sampling_pip,counts_per_bin/N_samples_per_bin,'r')
-        plt.show()
+    # if 0:
+    #     plt.figure(1)
+    #     plt.plot(wavelengths,spectrum,'b')
+    #     plt.plot(sampling_pip,counts_per_bin/N_samples_per_bin,'r')
+    #     plt.show()
 
     return (sampling_pip,counts_per_bin/N_samples_per_bin)
 
@@ -185,21 +184,21 @@ def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = N
 
     spec_pip = ((target_temp-lower_temp)*upper_spec_pip+(upper_temp-target_temp)*lower_spec_pip)/(upper_temp-lower_temp)
 
-    if 0:
-        plt.figure(1)
-        plt.plot(upper_wave,upper_spec,'r')
-        plt.plot(lower_wave,lower_spec,'g')
-        plt.plot(spec_pip,spec_pip,'b')
-
-        plt.figure(2)
-        print(lower_temp,target_temp,upper_temp)
-        where_gpi_band = np.where((upper_wave < w_end) * (upper_wave > w_start) )
-        plt.plot(upper_wave[where_gpi_band],upper_spec[where_gpi_band],'r')
-        plt.plot(lower_wave[where_gpi_band],lower_spec[where_gpi_band],'g')
-        plt.plot(sampling_pip,upper_spec_pip,'r--')
-        plt.plot(sampling_pip,lower_spec_pip,'g--')
-        plt.plot(sampling_pip,spec_pip,'b--')
-        plt.show()
+    # if 0:
+    #     plt.figure(1)
+    #     plt.plot(upper_wave,upper_spec,'r')
+    #     plt.plot(lower_wave,lower_spec,'g')
+    #     plt.plot(spec_pip,spec_pip,'b')
+    #
+    #     plt.figure(2)
+    #     print(lower_temp,target_temp,upper_temp)
+    #     where_gpi_band = np.where((upper_wave < w_end) * (upper_wave > w_start) )
+    #     plt.plot(upper_wave[where_gpi_band],upper_spec[where_gpi_band],'r')
+    #     plt.plot(lower_wave[where_gpi_band],lower_spec[where_gpi_band],'g')
+    #     plt.plot(sampling_pip,upper_spec_pip,'r--')
+    #     plt.plot(sampling_pip,lower_spec_pip,'g--')
+    #     plt.plot(sampling_pip,spec_pip,'b--')
+    #     plt.show()
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
@@ -241,10 +240,10 @@ def get_planet_spectrum(filename,filter_name):
     #wave_intervals[N_samp-1] = wave[N_samp-1]-wave[N_samp-2]
     spec = spec_data[:,3]
 
-    if 0:
-        plt.figure(1)
-        plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
-        plt.show()
+    # if 0:
+    #     plt.figure(1)
+    #     plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
+    #     plt.show()
 
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
@@ -258,11 +257,11 @@ def get_planet_spectrum(filename,filter_name):
     f = interp1d(wave, spec)
     spec_pip = f(sampling_pip)
 
-    if 0:
-        plt.figure(2)
-        plt.plot(wave[50:100],spec[50:100],'r')
-        plt.plot(sampling_pip,spec_pip,'b.')
-        plt.show()
+    # if 0:
+    #     plt.figure(2)
+    #     plt.plot(wave[50:100],spec[50:100],'r')
+    #     plt.plot(sampling_pip,spec_pip,'b.')
+    #     plt.show()
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
@@ -276,19 +275,19 @@ if __name__ == "__main__":
     filename = "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
     get_planet_spectrum(filename,'H')
 
-    if 0:
-        filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
-        hdulist = pyfits.open(filename)
-        cube = hdulist[1].data
-        N_samples = np.size(cube)
-        c = []
-        d = []
-        for a,b in cube:
-            c.append(a)
-            d.append(b)
-        print(c,d)
-        wavelengths = cube[0][0]
-        filter_spec = cube[0][1]
-        plt.figure(1)
-        plt.plot(wavelengths,filter_spec)
-        plt.show()
+    # if 0:
+    #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
+    #     hdulist = pyfits.open(filename)
+    #     cube = hdulist[1].data
+    #     N_samples = np.size(cube)
+    #     c = []
+    #     d = []
+    #     for a,b in cube:
+    #         c.append(a)
+    #         d.append(b)
+    #     print(c,d)
+    #     wavelengths = cube[0][0]
+    #     filter_spec = cube[0][1]
+    #     plt.figure(1)
+    #     plt.plot(wavelengths,filter_spec)
+    #     plt.show()

@@ -9,7 +9,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     """
     Helper function for KLIP that does the linear algebra
     
-    Inputs:
+    Args:
         sci: array of length p containing the science data
         ref_psfs: N x p array of the N reference PSFs that 
                   characterizes the PSF of the p pixels
@@ -20,7 +20,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
                               the klipping. ie from which the modes are calculated.
         return_basis: If true, return KL basis vectors (used when onesegment==True)
 
-    Outputs:
+    Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
 
@@ -176,7 +176,7 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     Estimates the movement of a hypothetical astrophysical source in ADI and/or SDI at the given radius and
     given reference parallactic angle (parang0) and reference wavelegnth (wavelength0)
 
-    Inputs:
+    Args:
         radius: the radius from the star of the hypothetical astrophysical source
         parang0: the parallactic angle of the reference image (in degrees)
         parangs: array of length N of the parallactic angle of all N images (in degrees)
@@ -186,7 +186,7 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
                 Same with wavelength0 and wavelengths
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
 
-    Output:
+    Returns:
         moves: array of length N of the distance an astrophysical source would have moved from the
                reference image
     """
@@ -221,10 +221,10 @@ def calc_scaling(sats, refwv=18):
     Scaling is calculated as the average of (1/2 * sqrt((x_1-x_2)**2+(y_1-y_2))), over the two pairs
     of spots.
 
-    Inputs:
+    Args:
         sats: [4 x Nlambda x 2] array of x and y positions for the 4 satellite spots
         refwv: reference wavelength for scaling (optional, default = 20)
-    Outputs:
+    Returns:
         scaling_factors: Nlambda array of scaling factors
     """
     pairs = [(0,3), (1,2)] # diagonally-located spots (spot_num - 1 for indexing)
@@ -239,7 +239,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     """
     Helper function that realigns and/or scales the image
 
-    Inputs:
+    Args:
         img: 2D image to perform manipulation on
         new_center: 2 element tuple (xpos, ypos) of new image center
         old_center: 2 element tuple (xpos, ypos) of old image center
@@ -250,7 +250,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
                         <1: contract the image (longer to shorter wvs)
                         This means scale factor should be lambda_0/lambda
                         where lambda_0 is the wavelength you want to scale to
-    Outputs:
+    Returns:
         resampled_img: shifted and/or scaled 2D image
     """
     #import scipy.interpolate as interp
@@ -328,8 +328,8 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     vals = np.array([-nan_pad, nan_pad], dtype=np.int)
 
-    for nan_i in xrange(0, 2):
-        for nan_j in xrange(0, 2):
+    for nan_i in range(0, 2):
+        for nan_j in range(0, 2):
             xx = (xround + vals[nan_i]).clip(min = 0, max = (dims[1]-1))
             yy = (yround + vals[nan_j]).clip(min = 0, max = (dims[0]-1))
 
@@ -360,14 +360,14 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     Optional: can shift the image to a new image center after rotation. Also can reverse x axis for those left
               handed astronomy coordinate systems
 
-    Inputs:
+    Args:
         img: a 2D image
         angle: angle CCW to rotate by (degrees)
         center: 2 element list [x,y] that defines the center to rotate the image to respect to
         new_center: 2 element list [x,y] that defines the new image center after rotation
         flipx: default is True, which reverses x axis.
         astr_hdr: wcs astrometry header for the image
-    Outputs:
+    Returns:
         resampled_img: new 2D image
     """
     #convert angle to radians
@@ -420,7 +420,7 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
     """
     Modifies the wcs header when rotating/flipping an image.
 
-    Inputs:
+    Args:
         wcs_header: wcs astrometry header
         rot_angle: in degrees CCW, the specified rotation desired
         flipx: after the rotation, reverse x axis? Yes if True
@@ -438,7 +438,7 @@ def meas_contrast(dat, iwa, owa, resolution):
     Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
     thoughput.
 
-    Inputs:
+    Args:
         dat: 2D image - already flux calibrated
         iwa: inner working angle
         owa: outer working angle
@@ -491,11 +491,11 @@ def high_pass_filter(img, filtersize=10):
     """
     A FFT implmentation of high pass filter.
 
-    Inputs:
+    Args:
         img: a 2D image
         filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
 
-    Outputs:
+    Returns:
         filtered: the filtered image
     """
     # mask NaNs
@@ -527,7 +527,7 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
     """
     KLIP PSF Subtraction using angular differential imaging
 
-    Inputs:
+    Args:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
         centers: N by 2 array of (x,y) coordinates of image centers
         parangs: N legnth array detailing parallactic angle of each image
@@ -541,7 +541,7 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
                         registration
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
 
-    Ouput:
+    Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
                     array stripped away and is shape of (N,y,x).
@@ -619,8 +619,8 @@ def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, n
 
                 if np.size(file_ind) < 2:
                     print("less than 2 reference PSFs available, skipping...")
-                    print (sub_imgs[img_num, section_ind]).shape
-                    print np.zeros(np.size(section_ind)).shape 
+                    print((sub_imgs[img_num, section_ind]).shape)
+                    print(np.zeros(np.size(section_ind)).shape)
 #                    sub_imgs[img_num, section_ind] = np.zeros(np.size(section_ind))
                     continue
                 ref_psfs = flattened[file_ind[0], :]
@@ -653,7 +653,7 @@ def klip_sdi(imgs, centers, scale_factors, IWA, annuli=5, subsections=4, movemen
     """
     KLIP PSF Subtraction using angular differential imaging
 
-    Inputs:
+    Args:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
         centers: N by 2 array of (x,y) coordinates of image centers
         scale_factors: Nlambda length array with the scaling factor for each channel
@@ -667,7 +667,7 @@ def klip_sdi(imgs, centers, scale_factors, IWA, annuli=5, subsections=4, movemen
                         registration
         chansep: minimum channel separation to be considered for use as a reference PSF
 
-    Ouput:
+    Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
                     array stripped away and is shape of (N,y,x).

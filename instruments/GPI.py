@@ -1,4 +1,4 @@
-import astropy.io.fits as pyfits
+import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
 import scipy.ndimage as ndimage
@@ -28,7 +28,7 @@ class GPIData(Data):
     """
     A sequence of GPI Data. Each GPIData object has the following fields and functions
 
-    Fields:
+    Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
@@ -43,7 +43,7 @@ class GPIData(Data):
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
 
-    Functions:
+    Methods:
         readdata(): reread in the data
         savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
         calibrate_output(): calibrates flux of self.output
@@ -186,11 +186,11 @@ class GPIData(Data):
         """
         Method to open and read a list of GPI data
 
-        Inputs:
+        Args:
             filespaths: a list of filepaths
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
 
-        Outputs:
+        Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
         """
         #check to see if user just inputted a single filename string
@@ -287,13 +287,13 @@ class GPIData(Data):
             fakePlparams: fake planet params
 
         """
-        hdulist = pyfits.HDUList()
-        hdulist.append(pyfits.PrimaryHDU(header=self.prihdrs[0]))
-        hdulist.append(pyfits.ImageHDU(header=self.exthdrs[0], data=data, name="Sci"))
+        hdulist = fits.HDUList()
+        hdulist.append(fits.PrimaryHDU(header=self.prihdrs[0]))
+        hdulist.append(fits.ImageHDU(header=self.exthdrs[0], data=data, name="Sci"))
 
-        #save all the files we used in the reduction
-        #we'll assume you used all the input files
-        #remove duplicates from list
+        # save all the files we used in the reduction
+        # we'll assume you used all the input files
+        # remove duplicates from list
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
         hdulist[0].header["DRPNFILE"] = nfiles
@@ -305,10 +305,12 @@ class GPIData(Data):
             filename = matches.group(0)
             hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
-        #write out psf subtraction parameters
-        #get pyKLIP revision number
+        # write out psf subtraction parameters
+        # get pyKLIP revision number
         pykliproot = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-        pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot).strip()
+        # the universal_newline argument is just so python3 returns a string instead of bytes
+        # this will probably come to bite me later
+        pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
         hdulist[0].header['PSFSUB'] = "pyKLIP"
         hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
         if self.creator is None:
@@ -317,7 +319,7 @@ class GPIData(Data):
             hdulist[0].header['CREATOR'] = self.creator
             hdulist[0].header.add_history("Reduced by {0}".self.creator)
 
-        #store commit number for pyklip
+        # store commit number for pyklip
         hdulist[0].header['pyklipv'] = pyklipver
 
         if klipparams is not None:
@@ -381,9 +383,9 @@ class GPIData(Data):
         Assumes self.output exists and has shape (b,N,y,x) for N is the number of images and b is
         number of KL modes used.
 
-        Inputs:
+        Args:
             units: currently only support "contrast" w.r.t central star
-        Output:
+        Returns:
             stores calibrated data in self.output
         """
         if units == "contrast":
@@ -395,10 +397,10 @@ class GPIData(Data):
         Generates PSF for each frame of input data. Only works on spectral mode data.
         Currently hard coded assuming 37 spectral channels!!!
 
-        Inputs:
+        Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
 
-        Outputs:
+        Returns:
             saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
         self.psfs = []
@@ -434,11 +436,11 @@ class GPIData(Data):
         (If even width of the array it is the middle pixel with the highest row and column index.)
         The center pixel index is always (nx/2,nx/2) assuming integer division.
 
-        Inputs:
+        Args:
             boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
 
-        Outputs:
+        Returns:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
         """
 
@@ -572,11 +574,11 @@ class GPIData(Data):
         A call to generate_psf_cube() is required prior to calling this function.
         The center pixel index is always (nx/2,nx/2) assuming integer division.
 
-        Inputs:
+        Args:
             save: Optionally automatically save the radial psf cube as a fits file with filename:
                     save+"-original_radial_PSF_cube.fits"
 
-        Outputs:
+        Returns:
             rad_psf_cube: a (37,nx,nx) cube with the radial psf.
 
         """
@@ -645,11 +647,11 @@ def _gpi_process_file(filepath, skipslices=None):
     """
     Method to open and parse a GPI file
 
-    Inputs:
+    Args:
         filepath: the file to open
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
 
-    Outputs: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
+    Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
         parang: array of z of the parallactic angle of the target (same value just repeated z times)
@@ -663,7 +665,7 @@ def _gpi_process_file(filepath, skipslices=None):
         exthdr: 1st extention header of the FITS file
     """
     print("Reading File: {0}".format(filepath))
-    hdulist = pyfits.open(filepath)
+    hdulist = fits.open(filepath)
     try:
 
         #grab the data and headers
@@ -750,13 +752,13 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
     Generates a GPI PSF for the frame based on the satellite spots
 
-    Inputs:
+    Args:
         frame: 2d frame of data
         location: array of (N,2) containing [x,y] coordinates of all N satellite spots
         boxrad: half length of box to use to pull out PSF
         medianboxsize: size in pixels of box for median filter
 
-    Outputs:
+    Returns:
         genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
     """
     genpsf = []
@@ -799,12 +801,12 @@ def rescale_wvs(exthdrs, wvs, refwv=18, skipslices=None):
     Hack to try to fix wavelength scaling issue. This will calculate the scaling between channels,
     and adjust the wavelength solution such that the scaling comes out linear in scaling vs wavelength.
     Finicky - requires that all images in the dataset have the same number of wavelength channels
-    Input:
+    Args:
         exthdrs: a list of extension headers, from a pyklip.instrument dataset
         wvs: a list of wvs (can repeat. This function will only look at the first cube's wavelenghts)
         refwv (optional): integer index of the channel to normalize the scaling
         skipslices: list of skipped wavelength slices (needs to be consistent with the ones skipped by wv)
-    Output:
+    Returns:
         scaled_wvs: Nlambda*Nexthdrs array of wavelengths that produce a linear plot of wavelength vs scaling
     """
     #wvs_mean = wvs.reshape(len(exthdrs), len(wvs)/len(exthdrs)).mean(axis=0)
@@ -825,16 +827,18 @@ def rescale_wvs(exthdrs, wvs, refwv=18, skipslices=None):
 
 def calc_center_least_squares(xpos, ypos, wvs, orderx, ordery, displacement):
     """
-	calcualte the center position, linear least squares fit to 4 parameters
+    calcualte the center position, linear least squares fit to 4 parameters
 
-	Inputs: xpos: array of length n of x positions of satellite spots
-			ypos: array of length n of y positions of satellite spots
-			wvs: the wavelength of each pair of positoins
-			orderx: the x order (can be -1 or 1 in this case. -1 is under the center, 1 is above the center)
-			ordery: the y order (e.g. pos0 is at pox=-1, posy=1).
-			displacment: the displacement from zenith
-	Outputs: four fit parameters (xcenter, ycenter, adrx, adry). xcenters = xcenter + ardx * displacement
-	"""
+    Args:
+        xpos: array of length n of x positions of satellite spots
+        ypos: array of length n of y positions of satellite spots
+        wvs: the wavelength of each pair of positoins
+        orderx: the x order (can be -1 or 1 in this case. -1 is under the center, 1 is above the center)
+        ordery: the y order (e.g. pos0 is at pox=-1, posy=1).
+        displacment: the displacement from zenith
+    Returns:
+        four fit parameters (xcenter, ycenter, adrx, adry). xcenters = xcenter + ardx * displacement
+    """
 
     pos_x = np.matrix(xpos).T
     pos_y = np.matrix(ypos).T
@@ -866,27 +870,6 @@ def calc_center_least_squares(xpos, ypos, wvs, orderx, ordery, displacement):
     adrx = float(Q[3])
     adry = float(Q[4])
 
-    # xcalc = xcenter + orderx*wvs*shift1 - ordery*wvs*shift2 + (adrx)*np.array(displacement)
-    # ycalc = ycenter + ordery*wvs*shift1 + orderx*wvs*shift2 + (adry)*np.array(displacement)
-    #
-    # xres = (xpos - xcalc)
-    # yres = (ypos - ycalc)
-    #
-    #
-    # xcenters = xcenter + (adrx)*np.array(displacement)
-    # ycenters = ycenter + (adry)*np.array(displacement)
-
-    #old code - preserved just in case
-	#one_params1 = np.polyfit(pos_one[:, 0], pos_one[:, 1], 1)
-	#one_params2 = np.polyfit(pos_one[:, 1], pos_oplt.show()ne[:, 0], 1)
-	#
-	#two_params1 = np.polyfit(pos_two[:, 0], pos_two[:, 1], 1)
-	#two_params2 = np.polyfit(pos_two[:, 1], pos_two[:, 0], 1)
-	#
-	#xcenter1 = (two_params1[1] - one_params1[1]) / (one_params1[0] - two_params1[0])
-	#ycenter1 = two_params1[1] + two_params1[0] * xcenter1
-	#ycenter2 = (two_params2[1] - one_params2[1]) / (one_params2[0] - two_params2[0])
-	#xcenter2 = two_params2[1] + two_params2[0] * ycenter2
 
     return xcenter, ycenter, adrx, adry
 
@@ -895,14 +878,14 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
     """
     calcualte the center position of a spectral data cube
 
-    Inputs:
+    Args:
         prihdr: primary GPI header
         exthdr: extention GPI header
         wvs: wvs of the datacube
         ignoreslices: slices to ignore in the fit. A list of wavelength slice indicies to ignore
                         if none, ignores slices 0,1, len-2, len-1 (first and last two)
         skipslices: slices that were already skipped in processing
-    Outputs:
+    Returns:
         centx, centy: star center
     """
     maxwvs = exthdr['NAXIS3']
@@ -965,7 +948,7 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
                     break
 
         for j in range(4):
-            hdr_str = "sats%i_%i" % (i, j)
+            hdr_str = "sats{0}_{1}".format(i, j)
             cents = exthdr[hdr_str]
             args = cents.split()
 
@@ -991,7 +974,7 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
                 order_x.append(1)
                 order_y.append(-1)
             else:
-                print "LOGIC ERROR: j value in loop somehow got to %f" %(j)
+                print("LOGIC ERROR: j value in loop somehow got to {0}".format(j))
                 continue
 
         i += 1

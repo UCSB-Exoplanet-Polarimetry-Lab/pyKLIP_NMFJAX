@@ -4,7 +4,7 @@ class Data(object):
     """
     Abstract Class with the required fields and methods that need to be implemented
 
-    Fields:
+    Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
@@ -17,7 +17,7 @@ class Data(object):
         creator: string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: a string that saves the most recent KLIP parameters
 
-    Functions:
+    Methods:
         readdata(): reread in the dadta
         savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
         calibrate_output(): flux calibrate the output data
@@ -150,7 +150,7 @@ class Data(object):
         """
         Saves data for this instrument
 
-        Input:
+        Args:
             filepath: filepath to save to
             data: data to save
             klipparams: a string of KLIP parameters. Write it to the 'PSFPARAM' keyword

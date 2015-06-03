@@ -2,18 +2,17 @@ import numpy as np
 from scipy import optimize
 import scipy.ndimage as ndimage
 import scipy.interpolate as interp
-import matplotlib.pyplot as plt
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
     Given a parallactic angle (angle from N to Zenith rotating in the Eastward direction), calculate what
     polar angle theta (angle from +X CCW towards +Y) it corresponds to
 
-    Input:
+    Args:
         pa: parallactic angle in degrees
         astr_hdr: wcs astrometry header (astropy.wcs)
 
-    Output:
+    Returns:
         theta: polar angle in degrees
     """
     rot_det = astr_hdr.wcs.cd[0,0] * astr_hdr.wcs.cd[1,1] - astr_hdr.wcs.cd[0,1] * astr_hdr.wcs.cd[1,0]
@@ -34,11 +33,11 @@ def covert_polar_to_image_pa(theta, astr_hdr):
     """
     Reversed engineer from covert_pa_to_image_polar by JB. Actually JB doesn't quite understand how it works...
 
-    Input:
+    Args:
         theta: parallactic angle in degrees
         astr_hdr: wcs astrometry header (astropy.wcs)
 
-    Output:
+    Returns:
         theta: polar angle in degrees
     """
     rot_det = astr_hdr.wcs.cd[0,0] * astr_hdr.wcs.cd[1,1] - astr_hdr.wcs.cd[0,1] * astr_hdr.wcs.cd[1,0]
@@ -59,13 +58,13 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
     """
     Injects a fake planet with a Gaussian PSF into a dataframe
 
-    Inputs:
+    Args:
         frame: a 2D data frame
         xpos,ypos: x,y location (in pixels) where the planet should be
         amplitude: peak of the Gaussian PSf (in appropriate units not dictacted here)
         fwhm: fwhm of gaussian
 
-    Outputs:
+    Returns:
         frame: the frame with the injected planet
     """
 
@@ -86,7 +85,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
     """
     Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
-    Inputs:
+    Args:
         frames: array of (N,y,x) for N is the total number of frames
         centers: array of size (N,2) of [x,y] coordiantes of the image center
         inputflux: EITHER array of size N of the peak flux of the fake planet in each frame (will inject a Gaussian PSF)
@@ -99,7 +98,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
                 array of size N
 
-    Outputs:
+    Returns:
         saves result in input "frames" variable
     """
 
@@ -134,14 +133,14 @@ def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
     """
     Constructs a rectangular slab for a disk with a vertical gaussian profile
 
-    Inputs:
+    Args:
         x0,y0: center of disk
         xsize, ysize: x and y dimensions of the output image
         intensity: peak intensity of the disk (whatever units you want)
         angle: orientation of the disk plane (CCW from +x axis) [degrees]
         fwhm: FWHM of guassian profile (in pixels)
 
-    Outputs:
+    Returns:
         disk_img: 2d array of size (ysize,xsize) with the image of the disk
     """
 
@@ -167,14 +166,14 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
     """
     Injects a fake disk into a dataset
 
-    Inputs:
+    Args:
         frames: array of (N,y,x) for N is the total number of frames
         centers: array of size (N,2) of [x,y] coordiantes of the image center
         peakflxes: array of size N of the peak flux of the fake disk in each frame
         astr_hdrs: array of size N of the WCS headers
         pa: parallactic angle (in degrees) of disk plane (if that is a quantity that makes any sense)
 
-    Outputs:
+    Returns:
         saves result in input "frames" variable
     """
 
@@ -207,7 +206,7 @@ def gauss2d(x0, y0, peak, sigma):
     '''
     2d symmetric guassian function for guassfit2d
 
-    Inputs:
+    Args:
         x0,y0: center of gaussian
         peak: peak amplitude of guassian
         sigma: stddev in both x and y directions
@@ -219,7 +218,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, ref
     """
     Fits a 2d gaussian to the data at point (xguess, yguess)
 
-    Inputs:
+    Args:
         frame: the data - Array of size (y,x)
         xguess,yguess: location to fit the 2d guassian to (should be pretty accurate)
         searchrad: 1/2 the length of the box used for the fit
@@ -227,7 +226,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, ref
         guesspeak: approximate flux
         refinefit: whether to refine the fit of the position of the guess
 
-    Ouputs:
+    Returns:
         peakflux: the peakflux of the gaussian
     """
     x0 = np.round(xguess)
@@ -292,7 +291,7 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
     """
     Retrives the peak flux of the planet from a series of frames given a separation and PA
 
-    Inputs:
+    Args:
         frames: N frames of data - Array of size (N,y,x)
         centers: array of size (N,2) of [x,y] coordiantes of the image center
         astr_hdrs: array of N astr_hdrs
@@ -305,7 +304,7 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
                 array of size N
 
-    Outputs:
+    Returns:
         peakfluxes: array of N peak planet fluxes
     """
     peakfluxes = []
