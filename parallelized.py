@@ -407,7 +407,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         goodmv = (moves >= minmove)
     else:
         # optimize the selection based on the spectral template rather than just an exclusion principle
-        goodmv = (spectrum * norm.sf(moves-minmove, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+        goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
 
     # enough field rotation
     if minrot > 0:
@@ -1328,6 +1328,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
                              .format(spectrum))
+    else:
+        spectra_template = None
 
     # save klip parameters as a string
     klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
