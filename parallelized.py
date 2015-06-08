@@ -9,6 +9,8 @@ import os
 import itertools
 import copy
 import astropy.io.fits as fits
+import scipy.interpolate as interp
+from scipy.stats import norm
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 pa_imgs, wvs_imgs, centers_imgs, ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared,
@@ -255,8 +257,10 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
         minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
         maxrot: maximum PA rotation (in degrees) to be considered for use as a reference PSF (temporal variability)
-        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
-                        shape. Currently only supports "methane" in H band.
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         lite: if True, use low memory footprint mode
 
@@ -381,8 +385,11 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         PSFsarea_thread_np: Ignored if None. Should be the same as ref_psfs but with the sole PSFs.
-        spectrum: if not None, optimizes the choosing the reference PSFs based on the spectrum
-                        shape. Currently only supports "methane" in H band.
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
 
     Return:
         return True on success, False on failure.
@@ -396,18 +403,23 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
     # enough movement of the astrophyiscal source
-    goodmv = (moves >= minmove)
+    if spectrum is None:
+        goodmv = (moves >= minmove)
+    else:
+        # optimize the selection based on the spectral template rather than just an exclusion principle
+        goodmv = (spectrum * norm.sf(moves-minmove, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+
     # enough field rotation
     if minrot > 0:
         goodmv = (goodmv) & (np.abs(pa_imgs - parang) >= minrot)
-    # optimization for different spectrum
+
+    # if no SDI, don't use other wavelengths
     if "SDI" not in mode.upper():
         goodmv = (goodmv) & (wvs_imgs == wavelength)
-    if spectrum is not None:
-        if spectrum.lower() == "methane":
-            goodmv = ((goodmv) | ((wvs_imgs > 1.64) & (wvs_imgs < 1.8)) | ((wvs_imgs < 1.19) & (wvs_imgs > 1.1))) & (wvs_imgs != wavelength)
+    # if no ADI, don't use other parallactic angles
     if "ADI" not in mode.upper():
         goodmv = (goodmv) & (pa_imgs == parang)
+
     # if minrot > 0:
     #     file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
     # else:
@@ -576,14 +588,19 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
               transformation as imgs without influencing the KL-modes.
         out_PSFs: Array of shape similar to sub_imgs (the output of this function). It contains the reduced images of PSFs.
                   It should be defined as out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape).
-        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
-                        shape. Currently only supports "methane" in H band.
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
         kwargs: in case you pass it stuff that we don't use in the lite version
 
     Return:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x).
     """
+
+    ################## Interpret input arguments ####################
 
     #defaullt numbasis if none
     if numbasis is None:
@@ -652,13 +669,14 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         section_ind_size = np.size(np.where((r_tmp >= rad_bounds[0][0]) & (r_tmp < rad_bounds[0][1]) & (phi_tmp >= phi_bounds[0][0]) & (phi_tmp < phi_bounds[0][1])))
         section_ind_size = int(np.round(section_ind_size * 1.1))
 
-
     #calculate how many iterations we need to do
     global tot_iter
     tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
 
     #before we start, create the output array in flattened form
     #sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
+
+    ########################### Create Shared Memory ###################################
 
     #implement the thread pool
     #make a bunch of shared memory arrays to transfer data between threads
@@ -769,7 +787,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         lite = True
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, this_wv, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, maxrot, spectrum, mode, onesegment, companion_theta, lite))
+                                                                     aligned_center, minrot, maxrot, spectrum,
+                                                                     mode, onesegment, companion_theta, lite))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -862,8 +881,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         out_PSFs: Array of shape similar to sub_imgs (the output of this function). It contains the reduced images of PSFs.
                   It should be defined as out_PSFs = np.zeros((np.size(numbasis),)+dataset.input.shape).
 
-        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
-                        shape. Currently only supports "methane" in H band.
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
 
         onesegment:     False (default) - pefrom KLIP on entire image, True - perform KLIP on one segment defined
                         by segment_dr, segment_dt, centered on (companion_rho, companion_theta). ONLY WORKS ON ADI+SDI
@@ -880,6 +902,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x).
     """
+
+    ################## Interpret input arguments ####################
 
     #defaullt numbasis if none
     if numbasis is None:
@@ -949,12 +973,16 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         section_ind_size = int(np.round(section_ind_size * 1.1))
 
 
+
     #calculate how many iterations we need to do
     global tot_iter
     tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
 
     #before we start, create the output array in flattened form
     #sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
+
+
+    ########################### Create Shared Memory ###################################
 
     #implement the thread pool
     #make a bunch of shared memory arrays to transfer data between threads
@@ -1053,8 +1081,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
                                                                      radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, maxrot, spectrum, mode,
-                                                                     onesegment, companion_theta))
+                                                                     aligned_center, minrot, maxrot, spectrum,
+                                                                     mode, onesegment, companion_theta))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -1210,7 +1238,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                         shape. Currently only supports "methane" in H band.
 
         spectrum:       (only applicable for SDI) if not None, optimizes the choosing the reference PSFs based on the
-                        spectrum shape. Currently only supports "methane" in H band.
+                        spectrum shape. Currently only supports "methane" between 1 and 10 microns.
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units
 
@@ -1285,6 +1313,21 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # if no outputdir specified, then current working directory (don't want to write to '/'!)
     if outputdir == "":
         outputdir = "."
+
+    if spectrum is not None:
+        if spectrum.lower() == "methane":
+            pykliproot = os.path.dirname(os.path.realpath(__file__))
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+
+            spectra_template = spectrum_interpolation(dataset.wvs)
+            #unique_wvs = np.unique(wvs)
+            #spectra_template = spectrum_interpolation(unique_wvs)
+        else:
+            raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
+                             .format(spectrum))
 
     # save klip parameters as a string
     klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
@@ -1454,7 +1497,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                      annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
                                      numthreads=numthreads, minrot=minrot, aligned_center=aligned_center,
                                      PSFs = PSFs,out_PSFs=out_PSFs,
-                                     spectrum=spectrum,
+                                     spectrum=spectra_template,
                                      onesegment=onesegment, companion_rho = companion_rho,
                                      companion_theta = companion_theta, segment_dr = segment_dr,
                                      segment_dt = segment_dt,
@@ -1545,7 +1588,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                  center=dataset.centers[0])
 
             # collapse in time and wavelength to examine KL modes
-            KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            if spectrum is None:
+                KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            else:
+                #do the mean combine by weighting by the spectrum
+                spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
+                KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
+                              / np.mean(spectra_template)
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube,
                                       klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                                       zaxis=numbasis, fakePlparams = fakePlparams, astr_hdr=dataset.wcs[0],
@@ -1560,7 +1609,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                  astr_hdr=dataset.wcs[0], center=dataset.centers[0])
         else:
             # collapse in time and wavelength to examine KL modes
-            KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            if spectrum is None:
+                KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+            else:
+                #do the mean combine by weighting by the spectrum
+                spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
+                KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
+                              / np.mean(spectra_template)
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                              klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                              zaxis=numbasis)
@@ -1635,7 +1690,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         klip_output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
                                          dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                         aligned_center=aligned_center, spectrum=spectrum,
+                                         aligned_center=aligned_center, spectrum=spectra_template,
                                          save_aligned = save_aligned, restored_aligned = restored_aligned)
         if save_aligned:
             dataset.output, dataset.aligned_and_scaled = klip_output
@@ -1676,7 +1731,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Writing Images to directory {0}".format(outputdirpath))
 
         # collapse in time and wavelength to examine KL modes
-        KLmode_cube = np.nanmean(dataset.output, axis=(1))
+        # collapse in time and wavelength to examine KL modes
+        if spectrum is None:
+            KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
+        else:
+            #do the mean combine by weighting by the spectrum
+            spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
+            KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
+                          / np.mean(spectra_template)
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
 
