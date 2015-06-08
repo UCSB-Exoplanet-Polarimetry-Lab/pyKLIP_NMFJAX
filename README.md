@@ -1,6 +1,7 @@
 # pyKLIP README #
 
-A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo.  
+A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo.
+If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [http://ascl.net/1506.001](http://ascl.net/1506.001).
 
 ### Overview ###
 
@@ -10,7 +11,7 @@ A python library for PSF subtraction for both exoplanet and disk imaging. Develo
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
 [GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
 * If confused about what a function is doing, read the docstring for it.
-* Version 0.1
+* Version 1.0
 
 ### Dependencies ###
 
@@ -28,9 +29,9 @@ Put all of the files into a folder called *pyklip* and put the *pyklip* folder i
 
 Please use the Bitbucket Issue Tracker to submit bugs and new feature requests
 
-### GPI Tutorial ###
+### Quick GPI Tutorial ###
 
-You'll need some GPI reduced spectral datacubes to start (with satellite spots located). First we need to parse through the data. This is done with the ``readdata`` module.
+You'll need some GPI reduced spectral datacubes to start (with satellite spots located). First we need to parse through the data. This is done with the ``instruments.GPI`` module.
 
     :::python
         import glob
@@ -40,8 +41,8 @@ You'll need some GPI reduced spectral datacubes to start (with satellite spots l
         dataset = GPI.GPIData(filelist)
 
 This returns ``dataset``, an implementation of the abstract class ``Instrument.Data`` with fields such as ``data``,
-``wvs``, ``PAs`` that are needed to perform the KLIP subtraction. Please read the docstring for ``GPI`` or
-``Instrument.Data``for a full description of what is in ``dataset``.
+``wvs``, ``PAs`` that are needed to perform the KLIP subtraction, none of which are instrument specific.
+ Please read the docstring for ``GPI`` or ``Instrument.Data``for a full description of what is in ``dataset``.
 
 Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of the easily parallelizable computation, we will use the
 ``parallelized`` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code.
