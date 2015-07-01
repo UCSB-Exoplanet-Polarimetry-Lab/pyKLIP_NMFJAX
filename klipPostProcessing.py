@@ -14,6 +14,7 @@ import multiprocessing as mp
 import itertools
 import glob, os
 from sys import stdout
+import platform
 
 import spectra_management as spec
 
@@ -1022,14 +1023,14 @@ def calculate_metrics(filename,
     ##
     # Preliminaries and some sanity checks before saving the metrics maps fits file.
     if outputDir is None:
-        outputDir = "./"
+        outputDir = "."+os.path.sep
     else:
-        outputDir = outputDir+"/"
+        outputDir = outputDir+os.path.sep
 
     if folderName is None:
-        folderName = "/default_out/"
+        folderName = os.path.sep+"default_out" +os.path.sep
     else:
-        folderName = folderName+"/"
+        folderName = folderName+os.path.sep
 
     if not os.path.exists(outputDir+folderName): os.makedirs(outputDir+folderName)
 
@@ -1118,7 +1119,7 @@ def candidate_detection(metrics_foldername,
     Outputs:
 
     '''
-    shape_filename_list = glob.glob(metrics_foldername+"/*-shape_SNR.fits")
+    shape_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape_SNR.fits")
     if len(shape_filename_list) == 0:
         if not mute:
             print("Couldn't find shape_SNR map in "+metrics_foldername)
@@ -1155,14 +1156,15 @@ def candidate_detection(metrics_foldername,
     except:
         prefix = "UNKNOWN_OBJECT"
 
+    IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
 
     # Ignore all the pixel too close from an edge with nans
-    flat_cube_nans = np.where(np.isnan(criterion_map))
-    flat_cube_mask = np.ones((ny,nx))
-    flat_cube_mask[flat_cube_nans] = np.nan
+    #flat_cube_nans = np.where(np.isnan(criterion_map))
+    #flat_cube_mask = np.ones((ny,nx))
+    #flat_cube_mask[flat_cube_nans] = np.nan
     #widen the nans region
-    conv_kernel = np.ones((5,5))
-    flat_cube_wider_mask = convolve2d(flat_cube_mask,conv_kernel,mode="same")
+    conv_kernel = np.ones((10,10))
+    flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
     criterion_map[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
 
 
@@ -1191,8 +1193,8 @@ def candidate_detection(metrics_foldername,
     # List of local maxima that are valid candidates
     candidates_list = []
 
-    logFile_all = open(metrics_foldername+"/"+prefix+'-detectionLog_all.txt', 'w')
-    logFile_candidates = open(metrics_foldername+"/"+prefix+'-detectionLog_candidates.txt', 'w')
+    logFile_all = open(metrics_foldername+os.path.sep+prefix+'-detectionLog_all.txt', 'w')
+    logFile_candidates = open(metrics_foldername+os.path.sep+prefix+'-detectionLog_candidates.txt', 'w')
 
     myStr = "# Log some values for each local maxima \n" +\
             "# Meaning of the columns from left to right. \n" +\
@@ -1284,7 +1286,7 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
         plt.clim(-4.,4.0)
-        plt.savefig(metrics_foldername+"/"+prefix+'-detectionIm_candidates.png', bbox_inches='tight')
+        plt.savefig(metrics_foldername+os.path.sep+prefix+'-detectionIm_candidates.png', bbox_inches='tight')
     plt.close(3)
 
     plt.close(3)
@@ -1302,7 +1304,7 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
         plt.clim(-4.,4.0)
-        plt.savefig(metrics_foldername+"/"+prefix+'-detectionIm_all.png', bbox_inches='tight')
+        plt.savefig(metrics_foldername+os.path.sep+prefix+'-detectionIm_all.png', bbox_inches='tight')
     plt.close(3)
 
 
@@ -1318,9 +1320,9 @@ def confirm_candidates(GOI_list_filename, logFilename_all, candidate_indices,can
 
     #"/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/planet_detec_pyklip-S20141218-k100a7s4m3_KL20/t800g100nc/c_Eri-detectionLog_candidates.txt"
 
-def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
+def calculate_metrics_in_dir_per_file(filename,
                                       metrics = None,
-                                      directory = "./",
+                                      directory = "."+os.path.sep,
                                       outputDir = '',
                                       spectrum_model = "",
                                       star_type = "",
@@ -1335,7 +1337,7 @@ def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
     N_KL_modes = int(splitted_after_KL[0])
 
     # Get the prefix of the filename
-    splitted_before_KL = splitted_name[0].split("/")
+    splitted_before_KL = splitted_name[0].split(os.path.sep)
     prefix = splitted_before_KL[np.size(splitted_before_KL)-1]
 
 
@@ -1357,7 +1359,7 @@ def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
             print("User defined PSF cube: "+user_defined_PSF_cube)
         filelist_ori_PSFs_cube = glob.glob(user_defined_PSF_cube)
     else:
-        filelist_ori_PSFs_cube = glob.glob(directory+"/"+prefix+"-original_radial_PSF_cube.fits")
+        filelist_ori_PSFs_cube = glob.glob(directory+os.path.sep+prefix+"-original_radial_PSF_cube.fits")
 
     if np.size(filelist_ori_PSFs_cube) == 1:
         if not mute:
@@ -1374,7 +1376,7 @@ def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
     elif np.size(filelist_ori_PSFs_cube) == 0:
         if not mute:
             print("I didn't find any PSFs file so I will use a default gaussian. Default sat spot spectrum = filter spectrum.")
-        wv,sat_spot_spec = spec.get_gpi_filter(pipeline_dir,filter)
+        wv,sat_spot_spec = spec.get_gpi_filter(filter)
         sat_spot_spec_exist = False
         PSF_cube = None
     else:
@@ -1395,14 +1397,14 @@ def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
 
         # Define the output Foldername
         if spectrum_name_it != "":
-            spectrum_name = spectrum_name_it.split("/")
+            spectrum_name = spectrum_name_it.split(os.path.sep)
             spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
         else:
             spectrum_name = "satSpotSpec"
 
         if outputDir == '':
             outputDir = directory
-        folderName = "/planet_detec_"+prefix+"/"+spectrum_name+"/"
+        folderName = os.path.sep+"planet_detec_"+prefix+os.path.sep+spectrum_name+os.path.sep
 
 
 
@@ -1414,7 +1416,7 @@ def calculate_metrics_in_dir_per_file(filename,pipeline_dir,
 
             if sat_spot_spec_exist and (star_type !=  "" or star_temperature is not None):
                 # Interpolate a spectrum of the star based on its spectral type/temperature
-                wv,star_sp = spec.get_star_spectrum(pipeline_dir,filter,star_type,star_temperature)
+                wv,star_sp = spec.get_star_spectrum(filter,star_type,star_temperature)
                 spectrum = (sat_spot_spec/star_sp)*planet_sp
             else:
                 if not mute:
@@ -1456,8 +1458,7 @@ def planet_detection_in_dir_star(params):
     """
     return planet_detection_in_dir(*params)
 
-def planet_detection_in_dir(pipeline_dir,
-                            directory = "./",
+def planet_detection_in_dir(directory = "."+os.path.sep,
                             filename_prefix_is = '',
                             numbasis = None,
                             outputDir = '',
@@ -1483,7 +1484,6 @@ def planet_detection_in_dir(pipeline_dir,
     entirely "rethought" and implemented from scratch.
 
     Inputs:
-        pipeline_dir: GPI pipeline directory. E.g. "/Users/jruffio/gpi/pipeline/".
         directory: directory in which the function will look for suitable fits files and run the planet detection algorithm.
         filename_prefix_is: Look for file containing of the form "/"+filename_filter+"-KL*-speccube.fits"
         numbasis: Integer. Apply algorithm only to klipped images that used numbasis KL modes.
@@ -1511,9 +1511,9 @@ def planet_detection_in_dir(pipeline_dir,
         numbasis = '*'
 
     if filename_prefix_is == '':
-        filelist_klipped_cube = glob.glob(directory+"/pyklip-*-KL"+numbasis+"-speccube.fits")
+        filelist_klipped_cube = glob.glob(directory+os.path.sep+"pyklip-*-KL"+numbasis+"-speccube.fits")
     else:
-        filelist_klipped_cube = glob.glob(directory+"/"+filename_prefix_is+"-KL"+numbasis+"-speccube.fits")
+        filelist_klipped_cube = glob.glob(directory+os.path.sep+filename_prefix_is+"-KL"+numbasis+"-speccube.fits")
         #print(directory+"/"+filename_prefix_is+"-KL"+numbasis+"-speccube.fits")
 
     if len(filelist_klipped_cube) == 0:
@@ -1530,7 +1530,6 @@ def planet_detection_in_dir(pipeline_dir,
                 N_threads = np.size(filelist_klipped_cube)
                 pool = mp.Pool(processes=N_threads)
                 pool.map(calculate_metrics_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
-                                                                               itertools.repeat(pipeline_dir),
                                                                                itertools.repeat(metrics),
                                                                                itertools.repeat(directory),
                                                                                itertools.repeat(outputDir),
@@ -1544,7 +1543,6 @@ def planet_detection_in_dir(pipeline_dir,
             else:
                 for filename in filelist_klipped_cube:
                     calculate_metrics_in_dir_per_file(filename,
-                                                     pipeline_dir,
                                                      metrics = metrics,
                                                      directory = directory,
                                                      outputDir = outputDir,
@@ -1560,42 +1558,48 @@ def planet_detection_in_dir(pipeline_dir,
 
 
 
-def planet_detection_campaign(pipeline_dir,
-                              campaign_dir = "./"):
+def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     outputDir = ''
     star_type = ''
     metrics = None
 
     filename_filter = "pyklip-*-k100a7s4m3"
     numbasis = 20
-    spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx",
-                      "/Users/jruffio/gpi/pyklip/spectra/t700g178nc.flx",
-                      "/Users/jruffio/gpi/pyklip/spectra/t650g18nc.flx",
-                      "/Users/jruffio/gpi/pyklip/spectra/t650g32nc.flx",
-                      "/Users/jruffio/gpi/pyklip/spectra/t650g56nc.flx",
-                      ""]
-    #spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t650g18nc.flx",
-    #                  "/Users/jruffio/gpi/pyklip/spectra/t650g32nc.flx",
-    #                  "/Users/jruffio/gpi/pyklip/spectra/t650g56nc.flx"]
+    spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx"]
+    if 0:
+        spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx",
+                          "."+os.path.sep+"spectra"+os.path.sep+"t700g178nc.flx",
+                          "."+os.path.sep+"spectra"+os.path.sep+"t650g18nc.flx",
+                          "."+os.path.sep+"spectra"+os.path.sep+"t650g32nc.flx",
+                          "."+os.path.sep+"spectra"+os.path.sep+"t650g56nc.flx",
+                          ""]
+        spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t650g18nc.flx",
+                          "/Users/jruffio/gpi/pyklip/spectra/t650g32nc.flx",
+                          "/Users/jruffio/gpi/pyklip/spectra/t650g56nc.flx"]
     star_type = "G4"
     metrics = ["weightedFlatCube","matchedFilter","shape"]
-    user_defined_PSF_cube = "/Users/jruffio/gpi/pyklip/outputs/dropbox_prior_test/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+
+    if platform.system() == "Mac":
+        user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/codepyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+    elif platform.system() == "Windows":
+        user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
 
     inputDirs = []
     for inputDir in os.listdir(campaign_dir):
         if not inputDir.startswith('.'):
-            inputDirs.append(campaign_dir+inputDir+"/autoreduced/")
+            inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
 
             if 1:
-                inputDir = campaign_dir+inputDir+"/autoreduced/"
-                planet_detection_in_dir(pipeline_dir,
-                                        inputDir,
+                inputDir = campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep
+                planet_detection_in_dir(inputDir,
                                         filename_prefix_is=filename_filter,
                                         spectrum_model=spectrum_model,
                                         star_type=star_type,
                                         metrics = metrics,
                                         numbasis=numbasis,
                                         user_defined_PSF_cube=user_defined_PSF_cube,
+                                        metrics_only = False,
+                                        planet_detection_only = True,
                                         threads = True,
                                         mute = False)
 
@@ -1603,8 +1607,7 @@ def planet_detection_campaign(pipeline_dir,
         N_threads = len(inputDirs)
         print(N_threads)
         pool = mp.Pool(processes=N_threads)
-        pool.map(planet_detection_in_dir_star, itertools.izip(itertools.repeat(pipeline_dir),
-                                                                       inputDirs,
+        pool.map(planet_detection_in_dir_star, itertools.izip(inputDirs,
                                                                        itertools.repeat(filename_filter),
                                                                        itertools.repeat(numbasis),
                                                                        itertools.repeat(outputDir),

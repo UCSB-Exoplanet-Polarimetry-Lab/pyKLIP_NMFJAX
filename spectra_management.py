@@ -3,6 +3,7 @@ __author__ = 'jruffio'
 import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
+import platform
 
 
 # First and last wavelength of each band
@@ -13,12 +14,11 @@ band_sampling = {'Z' : (0.9444, 1.1448, 37),
                 'K1' : (1.8818, 2.1994, 37),
                 'K2' : (2.1034, 2.4004, 37)}
 
-def get_gpi_filter(pipeline_dir,filter_name):
+def get_gpi_filter(filter_name):
     """
     Extract the spectrum of a given gpi filter with the sampling of pipeline reduced cubes.
 
     Inputs:
-        pipeline_dir: Directory of the gpi pipeline.
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
 
     Output:
@@ -28,7 +28,11 @@ def get_gpi_filter(pipeline_dir,filter_name):
     """
 
     # get the path to the file containing the spectrum in the pipeline directory
-    filename = pipeline_dir+"/config/filters/GPI-filter-"+filter_name+".fits"
+    if platform.system() == "Windows":
+        filename = ".\\filters\\GPI-filter-"+filter_name+".fits"
+    else:
+        filename = "./filters/GPI-filter-"+filter_name+".fits"
+
 
     # load the fits array
     hdulist = pyfits.open(filename)
@@ -79,7 +83,7 @@ def find_lower_nearest(array,value):
     idx = np.nanargmax(diff)
     return array[idx], idx
 
-def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = None):
+def get_star_spectrum(filter_name,star_type = None, temperature = None):
     """
     Get the spectrum of a star with given spectral type interpolating in the pickles database.
     The sampling is the one of pipeline reduced cubes.
@@ -87,7 +91,6 @@ def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = N
     Work only for V (ie brown dwarf) star
 
     Inputs:
-        pipeline_dir: Directory of the gpi pipeline.
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
         star_type: 'A5','F4',... Assume type V star. Is ignored of temperature is defined.
         temperature: temperature of the star. Overwrite star_type if defined.
@@ -100,8 +103,12 @@ def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = N
 
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
 
-    filename_temp_lookup = pipeline_dir+'/config/pickles/mainseq_colors.txt'
-    filename_pickles_lookup = pipeline_dir+'/config/pickles/AA_README'
+    if platform.system() == "Windows":
+        filename_temp_lookup = '.\\pickles\\mainseq_colors.txt'
+        filename_pickles_lookup = '.\\pickles\\AA_README'
+    else:
+        filename_temp_lookup = './pickles/mainseq_colors.txt'
+        filename_pickles_lookup = './pickles/AA_README'
 
     #a = np.genfromtxt(filename_temp_lookup, names=True, delimiter=' ', dtype=None)
 
@@ -145,8 +152,13 @@ def get_star_spectrum(pipeline_dir,filter_name,star_type = None, temperature = N
 
     upper_filename = dict_filename[upper_temp]
     lower_filename = dict_filename[lower_temp]
-    upper_filename = pipeline_dir+"/config/pickles/"+upper_filename+".fits"
-    lower_filename = pipeline_dir+"/config/pickles/"+lower_filename+".fits"
+
+    if platform.system() == "Windows":
+        upper_filename = ".\\pickles\\"+upper_filename+".fits"
+        lower_filename = ".\\pickles\\"+lower_filename+".fits"
+    else:
+        upper_filename = "./pickles/"+upper_filename+".fits"
+        lower_filename = "./pickles/"+lower_filename+".fits"
 
     hdulist = pyfits.open(upper_filename)
     cube = hdulist[1].data
@@ -268,9 +280,7 @@ def get_planet_spectrum(filename,filter_name):
 
 
 if __name__ == "__main__":
-    pipeline_dir = "/Users/jruffio/gpi/pipeline/"
 
-    #get_gpi_filter(pipeline_dir,'J')
     #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
     filename = "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
     get_planet_spectrum(filename,'H')
