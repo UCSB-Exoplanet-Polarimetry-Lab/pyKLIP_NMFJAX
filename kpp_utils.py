@@ -66,15 +66,13 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
     except:
         object_name = "UNKNOWN_OBJECT"
 
-    print(object_name)
-
     candidates_list = []
 
     with open(GOI_list_filename, 'r') as GOI_list:
         for myline in GOI_list:
             if not myline.startswith("#"):
                 GOI_name, status, k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
-                if GOI_name == object_name:
+                if GOI_name.lower() == object_name.lower(): # case insensitive comparision
                     candidates_list.append((int(k),bool(potential_planet),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
 
 
@@ -86,6 +84,7 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
     for candidate in candidates_list:
         k,potential_planet,max_val_criter,x_max_pos,y_max_pos, k,l = candidate
         cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+
 
     return np.squeeze(cube_cpy)
 

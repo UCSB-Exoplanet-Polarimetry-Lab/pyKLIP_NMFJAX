@@ -70,7 +70,6 @@ def get_pdf_model(data):
 
     pdf_model = weights*pdf_model_exp + (1-weights)*pdf_model_gaussian
 
-    pdf_model /= np.sum(pdf_model)
 
     if 0:
         fig = 2
@@ -79,11 +78,12 @@ def get_pdf_model(data):
 
     if 0:
         fig = 1
-        plt.figure(fig,figsize=(8,8))
-        plt.plot(center_bins,np.array(im_histo,dtype="double")/np.sum(im_histo)/(im_std/10.),'bx-', markersize=5,linewidth=3)
-        plt.plot(center_bins,g(center_bins)/np.sum(g(center_bins))/(im_std/10.),'g.')
+        plt.figure(fig,figsize=(8,16))
+        plt.subplot(211)
+        plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx-', markersize=5,linewidth=3) #/np.sum(im_histo)/(im_std/10.)
+        plt.plot(center_bins,g(center_bins),'g.')#/np.sum(g(center_bins))/(im_std/10.)
         plt.plot(new_sampling,pdf_model,'r--')
-        plt.plot(new_sampling,np.cumsum(pdf_model),'g.')
+        #plt.plot(new_sampling,np.cumsum(pdf_model),'g.')
         plt.xlabel('criterion value', fontsize=20)
         plt.ylabel('Probability of the value', fontsize=20)
         plt.xlim((-20.* im_std,20.*im_std))
@@ -93,7 +93,26 @@ def get_pdf_model(data):
         ax.tick_params(axis='y', labelsize=20)
         ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
         ax.set_yscale('log')
-        plt.ylim((10**-7,10))
+        plt.ylim((10**-7,1000))
+
+    pdf_model /= np.sum(pdf_model)
+
+    if 0:
+        plt.subplot(212)
+        plt.plot(center_bins,np.array(im_histo,dtype="double")/np.sum(im_histo)/(im_std/10.),'bx-', markersize=5,linewidth=3) #
+        plt.plot(center_bins,g(center_bins)/np.sum(g(center_bins))/(im_std/10.),'g.')#
+        plt.plot(new_sampling,pdf_model,'r--')
+        plt.plot(new_sampling,1-np.cumsum(pdf_model),'g.')
+        plt.xlabel('criterion value', fontsize=20)
+        plt.ylabel('Probability of the value', fontsize=20)
+        plt.xlim((-20.* im_std,20.*im_std))
+        plt.grid(True)
+        ax = plt.gca()
+        ax.tick_params(axis='x', labelsize=20)
+        ax.tick_params(axis='y', labelsize=20)
+        ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
+        ax.set_yscale('log')
+        plt.ylim((10**-7,1000))
         plt.show()
 
     return pdf_model,new_sampling
@@ -128,8 +147,8 @@ def get_image_probability_map(image,image_without_planet,IOWA,N,centroid = None)
         #plt.show()
 
     for k,l in zip(image_finite[0],image_finite[1]):
-        stdout.flush()
-        stdout.write("\r%d" % k)
+        #stdout.flush()
+        #stdout.write("\r%d" % k)
         r = r_grid[k,l]
 
         r_closest_id, r_closest = min(enumerate(pdf_radii), key=lambda x: abs(x[1]-r))
@@ -139,13 +158,14 @@ def get_image_probability_map(image,image_without_planet,IOWA,N,centroid = None)
             r_closest_id2 = r_closest_id - 1
         else:
             r_closest_id2 = r_closest_id + 1
+        r_closest2 = pdf_radii[r_closest_id2]
 
         if (r_closest_id2 < 0) or (r_closest_id2 > (pdf_radii.size-1)):
             probability_map[k,l] = 1-cdf_interp_list[r_closest_id](image[k,l])
             #plt.plot(np.arange(-10,10,0.1),cdf(np.arange(-10,10,0.1)))
             #plt.show()
         else:
-            probability_map[k,l] = 1-0.5*(cdf_interp_list[r_closest_id](image[k,l])+cdf_interp_list[r_closest_id2](image[k,l]))
+            probability_map[k,l] = 1-(cdf_interp_list[r_closest_id](image[k,l])*abs(r-r_closest2)+cdf_interp_list[r_closest_id2](image[k,l])*abs(r-r_closest))/abs(r_closest-r_closest2)
 
     if 0:
         plt.figure(1)
@@ -158,7 +178,7 @@ def get_image_probability_map(image,image_without_planet,IOWA,N,centroid = None)
         plt.imshow(image_without_planet,interpolation="nearest")
         plt.show()
 
-    return probability_map
+    return -np.log10(probability_map)
 
 
 
@@ -197,6 +217,7 @@ def get_image_PDF(image,IOWA,N,centroid = None):
     annulus_radii_list = []
     for it, rminmax in enumerate(annuli_radii):
         r_min,r_max = rminmax
+        #print(rminmax)
 
         where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
 

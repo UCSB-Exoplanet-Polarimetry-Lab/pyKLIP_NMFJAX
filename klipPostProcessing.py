@@ -173,6 +173,16 @@ def calculate_metrics(filename,
     # Divide the convolved flat cube by the standard deviation map to get the SNR.
     flat_cube_SNR = flat_cube/flat_cube_std
 
+    if probability:
+        if platform.system() == "Windows":
+            GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+        else:
+            GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+        image = flat_cube
+        image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+        IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+        flat_cube_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
 
     if metrics is not None:
         if len(metrics) == 1 and not isinstance(metrics,list):
@@ -388,6 +398,10 @@ def calculate_metrics(filename,
         hdulist2.writeto(outputDir+folderName+prefix+'-flatCube.fits', clobber=True)
         hdulist2[1].data = flat_cube_SNR
         hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
+        if probability:
+            hdulist2[1].data = flat_cube_proba_map
+            hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
+
         if metrics is not None:
             if "weightedFlatCube" in metrics:
                 hdulist2[1].data = weightedFlatCube
@@ -785,7 +799,7 @@ def planet_detection_in_dir_per_file(filename,
                                 folderName = folderName,
                                 spectrum=spectrum,
                                 mute = mute,
-                                SNR = False,
+                                SNR = True,
                                 probability = True)
 
 
@@ -917,7 +931,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
 
     filename_filter = "pyklip-*-k100a7s4m3"
     numbasis = 20
-    spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx"]
+    spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx",""]
     if 0:
         spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx",
                           "."+os.path.sep+"spectra"+os.path.sep+"t700g178nc.flx",
@@ -931,10 +945,11 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     star_type = "G4"
     metrics = ["weightedFlatCube","matchedFilter","shape"]
 
-    if platform.system() == "Mac":
-        user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/codepyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
-    elif platform.system() == "Windows":
+    if platform.system() == "Windows":
         user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+    else:
+        user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/code/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+
 
     inputDirs = []
     for inputDir in os.listdir(campaign_dir):
@@ -951,9 +966,9 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         numbasis=numbasis,
                                         user_defined_PSF_cube=user_defined_PSF_cube,
                                         metrics_only = False,
-                                        planet_detection_only = True,
+                                        planet_detection_only = False,
                                         threads = True,
-                                        mute = False)
+                                        mute = True)
 
     if 0:
         N_threads = len(inputDirs)
