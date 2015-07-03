@@ -2,6 +2,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
 from scipy.signal import convolve
+from scipy.optimize import curve_fit
 import astropy.io.fits as pyfits
 from astropy.modeling import models, fitting
 from copy import copy
@@ -17,736 +18,9 @@ from sys import stdout
 import platform
 
 import spectra_management as spec
-
-
-def extract_PSFs(filename, stamp_width = 10, mute = False):
-    '''
-    Extract the PSFs in a pyklip reduced cube in which fake planets have been injected.
-    The position of the fake planets is stored in the headers when pyklip is used.
-    A cube stamp is extracted for each radius and angle and they are all sorted in the out_stamp_PSFs array.
-
-    /!\ The cube is normalized following cube /= np.nanstd(cube[10,:,:])
-    This is because I don't want the very small numbers in Jason's output as he uses contrast units
-
-    :param filename: Name of the file from which the fake planets cube stamps should be extracted.
-    :param stamp_width: Spatial width of the stamps to be extracted around each fake planets.
-    :param mute: If true print some text in the console.
-    :return out_stamp_PSFs: A (nl,stamp_width,stamp_width,nth,nr) array with nl the number of wavelength of the cube,
-            nth the number of section in the klip reduction and nr the number of annuli. Therefore the cube defined by
-            out_stamp_PSFs[:,:,:,0,2] is a cube stamp of the planet in the first section of the third annulus. In order
-            to know what position it exactly corresponds to please look at the FAKPLPAR keyword in the primary headers.
-    '''
-    hdulist = pyfits.open(filename)
-    cube = hdulist[1].data
-    cube /= np.nanstd(cube[10,:,:])
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-    #slice = hdulist[1].data[2,:,:]
-    #ny,nx = slice.shape
-    prihdr = hdulist[0].header
-    exthdr = hdulist[1].header
-
-    try:
-        # Retrieve the center of the image from the fits keyword.
-        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-    except:
-        # If the keywords could not be found.
-        if not mute:
-            print("Couldn't find PSFCENTX and PSFCENTY keywords.")
-        center = [(nx-1)/2,(ny-1)/2]
-
-    try:
-        # Retrieve the position of the fake planets from the fits keyword.
-        fakePlparams_str = prihdr['FAKPLPAR']
-    except:
-        # If the keywords could not be found.
-        if not mute:
-            print("ERROR. Couldn't find FAKPLPAR (Fake planets parameters) keyword. Has to quit extract_PSFs().")
-        return 0
-
-    fakePlparams_splitted_str = fakePlparams_str.split(";")
-    planet_angles_str = fakePlparams_splitted_str[6]
-    planet_radii_str = fakePlparams_splitted_str[7]
-    planet_angles =eval(planet_angles_str.split("=")[1])
-    planet_radii =eval(planet_radii_str.split("=")[1])
-
-    nth = np.size(planet_angles)
-    nr = np.size(planet_radii)
-
-    x, y = np.meshgrid(np.arange(nx), np.arange(ny))
-    #x.shape = (x.shape[0] * x.shape[1])
-    #y.shape = (y.shape[0] * y.shape[1])
-    x -= center[0]
-    y -= center[1]
-    x_planets = np.dot(np.array([planet_radii]).transpose(),np.array([np.cos(np.radians(planet_angles))]))
-    y_planets = np.dot(np.array([planet_radii]).transpose(),np.array([np.sin(np.radians(planet_angles))]))
-    #print(x_planets+center[0])
-    #print(y_planets+center[1])
-
-    out_stamp_PSFs = np.zeros((nl,stamp_width,stamp_width,nth,nr))
-
-    for l_id in range(nl):
-        for r_id,r_it in enumerate(planet_radii):
-            for th_id, th_it in enumerate(planet_angles):
-                x_plnt = np.round(x_planets[r_id,th_id]+center[0])
-                y_plnt = np.round(y_planets[r_id,th_id]+center[1])
-
-                out_stamp_PSFs[l_id,:,:,th_id,r_id] = cube[l_id,
-                                                            (y_plnt-np.floor(stamp_width/2.)):(y_plnt+np.ceil(stamp_width/2.)),
-                                                            (x_plnt-np.floor(stamp_width/2.)):(x_plnt+np.ceil(stamp_width/2.))]
-
-        #print(l_id,r_id,r_it,th_id, th_it,x_plnt,y_plnt)
-        #plt.imshow(out_stamp_PSFs[:,:,l_id,th_id,r_id],interpolation = 'nearest')
-        #plt.show()
-
-    return out_stamp_PSFs
-
-def extract_merge_PSFs(filename, radii, thetas, stamp_width = 10):
-    hdulist = pyfits.open(filename)
-    cube = hdulist[1].data
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-    nth = np.size(thetas)
-    nr = np.size(radii)
-    #slice = hdulist[1].data[2,:,:]
-    #ny,nx = slice.shape
-    prihdr = hdulist[0].header
-    exthdr = hdulist[1].header
-    try:
-        # Retrieve the center of the image from the fits keyword.
-        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-    except:
-        # If the keywords could not be found.
-        center = [(nx-1)/2,(ny-1)/2]
-
-    x, y = np.meshgrid(np.arange(nx), np.arange(ny))
-    #x.shape = (x.shape[0] * x.shape[1])
-    #y.shape = (y.shape[0] * y.shape[1])
-    x -= center[0]
-    y -= center[1]
-    x_planets = np.dot(np.array([radii]).transpose(),np.array([np.cos(np.radians(thetas))]))
-    y_planets = np.dot(np.array([radii]).transpose(),np.array([np.sin(np.radians(thetas))]))
-
-    out_stamp_PSFs = np.zeros((ny,nx,nth,nr,nl))
-
-    dn = stamp_width
-    for l_id in range(nl):
-        for r_id,r_it in enumerate(radii):
-            for th_id, th_it in enumerate(thetas):
-                x_plnt = np.ceil(x_planets[r_id,th_id]+center[0])
-                y_plnt = np.ceil(y_planets[r_id,th_id]+center[1])
-
-                stamp = cube[l_id,(y_plnt-dn/2):(y_plnt+dn/2),(x_plnt-dn/2):(x_plnt+dn/2)]
-                stamp_x, stamp_y = np.meshgrid(np.arange(dn, dtype=np.float32), np.arange(dn, dtype=np.float32))
-                stamp_x += (x_planets[r_id,th_id]+center[0]-x_plnt)
-                stamp_y += y_planets[r_id,th_id]+center[1]-y_plnt
-                stamp = ndimage.map_coordinates(stamp, [stamp_y, stamp_x])
-
-                #plt.imshow(stamp,interpolation = 'nearest')
-                #plt.show()
-                #return
-
-                if k == 0 and l == 0:
-                    PSFs_stamps = [stamp]
-                else:
-                    PSFs_stamps = np.concatenate((PSFs_stamps,[stamp]),axis=0)
-
-    return np.mean(PSFs_stamps,axis=0)
-
-def subtract_radialMed(image,w,l,center):
-    ny,nx = image.shape
-
-    n_area_x = np.floor(nx/w)
-    n_area_y = np.floor(ny/w)
-
-    x, y = np.meshgrid(np.arange(nx)-center[0], np.arange(ny)-center[1])
-    r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
-
-    for p in np.arange(n_area_x):
-        for q in np.arange(n_area_y):
-            #stamp = image[(q*w):((q+1)*w),(p*w):((p+1)*w)]
-            #image[(q*w):((q+1)*w),(p*w):((p+1)*w)] -= nanmedian(stamp)
-
-            r = r_grid[((q+0.5)*w),((p+0.5)*w)]
-            th = th_grid[((q+0.5)*w),((p+0.5)*w)]
-
-            arc_id = np.where(((r-w/2.0) < r_grid) * (r_grid < (r+w/2.0)) * ((th-l/r) < th_grid) * (th_grid < (th+l/r)))
-            image[(q*w):((q+1)*w),(p*w):((p+1)*w)] -= nanmedian(image[arc_id])
-
-            if 0 and p == 50 and q == 50:
-                image[arc_id] = 100
-                print(image[arc_id].size)
-                plt.figure(2)
-                plt.imshow(image, interpolation="nearest")
-                plt.show()
-
-
-    return image
-
-
-
-def get_occ(image, centroid = None):
-    '''
-    Get the IWA (inner working angle) of the central disk of nans and return the mask corresponding to the inner disk.
-
-    :param image: A GPI image with a disk full of nans at the center.
-    :param centroid: center of the nan disk
-    :return:
-    '''
-    ny,nx = image.shape
-
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    IWA = 0
-    while np.isnan(image[x_cen,y_cen+IWA]):
-        IWA += 1
-
-    # Build the x and y coordinates grids
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    # Calculate the radial distance of each pixel
-    r = abs(x +y*1j)
-
-    mask = np.ones((ny,nx))
-    mask[np.where(np.isnan(image))] = np.nan
-
-    inner_mask = copy(mask)
-    inner_mask[np.where(r > IWA+2.)] = 1
-
-    outer_mask = copy(mask)
-    outer_mask[np.where(np.isnan(inner_mask))] = 1
-    OWA = np.min(r[np.where(np.isnan(outer_mask))])
-
-    return IWA,OWA,inner_mask,outer_mask
-
-def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
-
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-
-    width = 2*mask_radius+1
-    stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,width,1)-width/2,np.arange(0,width,1)-width/2)
-    stamp_mask = np.ones((width,width))
-    r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
-    stamp_mask[np.where(r_stamp < mask_radius)] = np.nan
-
-    try:
-        # OBJECT: keyword in the primary header with the name of the star.
-        object_name = prihdr['OBJECT'].strip().replace (" ", "_")
-    except:
-        object_name = "UNKNOWN_OBJECT"
-
-    print(object_name)
-
-    candidates_list = []
-
-    with open(GOI_list_filename, 'r') as GOI_list:
-        for myline in GOI_list:
-            if not myline.startswith("#"):
-                GOI_name, status, k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
-                if GOI_name == object_name:
-                    candidates_list.append((int(k),bool(potential_planet),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
-
-
-    row_m = np.floor(width/2.0)
-    row_p = np.ceil(width/2.0)
-    col_m = np.floor(width/2.0)
-    col_p = np.ceil(width/2.0)
-
-    for candidate in candidates_list:
-        k,potential_planet,max_val_criter,x_max_pos,y_max_pos, k,l = candidate
-        cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-
-    return np.squeeze(cube)
-
-def get_image_PDF(image,(IWA,OWA),N,centroid = None):
-    ny,nx = image.shape
-
-    image_mask = np.ones((ny,nx))
-    image_mask[np.where(np.isnan(image))] = 0
-
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    # Build the x and y coordinates grids
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    # Calculate the radial distance of each pixel
-    r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
-
-    # Define the radii intervals for each annulus
-    r0 = IWA
-    annuli_radii = []
-    while np.sqrt(N/np.pi+r0**2) < OWA:
-        annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-        r0 = np.sqrt(N/np.pi+r0**2)
-
-    annuli_radii.append((r0,np.max([ny,nx])))
-    N_annuli = len(annuli_radii)
-
-
-    for it, rminmax in enumerate(annuli_radii):
-        r_min,r_max = rminmax
-
-        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
-
-        #im = copy(image)
-        #im[where_ring] = 1.0
-        #plt.imshow(im,interpolation="nearest")
-        #plt.show()
-
-        im_std = np.std(image[where_ring])
-        bins = np.arange(-10.*im_std,10.*im_std,im_std/10.)
-        data = image[where_ring]
-        im_histo = np.histogram(data, bins=bins)[0]
-        N_inHisto = np.sum(im_histo)
-        im_histo = im_histo/float(N_inHisto)
-        print(im_histo)
-        print(N_inHisto,np.size(where_ring[0]))
-
-
-        if 1:
-            im_histo_max = np.max(im_histo)
-    
-            g_init = models.Gaussian1D(amplitude=np.max(im_histo), mean=0.0, stddev=im_std)
-            fit_g = fitting.LevMarLSQFitter()
-            warnings.simplefilter('ignore')
-            g = fit_g(g_init, bins[0:bins.size-1], im_histo)
-
-            fig = 1
-            plt.figure(fig,figsize=(12,12))
-            plt.plot(bins[0:bins.size-1],im_histo,'bx-', markersize=5,linewidth=3)
-            plt.plot(bins[0:bins.size-1],g(bins[0:bins.size-1]),'c--',linewidth=1)
-    
-            plt.xlabel('criterion value', fontsize=20)
-            plt.ylabel('Probability of the value', fontsize=20)
-            plt.xlim((-10.* im_std,10.*im_std))
-            plt.grid(True)
-            ax = plt.gca()
-            #ax.text(10.*im_std, 2.0*im_histo_max/5., str(N_high_SNR_planets),
-            #        verticalalignment='bottom', horizontalalignment='right',
-            #        color='red', fontsize=50)
-            #ax.text(3.*im_std, 2.0*im_histo_max/5., str(N_low_SNR_planets),
-            #        verticalalignment='bottom', horizontalalignment='right',
-            #        color='red', fontsize=50)
-            ax.tick_params(axis='x', labelsize=20)
-            ax.tick_params(axis='y', labelsize=20)
-            ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
-            #plt.savefig(outputDir+"histo_"+filename+".png", bbox_inches='tight')
-            #plt.clf()
-            #plt.close(fig)
-            ax.set_yscale('log')
-            plt.ylim((10**-7,1))
-            plt.show()
-    return
-
-def get_spatial_cova_func(image,(IWA,OWA),N,centroid = None,n_neigh=11, corr = False):
-    ny,nx = image.shape
-
-    image_mask = np.ones((ny,nx))
-    image_mask[np.where(np.isnan(image))] = 0
-    image_mask[0:n_neigh/2,:] = 0
-    image_mask[:,0:n_neigh/2] = 0
-    image_mask[(ny-n_neigh/2):ny,:] = 0
-    image_mask[:,(nx-n_neigh/2):nx] = 0
-
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    # Build the x and y coordinates grids
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    # Calculate the radial distance of each pixel
-    r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
-
-    # Define the radii intervals for each annulus
-    r0 = IWA
-    annuli_radii = []
-    while np.sqrt(N/np.pi+r0**2) < OWA:
-        annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-        r0 = np.sqrt(N/np.pi+r0**2)
-
-    annuli_radii.append((r0,np.max([ny,nx])))
-    N_annuli = len(annuli_radii)
-    #print(annuli_radii)
-
-    xneigh0, yneigh0 = np.meshgrid(np.arange(n_neigh)-n_neigh/2, np.arange(n_neigh)-n_neigh/2)
-    rneigh = abs(xneigh0 +yneigh0*1j)
-
-    correlation_list_of_values = []
-    correlation_stamps= np.zeros((n_neigh,n_neigh,N_annuli))
-    if corr:
-        variance_ring_values = np.zeros((N_annuli,))
-    for k in range(n_neigh*n_neigh*N_annuli):
-        correlation_list_of_values.append([])
-
-    for it, rminmax in enumerate(annuli_radii):
-        r_min,r_max = rminmax
-
-        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
-
-        #im = copy(image)
-        #im[where_ring] = 1.0
-        #plt.imshow(im,interpolation="nearest")
-        #plt.show()
-
-        if corr:
-            variance_ring_values[it] = np.nanvar(image[where_ring])
-
-        for k,l in zip(where_ring[0],where_ring[1]):
-            yneigh = k+yneigh0
-            xneigh = l+xneigh0
-            for i in range(n_neigh):
-                for j in range(n_neigh):
-                    correlation_list_of_values[it*n_neigh**2+ i*n_neigh + j].append(image[k,l]*image[yneigh[i,j],xneigh[i,j]])
-
-
-    for it in range(N_annuli):
-        for i in range(n_neigh):
-            for j in range(n_neigh):
-                correlation_stamps[i,j,it] = np.nanmean(correlation_list_of_values[it*n_neigh**2+ i*n_neigh + j])
-
-    if corr:
-        for it in range(N_annuli):
-            correlation_stamps[:,:,it] /= variance_ring_values[it]
-
-    #plt.plot(np.reshape(rneigh,n_neigh*n_neigh),np.reshape(correlation_stamps[:,:,0],n_neigh*n_neigh),".")
-    #plt.show()
-
-    return np.reshape(rneigh,n_neigh*n_neigh),np.reshape(correlation_stamps,(n_neigh*n_neigh,N_annuli))
-
-def get_spectral_cova_func(cube,(IWA,OWA),N,centroid = None,n_neigh=3, corr = False):
-
-    nl,ny,nx = cube.shape
-
-    flat_cube = np.mean(cube,axis=0)
-
-    image_mask = np.ones((ny,nx))
-    image_mask[np.where(np.isnan(flat_cube))] = 0
-    image_mask[0:n_neigh/2,:] = 0
-    image_mask[:,0:n_neigh/2] = 0
-    image_mask[(ny-n_neigh/2):ny,:] = 0
-    image_mask[:,(nx-n_neigh/2):nx] = 0
-
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    # Build the x and y coordinates grids
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-    # Calculate the radial distance of each pixel
-    r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
-
-    # Define the radii intervals for each annulus
-    r0 = IWA
-    annuli_radii = []
-    while np.sqrt(N/np.pi+r0**2) < OWA:
-        annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-        r0 = np.sqrt(N/np.pi+r0**2)
-
-    annuli_radii.append((r0,np.max([ny,nx])))
-    N_annuli = len(annuli_radii)
-
-    correlation_list_of_values = []
-    correlation= np.zeros((n_neigh,N_annuli))
-    for k in range(n_neigh*N_annuli):
-        correlation_list_of_values.append([])
-
-
-
-    for it, rminmax in enumerate(annuli_radii):
-        r_min,r_max = rminmax
-
-        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
-
-        #cube[:,where_ring[0],where_ring[1]] = 1.0
-        spectral_stddev = np.nanstd(cube[:,where_ring[0],where_ring[1]],axis=1)
-        for l in range(nl):
-            cube[l,where_ring[0],where_ring[1]] /= spectral_stddev[l]
-
-            if l == 2:
-                print(cube[:,where_ring[0],where_ring[1]])
-
-        for l in range(nl):
-            for i in range(l,n_neigh):
-                #print(l,i,i-l)
-                correlation_list_of_values[(i-l)+it*n_neigh].append(np.mean(cube[i,where_ring[0],where_ring[1]]*cube[l,where_ring[0],where_ring[1]]))
-                #print(correlation_list_of_values)
-
-
-    for it in range(N_annuli):
-        for i in range(n_neigh):
-            correlation[i,it] = np.nanmean(correlation_list_of_values[i+it*n_neigh])
-
-
-
-    return correlation,annuli_radii
-
-def radialStd(cube,dr,Dr,centroid = None, rejection = False):
-    '''
-    Return the standard deviation with respect to the radius on an image.
-    It cuts annuli of radial width Dr separated by dr and calculate the standard deviation in them.
-
-    Note: This function should work on cubes however JB has never really used it... So no guarantee
-
-    Inputs:
-        cube: 2D (ny,nx) or 3D (nl,ny,nx) array in which to calculate
-        dr: Sampling of the radial axis for calculating the standard deviation
-        Dr: width of the annuli used to calculate the standard deviation
-        centroid: [col,row] with the coordinates of the center of the image.
-        rejection: reject 3 sigma values
-
-    Outputs:
-        radial_std: Vector containing the standard deviation for each radii
-        r: Map with the distance of each pixel to the center.
-        r_samp: Radial sampling used for radial_std based on dr.
-
-    :return:
-    '''
-    # Get dimensions of the image
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
-        nl = 1
-
-    # Get the center of the image
-    #TODO centroid should be different for each slice?
-    if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
-    else:
-        x_cen, y_cen = centroid
-
-    # Build the x and y coordinates grids
-    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
-
-    # Calculate the radial distance of each pixel
-    r = abs(x +y*1j)
-    r_samp = np.arange(0,max(r.reshape(np.size(r))),dr)
-
-    # Declare the output array that will contain the std values
-    radial_std = np.zeros((nl,np.size(r_samp)))
-
-
-    for r_id, r_it in enumerate(r_samp):
-        # Get the coordinates of the pixels inside the current annulus
-        selec_pix = np.where( ((r_it-Dr/2.0) < r) * (r < (r_it+Dr/2.0)) )
-        selec_y, selec_x = selec_pix
-        # Extract the pixels inside the current annulus
-        data = cube[:,selec_y, selec_x]
-        for l_it in np.arange(nl):
-            data_slice = data[l_it,:]
-            # Check that everything is not Nan
-            if np.size(np.where(np.isnan(data_slice))) != data_slice.size:
-                # 3 sigma rejection if required
-                if rejection:
-                    mn_data = np.nanmean(data_slice)
-                    std_data = np.nanstd(data_slice)
-                    # Remove nans from the array but ensure they be put back afterwards
-                    data_slice[np.where(np.isnan(data_slice))] = mn_data + 10 * std_data
-                    out_3sig = np.where((data_slice-mn_data)>(3.*std_data))
-                    if out_3sig is not ():
-                        data[l_it,out_3sig] = np.nan
-
-                # Calculate the standard deviation on the annulus.
-                radial_std[l_it,r_id] = np.nanstd(data[l_it,:])
-            else:
-                radial_std[l_it,r_id] = np.nan
-
-    # Remove singleton dimension if the input is 2D.
-    radial_std = np.squeeze(radial_std)
-
-    return radial_std,r_samp,r
-
-def radialStdMap(cube,dr,Dr,centroid = None, rejection = False,treshold=10**(-6)):
-    '''
-    Return a cube of the same size as input cube with the radial standard deviation value. The pixels falling at same
-    radius will have the same value.
-
-    Inputs:
-        cube: 2D (ny,nx) or 3D (nl,ny,nx) array in which to calculate
-        dr: Sampling of the radial axis for calculating the standard deviation
-        Dr: width of the annuli used to calculate the standard deviation
-        centroid: [col,row] with the coordinates of the center of the image.
-        rejection: reject 3 sigma values
-        treshold: Set to nans the values of cube below the treshold.
-
-    Output:
-        cube_std: The standard deviation map.
-    '''
-
-    # Get the standard deviation function of radius
-    radial_std,r_samp,r = radialStd(cube,dr,Dr,centroid,rejection = rejection)
-
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        radial_std = radial_std[None,:]
-        nl = 1
-
-    # Interpolate the standard deviation function on each point of the image.
-    cube_std = np.zeros((nl,ny,nx))
-    radial_std_nans = np.isnan(radial_std)
-    radial_std[radial_std_nans] = 0.0
-    for l_id in np.arange(nl):
-        #f = interp1d(r_samp, radial_std[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
-        #a = f(r[0].reshape(nx*ny))
-        f = interp1d(r_samp, radial_std[l_id,:], kind='cubic',bounds_error=False, fill_value=np.nan)
-        a = f(r.reshape(nx*ny))
-        cube_std[l_id,:,:] = a.reshape(ny,nx)
-
-    # Remove nans from the array but ensure they be put back afterwards
-    cube_std[np.where(np.isnan(cube_std))] = 0.0
-    cube_std[np.where(cube_std < treshold)] = np.nan
-
-    # Remove singleton dimension if the input is 2D.
-    cube_std = np.squeeze(cube_std)
-
-    return cube_std
-
-
-
-def stamp_based_StdMap(image,width = 20,inner_mask_radius = 2.5):
-    '''
-    Return a map of the same size as input image with its standard deviation for each location in the image.
-    The standard deviation is calculated as follow:
-    For each pixel a 2D stamp is extracted around it. The width of the stamp is equal to the input width.
-    The center disk of radius inner_mask_radius is masked out from the stamp.
-    The standard deviation value for the center pixel is the standard deviation in the non masked surroundings.
-
-    Inputs:
-        image: 2D (ny,nx) array from which to calculate the standard deviation.
-        width: Width of the stamp to be extracted at each pixel.
-        inner_mask_radius: Radius of the inner disk to be masked out form the stamp.
-
-    Output:
-        im_std: The standard deviation map.
-    '''
-    ny,nx = image.shape
-
-    stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,width,1)-width/2,np.arange(0,width,1)-width/2)
-    stamp_PSF_mask = np.ones((width,width))
-    r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
-    stamp_PSF_mask[np.where(r_PSF_stamp < inner_mask_radius)] = np.nan
-
-    im_std = np.zeros((ny,nx)) + np.nan
-    row_m = np.floor(width/2.0)
-    row_p = np.ceil(width/2.0)
-    col_m = np.floor(width/2.0)
-    col_p = np.ceil(width/2.0)
-
-    for k in np.arange(10,ny-10):
-        stdout.write("\r{0}/{1}".format(k,ny))
-        stdout.flush()
-        for l in np.arange(10,nx-10):
-            stamp_cube = image[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-            im_std[k,l] = np.nanstd(stamp_cube*stamp_PSF_mask)
-
-
-    return im_std
-
-
-def ringSection_based_StdMap(image,Dr = 8,Dth = 45,Dpix_mask = 2.5,centroid = None):
-    '''
-    Return a map of the same size as input image with its standard deviation for each location in the image.
-    The standard deviation is calculated as follow:
-    For each pixel a 2D stamp is extracted around it.
-    The stamp has the shape of a piece of ring centered on the current pixel.
-    The piece of rings are constructed such that all the stamp have the same number of pixel roughly no matter the
-    separation.
-
-    Inputs:
-        image: 2D (ny,nx) array from which to calculate the standard deviation.
-        Dr: Width of the ring.
-        Dth: Angle of the section for a separation of 100 pixels.
-        Dpix_mask: radius of the PSF that should be masked in pixel
-        centroid: [col,row] with the coordinates of the center of the image.
-
-    Output:
-        im_std: The standard deviation map.
-    '''
-    ny,nx = image.shape
-
-    x, y = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
-    #x-axis points right
-    #y-axis points down
-    #theta measured from y to x.
-    #print(x)
-    #print(y)
-    r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
-    #print(th_grid)
-    #print(np.arctan2(10,10))
-    #print(np.arctan2(-10,10))
-    #print(np.arctan2(10,-10))
-    #print(np.arctan2(-10,-10))
-
-    Dth_rad = Dth/180.*np.pi
-    im_std = np.zeros((ny,nx)) + np.nan
-
-    for k in np.arange(10,ny-10):
-        #stdout.write("\r{0}/{1}".format(k,ny))
-        #stdout.flush()
-        for l in np.arange(10,nx-10):
-            if not np.isnan(image[k,l]):
-                r = r_grid[(k,l)]
-                th = th_grid[(k,l)]
-
-                delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
-
-                ring_section = ((r-Dr/2.0) < r_grid) * (r_grid < (r+Dr/2.0)) * \
-                                (abs(delta_th_grid)<(+Dth_rad*50./r)) * \
-                                (abs(delta_th_grid)>(Dpix_mask/r))
-                                #((+Dpix_mask/r) < delta_th_grid) * (delta_th_grid < (-Dpix_mask/r))
-                ring_section_id = np.where(ring_section)
-                im_std[k,l] = np.nanstd(image[ring_section_id])
-
-
-                if 0 and ((k == 75 and l == 150) or ((k == 173 and l == 165))):
-                    print("coucou")
-                    print(r,th,Dth*50./r,Dpix_mask/r,+Dpix_mask/r,-Dpix_mask/r)
-                    image[ring_section_id] = 100
-                    print(image[ring_section_id].size)
-                    print("coucou")
-                    plt.figure(2)
-                    plt.imshow(image, interpolation="nearest")
-                    plt.show()
-
-
-    return im_std
-
-def gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0, theta = 0, offset = 0):
-    xo = float(xo)
-    yo = float(yo)
-    a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
-    b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
-    c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
-    g = offset + amplitude*np.exp( - (a*((x-xo)**2) + 2*b*(x-xo)*(y-yo)
-                            + c*((y-yo)**2)))
-    return g
+from kpp_utils import *
+from kpp_pdf import *
+from kpp_std import *
 
 def calculate_metrics(filename,
                         metrics = None,
@@ -754,7 +28,10 @@ def calculate_metrics(filename,
                         outputDir = None,
                         folderName = None,
                         spectrum = None,
-                        mute = False ):
+                        mute = False,
+                        filename_no_planets = None,
+                        SNR = True,
+                        probability = True):
     '''
     Calculate the metrics for future planet detection. The SNR map is a metric for example but JB thinks it's not the best one.
 
@@ -885,11 +162,13 @@ def calculate_metrics(filename,
     # Exctract the finite pixels from the mask
     flat_cube_wider_notNans = np.where(np.isnan(flat_cube_wider_mask) == 0)
 
+    std_function = radialStdMap
+    #std_function = ringSection_based_StdMap
+
     # Calculate the standard deviation map.
     # the standard deviation is calculated on annuli of width Dr. There is an annulus centered every dr.
-    dr = 2 ; Dr = 5 ;
-    #flat_cube_std = radialStdMap(flat_cube,dr,Dr, centroid=center)
-    flat_cube_std = ringSection_based_StdMap(flat_cube, centroid=center)
+    #flat_cube_std = radialStdMap(flat_cube, centroid=center)
+    flat_cube_std = std_function(flat_cube, centroid=center)
 
     # Divide the convolved flat cube by the standard deviation map to get the SNR.
     flat_cube_SNR = flat_cube/flat_cube_std
@@ -900,11 +179,26 @@ def calculate_metrics(filename,
             metrics = [metrics]
 
         if "weightedFlatCube" in metrics:
+            if not mute:
+                print("Calculating weightedFlatCube for "+filename)
             weightedFlatCube = np.average(cube,axis=0,weights=spectrum)
             #weightedFlatCube_SNR = weightedFlatCube/radialStdMap(weightedFlatCube,dr,Dr, centroid=center)
-            weightedFlatCube_SNR = weightedFlatCube/ringSection_based_StdMap(weightedFlatCube,centroid=center)
+            if SNR:
+                weightedFlatCube_SNR = weightedFlatCube/std_function(weightedFlatCube,centroid=center)
+            if probability:
+                if platform.system() == "Windows":
+                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                else:
+                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+                image = weightedFlatCube
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
 
         if "matchedFilter" in metrics and "shape" not in metrics:
+            if not mute:
+                print("Calculating matchedFilter (no shape) for "+filename)
             matchedFilter_map = np.ones((ny,nx)) + np.nan
                 #ortho_criterion_map = np.zeros((ny,nx))
             row_m = np.floor(ny_PSF/2.0)
@@ -934,9 +228,22 @@ def calculate_metrics(filename,
                 ampl = np.nansum(PSF_cube*stamp_cube)
                 matchedFilter_map[k,l] = np.sign(ampl)*ampl**2
 
-            matchedFilter_SNR_map = matchedFilter_map/radialStdMap(matchedFilter_map,dr,Dr, centroid=center)
+            if SNR:
+                matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map, centroid=center)
+            if probability:
+                if platform.system() == "Windows":
+                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                else:
+                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+                image = matchedFilter_SNR_map
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
 
         if "shape" in metrics and "matchedFilter" not in metrics:
+            if not mute:
+                print("Calculating shape (no matchedFilter) for "+filename)
             shape_map = -np.ones((ny,nx)) + np.nan
                 #ortho_criterion_map = np.zeros((ny,nx))
             row_m = np.floor(ny_PSF/2.0)
@@ -971,9 +278,23 @@ def calculate_metrics(filename,
 
             # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
             shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
-            shape_SNR_map = shape_map/radialStdMap(shape_map,dr,Dr, centroid=center)
+            if SNR:
+                shape_SNR_map = shape_map/std_function(shape_map, centroid=center)
+            if probability:
+                if platform.system() == "Windows":
+                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                else:
+                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+                image = matchedFilter_SNR_map
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
+
 
         if "matchedFilter" in metrics and "shape" in metrics:
+            if not mute:
+                print("Calculating shape and matchedFilter for "+filename)
             matchedFilter_map = np.ones((ny,nx)) + np.nan
             shape_map = -np.ones((ny,nx)) + np.nan
                 #ortho_criterion_map = np.zeros((ny,nx))
@@ -1009,10 +330,27 @@ def calculate_metrics(filename,
                     shape_map[k,l] =  np.nan
 
             shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
-            #shape_SNR_map = shape_map/radialStdMap(shape_map,dr,Dr, centroid=center)
-            shape_SNR_map = shape_map/ringSection_based_StdMap(shape_map,centroid=center)
-            #matchedFilter_SNR_map = matchedFilter_map/radialStdMap(matchedFilter_map,dr,Dr, centroid=center)
-            matchedFilter_SNR_map = matchedFilter_map/ringSection_based_StdMap(matchedFilter_map,centroid=center)
+            if SNR:
+                #shape_SNR_map = shape_map/radialStdMap(shape_map,dr,Dr, centroid=center)
+                shape_SNR_map = shape_map/std_function(shape_map,centroid=center)
+                #matchedFilter_SNR_map = matchedFilter_map/radialStdMap(matchedFilter_map,dr,Dr, centroid=center)
+                matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map,centroid=center)
+            if probability:
+                if platform.system() == "Windows":
+                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                else:
+                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+                image = shape_map
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
+                image = matchedFilter_map
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),2000,centroid = center)
+
 
 
     ## ortho_criterion is actually the sine squared between the two vectors
@@ -1054,18 +392,30 @@ def calculate_metrics(filename,
             if "weightedFlatCube" in metrics:
                 hdulist2[1].data = weightedFlatCube
                 hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube.fits', clobber=True)
-                hdulist2[1].data = weightedFlatCube_SNR
-                hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits', clobber=True)
+                if SNR:
+                    hdulist2[1].data = weightedFlatCube_SNR
+                    hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits', clobber=True)
+                if probability:
+                    hdulist2[1].data = weightedFlatCube_proba_map
+                    hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_proba.fits', clobber=True)
             if "matchedFilter" in metrics:
                 hdulist2[1].data = matchedFilter_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter.fits', clobber=True)
-                hdulist2[1].data = matchedFilter_SNR_map
-                hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_SNR.fits', clobber=True)
+                if SNR:
+                    hdulist2[1].data = matchedFilter_SNR_map
+                    hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_SNR.fits', clobber=True)
+                if probability:
+                    hdulist2[1].data = matchedFilter_proba_map
+                    hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_proba.fits', clobber=True)
             if "shape" in metrics:
                 hdulist2[1].data = shape_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape.fits', clobber=True)
-                hdulist2[1].data = shape_SNR_map
-                hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
+                if SNR:
+                    hdulist2[1].data = shape_SNR_map
+                    hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
+                if probability:
+                    hdulist2[1].data = shape_proba_map
+                    hdulist2.writeto(outputDir+folderName+prefix+'-shape_proba.fits', clobber=True)
     except:
         print("No exthdr so only using primary to save data...")
         hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
@@ -1320,7 +670,7 @@ def confirm_candidates(GOI_list_filename, logFilename_all, candidate_indices,can
 
     #"/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/planet_detec_pyklip-S20141218-k100a7s4m3_KL20/t800g100nc/c_Eri-detectionLog_candidates.txt"
 
-def calculate_metrics_in_dir_per_file(filename,
+def planet_detection_in_dir_per_file(filename,
                                       metrics = None,
                                       directory = "."+os.path.sep,
                                       outputDir = '',
@@ -1434,7 +784,9 @@ def calculate_metrics_in_dir_per_file(filename,
                                 outputDir = outputDir,
                                 folderName = folderName,
                                 spectrum=spectrum,
-                                mute = mute)
+                                mute = mute,
+                                SNR = False,
+                                probability = True)
 
 
         if not metrics_only:
@@ -1444,12 +796,12 @@ def calculate_metrics_in_dir_per_file(filename,
                 candidate_detection(outputDir+folderName,
                                     mute = mute)
 
-def calculate_metrics_in_dir_per_file_star(params):
+def planet_detection_in_dir_per_file_star(params):
     """
     Convert `f([1,2])` to `f(1,2)` call.
-    It allows one to call calculate_metrics_in_dir_per_file() with a tuple of parameters.
+    It allows one to call planet_detection_in_dir_per_file() with a tuple of parameters.
     """
-    return calculate_metrics_in_dir_per_file(*params)
+    return planet_detection_in_dir_per_file(*params)
 
 def planet_detection_in_dir_star(params):
     """
@@ -1529,7 +881,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
             if threads:
                 N_threads = np.size(filelist_klipped_cube)
                 pool = mp.Pool(processes=N_threads)
-                pool.map(calculate_metrics_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
+                pool.map(planet_detection_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
                                                                                itertools.repeat(metrics),
                                                                                itertools.repeat(directory),
                                                                                itertools.repeat(outputDir),
@@ -1542,7 +894,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                                itertools.repeat(mute)))
             else:
                 for filename in filelist_klipped_cube:
-                    calculate_metrics_in_dir_per_file(filename,
+                    planet_detection_in_dir_per_file(filename,
                                                      metrics = metrics,
                                                      directory = directory,
                                                      outputDir = outputDir,
