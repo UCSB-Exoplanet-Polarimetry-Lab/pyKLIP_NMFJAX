@@ -45,11 +45,13 @@ def get_occ(image, centroid = None):
 
 def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
 
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-    elif np.size(cube.shape) == 2:
-        ny,nx = cube.shape
-        cube = cube[None,:]
+    cube_cpy = copy(cube)
+
+    if np.size(cube_cpy.shape) == 3:
+        nl,ny,nx = cube_cpy.shape
+    elif np.size(cube_cpy.shape) == 2:
+        ny,nx = cube_cpy.shape
+        cube_cpy = cube_cpy[None,:]
         nl = 1
 
     width = 2*mask_radius+1
@@ -83,9 +85,9 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
 
     for candidate in candidates_list:
         k,potential_planet,max_val_criter,x_max_pos,y_max_pos, k,l = candidate
-        cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+        cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
-    return np.squeeze(cube)
+    return np.squeeze(cube_cpy)
 
 
 def extract_PSFs(filename, stamp_width = 10, mute = False):

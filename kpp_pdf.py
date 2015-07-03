@@ -10,7 +10,8 @@ from astropy.modeling import models, fitting
 from copy import copy
 import warnings
 import matplotlib.pyplot as plt
-
+from scipy.interpolate import interp1d
+from sys import stdout
 
 def model_exp(x,m,alpha):
     return np.exp(-alpha*x-m)
@@ -32,7 +33,6 @@ def get_pdf_model(data):
     fit_g = fitting.LevMarLSQFitter()
     warnings.simplefilter('ignore')
     g = fit_g(g_init, center_bins, im_histo)
-    print(g.amplitude,g.mean,g.stddev)
 
     right_side_noZeros = np.where((center_bins > (g.mean+2*g.stddev))*(im_histo != 0))
     N_right_bins = len(right_side_noZeros[0])
@@ -63,7 +63,6 @@ def get_pdf_model(data):
     pdf_model_exp[left_side] = model_exp(new_sampling[left_side],*param_fit_leftExp[0])
 
     weights = np.zeros(new_sampling.size)
-    print((g.mean+2*g.stddev))
     weights[right_side] = np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev))
     weights[left_side] = np.tanh(-(new_sampling[left_side]-(g.mean-2*g.stddev))/(0.1*g.stddev))
     weights = 0.5*(weights+1.0)
@@ -84,6 +83,7 @@ def get_pdf_model(data):
         plt.plot(center_bins,np.array(im_histo,dtype="double")/np.sum(im_histo)/(im_std/10.),'bx-', markersize=5,linewidth=3)
         plt.plot(center_bins,g(center_bins)/np.sum(g(center_bins))/(im_std/10.),'g.')
         plt.plot(new_sampling,pdf_model,'r--')
+        plt.plot(new_sampling,np.cumsum(pdf_model),'g.')
         plt.xlabel('criterion value', fontsize=20)
         plt.ylabel('Probability of the value', fontsize=20)
         plt.xlim((-20.* im_std,20.*im_std))
@@ -101,6 +101,65 @@ def get_pdf_model(data):
 def get_cdf_model(data):
     pdf_model,sampling = get_pdf_model(data)
     return np.cumsum(pdf_model),pdf_model,sampling
+
+def get_image_probability_map(image,image_without_planet,IOWA,N,centroid = None):
+    pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,IOWA,N,centroid)
+
+    pdf_radii = np.array(annulus_radii_list)[:,0]
+
+    probability_map = np.zeros(image.shape) + np.nan
+    ny,nx = image.shape
+
+    # Build the x and y coordinates grids
+    x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
+
+    # Calculate the radial distance of each pixel
+    r_grid = abs(x_grid +y_grid*1j)
+
+    image_finite = np.where(np.isfinite(image))
+
+    #Build the cdf_models from interpolation
+    cdf_interp_list = []
+    for sampling,cdf_sampled in zip(sampling_list,cdf_list):
+        cdf_interp_list.append(interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0))
+
+        #f = interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0)
+        #plt.plot(np.arange(-10,10,0.1),f(np.arange(-10,10,0.1)))
+        #plt.show()
+
+    for k,l in zip(image_finite[0],image_finite[1]):
+        stdout.flush()
+        stdout.write("\r%d" % k)
+        r = r_grid[k,l]
+
+        r_closest_id, r_closest = min(enumerate(pdf_radii), key=lambda x: abs(x[1]-r))
+
+
+        if (r-r_closest) < 0:
+            r_closest_id2 = r_closest_id - 1
+        else:
+            r_closest_id2 = r_closest_id + 1
+
+        if (r_closest_id2 < 0) or (r_closest_id2 > (pdf_radii.size-1)):
+            probability_map[k,l] = 1-cdf_interp_list[r_closest_id](image[k,l])
+            #plt.plot(np.arange(-10,10,0.1),cdf(np.arange(-10,10,0.1)))
+            #plt.show()
+        else:
+            probability_map[k,l] = 1-0.5*(cdf_interp_list[r_closest_id](image[k,l])+cdf_interp_list[r_closest_id2](image[k,l]))
+
+    if 0:
+        plt.figure(1)
+        plt.subplot(1,3,1)
+        plt.imshow(np.log10(probability_map),interpolation="nearest")
+        plt.colorbar()
+        plt.subplot(1,3,2)
+        plt.imshow(image,interpolation="nearest")
+        plt.subplot(1,3,3)
+        plt.imshow(image_without_planet,interpolation="nearest")
+        plt.show()
+
+    return probability_map
+
 
 
 def get_image_PDF(image,IOWA,N,centroid = None):
@@ -132,23 +191,23 @@ def get_image_PDF(image,IOWA,N,centroid = None):
     N_annuli = len(annuli_radii)
 
 
+    pdf_list = []
+    cdf_list = []
+    sampling_list = []
+    annulus_radii_list = []
     for it, rminmax in enumerate(annuli_radii):
         r_min,r_max = rminmax
 
         where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
 
-        #im = copy(image)
-        #im[where_ring] = 1.0
-        #plt.imshow(im,interpolation="nearest")
-        #plt.show()
-
-        #N_inHisto = np.sum(im_histo)
-        #im_histo = im_histo/float(N_inHisto)
-
-        #print(rminmax)
         data = image[where_ring]
         cdf_model, pdf_model, sampling = get_cdf_model(data)
-        if 1:
+
+        pdf_list.append(pdf_model)
+        cdf_list.append(cdf_model)
+        sampling_list.append(sampling)
+        annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
+        if 0:
             fig = 1
             plt.figure(fig,figsize=(8,8))
             plt.plot(sampling,pdf_model,'b-',linewidth=3)
@@ -165,7 +224,7 @@ def get_image_PDF(image,IOWA,N,centroid = None):
             plt.show()
 
 
-    return
+    return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
 
 
