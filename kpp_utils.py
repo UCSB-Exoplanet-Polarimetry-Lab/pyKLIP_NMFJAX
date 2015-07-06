@@ -7,6 +7,23 @@ from scipy.stats import nanmedian
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 
+
+def confirm_candidates(GOI_list_filename, logFilename_all, candidate_indices,candidate_status, object_name = None):
+    #print(object_name)
+    with open(GOI_list_filename, 'a') as GOI_list:
+        #print("coucou")
+        #print(candidate_indices)
+
+        with open(logFilename_all, 'r') as logFile_all:
+            #print("bonjour")
+            for myline in logFile_all:
+                if not myline.startswith("#"):
+                    k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
+                    if int(k) in candidate_indices:
+                        GOI_list.write(object_name+", "+candidate_status[np.where(np.array(candidate_indices)==int(k))[0]]+", "+myline)
+
+    #"/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/planet_detec_pyklip-S20141218-k100a7s4m3_KL20/t800g100nc/c_Eri-detectionLog_candidates.txt"
+
 def get_occ(image, centroid = None):
     '''
     Get the IWA (inner working angle) of the central disk of nans and return the mask corresponding to the inner disk.
