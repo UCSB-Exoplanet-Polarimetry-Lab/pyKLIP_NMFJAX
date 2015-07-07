@@ -120,20 +120,21 @@ def get_pdf_model(data):
 
     new_sampling = np.arange(2*np.min(data),4*np.max(data),im_std/100.)
 
-    pdf_model_gaussian = g(new_sampling)
+    #pdf_model_gaussian = g(new_sampling)
+    pdf_model_gaussian = interp1d(center_bins,np.array(im_histo,dtype="double"),kind = "cubic",bounds_error = False, fill_value=0.0)(new_sampling)
 
 
-    if 0:
+    if 1:
         right_side = np.where((new_sampling >= g.mean))
         left_side = np.where((new_sampling < g.mean))
-        print(g.mean+0.0,g.stddev+0.0)
+        #print(g.mean+0.0,g.stddev+0.0)
         pdf_model_exp = np.zeros(new_sampling.size)
         weights = np.zeros(new_sampling.size)
         if param_fit_rightExp is not None:
             pdf_model_exp[right_side] = model_exp(new_sampling[right_side],*param_fit_rightExp[0])
             weights[right_side] = np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev))
-            plt.plot(np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
-            plt.show()
+            #plt.plot(np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
+            #plt.show()
         else:
             weights[right_side] = -1.
 
@@ -185,8 +186,8 @@ def get_pdf_model(data):
 
     if 0:
         fig = 1
-        plt.figure(fig,figsize=(8,16))
-        plt.subplot(211)
+        plt.figure(fig,figsize=(16,8))
+        plt.subplot(121)
         plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx-', markersize=5,linewidth=3) #/np.sum(im_histo)/(im_std/10.)
         plt.plot(center_bins,g(center_bins),'g.')#/np.sum(g(center_bins))/(im_std/10.)
         plt.plot(new_sampling,pdf_model,'r--')
@@ -206,7 +207,7 @@ def get_pdf_model(data):
     pdf_model /= np.sum(pdf_model)
 
     if 0:
-        plt.subplot(212)
+        plt.subplot(122)
         plt.plot(center_bins,np.array(im_histo,dtype="double")/np.sum(im_histo)/(im_std/10.),'bx-', markersize=5,linewidth=3) #
         plt.plot(center_bins,g(center_bins)/np.sum(g(center_bins))/(im_std/10.),'g.')#
         plt.plot(new_sampling,pdf_model,'r--')
@@ -220,7 +221,7 @@ def get_pdf_model(data):
         ax.tick_params(axis='y', labelsize=20)
         ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
         ax.set_yscale('log')
-        plt.ylim((10**-17,1000))
+        plt.ylim((10**-7,1000))
         plt.show()
 
     return pdf_model,new_sampling,np.array(im_histo,dtype="double"), center_bins
@@ -233,6 +234,28 @@ def get_cdf_model(data):
 def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
     IWA,OWA = IOWA
     ny,nx = image.shape
+
+    if 0:
+        fig = 1
+        plt.figure(fig,figsize=(16,8))
+        plt.subplot(121)
+        plt.imshow(image,interpolation="nearest")
+        plt.colorbar()
+
+        data = image[np.where(np.isfinite(image))]
+        im_std = np.std(data)
+        bins = np.arange(np.min(data),np.max(data),im_std/10.)
+        im_histo = np.histogram(data, bins=bins)[0]
+
+        N_bins = bins.size-1
+        center_bins = 0.5*(bins[0:N_bins]+bins[1:N_bins+1])
+        plt.subplot(122)
+        plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx-', markersize=5,linewidth=3)
+        plt.grid(True)
+        ax = plt.gca()
+        ax.set_yscale('log')
+        plt.show()
+
 
     image_mask = np.ones((ny,nx))
     image_mask[np.where(np.isnan(image))] = 0
@@ -312,7 +335,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
     return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
 
-def get_image_probability_map(image,image_without_planet,IOWA,N = 2000,centroid = None, r_step = 5):
+def get_image_probability_map(image,image_without_planet,IOWA,N = 3000,centroid = None, r_step = 5):
     IWA,OWA = IOWA
     pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,IOWA,N,centroid,r_step=r_step)
 

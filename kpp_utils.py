@@ -87,7 +87,8 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
 
     with open(GOI_list_filename, 'r') as GOI_list:
         for myline in GOI_list:
-            if not myline.startswith("#"):
+            #print([myline.rstrip()])
+            if (not myline.startswith("#")) and myline.rstrip():
                 GOI_name, status, k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
                 if GOI_name.lower() == object_name.lower(): # case insensitive comparision
                     candidates_list.append((int(k),bool(potential_planet),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))

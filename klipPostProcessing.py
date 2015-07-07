@@ -89,14 +89,15 @@ def calculate_metrics(filename,
         flat_cube = np.mean(cube,0)
 
         # Build the PSF.
-        if PSF_cube is not None:
-            if np.size(np.shape(PSF_cube)) != 3:
+        PSF_cube_cpy = copy(PSF_cube)
+        if PSF_cube_cpy is not None:
+            if np.size(np.shape(PSF_cube_cpy)) != 3:
                 if not mute:
                     print("Wrong PSF dimensions. Image is 3D.")
                 return 0
             # The PSF is user-defined.
-            nl, ny_PSF, nx_PSF = PSF_cube.shape
-            tmp_spectrum = np.nanmax(PSF_cube,axis=(1,2))
+            nl, ny_PSF, nx_PSF = PSF_cube_cpy.shape
+            tmp_spectrum = np.nanmax(PSF_cube_cpy,axis=(1,2))
         else:
             if not mute:
                 print("No specified PSF cube so one is built with simple gaussian PSF. (no spectral widening)")
@@ -113,20 +114,21 @@ def calculate_metrics(filename,
 
             # Duplicate the PSF to get a PSF cube.
             # Besides apply the spectrum of the planet on that cube before renormalization.
-            PSF_cube = np.tile(PSF,(nl,1,1))
+            PSF_cube_cpy = np.tile(PSF,(nl,1,1))
 
-        if spectrum is not None:
+        spectrum_cpy = spectrum
+        if spectrum_cpy is not None:
             for k in range(nl):
-                PSF_cube[k,:,:] *= spectrum[k]
+                PSF_cube_cpy[k,:,:] *= spectrum_cpy[k]
         else:
-            if PSF_cube is not None:
-                spectrum = tmp_spectrum
+            if PSF_cube_cpy is not None:
+                spectrum_cpy = tmp_spectrum
             else:
-                spectrum = np.ones(nl)
+                spectrum_cpy = np.ones(nl)
 
-        spectrum /= np.sqrt(np.nansum(spectrum**2))
+        spectrum_cpy /= np.sqrt(np.nansum(spectrum_cpy**2))
         # normalize PSF with norm 2.
-        PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
+        PSF_cube_cpy /= np.sqrt(np.sum(PSF_cube_cpy**2))
 
     else: # Assuming 2D image
         flat_cube = cube
@@ -188,7 +190,7 @@ def calculate_metrics(filename,
     #std_function = ringSection_based_StdMap
 
     if SNR_only:
-        probability = Fasle
+        probability = False
         SNR = True
     if probability_only:
         probability = True
@@ -197,7 +199,7 @@ def calculate_metrics(filename,
 
     if SNR:
         if not mute:
-            print("Calculating SNR of flatCube for"+filename)
+            print("Calculating SNR of flatCube for "+filename)
         # Calculate the standard deviation map.
         # the standard deviation is calculated on annuli of width Dr. There is an annulus centered every dr.
         #flat_cube_std = radialStdMap(flat_cube, centroid=center)
@@ -208,7 +210,7 @@ def calculate_metrics(filename,
 
     if probability:
         if not mute:
-            print("Calculating proba of flatCube for"+filename)
+            print("Calculating proba of flatCube for "+filename)
         if platform.system() == "Windows":
             GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
         else:
@@ -236,7 +238,7 @@ def calculate_metrics(filename,
             if activate_metric_calc:
                 if not mute:
                     print("Calculating weightedFlatCube for "+filename)
-                weightedFlatCube = np.average(cube,axis=0,weights=spectrum)
+                weightedFlatCube = np.average(cube,axis=0,weights=spectrum_cpy)
                 #weightedFlatCube_SNR = weightedFlatCube/radialStdMap(weightedFlatCube,dr,Dr, centroid=center)
 
             if SNR:
@@ -295,7 +297,7 @@ def calculate_metrics(filename,
                     stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
                     for slice_id in range(nl):
                         stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube*stamp_cube)
+                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
                     matchedFilter_map[k,l] = np.sign(ampl)*ampl**2
 
                 IWA,OWA,inner_mask,outer_mask = get_occ(matchedFilter_map, centroid = center)
@@ -359,19 +361,21 @@ def calculate_metrics(filename,
                     stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
                     for slice_id in range(nl):
                         stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube*stamp_cube)
+                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
                     try:
                         shape_map[k,l] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
                     except:
                         shape_map[k,l] =  np.nan
+
+                # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
+                shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
 
                 IWA,OWA,inner_mask,outer_mask = get_occ(shape_map, centroid = center)
                 conv_kernel = np.ones((10,10))
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
                 shape_map[np.where(np.isnan(wider_mask))] = np.nan
 
-            # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
-            shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
+
             if SNR:
                 if not mute:
                     print("Calculating SNR of shape (no matchedFilter) for "+filename)
@@ -427,13 +431,13 @@ def calculate_metrics(filename,
 
                 #stdout.write("\r%d" % 0)
                 for k,l in zip(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1]):
-                    #stdout.flush()
-                    #stdout.write("\r%d" % k)
+                    stdout.flush()
+                    stdout.write("\r%d" % k)
 
                     stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
                     for slice_id in range(nl):
                         stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube*stamp_cube)
+                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
                     matchedFilter_map[k,l] = np.sign(ampl)*ampl**2
                     try:
                         shape_map[k,l] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
@@ -481,49 +485,54 @@ def calculate_metrics(filename,
     ## criterion_map = np.minimum(ratio_shape_SNR*shape_map,flat_cube_SNR)
 
 
+
     if not mute:
         print("Saving metrics maps as: "+outputDir+folderName+prefix+'-#myMetric#.fits')
     hdulist2 = pyfits.HDUList()
-    try:
-        hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
-        hdulist2.append(pyfits.ImageHDU(header=exthdr, data=flat_cube, name="Sci"))
-        #hdulist2[1].data = flat_cube
-        hdulist2.writeto(outputDir+folderName+prefix+'-flatCube.fits', clobber=True)
-        if SNR:
-            hdulist2[1].data = flat_cube_SNR
-            hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
-        if probability:
-            hdulist2[1].data = flat_cube_proba_map
-            hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
+    #try:
+    hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
+    hdulist2.append(pyfits.ImageHDU(header=exthdr, data=flat_cube, name="Sci"))
+    #hdulist2[1].data = flat_cube
+    hdulist2.writeto(outputDir+folderName+prefix+'-flatCube.fits', clobber=True)
+    if SNR:
+        hdulist2[1].data = flat_cube_SNR
+        hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
+    if probability:
+        hdulist2[1].data = flat_cube_proba_map
+        hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
 
-        if metrics is not None:
-            if "weightedFlatCube" in metrics:
+    if metrics is not None:
+        if "weightedFlatCube" in metrics:
+            if activate_metric_calc:
                 hdulist2[1].data = weightedFlatCube
                 hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube.fits', clobber=True)
-                if SNR:
-                    hdulist2[1].data = weightedFlatCube_SNR
-                    hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits', clobber=True)
-                if probability:
-                    hdulist2[1].data = weightedFlatCube_proba_map
-                    hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_proba.fits', clobber=True)
-            if "matchedFilter" in metrics:
+            if SNR:
+                hdulist2[1].data = weightedFlatCube_SNR
+                hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits', clobber=True)
+            if probability:
+                hdulist2[1].data = weightedFlatCube_proba_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_proba.fits', clobber=True)
+        if "matchedFilter" in metrics:
+            if activate_metric_calc:
                 hdulist2[1].data = matchedFilter_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter.fits', clobber=True)
-                if SNR:
-                    hdulist2[1].data = matchedFilter_SNR_map
-                    hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_SNR.fits', clobber=True)
-                if probability:
-                    hdulist2[1].data = matchedFilter_proba_map
-                    hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_proba.fits', clobber=True)
-            if "shape" in metrics:
+            if SNR:
+                hdulist2[1].data = matchedFilter_SNR_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_SNR.fits', clobber=True)
+            if probability:
+                hdulist2[1].data = matchedFilter_proba_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_proba.fits', clobber=True)
+        if "shape" in metrics:
+            if activate_metric_calc:
                 hdulist2[1].data = shape_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape.fits', clobber=True)
-                if SNR:
-                    hdulist2[1].data = shape_SNR_map
-                    hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
-                if probability:
-                    hdulist2[1].data = shape_proba_map
-                    hdulist2.writeto(outputDir+folderName+prefix+'-shape_proba.fits', clobber=True)
+            if SNR:
+                hdulist2[1].data = shape_SNR_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
+            if probability:
+                hdulist2[1].data = shape_proba_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-shape_proba.fits', clobber=True)
+    """
     except:
         print("No exthdr so only using primary to save data...")
         hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
@@ -547,6 +556,7 @@ def calculate_metrics(filename,
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape.fits', clobber=True)
                 hdulist2[0].data = shape_SNR_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
+    """
     hdulist2.close()
 
     # Save a plot of the spectrum used
@@ -556,7 +566,7 @@ def calculate_metrics(filename,
     spec_sampling = np.arange(nl)*wave_step + lambdaH0
     plt.close(1)
     plt.figure(1)
-    plt.plot(spec_sampling,spectrum,"rx-",markersize = 7, linewidth = 2)
+    plt.plot(spec_sampling,spectrum_cpy,"rx-",markersize = 7, linewidth = 2)
     plt.title("Template spectrum use in this folder")
     plt.xlabel("Wavelength (mum)")
     plt.ylabel("Norm-2 Normalized")
@@ -847,7 +857,6 @@ def planet_detection_in_dir_per_file(filename,
 
     prefix = prefix+"_KL"+str(N_KL_modes)
 
-
     if len(spectrum_model) == 1 and not isinstance(spectrum_model,list):
         spectrum_model =[spectrum_model]
     else:
@@ -882,9 +891,15 @@ def planet_detection_in_dir_per_file(filename,
             else:
                 if not mute:
                     print("No star spec or sat spot spec so using sole planet spectrum.")
-                spectrum = planet_sp
+                spectrum = copy(planet_sp)
         else:
-            spectrum = sat_spot_spec
+            if not mute:
+                print("Default sat spot spectrum will be used.")
+            spectrum = copy(sat_spot_spec)
+            #plt.plot(sat_spot_spec)
+            #plt.plot(spectrum)
+            #plt.show()
+
 
         if not planet_detection_only:
             if not mute:
@@ -1075,7 +1090,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         threads = True,
                                         mute = False,
                                         SNR_only = False,
-                                        probability_only = False)
+                                        probability_only = True)
 
     if 0:
         N_threads = len(inputDirs)
