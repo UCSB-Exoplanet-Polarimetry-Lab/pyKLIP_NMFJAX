@@ -568,7 +568,7 @@ class GPIData(Data):
 
         self.psfs = PSF_cube
 
-    def get_radial_psf(self,save = ""):
+    def get_radial_psf(self,save = None):
         """
         Return a pure radial PSF by averaging the original psf. The new PSF is invariant by rotation.
         A call to generate_psf_cube() is required prior to calling this function.
@@ -630,7 +630,7 @@ class GPIData(Data):
 
 
 
-            if save != "":
+            if save is not None:
                 self.savedata(save+"-original_radial_PSF_cube.fits", rad_psf_cube)
 
             return rad_psf_cube

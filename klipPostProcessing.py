@@ -16,6 +16,7 @@ import itertools
 import glob, os
 from sys import stdout
 import platform
+import xml.etree.cElementTree as ET
 
 import spectra_management as spec
 from kpp_utils import *
@@ -144,6 +145,14 @@ def calculate_metrics(filename,
             print("Couldn't find PSFCENTX and PSFCENTY keywords.")
         center = [(nx-1)/2,(ny-1)/2]
 
+
+    try:
+        filter = prihdr['IFSFILT'].split('_')[1]
+    except:
+        # If the keywords could not be found.
+        if not mute:
+            print("Couldn't find IFSFILT keyword. Assuming H.")
+        filter = "H"
 
     ##
     # Preliminaries and some sanity checks before saving the metrics maps fits file.
@@ -560,10 +569,7 @@ def calculate_metrics(filename,
     hdulist2.close()
 
     # Save a plot of the spectrum used
-    # todo /!\ Works only for H-Band. To be generalized.
-    wave_step = 0.00841081142426 # in mum
-    lambdaH0 = 1.49460536242  # in mum
-    spec_sampling = np.arange(nl)*wave_step + lambdaH0
+    spec_sampling = spec.get_gpi_wavelength_sampling(filter)
     plt.close(1)
     plt.figure(1)
     plt.plot(spec_sampling,spectrum_cpy,"rx-",markersize = 7, linewidth = 2)
@@ -572,6 +578,9 @@ def calculate_metrics(filename,
     plt.ylabel("Norm-2 Normalized")
     plt.savefig(outputDir+folderName+'template_spectrum.png', bbox_inches='tight')
     plt.close(1)
+
+    hdulist2[1].data = [spec_sampling,spectrum_cpy]
+    hdulist2.writeto(outputDir+folderName+'template_spectrum.fits', clobber=True)
 
     return 1
 # END calculate_metrics() DEFINITION
@@ -628,13 +637,13 @@ def candidate_detection(metrics_foldername,
 
     try:
         # OBJECT: keyword in the primary header with the name of the star.
-        prefix = prihdr['OBJECT'].strip().replace (" ", "_")
+        star_name = prihdr['OBJECT'].strip().replace (" ", "_")
     except:
-        prefix = "UNKNOWN_OBJECT"
+        star_name = "UNKNOWN_OBJECT"
 
 
-    #criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
-    criterion_map = shape_map
+    criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
+    #criterion_map = shape_map
     criterion_map_cpy = copy(criterion_map)
     if 0:
         IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
@@ -669,34 +678,10 @@ def candidate_detection(metrics_foldername,
     col_m = np.floor(stamp_ncol/2.0)
     col_p = np.ceil(stamp_ncol/2.0)
 
-    # List of local maxima
-    checked_spots_list = []
-    # List of local maxima that are valid candidates
-    candidates_list = []
-
-    logFile_all = open(metrics_foldername+os.path.sep+prefix+'-detectionLog_all.txt', 'w')
-    logFile_candidates = open(metrics_foldername+os.path.sep+prefix+'-detectionLog_candidates.txt', 'w')
-
-    myStr = "# Log some values for each local maxima \n" +\
-            "# Meaning of the columns from left to right. \n" +\
-            "# 1/ Index \n" +\
-            "# 2/ Boolean. True if the local maximum is a valid candidate. \n" +\
-            "# 3/ Value of the criterion at this local maximum. \n"+\
-            "# 4/ y coordinate of the maximum. \n"+\
-            "# 5/ x coordinate of the maximum. \n"+\
-            "# 6/ Row index of the maximum. (y-coord in DS9) \n"+\
-            "# 7/ Column index of the maximum. (x-coord in DS9) \n"
-    logFile_all.write(myStr)
-
-    myStr2 = "# Log some values for each local maxima \n" +\
-            "# Meaning of the columns from left to right. \n" +\
-            "# 1/ Index \n" +\
-            "# 2/ Value of the criterion at this local maximum. \n"+\
-            "# 3/ y coordinate of the maximum. \n"+\
-            "# 4/ x coordinate of the maximum. \n"+\
-            "# 5/ Row index of the maximum. (y-coord in DS9) \n"+\
-            "# 6/ Column index of the maximum. (x-coord in DS9) \n"
-    logFile_candidates.write(myStr2)
+    root = ET.Element("root")
+    star_elt = ET.SubElement(root, star_name)
+    candidates_elt = ET.SubElement(star_elt, "candidates")
+    all_elt = ET.SubElement(star_elt, "all")
 
     # Count the number of valid detected candidates.
     N_candidates = 0.0
@@ -719,35 +704,32 @@ def candidate_detection(metrics_foldername,
         # Mask the spot around the maximum we just found.
         criterion_map[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
 
-        potential_planet = max_val_criter > 4.
+        potential_planet = max_val_criter > 4.0
 
-        myStr = str(k)+', '+\
-                str(potential_planet)+', '+\
-                str(max_val_criter)+', '+\
-                str(x_max_pos)+', '+\
-                str(y_max_pos)+', '+\
-                str(row_id)+', '+\
-                str(col_id)+'\n'
-        logFile_all.write(myStr)
 
-        checked_spots_list.append((k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id))
+        ET.SubElement(all_elt,"localMax",
+                      id = str(k),
+                      max_val_criter = str(max_val_criter),
+                      x_max_pos= str(x_max_pos),
+                      y_max_pos= str(y_max_pos),
+                      row_id= str(row_id),
+                      col_id= str(col_id))
 
         if potential_planet:
-            myStr = str(k)+', '+\
-                    str(max_val_criter)+', '+\
-                    str(x_max_pos)+', '+\
-                    str(y_max_pos)+', '+\
-                    str(row_id)+', '+\
-                    str(col_id)+'\n'
-            logFile_candidates.write(myStr)
+            ET.SubElement(candidates_elt, "localMax",
+                          id = str(k),
+                          max_val_criter = str(max_val_criter),
+                          x_max_pos= str(x_max_pos),
+                          y_max_pos= str(y_max_pos),
+                          row_id= str(row_id),
+                          col_id= str(col_id))
 
             # Increment the number of detected candidates
             N_candidates += 1
-            # Append the useful things about the candidate in the list.
-            candidates_list.append((k,max_val_criter,x_max_pos,y_max_pos, row_id,col_id))
 
-    logFile_all.close()
-    logFile_candidates.close()
+
+    tree = ET.ElementTree(root)
+    tree.write(metrics_foldername+os.path.sep+star_name+'-detections.xml')
 
     # Highlight the detected candidates in the criterion map
     if not mute:
@@ -756,10 +738,13 @@ def candidate_detection(metrics_foldername,
     plt.figure(3,figsize=(16,16))
     plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
     ax = plt.gca()
-    for candidate in candidates_list:
-        candidate_it,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = candidate
+    for candidate in candidates_elt:
+        candidate_id = int(candidate.attrib["id"])
+        max_val_criter = float(candidate.attrib["max_val_criter"])
+        x_max_pos = float(candidate.attrib["x_max_pos"])
+        y_max_pos = float(candidate.attrib["y_max_pos"])
 
-        ax.annotate(str(candidate_it)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
+        ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
                 xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
                 textcoords='data',
                 arrowprops=dict(arrowstyle="->",
@@ -767,7 +752,7 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
-    plt.savefig(metrics_foldername+os.path.sep+prefix+'-detectionIm_candidates.png', bbox_inches='tight')
+    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates.png', bbox_inches='tight')
     plt.close(3)
 
     plt.close(3)
@@ -775,9 +760,12 @@ def candidate_detection(metrics_foldername,
     plt.figure(3,figsize=(16,16))
     plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
     ax = plt.gca()
-    for spot in checked_spots_list:
-        k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = spot
-        ax.annotate(str(k)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
+    for spot in all_elt:
+        candidate_id = int(spot.attrib["id"])
+        max_val_criter = float(spot.attrib["max_val_criter"])
+        x_max_pos = float(spot.attrib["x_max_pos"])
+        y_max_pos = float(spot.attrib["y_max_pos"])
+        ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
                 xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
                 textcoords='data',
                 arrowprops=dict(arrowstyle="->",
@@ -785,8 +773,242 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
-    plt.savefig(metrics_foldername+os.path.sep+prefix+'-detectionIm_all.png', bbox_inches='tight')
+    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all.png', bbox_inches='tight')
     plt.close(3)
+
+def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
+
+    spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
+    N_spectra_folders = len(spectrum_folders_list)
+    plt.figure(1,figsize=(4*N_spectra_folders,8))
+
+
+    # First let's recover the name of the file that was reduced for this folder.
+    # The name of the file is in the folder name
+    planet_detec_dir_glob = glob.glob(planet_detec_dir)
+    if np.size(planet_detec_dir_glob) == 0:
+        if not mute:
+            print("/!\ Quitting! Couldn't find the following directory " + planet_detec_dir)
+        return 0
+    else:
+        planet_detec_dir = planet_detec_dir_glob[0]
+
+    planet_detec_dir_splitted = planet_detec_dir.split(os.path.sep)
+    # Filename of the original klipped cube
+    original_cube_filename = planet_detec_dir_splitted[len(planet_detec_dir_splitted)-2].split("planet_detec_")[1]
+    original_cube_filename += "-speccube.fits"
+
+    if isinstance(PSF_cube_filename, basestring):
+        hdulist = pyfits.open(PSF_cube_filename)
+        PSF_cube = hdulist[1].data
+        hdulist.close()
+    else:
+        PSF_cube = PSF_cube_filename
+
+    hdulist = pyfits.open(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename)
+    cube = hdulist[1].data
+    exthdr = hdulist[1].header
+    prihdr = hdulist[0].header
+    hdulist.close()
+
+    nl,ny,nx = np.shape(cube)
+
+    try:
+        # Retrieve the center of the image from the fits keyword.
+        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    except:
+        # If the keywords could not be found.
+        center = [(nx-1)/2,(ny-1)/2]
+
+
+    try:
+        prihdr = hdulist[0].header
+        date = prihdr["DATE"]
+        hdulist.close()
+    except:
+        date = "no_date"
+        hdulist.close()
+
+    try:
+        filter = prihdr['IFSFILT'].split('_')[1]
+    except:
+        # If the keywords could not be found.
+        filter = "no_filter"
+
+
+    if not mute:
+        print("Looking for folders in " + planet_detec_dir + " ...")
+        print("... They should contain spectrum template based detection algorithm outputs.")
+    all_templates_detections = []
+    for spec_id,spectrum_folder in enumerate(spectrum_folders_list):
+        spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
+        spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
+        if not mute:
+            print("Found the folder " + spectrum_name)
+
+
+        # Gather the detection png in a single png
+        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections.xml")
+        #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
+        shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
+        shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
+        if len(candidates_log_file_list) == 1 and len(shape_proba_file_list) == 1 and len(shape_file_list) == 1:
+            candidates_log_file = candidates_log_file_list[0]
+            shape_proba_file = shape_proba_file_list[0]
+            shape_file = shape_file_list[0]
+
+            splitted_str =  candidates_log_file.split(os.path.sep)
+            star_name = splitted_str[len(splitted_str)-1].split("-")[0]
+
+            # Read flatCube_file
+            hdulist = pyfits.open(shape_proba_file)
+            shape_proba = hdulist[1].data
+            exthdr = hdulist[1].header
+            prihdr = hdulist[0].header
+            hdulist.close()
+            x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
+
+            plt.subplot(2,N_spectra_folders,spec_id+1)
+            plt.imshow(shape_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            ax = plt.gca()
+
+
+            tree = ET.parse(candidates_log_file)
+            root = tree.getroot()
+            for candidate in root[0].find("candidates"):
+                candidate_id = int(candidate.attrib["id"])
+                max_val_criter = float(candidate.attrib["max_val_criter"])
+                x_max_pos = float(candidate.attrib["x_max_pos"])
+                y_max_pos = float(candidate.attrib["y_max_pos"])
+                row_id = float(candidate.attrib["row_id"])
+                col_id = float(candidate.attrib["col_id"])
+
+                all_templates_detections.append((spectrum_name,int(candidate_id),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
+
+                ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=10, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
+                        xycoords='data', xytext=(float(x_max_pos)+10, float(y_max_pos)-10),
+                        textcoords='data',
+                        arrowprops=dict(arrowstyle="->",
+                                        linewidth = 1.,
+                                        color = 'red')
+                        )
+            plt.title(star_name +" "+ spectrum_name)
+            plt.clim(0.,5.0)
+
+            # Read flatCube_file
+            hdulist = pyfits.open(shape_file)
+            shape = hdulist[1].data
+            hdulist.close()
+
+            plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
+            plt.imshow(shape[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            plt.colorbar()
+
+    #plt.show()
+
+    ##
+    # Extract centroid for all detections
+    root = ET.Element("root")
+    star_elt = ET.SubElement(root, star_name)
+    #position_no_duplicated_detec = []
+    no_duplicates_id = 0
+    for detection in all_templates_detections:
+        spectrum_name,candidate_it,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = detection
+
+        row_cen,col_cen = spec.extract_planet_centroid(cube, (row_id,col_id), PSF_cube)
+
+        candidate_already_seen = False
+        candidate_seen_with_template = False
+
+
+        #Check that the detection hasn't already been taken care of.
+        for candidate in star_elt:
+            if abs(col_cen-float(candidate.attrib['col_centroid'])) < 1. \
+                and abs(row_cen-float(candidate.attrib['row_centroid'])) < 1.:
+                candidate_already_seen = True
+                candidate_elt = candidate
+
+        if not candidate_already_seen:
+            no_duplicates_id+=1
+            candidate_elt = ET.SubElement(star_elt,"candidate",
+                                          id = str(no_duplicates_id),
+                                          x_max_pos= str(x_max_pos),
+                                          y_max_pos= str(y_max_pos),
+                                          col_centroid= str(col_cen),
+                                          row_centroid= str(row_cen),
+                                          row_id= str(row_id),
+                                          col_id= str(col_id))
+            ET.SubElement(candidate_elt,"spectrumTemplate",
+                          candidate_it = str(candidate_it),
+                          name = spectrum_name,
+                          max_val_criter = str(max_val_criter))
+
+            for spec_id in range(N_spectra_folders):
+                plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
+                ax = plt.gca()
+                ax.annotate(str(int(no_duplicates_id)), fontsize=10, color = "black", xy=(float(x_max_pos), float(y_max_pos)),
+                        xycoords='data', xytext=(float(x_max_pos)+10, float(y_max_pos)-10),
+                        textcoords='data',
+                        arrowprops=dict(arrowstyle="->",
+                                        linewidth = 1.,
+                                        color = 'black')
+                        )
+        else:
+            for template in candidate_elt:
+                if template.attrib["name"] == spectrum_name:
+                    candidate_seen_with_template = True
+
+            if not candidate_seen_with_template:
+                ET.SubElement(candidate_elt,"spectrumTemplate",
+                              candidate_it = str(candidate_it),
+                              name = spectrum_name,
+                              max_val_criter = str(max_val_criter))
+
+    for candidate in star_elt:
+        wave_samp,spectrum = spec.extract_planet_spectrum(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename,
+                                                          (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
+                                                          PSF_cube, method="aperture")
+
+        plt.close(2)
+        plt.figure(2)
+        plt.plot(wave_samp,spectrum/np.nanmean(spectrum),"rx-",markersize = 7, linewidth = 2)
+        legend_str = ["candidate spectrum"]
+        for spectrum_folder in spectrum_folders_list:
+            spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
+            spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
+
+            hdulist = pyfits.open(spectrum_folder+os.path.sep+'template_spectrum.fits')
+            spec_data = hdulist[1].data
+            hdulist.close()
+
+            wave_samp = spec_data[0]
+            spectrum_template = spec_data[1]
+
+            plt.plot(wave_samp,spectrum_template/np.nanmean(spectrum_template),"--")
+            legend_str.append(spectrum_name)
+        plt.title("Candidate spectrum and templates used")
+        plt.xlabel("Wavelength (mum)")
+        plt.ylabel("Mean Normalized")
+        ax = plt.gca()
+        ax.legend(legend_str, loc = 'upper right', fontsize=12)
+        #print(planet_detec_dir)
+        #plt.show()
+        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate'+"_"+ \
+                    str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
+        plt.close(2)
+
+        #myAttributes = {"proba":max_val_criter}
+        #ET.SubElement(object_elt, "detec "+str(candidate_it), name="coucou").text = "some value1"
+
+
+    tree = ET.ElementTree(root)
+    tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates.xml')
+
+
+    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates.png', bbox_inches='tight')
+    plt.close(1)
+    #plt.show()
+
 
 
 def planet_detection_in_dir_per_file(filename,
@@ -855,13 +1077,17 @@ def planet_detection_in_dir_per_file(filename,
             print("I found several *-original_radial_PSF_cube.fits so I don't know what to do and I quit")
         return 0
 
-    prefix = prefix+"_KL"+str(N_KL_modes)
+    prefix = prefix+"-KL"+str(N_KL_modes)
 
     if len(spectrum_model) == 1 and not isinstance(spectrum_model,list):
         spectrum_model =[spectrum_model]
     else:
         if not mute:
             print("Iterating over several model spectra")
+
+    if outputDir == '':
+        outputDir = directory
+    outputDir += os.path.sep+"planet_detec_"+prefix+os.path.sep
 
     for spectrum_name_it in spectrum_model:
 
@@ -872,9 +1098,7 @@ def planet_detection_in_dir_per_file(filename,
         else:
             spectrum_name = "satSpotSpec"
 
-        if outputDir == '':
-            outputDir = directory
-        folderName = os.path.sep+"planet_detec_"+prefix+os.path.sep+spectrum_name+os.path.sep
+        folderName = spectrum_name+os.path.sep
 
 
 
@@ -896,9 +1120,11 @@ def planet_detection_in_dir_per_file(filename,
             if not mute:
                 print("Default sat spot spectrum will be used.")
             spectrum = copy(sat_spot_spec)
-            #plt.plot(sat_spot_spec)
-            #plt.plot(spectrum)
-            #plt.show()
+
+        if 0:
+            plt.plot(sat_spot_spec)
+            plt.plot(spectrum)
+            plt.show()
 
 
         if not planet_detection_only:
@@ -920,9 +1146,13 @@ def planet_detection_in_dir_per_file(filename,
         if not metrics_only:
             if not mute:
                 print("Calling candidate_detection() on "+outputDir+folderName)
-            if 1:
-                candidate_detection(outputDir+folderName,
-                                    mute = mute)
+            candidate_detection(outputDir+folderName,
+                                mute = mute)
+
+    if not metrics_only:
+        if not mute:
+            print("Calling gather_detections() on "+outputDir+folderName)
+        gather_detections(outputDir,PSF_cube, mute = mute)
 
 def planet_detection_in_dir_per_file_star(params):
     """
@@ -1007,38 +1237,37 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
             for f_name in filelist_klipped_cube:
                 print(f_name)
 
-        if 1:
-            if threads:
-                N_threads = np.size(filelist_klipped_cube)
-                pool = mp.Pool(processes=N_threads)
-                pool.map(planet_detection_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
-                                                                               itertools.repeat(metrics),
-                                                                               itertools.repeat(directory),
-                                                                               itertools.repeat(outputDir),
-                                                                               itertools.repeat(spectrum_model),
-                                                                               itertools.repeat(star_type),
-                                                                               itertools.repeat(star_temperature),
-                                                                               itertools.repeat(user_defined_PSF_cube),
-                                                                               itertools.repeat(metrics_only),
-                                                                               itertools.repeat(planet_detection_only),
-                                                                               itertools.repeat(mute),
-                                                                               itertools.repeat(SNR_only),
-                                                                               itertools.repeat(probability_only)))
-            else:
-                for filename in filelist_klipped_cube:
-                    planet_detection_in_dir_per_file(filename,
-                                                     metrics = metrics,
-                                                     directory = directory,
-                                                     outputDir = outputDir,
-                                                     spectrum_model = spectrum_model,
-                                                     star_type = star_type,
-                                                     star_temperature = star_temperature,
-                                                     user_defined_PSF_cube = user_defined_PSF_cube,
-                                                     metrics_only = metrics_only,
-                                                     planet_detection_only = planet_detection_only,
-                                                     mute = mute,
-                                                     SNR_only = SNR_only,
-                                                     probability_only = probability_only)
+        if threads:
+            N_threads = np.size(filelist_klipped_cube)
+            pool = mp.Pool(processes=N_threads)
+            pool.map(planet_detection_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
+                                                                           itertools.repeat(metrics),
+                                                                           itertools.repeat(directory),
+                                                                           itertools.repeat(outputDir),
+                                                                           itertools.repeat(spectrum_model),
+                                                                           itertools.repeat(star_type),
+                                                                           itertools.repeat(star_temperature),
+                                                                           itertools.repeat(user_defined_PSF_cube),
+                                                                           itertools.repeat(metrics_only),
+                                                                           itertools.repeat(planet_detection_only),
+                                                                           itertools.repeat(mute),
+                                                                           itertools.repeat(SNR_only),
+                                                                           itertools.repeat(probability_only)))
+        else:
+            for filename in filelist_klipped_cube:
+                planet_detection_in_dir_per_file(filename,
+                                                 metrics = metrics,
+                                                 directory = directory,
+                                                 outputDir = outputDir,
+                                                 spectrum_model = spectrum_model,
+                                                 star_type = star_type,
+                                                 star_temperature = star_temperature,
+                                                 user_defined_PSF_cube = user_defined_PSF_cube,
+                                                 metrics_only = metrics_only,
+                                                 planet_detection_only = planet_detection_only,
+                                                 mute = mute,
+                                                 SNR_only = SNR_only,
+                                                 probability_only = probability_only)
 
 
 
@@ -1053,17 +1282,12 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     numbasis = 20
     spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx",""]
     if 0:
-        spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"t800g100nc.flx",
-                          "."+os.path.sep+"spectra"+os.path.sep+"t700g178nc.flx",
-                          "."+os.path.sep+"spectra"+os.path.sep+"t650g18nc.flx",
-                          "."+os.path.sep+"spectra"+os.path.sep+"t650g32nc.flx",
-                          "."+os.path.sep+"spectra"+os.path.sep+"t650g56nc.flx",
-                          ""]
-        spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t650g18nc.flx",
-                          "/Users/jruffio/gpi/pyklip/spectra/t650g32nc.flx",
-                          "/Users/jruffio/gpi/pyklip/spectra/t650g56nc.flx"]
+        spectrum_model = ["."+os.path.sep+"spectra"+os.path.sep+"g100ncflx"+os.path.sep+"t1500g100nc.flx",
+                              "."+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx",
+                              "."+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t600g32nc.flx",
+                              ""]
     star_type = "G4"
-    metrics = ["weightedFlatCube","matchedFilter","shape"]
+    metrics = []#["weightedFlatCube","matchedFilter","shape"]
 
     if platform.system() == "Windows":
         user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
@@ -1076,21 +1300,20 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
         if not inputDir.startswith('.'):
             inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
 
-            if 1:
-                inputDir = campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep
-                planet_detection_in_dir(inputDir,
-                                        filename_prefix_is=filename_filter,
-                                        spectrum_model=spectrum_model,
-                                        star_type=star_type,
-                                        metrics = metrics,
-                                        numbasis=numbasis,
-                                        user_defined_PSF_cube=user_defined_PSF_cube,
-                                        metrics_only = False,
-                                        planet_detection_only = False,
-                                        threads = True,
-                                        mute = False,
-                                        SNR_only = False,
-                                        probability_only = True)
+            inputDir = campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep
+            planet_detection_in_dir(inputDir,
+                                    filename_prefix_is=filename_filter,
+                                    spectrum_model=spectrum_model,
+                                    star_type=star_type,
+                                    metrics = metrics,
+                                    numbasis=numbasis,
+                                    user_defined_PSF_cube=user_defined_PSF_cube,
+                                    metrics_only = False,
+                                    planet_detection_only = True,
+                                    threads = False,
+                                    mute = False,
+                                    SNR_only = False,
+                                    probability_only = True)
 
     if 0:
         N_threads = len(inputDirs)

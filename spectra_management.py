@@ -4,6 +4,11 @@ import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
+import matplotlib.pyplot as plt
+import scipy.ndimage as ndimage
+from scipy.optimize import leastsq
+from scipy.optimize import minimize
+import glob
 
 
 # First and last wavelength of each band
@@ -278,26 +283,223 @@ def get_planet_spectrum(filename,filter_name):
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
 
+def get_gpi_wavelength_sampling(filter_name):
+
+    w_start, w_end, N_sample = band_sampling[filter_name]
+    dw = (w_end-w_start)/N_sample
+    sampling_pip = np.arange(w_start,w_end,dw)
+
+    return sampling_pip
+
+
+
+def place_model_PSF(PSF_template,x_cen,y_cen,output_shape, x_grid = None, y_grid = None):
+
+    ny_template, nx_template = PSF_template.shape
+    if x_grid is None and y_grid is None:
+        x_grid, y_grid = np.meshgrid(np.arange(0,output_shape[1],1),np.arange(0,output_shape[0],1))
+
+    x_grid = x_grid.astype(np.float)
+    y_grid = y_grid.astype(np.float)
+
+    x_grid -= x_cen - nx_template/2
+    y_grid -= y_cen - ny_template/2
+
+    return ndimage.map_coordinates(PSF_template, [y_grid,x_grid], mode='constant', cval=0.0)
+
+def LSQ_place_model_PSF(PSF_template,x_cen,y_cen,planet_image, x_grid = None, y_grid = None):
+    model = place_model_PSF(PSF_template,x_cen,y_cen,planet_image.shape, x_grid = x_grid, y_grid = y_grid)
+    return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
+
+
+def extract_planet_centroid(cube, position, PSF_cube):
+
+
+    nl,ny,nx = cube.shape
+    row_id,col_id = position
+    nl_PSF,ny_PSF,nx_PSF = PSF_cube.shape
+
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+    cube_stamp = cube[:,(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
+    flatCube_stamp = np.nansum(cube_stamp,axis=0)
+    flatCube_stamp /= np.nanmax(flatCube_stamp)
+    flatPSF = np.nansum(PSF_cube,axis=0)
+    flatPSF /= np.nanmax(flatPSF)
+
+    nanargmax_flat_stamp= np.nanargmax(flatCube_stamp)
+    max_row_id = np.floor(nanargmax_flat_stamp/nx_PSF)
+    max_col_id = nanargmax_flat_stamp-nx_PSF*max_row_id
+
+    param0 = (float(max_col_id),float(max_row_id)+1)
+
+    LSQ_func = lambda para: LSQ_place_model_PSF(flatPSF,para[0],para[1],flatCube_stamp)
+    param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
+
+    if 0:
+        plt.figure(1)
+        plt.subplot(2,2,1)
+        plt.imshow(flatCube_stamp,interpolation="nearest")
+        plt.subplot(2,2,2)
+        plt.imshow(flatPSF,interpolation="nearest")
+        plt.subplot(2,2,3)
+        plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param0[0],param0[1],(ny_PSF,nx_PSF)),interpolation="nearest")
+        plt.subplot(2,2,4)
+        plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param_fit[0],param_fit[1],(ny_PSF,nx_PSF)),interpolation="nearest")
+        plt.show()
+
+    return (param_fit[1]+row_id-row_m),(param_fit[0]+col_id-col_m)
+
+
+def LSQ_scale_model_PSF(PSF_template,planet_image,a):
+    return np.nansum((planet_image-a*PSF_template)**2,axis = (0,1))#/y_model
+
+def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,filter = None, mute = True):
+
+    if isinstance(cube_para, basestring):
+        hdulist = pyfits.open(cube_para)
+        cube = hdulist[1].data
+        exthdr = hdulist[1].header
+        prihdr = hdulist[0].header
+        hdulist.close()
+
+        try:
+            filter = prihdr['IFSFILT'].split('_')[1]
+        except:
+            if not mute:
+                print("Couldn't find IFSFILT keyword in headers.")
+
+    else:
+        cube = cube_para
+
+    if isinstance(PSF_cube_para, basestring):
+        hdulist = pyfits.open(PSF_cube_para)
+        PSF_cube = hdulist[1].data
+        exthdr = hdulist[1].header
+        prihdr = hdulist[0].header
+        hdulist.close()
+
+        sat_spot_spec = np.nanmax(PSF_cube,axis=(1,2))
+        for l_id in range(PSF_cube.shape[0]):
+            PSF_cube[l_id,:,:] /= sat_spot_spec[l_id]
+    else:
+        PSF_cube = PSF_cube_para
+
+    row_cen,col_cen = extract_planet_centroid(cube, position, PSF_cube)
+
+    nl,ny,nx = cube.shape
+    row_id = np.round(row_cen)
+    col_id = np.round(col_cen)
+    #row_id,col_id = position
+    nl_PSF,ny_PSF,nx_PSF = PSF_cube.shape
+
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+    cube_stamp = cube[:,(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
+
+
+    # Mask to remove the spots already checked in criterion_map.
+    stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,nx_PSF,1),np.arange(0,ny_PSF,1))
+    r_stamp = np.sqrt((stamp_x_grid-(col_cen-(col_id-col_m)))**2 +(stamp_y_grid-(row_cen-(row_id-row_m)))**2)
+    #stamp_mask = np.ones((stamp_nrow,stamp_ncol))
+    #stamp_mask[np.where(r_stamp < 4.0)] = np.nan
+    stamp_mask_small = np.ones((ny_PSF,nx_PSF))
+    stamp_mask_small[np.where(r_stamp > 2.)] = np.nan
+    stamp_cube_small_mask = np.tile(stamp_mask_small[None,:,:],(nl,1,1))
+
+    if method is None or method == "max":
+        spectrum = np.nanmax(cube_stamp*stamp_cube_small_mask,axis=(1,2))
+    elif method == "aperture":
+        spectrum = np.nansum(cube_stamp*stamp_cube_small_mask,axis=(1,2))
+    elif method == "fit":
+        spectrum = np.zeros((nl,))
+        for k in range(nl):
+            PSF_cube_slice = PSF_cube[k,:,:]/np.nanmax(PSF_cube[k,:,:])
+            cube_stamp_slice = cube_stamp[k,:,:]
+            param0 = np.nanmax(cube_stamp_slice)
+            LSQ_func = lambda para: LSQ_scale_model_PSF(PSF_cube_slice,cube_stamp_slice,para)
+            spectrum_fit[k] = minimize(LSQ_func,param0).x #, method="Nelder-Mead"
+            if 0:
+                plt.figure(1)
+                plt.subplot(2,2,1)
+                plt.imshow(cube_stamp_slice,interpolation="nearest")
+                plt.subplot(2,2,2)
+                plt.imshow(cube_stamp_slice*stamp_mask_small,interpolation="nearest")
+                plt.show()
+
+
+
+    return get_gpi_wavelength_sampling(filter), spectrum
+
+
+
+
 
 if __name__ == "__main__":
 
-    #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
-    filename = "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
-    get_planet_spectrum(filename,'H')
+    OS = platform.system()
+    if OS == "Windows":
+        print("Using WINDOWS!!")
+    else:
+        print("I hope you are using a UNIX OS")
 
-    # if 0:
-    #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
-    #     hdulist = pyfits.open(filename)
-    #     cube = hdulist[1].data
-    #     N_samples = np.size(cube)
-    #     c = []
-    #     d = []
-    #     for a,b in cube:
-    #         c.append(a)
-    #         d.append(b)
-    #     print(c,d)
-    #     wavelengths = cube[0][0]
-    #     filter_spec = cube[0][1]
-    #     plt.figure(1)
-    #     plt.plot(wavelengths,filter_spec)
-    #     plt.show()
+
+    if 0:
+        if OS == "Windows":
+            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\HD_100491\\autoreduced\\"
+            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\bet_cir\\autoreduced\\"
+            cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\c_Eri\\autoreduced\\pyklip-S20141218-k100a7s4m3-KL20-speccube.fits"
+            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
+            #outputDir = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\"
+            spectrum_model = ["","C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx",""] #"C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\t2400g100nc.flx",
+            user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+        else:
+            cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/beta_pictoris/autoreduced/"
+            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/bet_cir/autoreduced/"
+            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
+            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
+            #outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
+            #spectrum_model = ""
+            spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx",""]
+            user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/code/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
+
+        wave_samp,spectrum = extract_planet_spectrum(cube_filename, (110, 135), user_defined_PSF_cube, method="aperture")
+        plt.plot(wave_samp,spectrum)
+        plt.show()
+
+    if 1:
+        if OS == "Windows":
+            #spectrum_model = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx"
+            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\*.flx")
+            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g18ncflx\\*.flx")
+        else:
+            spectrum_model = "/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx"
+
+        for spectrum_model in filelist:
+            print(spectrum_model)
+            #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
+            wv,spectrum  = get_planet_spectrum(spectrum_model,'H')
+
+            plt.plot(wv,spectrum/np.nanmean(spectrum))
+            plt.show()
+
+        # if 0:
+        #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
+        #     hdulist = pyfits.open(filename)
+        #     cube = hdulist[1].data
+        #     N_samples = np.size(cube)
+        #     c = []
+        #     d = []
+        #     for a,b in cube:
+        #         c.append(a)
+        #         d.append(b)
+        #     print(c,d)
+        #     wavelengths = cube[0][0]
+        #     filter_spec = cube[0][1]
+        #     plt.figure(1)
+        #     plt.plot(wavelengths,filter_spec)
+        #     plt.show()

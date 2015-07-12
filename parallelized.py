@@ -1233,11 +1233,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         psfs_struct:    Structure to tune PSFs calculation inside klip. See documentation of psfs_management class.
                         This is because this version is not definitive.
-        sat_spot_psf:   Save a original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
-                        spectrum (only applicable for SDI): if not None, optimizes the choosing the reference PSFs based on the spectrum
-                        shape. Currently only supports "methane" in H band.
+        sat_spot_psf:   Save an original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
 
-        spectrum:       (only applicable for SDI) if not None, optimizes the choosing the reference PSFs based on the
+        spectrum:       (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
                         spectrum shape. Currently only supports "methane" between 1 and 10 microns.
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units

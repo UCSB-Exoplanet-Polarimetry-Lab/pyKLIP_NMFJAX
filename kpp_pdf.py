@@ -13,12 +13,20 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from sys import stdout
 
+
+def model_expExp(x,a,m,alpha):
+    return np.exp(a*np.exp(-np.abs(x-m)/alpha))
+
+def LSQ_model_expExp(x,y,a,m,alpha):
+    y_model = model_expExp(x,a,m,alpha)
+    return (y-y_model)/y_model
+
 def model_exp(x,m,alpha):
     return np.exp(-alpha*x-m)
 
 def LSQ_model_exp(x,y,m,alpha):
     y_model = model_exp(x,m,alpha)
-    return (y-y_model)**2/y_model
+    return (y-y_model)/np.sqrt(y_model)
 
 
 def model_gauss1D(x,a,m,sigma):
@@ -26,57 +34,56 @@ def model_gauss1D(x,a,m,sigma):
 
 def LSQ_model_gauss1D(x,y,a,m,sigma):
     y_model = model_gauss1D(x,a,m,sigma)
-    return (y-y_model)**2#/y_model
+    return (y-y_model)
 
 def get_pdf_model(data):
 
     im_std = np.std(data)
-    bins = np.arange(np.min(data),np.max(data),im_std/10.)
+    bins = np.arange(np.min(data),np.max(data),im_std/5.)
     im_histo = np.histogram(data, bins=bins)[0]
 
 
     N_bins = bins.size-1
     center_bins = 0.5*(bins[0:N_bins]+bins[1:N_bins+1])
 
-    g_init = models.Gaussian1D(amplitude=np.max(im_histo), mean=0.0, stddev=im_std)
-    fit_g = fitting.LevMarLSQFitter()
-    warnings.simplefilter('ignore')
-    g = fit_g(g_init, center_bins, im_histo)
-    g.stddev = abs(g.stddev)
+    use_gauss = True
+    use_exp = False
+    if use_gauss:
+        g_init = models.Gaussian1D(amplitude=np.max(im_histo), mean=0.0, stddev=im_std)
+        fit_g = fitting.LevMarLSQFitter()
+        warnings.simplefilter('ignore')
+        g = fit_g(g_init, center_bins, im_histo)
+        g.stddev = abs(g.stddev)
 
-    right_side_noZeros = np.where((center_bins > (g.mean+2*g.stddev))*(im_histo != 0))
-    N_right_bins_noZeros = len(right_side_noZeros[0])
-    left_side_noZeros = np.where((center_bins < (g.mean-2*g.stddev))*(im_histo != 0))
-    N_left_bins_noZeros = len(left_side_noZeros[0])
-
-    right_side = np.where((center_bins > (g.mean+2*g.stddev))) #*(im_histo != 0))
-    N_right_bins = len(right_side[0])
-    left_side = np.where((center_bins < (g.mean-2*g.stddev))) #*(im_histo != 0))
-    N_left_bins = len(left_side[0])
-
-    if 0:
-        param0_gauss1D = (np.max(im_histo),0.0,im_std)
-        LSQ_func = lambda para: LSQ_model_gauss1D(bins[0:bins.size-1], im_histo,para[0],para[1],para[2])
-        param_fit_gauss1D = leastsq(LSQ_func,param0_gauss1D)
-
-        right_side_noZeros = np.where((center_bins > (param_fit_gauss1D[0][1]+2*param_fit_gauss1D[0][2]))*( im_histo != 0))
+        right_side_noZeros = np.where((center_bins > (g.mean+2*g.stddev))*(im_histo != 0))
         N_right_bins_noZeros = len(right_side_noZeros[0])
-        left_side_noZeros = np.where((center_bins < (param_fit_gauss1D[0][1]-2*param_fit_gauss1D[0][2]))*( im_histo != 0))
+        left_side_noZeros = np.where((center_bins < (g.mean-2*g.stddev))*(im_histo != 0))
         N_left_bins_noZeros = len(left_side_noZeros[0])
 
-        right_side = np.where((center_bins > (param_fit_gauss1D[0][1]+2*param_fit_gauss1D[0][2])))#*( im_histo != 0))
-        N_right_bins = len(right_side[0])
-        left_side = np.where((center_bins < (param_fit_gauss1D[0][1]-2*param_fit_gauss1D[0][2])))#*( im_histo != 0))
-        N_left_bins = len(left_side[0])
+        right_side = np.where((center_bins > (g.mean+2*g.stddev)))
+        left_side = np.where((center_bins < (g.mean-2*g.stddev)))
+    elif use_exp:
+        param0_expExp = (np.log(np.max(im_histo)),0.0,np.max(data)/2.)#,a,m,alpha
+        LSQ_func = lambda para: LSQ_model_expExp(center_bins, im_histo,para[0],para[1],para[2])
+        param_fit_expExp = leastsq(LSQ_func,param0_expExp)
+        print(param_fit_expExp)
 
-        print(param_fit_gauss1D[0][0],param_fit_gauss1D[0][1],param_fit_gauss1D[0][2])
-        print(g.amplitude+0.0,g.mean+0.0,g.stddev+0.0)
+
+        right_side_noZeros = np.where((center_bins > (param_fit_expExp[0][1]+param_fit_expExp[0][2]))*( im_histo != 0))
+        N_right_bins_noZeros = len(right_side_noZeros[0])
+        left_side_noZeros = np.where((center_bins < (param_fit_expExp[0][1]-param_fit_expExp[0][2]))*( im_histo != 0))
+        N_left_bins_noZeros = len(left_side_noZeros[0])
+
+        right_side = np.where((center_bins > (param_fit_expExp[0][1]+param_fit_expExp[0][2])))
+        left_side = np.where((center_bins < (param_fit_expExp[0][1]-param_fit_expExp[0][2])))
 
     if 0:
         fig = 1
         plt.figure(fig,figsize=(8,8))
         plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx-', markersize=5,linewidth=3)
-        plt.plot(center_bins,g(center_bins),'g.')
+        #plt.plot(center_bins,g(center_bins),'g.')
+        plt.plot(center_bins,model_expExp(center_bins,np.log(2000),0.0,2000.),'g.')
+        plt.plot(center_bins,model_expExp(center_bins,*param_fit_expExp[0]),'b.')
         plt.plot((bins[0:bins.size-1])[right_side_noZeros],(bins[0:bins.size-1])[right_side_noZeros]*0+1,'ro')
         plt.plot((bins[0:bins.size-1])[left_side_noZeros],(bins[0:bins.size-1])[left_side_noZeros]*0+1,'ro')
         #plt.plot(center_bins,model_gauss1D(center_bins,*param_fit_gauss1D[0]),'r--')
@@ -88,10 +95,35 @@ def get_pdf_model(data):
         ax = plt.gca()
         ax.tick_params(axis='x', labelsize=20)
         ax.tick_params(axis='y', labelsize=20)
-        ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
         ax.set_yscale('log')
         plt.ylim((10**-5,100000))
         plt.show()
+
+    if N_right_bins_noZeros < 5:
+        where_pos_zero = np.where((im_histo == 0) * (center_bins > g.mean))
+        if len(where_pos_zero[0]) != 0:
+            right_side_noZeros = (range(where_pos_zero[0][0]-5,where_pos_zero[0][0]),)
+            right_side = (range(where_pos_zero[0][0]-5,center_bins.size),)
+        else:
+            right_side_noZeros = (range(center_bins.size-5,center_bins.size),)
+            right_side = right_side_noZeros
+        N_right_bins_noZeros = 5
+
+    if N_left_bins_noZeros < 5:
+        where_neg_zero = np.where((im_histo == 0) * (center_bins < g.mean))
+        if len(where_neg_zero[0]) != 0:
+            left_side_noZeros = (range(where_neg_zero[0][len(where_neg_zero[0])-1]+1,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
+            left_side = (range(0,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
+        else:
+            left_side_noZeros = (range(0,5),)
+            left_side = left_side_noZeros
+        N_left_bins_noZeros = 5
+
+    #print(left_side,right_side)
+    #print(im_histo[left_side],im_histo[right_side])
+    #print(right_side_noZeros,left_side_noZeros)
+    #print(im_histo[right_side_noZeros],im_histo[left_side_noZeros])
+
 
 
     #print(N_right_bins_noZeros,N_left_bins_noZeros)
@@ -124,26 +156,37 @@ def get_pdf_model(data):
     pdf_model_gaussian = interp1d(center_bins,np.array(im_histo,dtype="double"),kind = "cubic",bounds_error = False, fill_value=0.0)(new_sampling)
 
 
-    if 1:
+    if use_gauss:
         right_side = np.where((new_sampling >= g.mean))
         left_side = np.where((new_sampling < g.mean))
-        #print(g.mean+0.0,g.stddev+0.0)
-        pdf_model_exp = np.zeros(new_sampling.size)
-        weights = np.zeros(new_sampling.size)
-        if param_fit_rightExp is not None:
-            pdf_model_exp[right_side] = model_exp(new_sampling[right_side],*param_fit_rightExp[0])
-            weights[right_side] = np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev))
-            #plt.plot(np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
-            #plt.show()
-        else:
-            weights[right_side] = -1.
+    elif use_exp:
+        right_side = np.where((new_sampling >= param_fit_expExp[0][1]))
+        left_side = np.where((new_sampling < param_fit_expExp[0][1]))
 
-        if param_fit_leftExp is not None:
-            pdf_model_exp[left_side] = model_exp(new_sampling[left_side],*param_fit_leftExp[0])
-            weights[left_side] = np.tanh(-(new_sampling[left_side]-(g.mean-2*g.stddev))/(0.1*g.stddev))
-        else:
-            weights[left_side] = -1.
+    #print(g.mean+0.0,g.stddev+0.0)
+    pdf_model_exp = np.zeros(new_sampling.size)
+    weights = np.zeros(new_sampling.size)
+    if param_fit_rightExp is not None:
+        pdf_model_exp[right_side] = model_exp(new_sampling[right_side],*param_fit_rightExp[0])
+        if use_gauss:
+            weights[right_side] = np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev))
+        elif use_exp:
+            weights[right_side] = np.tanh((new_sampling[right_side]-(param_fit_expExp[0][1]+param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
+        #plt.plot(np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
+        #plt.show()
     else:
+        weights[right_side] = -1.
+
+    if param_fit_leftExp is not None:
+        pdf_model_exp[left_side] = model_exp(new_sampling[left_side],*param_fit_leftExp[0])
+        if use_gauss:
+            weights[left_side] = np.tanh(-(new_sampling[left_side]-(g.mean-2*g.stddev))/(0.1*g.stddev))
+        elif use_exp:
+            weights[left_side] = np.tanh(-(new_sampling[right_side]-(param_fit_expExp[0][1]-param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
+    else:
+        weights[left_side] = -1.
+
+    '''
         right_side = np.where((new_sampling > (g.mean+2*g.stddev)))
         left_side = np.where((new_sampling < (g.mean-2*g.stddev)))
         pdf_model_exp = np.zeros(new_sampling.size)
@@ -159,6 +202,7 @@ def get_pdf_model(data):
             weights[right_side] = 1.
         else:
             weights[left_side] = -1.
+    '''
 
     weights = 0.5*(weights+1.0)
 
@@ -188,33 +232,34 @@ def get_pdf_model(data):
         fig = 1
         plt.figure(fig,figsize=(16,8))
         plt.subplot(121)
-        plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx-', markersize=5,linewidth=3) #/np.sum(im_histo)/(im_std/10.)
-        plt.plot(center_bins,g(center_bins),'g.')#/np.sum(g(center_bins))/(im_std/10.)
+        plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx', markersize=5,linewidth=3)
+        if use_gauss:
+            plt.plot(center_bins,g(center_bins),'b-')
+        elif use_exp:
+            plt.plot(center_bins,model_expExp(center_bins,*param_fit_expExp[0]),'b-')
         plt.plot(new_sampling,pdf_model,'r--')
-        plt.plot(new_sampling,pdf_model_exp,'b--')
+        plt.plot(new_sampling,pdf_model_exp,'g--')
         #plt.plot(new_sampling,np.cumsum(pdf_model),'g.')
         plt.xlabel('criterion value', fontsize=20)
         plt.ylabel('Probability of the value', fontsize=20)
-        plt.xlim((1*np.min(data),2*np.max(data)))
+        plt.xlim((2*np.min(data),5*np.max(data)))
         plt.grid(True)
         ax = plt.gca()
         ax.tick_params(axis='x', labelsize=20)
         ax.tick_params(axis='y', labelsize=20)
         ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
         ax.set_yscale('log')
-        plt.ylim((10**-7,1000))
+        plt.ylim((10**-4,1000000))
 
     pdf_model /= np.sum(pdf_model)
 
     if 0:
         plt.subplot(122)
-        plt.plot(center_bins,np.array(im_histo,dtype="double")/np.sum(im_histo)/(im_std/10.),'bx-', markersize=5,linewidth=3) #
-        plt.plot(center_bins,g(center_bins)/np.sum(g(center_bins))/(im_std/10.),'g.')#
         plt.plot(new_sampling,pdf_model,'r--')
-        plt.plot(new_sampling,1-np.cumsum(pdf_model),'g.')
+        plt.plot(new_sampling,1-np.cumsum(pdf_model),'g--')
         plt.xlabel('criterion value', fontsize=20)
         plt.ylabel('Probability of the value', fontsize=20)
-        plt.xlim((1*np.min(data),2*np.max(data)))
+        plt.xlim((2*np.min(data),5*np.max(data)))
         plt.grid(True)
         ax = plt.gca()
         ax.tick_params(axis='x', labelsize=20)
