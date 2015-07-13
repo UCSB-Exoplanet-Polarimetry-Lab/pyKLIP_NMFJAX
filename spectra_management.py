@@ -323,8 +323,13 @@ def extract_planet_centroid(cube, position, PSF_cube):
     row_p = np.ceil(ny_PSF/2.0)
     col_m = np.floor(nx_PSF/2.0)
     col_p = np.ceil(nx_PSF/2.0)
-    cube_stamp = cube[:,(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
+    #print(np.max([0,(row_id-row_m)]),np.min([ny_PSF-1,(row_id+row_p)]),np.max([0,(col_id-col_m)]),np.min([nx_PSF-1,(col_id+col_p)]))
+    cube_stamp = cube[:,np.max([0,(row_id-row_m)]):np.min([ny-1,(row_id+row_p)]), np.max([0,(col_id-col_m)]):np.min([nx-1,(col_id+col_p)])]
     flatCube_stamp = np.nansum(cube_stamp,axis=0)
+    #plt.figure(5)
+    #print(flatCube_stamp.shape,flatCube_stamp)
+    #plt.imshow(flatCube_stamp,interpolation="nearest")
+    #plt.show()
     flatCube_stamp /= np.nanmax(flatCube_stamp)
     flatPSF = np.nansum(PSF_cube,axis=0)
     flatPSF /= np.nanmax(flatPSF)
@@ -399,15 +404,16 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     row_p = np.ceil(ny_PSF/2.0)
     col_m = np.floor(nx_PSF/2.0)
     col_p = np.ceil(nx_PSF/2.0)
-    cube_stamp = cube[:,(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)]
+    cube_stamp = cube[:,max([0,(row_id-row_m)]):min([ny_PSF-1,(row_id+row_p)]), max([0,(col_id-col_m)]):min([nx_PSF-1,(col_id+col_p)])]
+    nl_stamp, ny_stamp,nx_stamp = cube_stamp.shape
 
 
     # Mask to remove the spots already checked in criterion_map.
-    stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,nx_PSF,1),np.arange(0,ny_PSF,1))
+    stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,nx_stamp,1),np.arange(0,ny_stamp,1))
     r_stamp = np.sqrt((stamp_x_grid-(col_cen-(col_id-col_m)))**2 +(stamp_y_grid-(row_cen-(row_id-row_m)))**2)
     #stamp_mask = np.ones((stamp_nrow,stamp_ncol))
     #stamp_mask[np.where(r_stamp < 4.0)] = np.nan
-    stamp_mask_small = np.ones((ny_PSF,nx_PSF))
+    stamp_mask_small = np.ones((ny_stamp,nx_stamp))
     stamp_mask_small[np.where(r_stamp > 2.)] = np.nan
     stamp_cube_small_mask = np.tile(stamp_mask_small[None,:,:],(nl,1,1))
 

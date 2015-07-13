@@ -7,6 +7,22 @@ from scipy.stats import nanmedian
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 import glob, os
+import multiprocessing as mp
+import multiprocessing.pool as mpPool
+
+
+class NoDaemonProcess(mp.Process):
+    # make 'daemon' attribute always return False
+    def _get_daemon(self):
+        return False
+    def _set_daemon(self, value):
+        pass
+    daemon = property(_get_daemon, _set_daemon)
+
+# We sub-class multiprocessing.pool.Pool instead of multiprocessing.Pool
+# because the latter is only a wrapper function, not a proper class.
+class NoDaemonPool(mpPool.Pool):
+    Process = NoDaemonProcess
 
 def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep):
     #objectsDir_list = []
@@ -127,7 +143,7 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
     print("/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\/!\\")
     var = raw_input("Enter \"I want to\" to go on: ")
     print("You entered: "+str([var]))
-    if 0 and var != "I want to":
+    if 1 and var != "I want to":
         print("Won't delete files")
         return 0
     else:
@@ -140,22 +156,24 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
             objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep
             #print(inputDir)
 
-            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*")
+            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*_KL*")
             #print(planet_detec_dir_list)
 
             for planet_detec_dir in planet_detec_dir_list:
                 #print(planet_detec_dir)
 
                 if 0:
-                    spectrum_folder_list = glob.glob(planet_detec_dir+os.path.sep+"t700*")
+                    spectrum_folder_list = glob.glob(planet_detec_dir+os.path.sep+"*")
                     for spectrum_folder in spectrum_folder_list:
                         print("Removing "+spectrum_folder)
                         files_list = glob.glob(spectrum_folder+os.path.sep+"*")
                         for file in files_list:
                             print("Removing "+file)
-                            os.remove(file)
-
-                        os.rmdir(spectrum_folder)
+                            #os.remove(file)
+                        print(spectrum_folder)
+                        #os.rmdir(spectrum_folder)
+                    print(planet_detec_dir)
+                    #os.rmdir(planet_detec_dir)
 
 
 
