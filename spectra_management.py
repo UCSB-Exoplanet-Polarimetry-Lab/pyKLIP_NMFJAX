@@ -404,7 +404,7 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     row_p = np.ceil(ny_PSF/2.0)
     col_m = np.floor(nx_PSF/2.0)
     col_p = np.ceil(nx_PSF/2.0)
-    cube_stamp = cube[:,max([0,(row_id-row_m)]):min([ny_PSF-1,(row_id+row_p)]), max([0,(col_id-col_m)]):min([nx_PSF-1,(col_id+col_p)])]
+    cube_stamp = cube[:,np.max([0,(row_id-row_m)]):np.min([ny-1,(row_id+row_p)]), np.max([0,(col_id-col_m)]):np.min([nx-1,(col_id+col_p)])]
     nl_stamp, ny_stamp,nx_stamp = cube_stamp.shape
 
 
@@ -416,6 +416,15 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     stamp_mask_small = np.ones((ny_stamp,nx_stamp))
     stamp_mask_small[np.where(r_stamp > 2.)] = np.nan
     stamp_cube_small_mask = np.tile(stamp_mask_small[None,:,:],(nl,1,1))
+
+
+    if 0:
+        plt.figure(6)
+        plt.subplot(2,2,1)
+        plt.imshow(stamp_mask_small,interpolation="nearest")
+        plt.subplot(2,2,2)
+        plt.imshow(cube_stamp[10,:,:]*stamp_mask_small,interpolation="nearest")
+        plt.show()
 
     if method is None or method == "max":
         spectrum = np.nanmax(cube_stamp*stamp_cube_small_mask,axis=(1,2))
@@ -437,7 +446,11 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
                 plt.imshow(cube_stamp_slice*stamp_mask_small,interpolation="nearest")
                 plt.show()
 
-
+    if 0:
+        print(spectrum)
+        plt.figure(3)
+        plt.plot(get_gpi_wavelength_sampling(filter), spectrum)
+        plt.show()
 
     return get_gpi_wavelength_sampling(filter), spectrum
 

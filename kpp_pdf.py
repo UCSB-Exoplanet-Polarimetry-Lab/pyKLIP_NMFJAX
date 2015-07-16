@@ -10,9 +10,11 @@ from astropy.modeling import models, fitting
 from copy import copy
 import warnings
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
 from scipy.interpolate import interp1d
 from sys import stdout
-
+from mpl_toolkits.axes_grid1 import host_subplot
+import mpl_toolkits.axisartist as AA
 
 def model_expExp(x,a,m,alpha):
     return np.exp(a*np.exp(-np.abs(x-m)/alpha))
@@ -157,51 +159,51 @@ def get_pdf_model(data):
 
 
     if use_gauss:
-        right_side = np.where((new_sampling >= g.mean))
-        left_side = np.where((new_sampling < g.mean))
+        right_side2 = np.where((new_sampling >= g.mean))
+        left_side2 = np.where((new_sampling < g.mean))
     elif use_exp:
-        right_side = np.where((new_sampling >= param_fit_expExp[0][1]))
-        left_side = np.where((new_sampling < param_fit_expExp[0][1]))
+        right_side2 = np.where((new_sampling >= param_fit_expExp[0][1]))
+        left_side2 = np.where((new_sampling < param_fit_expExp[0][1]))
 
     #print(g.mean+0.0,g.stddev+0.0)
     pdf_model_exp = np.zeros(new_sampling.size)
     weights = np.zeros(new_sampling.size)
     if param_fit_rightExp is not None:
-        pdf_model_exp[right_side] = model_exp(new_sampling[right_side],*param_fit_rightExp[0])
+        pdf_model_exp[right_side2] = model_exp(new_sampling[right_side2],*param_fit_rightExp[0])
         if use_gauss:
-            weights[right_side] = np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev))
+            weights[right_side2] = np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev))
         elif use_exp:
-            weights[right_side] = np.tanh((new_sampling[right_side]-(param_fit_expExp[0][1]+param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
-        #plt.plot(np.tanh((new_sampling[right_side]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
+            weights[right_side2] = np.tanh((new_sampling[right_side2]-(param_fit_expExp[0][1]+param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
+        #plt.plot(np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
         #plt.show()
     else:
-        weights[right_side] = -1.
+        weights[right_side2] = -1.
 
     if param_fit_leftExp is not None:
-        pdf_model_exp[left_side] = model_exp(new_sampling[left_side],*param_fit_leftExp[0])
+        pdf_model_exp[left_side2] = model_exp(new_sampling[left_side2],*param_fit_leftExp[0])
         if use_gauss:
-            weights[left_side] = np.tanh(-(new_sampling[left_side]-(g.mean-2*g.stddev))/(0.1*g.stddev))
+            weights[left_side2] = np.tanh(-(new_sampling[left_side2]-(g.mean-2*g.stddev))/(0.1*g.stddev))
         elif use_exp:
-            weights[left_side] = np.tanh(-(new_sampling[right_side]-(param_fit_expExp[0][1]-param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
+            weights[left_side2] = np.tanh(-(new_sampling[right_side2]-(param_fit_expExp[0][1]-param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
     else:
-        weights[left_side] = -1.
+        weights[left_side2] = -1.
 
     '''
-        right_side = np.where((new_sampling > (g.mean+2*g.stddev)))
-        left_side = np.where((new_sampling < (g.mean-2*g.stddev)))
+        right_side2 = np.where((new_sampling > (g.mean+2*g.stddev)))
+        left_side2 = np.where((new_sampling < (g.mean-2*g.stddev)))
         pdf_model_exp = np.zeros(new_sampling.size)
         weights = np.zeros(new_sampling.size)
         if param_fit_rightExp is not None:
-            pdf_model_exp[right_side] = model_exp(new_sampling[right_side],*param_fit_rightExp[0])
-            weights[right_side] = 1.
+            pdf_model_exp[right_side2] = model_exp(new_sampling[right_side2],*param_fit_rightExp[0])
+            weights[right_side2] = 1.
         else:
-            weights[right_side] = -1.
+            weights[right_side2] = -1.
 
         if param_fit_leftExp is not None:
-            pdf_model_exp[left_side] = model_exp(new_sampling[left_side],*param_fit_leftExp[0])
-            weights[right_side] = 1.
+            pdf_model_exp[left_side2] = model_exp(new_sampling[left_side2],*param_fit_leftExp[0])
+            weights[right_side2] = 1.
         else:
-            weights[left_side] = -1.
+            weights[left_side2] = -1.
     '''
 
     weights = 0.5*(weights+1.0)
@@ -229,44 +231,52 @@ def get_pdf_model(data):
         plt.show()
 
     if 0:
+        rcParams.update({'font.size': 20})
         fig = 1
         plt.figure(fig,figsize=(16,8))
         plt.subplot(121)
-        plt.plot(center_bins,np.array(im_histo,dtype="double"),'bx', markersize=5,linewidth=3)
+        plt.plot(new_sampling,pdf_model,'r-',linewidth=5)
         if use_gauss:
-            plt.plot(center_bins,g(center_bins),'b-')
+            plt.plot(center_bins,g(center_bins),'c--',linewidth=3)
         elif use_exp:
-            plt.plot(center_bins,model_expExp(center_bins,*param_fit_expExp[0]),'b-')
-        plt.plot(new_sampling,pdf_model,'r--')
-        plt.plot(new_sampling,pdf_model_exp,'g--')
+            plt.plot(center_bins,model_expExp(center_bins,*param_fit_expExp[0]),'c-')
+        plt.plot(new_sampling,pdf_model_exp,'g--',linewidth=3)
+        plt.plot(center_bins,np.array(im_histo,dtype="double"),'b.', markersize=10,linewidth=3)
         #plt.plot(new_sampling,np.cumsum(pdf_model),'g.')
-        plt.xlabel('criterion value', fontsize=20)
-        plt.ylabel('Probability of the value', fontsize=20)
-        plt.xlim((2*np.min(data),5*np.max(data)))
+        plt.xlabel('Metric value')
+        plt.ylabel('Number per bin')
+        plt.xlim((2*np.min(data),2*np.max(data)))
         plt.grid(True)
+        plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
         ax = plt.gca()
-        ax.tick_params(axis='x', labelsize=20)
-        ax.tick_params(axis='y', labelsize=20)
-        ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
+        ax.tick_params(axis='x')
+        ax.tick_params(axis='y')
+        ax.legend(['PDF Model Fit','Central Gaussian Fit','Tails Exponential Fit','Histogram'], loc = 'upper right', fontsize=15)
         ax.set_yscale('log')
-        plt.ylim((10**-4,1000000))
+        plt.ylim((10**-1,10000))
 
     pdf_model /= np.sum(pdf_model)
 
     if 0:
-        plt.subplot(122)
-        plt.plot(new_sampling,pdf_model,'r--')
-        plt.plot(new_sampling,1-np.cumsum(pdf_model),'g--')
-        plt.xlabel('criterion value', fontsize=20)
-        plt.ylabel('Probability of the value', fontsize=20)
-        plt.xlim((2*np.min(data),5*np.max(data)))
+        host = host_subplot(122, axes_class=AA.Axes)
+        par1 = host.twinx()
+        p1, = host.plot(new_sampling,pdf_model/(new_sampling[1]-new_sampling[0]),'r-',linewidth=5)
+        host.tick_params(axis='x', labelsize=20)
+        host.tick_params(axis='y', labelsize=20)
+        host.set_ylim((10**-3,10**2))
+        host.set_yscale('log')
+        p2, = par1.plot(new_sampling,1-np.cumsum(pdf_model),'g-',linewidth=5)
+        par1.set_ylabel("False positive rate")
+        par1.set_yscale('log')
+        par1.set_ylim((10**-4,10.))
+        host.axis["left"].label.set_color(p1.get_color())
+        par1.axis["right"].label.set_color(p2.get_color())
+        plt.xlabel('Metric value')
+        plt.ylabel('Probability density')
+        plt.xlim((2*np.min(data),2*np.max(data)))
         plt.grid(True)
-        ax = plt.gca()
-        ax.tick_params(axis='x', labelsize=20)
-        ax.tick_params(axis='y', labelsize=20)
-        ax.legend(['flat cube histogram','flat cube histogram (Gaussian fit)','planets'], loc = 'upper right', fontsize=12)
-        ax.set_yscale('log')
-        plt.ylim((10**-7,1000))
+        plt.legend(['PDF model','Tail distribution'], loc = 'lower left', fontsize=15)
+        plt.ticklabel_format(style='sci', axis='x', scilimits=(0,0))
         plt.show()
 
     return pdf_model,new_sampling,np.array(im_histo,dtype="double"), center_bins
@@ -337,6 +347,8 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
     cdf_list = []
     sampling_list = []
     annulus_radii_list = []
+    if 0:
+        rings = np.zeros((ny,nx))+np.nan
     for it, rminmax in enumerate(annuli_radii):
         r_min,r_max = rminmax
         #print(rminmax)
@@ -349,6 +361,8 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
             plt.figure(2)
             plt.imshow(image_tmp,interpolation="nearest")
             plt.show()
+        if 0:
+            rings[where_ring] = it
 
         data = image[where_ring]
         cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
@@ -373,7 +387,10 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
             ax.set_yscale('log')
             plt.ylim((10**-7,10))
 
-    plt.show()
+    if 0:
+        plt.figure(2,figsize=(8,8))
+        plt.imshow(rings,interpolation="nearest")
+        plt.show()
 
 
 

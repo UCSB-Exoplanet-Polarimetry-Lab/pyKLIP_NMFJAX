@@ -22,7 +22,7 @@ import spectra_management as spec
 from kpp_utils import *
 from kpp_pdf import *
 from kpp_std import *
-import pyklip.instruments.GPI as GPI
+import instruments.GPI as GPI
 
 
 
@@ -891,11 +891,11 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
 
                 all_templates_detections.append((spectrum_name,int(candidate_id),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
 
-                ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=10, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
-                        xycoords='data', xytext=(float(x_max_pos)+10, float(y_max_pos)-10),
+                ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=30, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
+                        xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
                         textcoords='data',
                         arrowprops=dict(arrowstyle="->",
-                                        linewidth = 1.,
+                                        linewidth = 2.,
                                         color = 'red')
                         )
             plt.title(star_name +" "+ spectrum_name)
@@ -966,11 +966,11 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
             for spec_id in range(N_spectra_folders):
                 plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
                 ax = plt.gca()
-                ax.annotate(str(int(no_duplicates_id)), fontsize=10, color = "black", xy=(float(x_max_pos), float(y_max_pos)),
-                        xycoords='data', xytext=(float(x_max_pos)+10, float(y_max_pos)-10),
+                ax.annotate(str(int(no_duplicates_id)), fontsize=30, color = "black", xy=(float(x_max_pos), float(y_max_pos)),
+                        xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
                         textcoords='data',
                         arrowprops=dict(arrowstyle="->",
-                                        linewidth = 1.,
+                                        linewidth = 2.,
                                         color = 'black')
                         )
         else:
@@ -1420,7 +1420,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                     numbasis=numbasis,
                                     user_defined_PSF_cube=user_defined_PSF_cube,
                                     metrics_only = False,
-                                    planet_detection_only = False,
+                                    planet_detection_only = True,
                                     threads = True,
                                     mute = False,
                                     SNR_only = False,

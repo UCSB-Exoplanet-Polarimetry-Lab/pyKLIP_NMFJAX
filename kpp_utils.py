@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 import glob, os
 import multiprocessing as mp
 import multiprocessing.pool as mpPool
-
+import xml.etree.cElementTree as ET
+import shutil
 
 class NoDaemonProcess(mp.Process):
     # make 'daemon' attribute always return False
@@ -38,93 +39,12 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
 
             for planet_detec_dir in planet_detec_dir_list:
                 spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
-                N_spectra_folders = len(spectrum_folders_list)
-                plt.figure(1,figsize=(4*N_spectra_folders,8))
-                for spec_id,spectrum_folder in enumerate(spectrum_folders_list):
-                    #print(spectrum_folder)
-                    spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
-                    spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
-                    #print(spectrum_name)
-                    candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections.xml")
-                    #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
-                    shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
-                    shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
-                    if len(candidates_log_file_list) == 1 and len(shape_proba_file_list) == 1 and len(shape_file_list) == 1:
-                        candidates_log_file = candidates_log_file_list[0]
-                        shape_proba_file = shape_proba_file_list[0]
-                        shape_file = shape_file_list[0]
-
-                        splitted_str =  candidates_log_file.split(os.path.sep)
-                        object_name = splitted_str[len(splitted_str)-1].split("-")[0]
-
-                        # Read flatCube_file
-                        hdulist = pyfits.open(shape_proba_file)
-                        shape_proba = hdulist[1].data
-                        exthdr = hdulist[1].header
-                        prihdr = hdulist[0].header
-                        hdulist.close()
-
-                        ny,nx = np.shape(shape_proba)
-
-                        try:
-                            # Retrieve the center of the image from the fits keyword.
-                            center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                        except:
-                            # If the keywords could not be found.
-                            center = [(nx-1)/2,(ny-1)/2]
-
-
-                        try:
-                            prihdr = hdulist[0].header
-                            date = prihdr["DATE"]
-                            hdulist.close()
-                        except:
-                            date = "no_date"
-                            hdulist.close()
-
-                        try:
-                            filter = prihdr['IFSFILT'].split('_')[1]
-                        except:
-                            # If the keywords could not be found.
-                            filter = "no_filter"
-
-                        x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
-
-                        plt.subplot(2,N_spectra_folders,spec_id+1)
-                        plt.imshow(shape_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-                        ax = plt.gca()
-                        tree = ET.parse(candidates_log_file)
-                        root = tree.getroot()
-                        for candidate in root[0].find("candidates"):
-                            candidate_id = int(candidate.attrib["id"])
-                            max_val_criter = float(candidate.attrib["max_val_criter"])
-                            x_max_pos = float(candidate.attrib["x_max_pos"])
-                            y_max_pos = float(candidate.attrib["y_max_pos"])
-                            row_id = float(candidate.attrib["row_id"])
-                            col_id = float(candidate.attrib["col_id"])
-
-                            ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=10, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
-                                    xycoords='data', xytext=(float(x_max_pos)+10, float(y_max_pos)-10),
-                                    textcoords='data',
-                                    arrowprops=dict(arrowstyle="->",
-                                                    linewidth = 1.,
-                                                    color = 'red')
-                                    )
-                        plt.title(object_name +" "+ spectrum_name)
-                        plt.clim(0.,5.0)
-
-                        # Read flatCube_file
-                        hdulist = pyfits.open(shape_file)
-                        shape = hdulist[1].data
-                        hdulist.close()
-
-                        plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
-                        plt.imshow(shape[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-                        plt.colorbar()
-
-                plt.savefig(output_dir+os.path.sep+object_name+'-'+filter+'-'+date+'-candidates.png', bbox_inches='tight')
-                plt.close(1)
-                #plt.show()
+                src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates.png")
+                for src in src_list:
+                    src_splitted = src.split(os.path.sep)
+                    dst = output_dir+src_splitted[len(src_splitted)-1]
+                    #print(dst)
+                    shutil.copyfile(src, dst)
 
 
     '''
@@ -156,14 +76,14 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
             objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep
             #print(inputDir)
 
-            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*_KL*")
+            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*-KL*")
             #print(planet_detec_dir_list)
 
             for planet_detec_dir in planet_detec_dir_list:
                 #print(planet_detec_dir)
 
                 if 0:
-                    spectrum_folder_list = glob.glob(planet_detec_dir+os.path.sep+"*")
+                    spectrum_folder_list = glob.glob(planet_detec_dir+os.path.sep+"t800*")
                     for spectrum_folder in spectrum_folder_list:
                         print("Removing "+spectrum_folder)
                         files_list = glob.glob(spectrum_folder+os.path.sep+"*")
@@ -172,7 +92,7 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
                             #os.remove(file)
                         print(spectrum_folder)
                         #os.rmdir(spectrum_folder)
-                    print(planet_detec_dir)
+                    #print(planet_detec_dir)
                     #os.rmdir(planet_detec_dir)
 
 
