@@ -226,6 +226,8 @@ def calculate_metrics(filename,
             print("Calculating proba of flatCube for "+filename)
         if platform.system() == "Windows":
             GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+        elif platform.system() == "Linux":
+            GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
         else:
             GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
         image = flat_cube
@@ -263,6 +265,8 @@ def calculate_metrics(filename,
                     print("Calculating proba of weightedFlatCube for "+filename)
                 if platform.system() == "Windows":
                     GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                elif platform.system() == "Linux":
+                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 else:
                     GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = weightedFlatCube
@@ -327,6 +331,8 @@ def calculate_metrics(filename,
                     print("Calculating proba of matchedFilter (no shape) for "+filename)
                 if platform.system() == "Windows":
                     GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                elif platform.system() == "Linux":
+                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 else:
                     GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = matchedFilter_map
@@ -398,6 +404,8 @@ def calculate_metrics(filename,
                     print("Calculating proba of shape (no matchedFilter) for "+filename)
                 if platform.system() == "Windows":
                     GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                elif platform.system() == "Linux":
+                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 else:
                     GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = shape_map
@@ -477,6 +485,8 @@ def calculate_metrics(filename,
                     print("Calculating proba of shape and matchedFilter for "+filename)
                 if platform.system() == "Windows":
                     GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+                elif platform.system() == "Linux":
+                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 else:
                     GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = shape_map
@@ -1407,24 +1417,28 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
 
 
     inputDirs = []
-    for inputDir in os.listdir(campaign_dir):
+    #for inputDir in os.listdir(campaign_dir):
+    for inputDir in ["c_Eri"]:
         if not inputDir.startswith('.'):
+
             inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
 
             inputDir = campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep
-            planet_detection_in_dir(inputDir,
-                                    filename_prefix_is=filename_filter,
-                                    spectrum_model=spectrum_model,
-                                    star_type=star_type,
-                                    metrics = metrics,
-                                    numbasis=numbasis,
-                                    user_defined_PSF_cube=user_defined_PSF_cube,
-                                    metrics_only = False,
-                                    planet_detection_only = True,
-                                    threads = True,
-                                    mute = False,
-                                    SNR_only = False,
-                                    probability_only = False)
+            print(inputDir)
+            if 1:
+                planet_detection_in_dir(inputDir,
+                                        filename_prefix_is=filename_filter,
+                                        spectrum_model=spectrum_model,
+                                        star_type=star_type,
+                                        metrics = metrics,
+                                        numbasis=numbasis,
+                                        user_defined_PSF_cube=user_defined_PSF_cube,
+                                        metrics_only = False,
+                                        planet_detection_only = False,
+                                        threads = True,
+                                        mute = False,
+                                        SNR_only = False,
+                                        probability_only = False)
 
     if 0:
         N_threads = len(inputDirs)
