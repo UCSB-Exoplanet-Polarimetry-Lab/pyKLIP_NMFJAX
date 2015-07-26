@@ -121,24 +121,70 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
                             print("Removing "+conflicted_file)
                             os.remove(conflicted_file)
 
+def GOI_list_add_object_from_coord(GOI_list_filename, object_name, col_centroid,row_centroid):
+    GOI_list_filename_list = glob.glob(GOI_list_filename)
+    print(GOI_list_filename_list)
+    if len(GOI_list_filename_list) == 0:
+        print("Couldn't find GOI list xml file: "+GOI_list_filename)
+        print("Try to create one")
+        root_GOI_list = ET.Element("root")
+        tree_GOI_list = ET.ElementTree(root_GOI_list)
+        tree_GOI_list.write(GOI_list_filename)
+    else:
+        tree_GOI_list = ET.parse(GOI_list_filename)
+        root_GOI_list = tree_GOI_list.getroot()
+
+    object_elt_in_GOI_list = root_GOI_list.find(object_name)
+    if object_elt_in_GOI_list is None:
+        object_elt_in_GOI_list = ET.Element(object_name)
+        root_GOI_list.append(object_elt_in_GOI_list)
+
+    ET.SubElement(object_elt_in_GOI_list, "candidate",
+                      col_centroid = str(col_centroid),
+                      row_centroid = str(row_centroid))
+
+    tree_GOI_list.write(GOI_list_filename)
+
+def GOI_list_add_object_from_xml(GOI_list_filename, object_planet_detec_directory, detection_indices ):
+
+    GOI_list_filename_list = glob.glob(GOI_list_filename)
+    print(GOI_list_filename_list)
+    if len(GOI_list_filename_list) == 0:
+        print("Couldn't find GOI list xml file: "+GOI_list_filename)
+        print("Try to create one")
+        root_GOI_list = ET.Element("root")
+        tree_GOI_list = ET.ElementTree(root_GOI_list)
+        tree_GOI_list.write(GOI_list_filename)
+    else:
+        tree_GOI_list = ET.parse(GOI_list_filename)
+        root_GOI_list = tree_GOI_list.getroot()
+
+    object_detec_xml = glob.glob(object_planet_detec_directory+os.path.sep+os.path.sep+"*-candidates.xml")
+    #print(object_detec_xml)
+    if len(object_detec_xml) == 1:
+        tree_object = ET.parse(object_detec_xml[0])
+        root_object = tree_object.getroot()
+
+        object_elt_in_GOI_list = root_GOI_list.find(root_object[0].tag)
+        if object_elt_in_GOI_list is None:
+            object_elt_in_GOI_list = ET.Element(root_object[0].tag)
+            root_GOI_list.append(object_elt_in_GOI_list)
 
 
+        for candidate in root_object[0]:
+            if int(candidate.attrib["id"]) in detection_indices:
+                object_elt_in_GOI_list.append(candidate)
 
-def confirm_candidates(GOI_list_filename, logFilename_all, candidate_indices,candidate_status, object_name = None):
-    #print(object_name)
-    with open(GOI_list_filename, 'a') as GOI_list:
-        #print("coucou")
-        #print(candidate_indices)
+        tree_GOI_list.write(GOI_list_filename)
+    elif len(object_detec_xml) == 0:
+        print("Couldn't find xml file: "+object_planet_detec_directory+os.path.sep+"*-candidates.xml")
+        return None
+    else:
+        print("I found several files: "+object_planet_detec_directory+os.path.sep+"*-candidates.xml")
+        print(object_detec_xml)
+        print("Don't know what to do with them...")
+        return None
 
-        with open(logFilename_all, 'r') as logFile_all:
-            #print("bonjour")
-            for myline in logFile_all:
-                if not myline.startswith("#"):
-                    k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
-                    if int(k) in candidate_indices:
-                        GOI_list.write(object_name+", "+candidate_status[np.where(np.array(candidate_indices)==int(k))[0]]+", "+myline)
-
-    #"/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/planet_detec_pyklip-S20141218-k100a7s4m3_KL20/t800g100nc/c_Eri-detectionLog_candidates.txt"
 
 def get_occ(image, centroid = None):
     '''
@@ -201,23 +247,21 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
 
     candidates_list = []
 
-    with open(GOI_list_filename, 'r') as GOI_list:
-        for myline in GOI_list:
-            #print([myline.rstrip()])
-            if (not myline.startswith("#")) and myline.rstrip():
-                GOI_name, status, k,potential_planet,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = myline.rstrip().split(",")
-                if GOI_name.lower() == object_name.lower(): # case insensitive comparision
-                    candidates_list.append((int(k),bool(potential_planet),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
-
+    tree_GOI_list = ET.parse(GOI_list_filename)
+    root_GOI_list = tree_GOI_list.getroot()
 
     row_m = np.floor(width/2.0)
     row_p = np.ceil(width/2.0)
     col_m = np.floor(width/2.0)
     col_p = np.ceil(width/2.0)
 
-    for candidate in candidates_list:
-        k,potential_planet,max_val_criter,x_max_pos,y_max_pos, k,l = candidate
-        cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+    for object_elt in root_GOI_list.findall(object_name):
+        #print(object_elt)
+        for candidate in object_elt.findall("candidate"):
+            k = round(float(candidate.attrib["row_centroid"]))
+            l = round(float(candidate.attrib["col_centroid"]))
+            #print(k,l)
+            cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
 
     return np.squeeze(cube_cpy)

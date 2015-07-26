@@ -37,8 +37,10 @@ def calculate_metrics(filename,
                         filename_no_planets = None,
                         SNR = True,
                         probability = True,
-                        SNR_only = False,
-                        probability_only = False):
+                        GOI_list = None,
+                        overwrite_metric = False,
+                        overwrite_stat = False,
+                        proba_using_mask_per_pixel = False):
     '''
     Calculate the metrics for future planet detection. The SNR map is a metric for example but JB thinks it's not the best one.
 
@@ -202,15 +204,31 @@ def calculate_metrics(filename,
     std_function = radialStdMap
     #std_function = ringSection_based_StdMap
 
-    if SNR_only:
-        probability = False
-        SNR = True
-    if probability_only:
-        probability = True
-        SNR = False
-    activate_metric_calc = True
+    activate_metric_calc_WFC = True
+    activate_metric_calc_MF = True
+    activate_metric_calc_shape = True
 
-    if SNR:
+    activate_proba_calc_FC = True
+    activate_proba_calc_WFC = True
+    activate_proba_calc_MF = True
+    activate_proba_calc_shape = True
+
+    activate_SNR_calc_FC = True
+    activate_SNR_calc_WFC = True
+    activate_SNR_calc_MF = True
+    activate_SNR_calc_shape = True
+
+    if not overwrite_stat:
+        if SNR:
+            doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_SNR.fits')
+            if len(doesFileExist) != 0:
+                activate_SNR_calc_FC = False
+        if probability:
+            doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_proba.fits')
+            if len(doesFileExist) != 0:
+                activate_proba_calc_FC = False
+
+    if SNR and activate_SNR_calc_FC:
         if not mute:
             print("Calculating SNR of flatCube for "+filename)
         # Calculate the standard deviation map.
@@ -221,71 +239,69 @@ def calculate_metrics(filename,
         # Divide the convolved flat cube by the standard deviation map to get the SNR.
         flat_cube_SNR = flat_cube/flat_cube_std
 
-    if probability:
+    if probability and activate_proba_calc_FC:
         if not mute:
             print("Calculating proba of flatCube for "+filename)
-        if platform.system() == "Windows":
-            GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
-        elif platform.system() == "Linux":
-            GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
-        else:
-            GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
         image = flat_cube
         image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+        #image_without_planet = copy(image)
         center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-        IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-        flat_cube_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+        flat_cube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
 
     if metrics is not None:
         if len(metrics) == 1 and not isinstance(metrics,list):
             metrics = [metrics]
 
         if "weightedFlatCube" in metrics:
-            if SNR_only or probability_only:
-                activate_metric_calc = False
+            if not overwrite_metric:
+                activate_metric_calc_WFC = False
                 try:
                     hdulist = pyfits.open(outputDir+folderName+prefix+'-weightedFlatCube.fits')
                     weightedFlatCube = hdulist[1].data
                     hdulist.close()
                 except:
-                    activate_metric_calc = True
+                    activate_metric_calc_WFC = True
 
-            if activate_metric_calc:
+            if activate_metric_calc_WFC:
                 if not mute:
                     print("Calculating weightedFlatCube for "+filename)
                 weightedFlatCube = np.average(cube,axis=0,weights=spectrum_cpy)
                 #weightedFlatCube_SNR = weightedFlatCube/radialStdMap(weightedFlatCube,dr,Dr, centroid=center)
 
-            if SNR:
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits')
+                    if len(doesFileExist) != 0:
+                        activate_SNR_calc_WFC = False
+                if probability:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-weightedFlatCube_proba.fits')
+                    if len(doesFileExist) != 0:
+                        activate_proba_calc_WFC = False
+
+            if SNR and activate_SNR_calc_WFC:
                 if not mute:
                     print("Calculating SNR of weightedFlatCube for "+filename)
                 weightedFlatCube_SNR = weightedFlatCube/std_function(weightedFlatCube,centroid=center)
-            if probability:
+            if probability and activate_proba_calc_WFC:
                 if not mute:
                     print("Calculating proba of weightedFlatCube for "+filename)
-                if platform.system() == "Windows":
-                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
-                elif platform.system() == "Linux":
-                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
-                else:
-                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = weightedFlatCube
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
 
         if "matchedFilter" in metrics and "shape" not in metrics:
-            if SNR_only or probability_only:
-                activate_metric_calc = False
+            if not overwrite_metric:
+                activate_metric_calc_MF = False
                 try:
                     hdulist = pyfits.open(outputDir+folderName+prefix+'-matchedFilter.fits')
                     matchedFilter_map = hdulist[1].data
                     hdulist.close()
                 except:
-                    activate_metric_calc = True
+                    activate_metric_calc_MF = True
 
-            if activate_metric_calc:
+            if activate_metric_calc_MF:
                 if not mute:
                     print("Calculating matchedFilter (no shape) for "+filename)
                 matchedFilter_map = np.ones((ny,nx)) + np.nan
@@ -322,36 +338,40 @@ def calculate_metrics(filename,
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
                 matchedFilter_map[np.where(np.isnan(wider_mask))] = np.nan
 
-            if SNR:
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-matchedFilter_SNR.fits')
+                    if len(doesFileExist) != 0:
+                        activate_SNR_calc_MF = False
+                if probability:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-matchedFilter_proba.fits')
+                    if len(doesFileExist) != 0:
+                        activate_proba_calc_MF = False
+
+            if SNR and activate_SNR_calc_MF:
                 if not mute:
                     print("Calculating SNR of matchedFilter (no shape) for "+filename)
                 matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map, centroid=center)
-            if probability:
+            if probability and activate_proba_calc_MF:
                 if not mute:
                     print("Calculating proba of matchedFilter (no shape) for "+filename)
-                if platform.system() == "Windows":
-                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
-                elif platform.system() == "Linux":
-                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
-                else:
-                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = matchedFilter_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
 
         if "shape" in metrics and "matchedFilter" not in metrics:
-            if SNR_only or probability_only:
-                activate_metric_calc = False
+            if not overwrite_metric:
+                activate_metric_calc_shape = False
                 try:
                     hdulist = pyfits.open(outputDir+folderName+prefix+'-shape.fits')
                     shape_map = hdulist[1].data
                     hdulist.close()
                 except:
-                    activate_metric_calc = True
+                    activate_metric_calc_shape = True
 
-            if activate_metric_calc:
+            if activate_metric_calc_shape:
                 if not mute:
                     print("Calculating shape (no matchedFilter) for "+filename)
                 shape_map = -np.ones((ny,nx)) + np.nan
@@ -394,30 +414,34 @@ def calculate_metrics(filename,
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
                 shape_map[np.where(np.isnan(wider_mask))] = np.nan
 
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-shape_SNR.fits')
+                    if len(doesFileExist) != 0:
+                        activate_SNR_calc_shape = False
+                if probability:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-shape_proba.fits')
+                    if len(doesFileExist) != 0:
+                        activate_proba_calc_shape = False
 
-            if SNR:
+            if SNR and activate_SNR_calc_shape:
                 if not mute:
                     print("Calculating SNR of shape (no matchedFilter) for "+filename)
                 shape_SNR_map = shape_map/std_function(shape_map, centroid=center)
-            if probability:
+            if probability and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape (no matchedFilter) for "+filename)
-                if platform.system() == "Windows":
-                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
-                elif platform.system() == "Linux":
-                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
-                else:
-                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
                 image = shape_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-                shape_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
 
 
         if "matchedFilter" in metrics and "shape" in metrics:
-            if SNR_only or probability_only:
-                activate_metric_calc = False
+            if not overwrite_metric:
+                activate_metric_calc_MF = False
+                activate_metric_calc_shape = False
                 try:
                     hdulist = pyfits.open(outputDir+folderName+prefix+'-matchedFilter.fits')
                     matchedFilter_map = hdulist[1].data
@@ -426,9 +450,10 @@ def calculate_metrics(filename,
                     shape_map = hdulist[1].data
                     hdulist.close()
                 except:
-                    activate_metric_calc = True
+                    activate_metric_calc_MF = True
+                    activate_metric_calc_shape = True
 
-            if activate_metric_calc:
+            if activate_metric_calc_MF and activate_metric_calc_shape:
                 if not mute:
                     print("Calculating shape and matchedFilter for "+filename)
                 matchedFilter_map = np.ones((ny,nx)) + np.nan
@@ -473,32 +498,39 @@ def calculate_metrics(filename,
                 shape_map[np.where(np.isnan(wider_mask))] = np.nan
                 matchedFilter_map[np.where(np.isnan(wider_mask))] = np.nan
 
-            if SNR:
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist1 = glob.glob(outputDir+folderName+prefix+'-shape_SNR.fits')
+                    doesFileExist2 = glob.glob(outputDir+folderName+prefix+'-matchedFilter_SNR.fits')
+                    if len(doesFileExist1) != 0 and len(doesFileExist2) != 0:
+                        activate_SNR_calc_MF = False
+                        activate_SNR_calc_shape = False
+                if probability:
+                    doesFileExist1 = glob.glob(outputDir+folderName+prefix+'-shape_proba.fits')
+                    doesFileExist2 = glob.glob(outputDir+folderName+prefix+'-matchedFilter_proba.fits')
+                    if len(doesFileExist1) != 0 and len(doesFileExist2) != 0:
+                        activate_proba_calc_MF = False
+                        activate_proba_calc_shape = False
+
+            if SNR and activate_SNR_calc_MF and activate_SNR_calc_shape:
                 if not mute:
                     print("Calculating SNR of shape and matchedFilter for "+filename)
                 #shape_SNR_map = shape_map/radialStdMap(shape_map,dr,Dr, centroid=center)
                 shape_SNR_map = shape_map/std_function(shape_map,centroid=center)
                 #matchedFilter_SNR_map = matchedFilter_map/radialStdMap(matchedFilter_map,dr,Dr, centroid=center)
                 matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map,centroid=center)
-            if probability:
+            if probability and activate_proba_calc_MF and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape and matchedFilter for "+filename)
-                if platform.system() == "Windows":
-                    GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
-                elif platform.system() == "Linux":
-                    GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
-                else:
-                    GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 image = shape_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-                shape_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+                #image_without_planet = copy(image)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
                 image = matchedFilter_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center)
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,(IWA,OWA),centroid = center)
+                #image_without_planet = copy(image)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
 
 
 
@@ -510,49 +542,50 @@ def calculate_metrics(filename,
 
 
     if not mute:
-        print("Saving metrics maps as: "+outputDir+folderName+prefix+'-#myMetric#.fits')
+        print("Saving metrics maps as: "+outputDir+folderName+prefix+'-<myMetric>.fits')
+        print("Saving stat maps as: "+outputDir+folderName+prefix+'-<myMetric>_<stat>.fits')
     hdulist2 = pyfits.HDUList()
     #try:
     hdulist2.append(pyfits.PrimaryHDU(header=prihdr))
     hdulist2.append(pyfits.ImageHDU(header=exthdr, data=flat_cube, name="Sci"))
     #hdulist2[1].data = flat_cube
     hdulist2.writeto(outputDir+folderName+prefix+'-flatCube.fits', clobber=True)
-    if SNR:
+    if SNR and activate_SNR_calc_FC:
         hdulist2[1].data = flat_cube_SNR
         hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
-    if probability:
+    if probability and activate_proba_calc_FC:
         hdulist2[1].data = flat_cube_proba_map
         hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
 
     if metrics is not None:
         if "weightedFlatCube" in metrics:
-            if activate_metric_calc:
+            if activate_metric_calc_WFC:
                 hdulist2[1].data = weightedFlatCube
                 hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube.fits', clobber=True)
-            if SNR:
+            if SNR and activate_SNR_calc_WFC:
                 hdulist2[1].data = weightedFlatCube_SNR
                 hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_SNR.fits', clobber=True)
-            if probability:
+            if probability and activate_proba_calc_WFC:
                 hdulist2[1].data = weightedFlatCube_proba_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-weightedFlatCube_proba.fits', clobber=True)
         if "matchedFilter" in metrics:
-            if activate_metric_calc:
+            if activate_metric_calc_MF:
                 hdulist2[1].data = matchedFilter_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter.fits', clobber=True)
-            if SNR:
+            if SNR and activate_SNR_calc_MF:
                 hdulist2[1].data = matchedFilter_SNR_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_SNR.fits', clobber=True)
-            if probability:
+            if probability and activate_proba_calc_MF:
                 hdulist2[1].data = matchedFilter_proba_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-matchedFilter_proba.fits', clobber=True)
         if "shape" in metrics:
-            if activate_metric_calc:
+            if activate_metric_calc_shape:
                 hdulist2[1].data = shape_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape.fits', clobber=True)
-            if SNR:
+            if SNR and activate_SNR_calc_shape:
                 hdulist2[1].data = shape_SNR_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape_SNR.fits', clobber=True)
-            if probability:
+            if probability and activate_proba_calc_shape:
                 hdulist2[1].data = shape_proba_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape_proba.fits', clobber=True)
     """
@@ -1059,8 +1092,12 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                                   metrics_only = False,
                                                   planet_detection_only = False,
                                                   mute = False,
-                                                  SNR_only = False,
-                                                  probability_only = False):
+                                                  GOI_list = None,
+                                                  overwrite_metric = False,
+                                                  overwrite_stat = False,
+                                                  proba_using_mask_per_pixel = False,
+                                                  SNR = True,
+                                                  probability = True):
 
         # Define the output Foldername
         if spectrum_name_it != "":
@@ -1113,10 +1150,12 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                 folderName = folderName,
                                 spectrum=spectrum,
                                 mute = mute,
-                                SNR = False,
-                                probability = True,
-                                SNR_only = SNR_only,
-                                probability_only = probability_only)
+                                SNR = SNR,
+                                probability = probability,
+                                GOI_list = GOI_list,
+                                overwrite_metric = overwrite_metric,
+                                overwrite_stat = overwrite_stat,
+                                proba_using_mask_per_pixel = proba_using_mask_per_pixel)
 
 
         if not metrics_only:
@@ -1145,9 +1184,13 @@ def planet_detection_in_dir_per_file(filename,
                                       metrics_only = False,
                                       planet_detection_only = False,
                                       mute = False,
-                                      SNR_only = False,
-                                      probability_only = False,
-                                      threads = False):
+                                      threads = False,
+                                      GOI_list = None,
+                                      overwrite_metric = False,
+                                      overwrite_stat = False,
+                                      proba_using_mask_per_pixel = False,
+                                      SNR = True,
+                                      probability = True):
     # Get the number of KL_modes for this file based on the filename *-KL#-speccube*
     splitted_name = filename.split("-KL")
     splitted_after_KL = splitted_name[1].split("-speccube.")
@@ -1251,8 +1294,12 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(metrics_only),
                                                                            itertools.repeat(planet_detection_only),
                                                                            itertools.repeat(mute),
-                                                                           itertools.repeat(SNR_only),
-                                                                           itertools.repeat(probability_only)))
+                                                                           itertools.repeat(GOI_list),
+                                                                           itertools.repeat(overwrite_metric),
+                                                                           itertools.repeat(overwrite_stat),
+                                                                           itertools.repeat(proba_using_mask_per_pixel),
+                                                                           itertools.repeat(SNR),
+                                                                           itertools.repeat(probability)))
     else:
         for spectrum_name_it in spectrum_model:
             planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
@@ -1267,8 +1314,12 @@ def planet_detection_in_dir_per_file(filename,
                                                           metrics_only = metrics_only,
                                                           planet_detection_only = planet_detection_only,
                                                           mute = mute,
-                                                          SNR_only = SNR_only,
-                                                          probability_only = probability_only)
+                                                          GOI_list = GOI_list,
+                                                          overwrite_metric = overwrite_metric,
+                                                          overwrite_stat = overwrite_stat,
+                                                          proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                                                          SNR = SNR,
+                                                          probability = probability)
 
 
     if not metrics_only:
@@ -1296,8 +1347,12 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                             metrics_only = False,
                             planet_detection_only = False,
                             mute = True,
-                            SNR_only = False,
-                            probability_only = False):
+                            GOI_list = None,
+                            overwrite_metric = False,
+                            overwrite_stat = False,
+                            proba_using_mask_per_pixel = False,
+                            SNR = True,
+                            probability = True):
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
@@ -1367,9 +1422,13 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                            itertools.repeat(metrics_only),
                                                                            itertools.repeat(planet_detection_only),
                                                                            itertools.repeat(mute),
-                                                                           itertools.repeat(SNR_only),
-                                                                           itertools.repeat(probability_only),
-                                                                           itertools.repeat(threads)))
+                                                                           itertools.repeat(threads),
+                                                                           itertools.repeat(GOI_list),
+                                                                           itertools.repeat(overwrite_metric),
+                                                                           itertools.repeat(overwrite_stat),
+                                                                           itertools.repeat(proba_using_mask_per_pixel),
+                                                                           itertools.repeat(SNR),
+                                                                           itertools.repeat(probability)))
         else:
             for filename in filelist_klipped_cube:
                 planet_detection_in_dir_per_file(filename,
@@ -1383,9 +1442,13 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                  metrics_only = metrics_only,
                                                  planet_detection_only = planet_detection_only,
                                                  mute = mute,
-                                                 SNR_only = SNR_only,
-                                                 probability_only = probability_only,
-                                                 threads = False)
+                                                 threads = False,
+                                                 GOI_list = GOI_list,
+                                                 overwrite_metric = overwrite_metric,
+                                                 overwrite_stat = overwrite_stat,
+                                                 proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                                                 SNR = SNR,
+                                                 probability = probability)
 
 
 
@@ -1415,6 +1478,12 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     else:
         user_defined_PSF_cube = None
 
+    if platform.system() == "Windows":
+        GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+    elif platform.system() == "Linux":
+        GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+    else:
+        GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
 
     inputDirs = []
     #for inputDir in os.listdir(campaign_dir):
@@ -1437,24 +1506,29 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         planet_detection_only = False,
                                         threads = True,
                                         mute = False,
-                                        SNR_only = False,
-                                        probability_only = False)
+                                        GOI_list = GOI_list,
+                                        overwrite_metric=False,
+                                        overwrite_stat=False,
+                                        proba_using_mask_per_pixel = True,
+                                        SNR = True,
+                                        probability = True)
 
-    if 0:
+    if 0 and 0:
         N_threads = len(inputDirs)
         print(N_threads)
         pool = mp.Pool(processes=N_threads)
-        pool.map(planet_detection_in_dir_star, itertools.izip(inputDirs,
-                                                                       itertools.repeat(filename_filter),
-                                                                       itertools.repeat(numbasis),
-                                                                       itertools.repeat(outputDir),
-                                                                       itertools.repeat(spectrum_model),
-                                                                       itertools.repeat(star_type),
-                                                                       itertools.repeat(None),
-                                                                       itertools.repeat(user_defined_PSF_cube),
-                                                                       itertools.repeat(metrics),
-                                                                       itertools.repeat(False),
-                                                                       itertools.repeat(False),
-                                                                       itertools.repeat(False),
-                                                                       itertools.repeat(True)))
+        #Check parameters
+        #pool.map(planet_detection_in_dir_star, itertools.izip(inputDirs,
+        #                                                               itertools.repeat(filename_filter),
+        #                                                               itertools.repeat(numbasis),
+        #                                                               itertools.repeat(outputDir),
+        #                                                               itertools.repeat(spectrum_model),
+        #                                                               itertools.repeat(star_type),
+        #                                                               itertools.repeat(None),
+        #                                                               itertools.repeat(user_defined_PSF_cube),
+        #                                                               itertools.repeat(metrics),
+        #                                                               itertools.repeat(False),
+        #                                                               itertools.repeat(True),
+        #                                                               itertools.repeat(False),
+        #                                                               itertools.repeat(False)))
 
