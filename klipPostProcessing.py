@@ -25,7 +25,113 @@ from kpp_std import *
 import instruments.GPI as GPI
 
 
+def calculate_shape_metric_star(params):
+    """
+    Convert `f([1,2])` to `f(1,2)` call.
+    It allows one to call calculate_shape_metric() with a tuple of parameters.
+    """
+    return calculate_shape_metric(*params)
 
+def calculate_shape_metric(row_indices,col_indices,cube,PSF_cube_cpy,stamp_PSF_mask):
+
+    nl,ny_PSF,nx_PSF = PSF_cube_cpy.shape
+
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+
+    N_it = row_indices.size
+    shape_map = np.zeros((N_it)) + np.nan
+    #stdout.write("\r%d" % 0)
+    for id,k,l in zip(range(N_it),row_indices,col_indices):
+        #stdout.flush()
+        #stdout.write("\r%d" % k)
+
+        stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        for slice_id in range(nl):
+            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+        ampl = np.nansum(PSF_cube_cpy*stamp_cube)
+        try:
+            shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+        except:
+            shape_map[id] =  np.nan
+
+    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
+    return np.sign(shape_map)*np.sqrt(abs(shape_map))
+
+
+def calculate_MF_metric_star(params):
+    """
+    Convert `f([1,2])` to `f(1,2)` call.
+    It allows one to call calculate_MF_metric() with a tuple of parameters.
+    """
+    return calculate_MF_metric(*params)
+
+def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube_cpy,stamp_PSF_mask):
+
+    nl,ny_PSF,nx_PSF = PSF_cube_cpy.shape
+
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+
+    N_it = row_indices.size
+    matchedFilter_map = np.zeros((N_it)) + np.nan
+    #stdout.write("\r%d" % 0)
+    for id,k,l in zip(range(N_it),row_indices,col_indices):
+        #stdout.flush()
+        #stdout.write("\r%d" % k)
+
+        stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        for slice_id in range(nl):
+            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+        ampl = np.nansum(PSF_cube_cpy*stamp_cube)
+        matchedFilter_map[id] = np.sign(ampl)*ampl**2
+
+    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
+    return matchedFilter_map
+
+def calculate_shapeAndMF_metric_star(params):
+    """
+    Convert `f([1,2])` to `f(1,2)` call.
+    It allows one to call calculate_MF_metric() with a tuple of parameters.
+    """
+    return calculate_shapeAndMF_metric(*params)
+
+def calculate_shapeAndMF_metric(row_indices,col_indices,cube,PSF_cube_cpy,stamp_PSF_mask):
+
+    nl,ny_PSF,nx_PSF = PSF_cube_cpy.shape
+
+    row_m = np.floor(ny_PSF/2.0)
+    row_p = np.ceil(ny_PSF/2.0)
+    col_m = np.floor(nx_PSF/2.0)
+    col_p = np.ceil(nx_PSF/2.0)
+
+    N_it = row_indices.size
+    matchedFilter_map = np.zeros((N_it)) + np.nan
+    shape_map = np.zeros((N_it)) + np.nan
+
+    #stdout.write("\r%d" % 0)
+    for id,k,l in zip(range(N_it),row_indices,col_indices):
+        stdout.flush()
+        stdout.write("\r%d" % k)
+
+        stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        for slice_id in range(nl):
+            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+        ampl = np.nansum(PSF_cube_cpy*stamp_cube)
+        matchedFilter_map[id] = np.sign(ampl)*ampl**2
+        try:
+            shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+        except:
+            shape_map[id] =  np.nan
+
+    shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
+
+    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
+    return shape_map,matchedFilter_map
 
 def calculate_metrics(filename,
                         metrics = None,
@@ -40,7 +146,8 @@ def calculate_metrics(filename,
                         GOI_list = None,
                         overwrite_metric = False,
                         overwrite_stat = False,
-                        proba_using_mask_per_pixel = False):
+                        proba_using_mask_per_pixel = False,
+                        N_threads = None):
     '''
     Calculate the metrics for future planet detection. The SNR map is a metric for example but JB thinks it's not the best one.
 
@@ -218,39 +325,41 @@ def calculate_metrics(filename,
     activate_SNR_calc_MF = True
     activate_SNR_calc_shape = True
 
-    if not overwrite_stat:
-        if SNR:
-            doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_SNR.fits')
-            if len(doesFileExist) != 0:
-                activate_SNR_calc_FC = False
-        if probability:
-            doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_proba.fits')
-            if len(doesFileExist) != 0:
-                activate_proba_calc_FC = False
-
-    if SNR and activate_SNR_calc_FC:
-        if not mute:
-            print("Calculating SNR of flatCube for "+filename)
-        # Calculate the standard deviation map.
-        # the standard deviation is calculated on annuli of width Dr. There is an annulus centered every dr.
-        #flat_cube_std = radialStdMap(flat_cube, centroid=center)
-        flat_cube_std = std_function(flat_cube, centroid=center)
-
-        # Divide the convolved flat cube by the standard deviation map to get the SNR.
-        flat_cube_SNR = flat_cube/flat_cube_std
-
-    if probability and activate_proba_calc_FC:
-        if not mute:
-            print("Calculating proba of flatCube for "+filename)
-        image = flat_cube
-        image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-        #image_without_planet = copy(image)
-        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-        flat_cube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
-
     if metrics is not None:
         if len(metrics) == 1 and not isinstance(metrics,list):
             metrics = [metrics]
+
+        if "flatCube" in metrics:
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_SNR.fits')
+                    if len(doesFileExist) != 0:
+                        activate_SNR_calc_FC = False
+                if probability:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-flatCube_proba.fits')
+                    if len(doesFileExist) != 0:
+                        activate_proba_calc_FC = False
+
+            if SNR and activate_SNR_calc_FC:
+                if not mute:
+                    print("Calculating SNR of flatCube for "+filename)
+                # Calculate the standard deviation map.
+                # the standard deviation is calculated on annuli of width Dr. There is an annulus centered every dr.
+                #flat_cube_std = radialStdMap(flat_cube, centroid=center)
+                flat_cube_std = std_function(flat_cube, centroid=center)
+
+                # Divide the convolved flat cube by the standard deviation map to get the SNR.
+                flat_cube_SNR = flat_cube/flat_cube_std
+
+            if probability and activate_proba_calc_FC:
+                if not mute:
+                    print("Calculating proba of flatCube for "+filename)
+                image = flat_cube
+                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                #image_without_planet = copy(image)
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+                flat_cube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+
 
         if "weightedFlatCube" in metrics:
             if not overwrite_metric:
@@ -289,7 +398,7 @@ def calculate_metrics(filename,
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
+                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
 
         if "matchedFilter" in metrics and "shape" not in metrics:
             if not overwrite_metric:
@@ -305,11 +414,6 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating matchedFilter (no shape) for "+filename)
                 matchedFilter_map = np.ones((ny,nx)) + np.nan
-                    #ortho_criterion_map = np.zeros((ny,nx))
-                row_m = np.floor(ny_PSF/2.0)
-                row_p = np.ceil(ny_PSF/2.0)
-                col_m = np.floor(nx_PSF/2.0)
-                col_p = np.ceil(nx_PSF/2.0)
 
                 # Calculate the criterion map.
                 # For each pixel calculate the dot product of a stamp around it with the PSF.
@@ -322,16 +426,36 @@ def calculate_metrics(filename,
                 #r_PSF_stamp = np.tile(r_PSF_stamp,(nl,1,1))
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
-                #stdout.write("\r%d" % 0)
-                for k,l in zip(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1]):
-                    #stdout.flush()
-                    #stdout.write("\r%d" % k)
+                if N_threads is not None:
+                    pool = NoDaemonPool(processes=N_threads)
+                    #pool = mp.Pool(processes=N_threads)
 
-                    stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
-                    for slice_id in range(nl):
-                        stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
-                    matchedFilter_map[k,l] = np.sign(ampl)*ampl**2
+                    ## cut images in N_threads part
+                    # get the first and last index of each chunck
+                    N_pix = flat_cube_wider_notNans[0].size
+                    chunk_size = N_pix/N_threads
+                    N_chunks = N_pix/chunk_size
+
+                    # Get the chunks
+                    chunks_row_indices = []
+                    chunks_col_indices = []
+                    for k in range(N_chunks-1):
+                        chunks_row_indices.append(flat_cube_wider_notNans[0][(k*chunk_size):((k+1)*chunk_size)])
+                        chunks_col_indices.append(flat_cube_wider_notNans[1][(k*chunk_size):((k+1)*chunk_size)])
+                    chunks_row_indices.append(flat_cube_wider_notNans[0][((N_chunks-1)*chunk_size):N_pix])
+                    chunks_col_indices.append(flat_cube_wider_notNans[1][((N_chunks-1)*chunk_size):N_pix])
+
+                    outputs_list = pool.map(calculate_MF_metric_star, itertools.izip(chunks_row_indices,
+                                                                                       chunks_col_indices,
+                                                                                       itertools.repeat(cube),
+                                                                                       itertools.repeat(PSF_cube_cpy),
+                                                                                       itertools.repeat(stamp_PSF_mask)))
+
+                    for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
+                        matchedFilter_map[(row_indices,col_indices)] = out
+                else:
+                    matchedFilter_map[flat_cube_wider_notNans] = calculate_MF_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
+
 
                 IWA,OWA,inner_mask,outer_mask = get_occ(matchedFilter_map, centroid = center)
                 conv_kernel = np.ones((10,10))
@@ -359,7 +483,7 @@ def calculate_metrics(filename,
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
 
         if "shape" in metrics and "matchedFilter" not in metrics:
             if not overwrite_metric:
@@ -375,11 +499,6 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating shape (no matchedFilter) for "+filename)
                 shape_map = -np.ones((ny,nx)) + np.nan
-                    #ortho_criterion_map = np.zeros((ny,nx))
-                row_m = np.floor(ny_PSF/2.0)
-                row_p = np.ceil(ny_PSF/2.0)
-                col_m = np.floor(nx_PSF/2.0)
-                col_p = np.ceil(nx_PSF/2.0)
 
                 # Calculate the criterion map.
                 # For each pixel calculate the dot product of a stamp around it with the PSF.
@@ -392,22 +511,36 @@ def calculate_metrics(filename,
                 #r_PSF_stamp = np.tile(r_PSF_stamp,(nl,1,1))
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
-                #stdout.write("\r%d" % 0)
-                for k,l in zip(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1]):
-                    #stdout.flush()
-                    #stdout.write("\r%d" % k)
+                if N_threads is not None:
+                    pool = NoDaemonPool(processes=N_threads)
+                    #pool = mp.Pool(processes=N_threads)
 
-                    stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
-                    for slice_id in range(nl):
-                        stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
-                    try:
-                        shape_map[k,l] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
-                    except:
-                        shape_map[k,l] =  np.nan
+                    ## cut images in N_threads part
+                    # get the first and last index of each chunck
+                    N_pix = flat_cube_wider_notNans[0].size
+                    chunk_size = N_pix/N_threads
+                    N_chunks = N_pix/chunk_size
 
-                # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
-                shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
+                    # Get the chunks
+                    chunks_row_indices = []
+                    chunks_col_indices = []
+                    for k in range(N_chunks-1):
+                        chunks_row_indices.append(flat_cube_wider_notNans[0][(k*chunk_size):((k+1)*chunk_size)])
+                        chunks_col_indices.append(flat_cube_wider_notNans[1][(k*chunk_size):((k+1)*chunk_size)])
+                    chunks_row_indices.append(flat_cube_wider_notNans[0][((N_chunks-1)*chunk_size):N_pix])
+                    chunks_col_indices.append(flat_cube_wider_notNans[1][((N_chunks-1)*chunk_size):N_pix])
+
+                    outputs_list = pool.map(calculate_shape_metric_star, itertools.izip(chunks_row_indices,
+                                                                                       chunks_col_indices,
+                                                                                       itertools.repeat(cube),
+                                                                                       itertools.repeat(PSF_cube_cpy),
+                                                                                       itertools.repeat(stamp_PSF_mask)))
+
+                    for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
+                        shape_map[(row_indices,col_indices)] = out
+                else:
+                    shape_map[flat_cube_wider_notNans] = calculate_shape_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
+
 
                 IWA,OWA,inner_mask,outer_mask = get_occ(shape_map, centroid = center)
                 conv_kernel = np.ones((10,10))
@@ -435,7 +568,7 @@ def calculate_metrics(filename,
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
 
 
         if "matchedFilter" in metrics and "shape" in metrics:
@@ -458,11 +591,6 @@ def calculate_metrics(filename,
                     print("Calculating shape and matchedFilter for "+filename)
                 matchedFilter_map = np.ones((ny,nx)) + np.nan
                 shape_map = -np.ones((ny,nx)) + np.nan
-                    #ortho_criterion_map = np.zeros((ny,nx))
-                row_m = np.floor(ny_PSF/2.0)
-                row_p = np.ceil(ny_PSF/2.0)
-                col_m = np.floor(nx_PSF/2.0)
-                col_p = np.ceil(nx_PSF/2.0)
 
                 # Calculate the criterion map.
                 # For each pixel calculate the dot product of a stamp around it with the PSF.
@@ -475,22 +603,38 @@ def calculate_metrics(filename,
                 #r_PSF_stamp = np.tile(r_PSF_stamp,(nl,1,1))
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
-                #stdout.write("\r%d" % 0)
-                for k,l in zip(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1]):
-                    stdout.flush()
-                    stdout.write("\r%d" % k)
+                if N_threads is not None:
+                    pool = NoDaemonPool(processes=N_threads)
+                    #pool = mp.Pool(processes=N_threads)
 
-                    stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
-                    for slice_id in range(nl):
-                        stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-                    ampl = np.nansum(PSF_cube_cpy*stamp_cube)
-                    matchedFilter_map[k,l] = np.sign(ampl)*ampl**2
-                    try:
-                        shape_map[k,l] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
-                    except:
-                        shape_map[k,l] =  np.nan
+                    ## cut images in N_threads part
+                    # get the first and last index of each chunck
+                    N_pix = flat_cube_wider_notNans[0].size
+                    chunk_size = N_pix/N_threads
+                    N_chunks = N_pix/chunk_size
 
-                shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
+                    # Get the chunks
+                    chunks_row_indices = []
+                    chunks_col_indices = []
+                    for k in range(N_chunks-1):
+                        chunks_row_indices.append(flat_cube_wider_notNans[0][(k*chunk_size):((k+1)*chunk_size)])
+                        chunks_col_indices.append(flat_cube_wider_notNans[1][(k*chunk_size):((k+1)*chunk_size)])
+                    chunks_row_indices.append(flat_cube_wider_notNans[0][((N_chunks-1)*chunk_size):N_pix])
+                    chunks_col_indices.append(flat_cube_wider_notNans[1][((N_chunks-1)*chunk_size):N_pix])
+
+                    outputs_list = pool.map(calculate_shapeAndMF_metric_star, itertools.izip(chunks_row_indices,
+                                                                                       chunks_col_indices,
+                                                                                       itertools.repeat(cube),
+                                                                                       itertools.repeat(PSF_cube_cpy),
+                                                                                       itertools.repeat(stamp_PSF_mask)))
+
+                    for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
+                        shape_map[(row_indices,col_indices)] = out[0]
+                        matchedFilter_map[(row_indices,col_indices)] = out[1]
+                else:
+                    shape_map[flat_cube_wider_notNans],matchedFilter_map[flat_cube_wider_notNans] = \
+                        calculate_shapeAndMF_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
+
 
                 IWA,OWA,inner_mask,outer_mask = get_occ(shape_map, centroid = center)
                 conv_kernel = np.ones((10,10))
@@ -526,11 +670,11 @@ def calculate_metrics(filename,
                 image = shape_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
                 #image_without_planet = copy(image)
-                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
+                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
                 image = matchedFilter_map
                 image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
                 #image_without_planet = copy(image)
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center)
+                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
 
 
 
@@ -550,14 +694,14 @@ def calculate_metrics(filename,
     hdulist2.append(pyfits.ImageHDU(header=exthdr, data=flat_cube, name="Sci"))
     #hdulist2[1].data = flat_cube
     hdulist2.writeto(outputDir+folderName+prefix+'-flatCube.fits', clobber=True)
-    if SNR and activate_SNR_calc_FC:
-        hdulist2[1].data = flat_cube_SNR
-        hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
-    if probability and activate_proba_calc_FC:
-        hdulist2[1].data = flat_cube_proba_map
-        hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
-
     if metrics is not None:
+        if "flatCube" in metrics:
+            if SNR and activate_SNR_calc_FC:
+                hdulist2[1].data = flat_cube_SNR
+                hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_SNR.fits', clobber=True)
+            if probability and activate_proba_calc_FC:
+                hdulist2[1].data = flat_cube_proba_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-flatCube_proba.fits', clobber=True)
         if "weightedFlatCube" in metrics:
             if activate_metric_calc_WFC:
                 hdulist2[1].data = weightedFlatCube
@@ -1097,7 +1241,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                                   overwrite_stat = False,
                                                   proba_using_mask_per_pixel = False,
                                                   SNR = True,
-                                                  probability = True):
+                                                  probability = True,
+                                                  N_threads_metric = None):
 
         # Define the output Foldername
         if spectrum_name_it != "":
@@ -1155,7 +1300,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                 GOI_list = GOI_list,
                                 overwrite_metric = overwrite_metric,
                                 overwrite_stat = overwrite_stat,
-                                proba_using_mask_per_pixel = proba_using_mask_per_pixel)
+                                proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                                N_threads = N_threads_metric )
 
 
         if not metrics_only:
@@ -1282,6 +1428,12 @@ def planet_detection_in_dir_per_file(filename,
         N_threads = np.size(spectrum_model)
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
+
+        N_threads_metric = mp.cpu_count()/N_threads
+        print(mp.cpu_count(),N_threads,N_threads_metric)
+        if N_threads_metric <= 1:
+            N_threads_metric = None
+
         pool.map(planet_detection_in_dir_per_file_per_spectrum_star, itertools.izip(spectrum_model,
                                                                            itertools.repeat(filename),
                                                                            itertools.repeat(filter),
@@ -1299,7 +1451,8 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(overwrite_stat),
                                                                            itertools.repeat(proba_using_mask_per_pixel),
                                                                            itertools.repeat(SNR),
-                                                                           itertools.repeat(probability)))
+                                                                           itertools.repeat(probability),
+                                                                           itertools.repeat(N_threads_metric)))
     else:
         for spectrum_name_it in spectrum_model:
             planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
@@ -1319,7 +1472,8 @@ def planet_detection_in_dir_per_file(filename,
                                                           overwrite_stat = overwrite_stat,
                                                           proba_using_mask_per_pixel = proba_using_mask_per_pixel,
                                                           SNR = SNR,
-                                                          probability = probability)
+                                                          probability = probability,
+                                                          N_threads_metric = None)
 
 
     if not metrics_only:

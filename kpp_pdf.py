@@ -398,7 +398,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
 
     return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
-def get_image_probability_map(image,image_without_planet,mask_radius = 7, use_mask_per_pixel = False, IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True,N_threads =6):
+def get_image_probability_map(image,image_without_planet,mask_radius = 7, use_mask_per_pixel = False, IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True,N_threads =None):
     if use_mask_per_pixel:
         return get_image_probability_map_perPixMasking(image,image_without_planet,mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads)
     else:
