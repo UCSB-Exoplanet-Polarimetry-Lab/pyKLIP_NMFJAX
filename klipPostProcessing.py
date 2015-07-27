@@ -1280,8 +1280,8 @@ def planet_detection_in_dir_per_file(filename,
 
     if threads:
         N_threads = np.size(spectrum_model)
-        #pool = NoDaemonPool(processes=N_threads)
-        pool = mp.Pool(processes=N_threads)
+        pool = NoDaemonPool(processes=N_threads)
+        #pool = mp.Pool(processes=N_threads)
         pool.map(planet_detection_in_dir_per_file_per_spectrum_star, itertools.izip(spectrum_model,
                                                                            itertools.repeat(filename),
                                                                            itertools.repeat(filter),
