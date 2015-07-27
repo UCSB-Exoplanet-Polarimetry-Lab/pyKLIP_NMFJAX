@@ -432,6 +432,7 @@ def get_image_probability_map_perPixMasking_threadTask(chunk_indices,image,image
             #stdout.write("\r{0}/{1} {2}/{3}".format(k,ny,l,nx))
             #stdout.flush()
             if not np.isnan(image[k,l]):
+
                 x = x_grid[(k,l)]
                 y = y_grid[(k,l)]
                 #print(x,y)
@@ -466,6 +467,7 @@ def get_image_probability_map_perPixMasking_threadTask(chunk_indices,image,image
 
                 cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
                 probability_map[proba_map_k,l] = 1-cdf_fit(image[k,l])
+                #print(probability_map[proba_map_k,l])
 
 
     return probability_map
@@ -513,6 +515,8 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
             chunks_indices.append(((k*chunk_size),((k+1)*chunk_size)))
         chunks_indices.append((((N_chunks-1)*chunk_size),ny))
 
+        chunks_indices = [(108,111),(111,114)]
+
         outputs_list = pool.map(get_image_probability_map_perPixMasking_threadTask_star, itertools.izip(chunks_indices,
                                                                            itertools.repeat(image),
                                                                            itertools.repeat(image_without_planet),
@@ -526,9 +530,6 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
         for indices,out in zip(chunks_indices,outputs_list):
             probability_map[indices[0]:indices[1]] = out
 
-        plt.figure(1)
-        plt.imshow(probability_map)
-        plt.show()
     else:
         for k in np.arange(ny):
             stdout.write("\r{0}/{1}".format(k,ny))
@@ -568,10 +569,6 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
 
                     cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
                     probability_map[k,l] = 1-cdf_fit(image[k,l])
-    if 0:
-        plt.figure(1)
-        plt.imshow(probability_map)
-        plt.show()
 
     return -np.log10(probability_map)
 
