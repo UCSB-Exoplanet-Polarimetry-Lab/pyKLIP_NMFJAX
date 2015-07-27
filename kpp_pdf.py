@@ -411,7 +411,14 @@ def get_image_probability_map_perPixMasking_threadTask_star(params):
     """
     return get_image_probability_map_perPixMasking_threadTask(*params)
 
-def get_image_probability_map_perPixMasking_threadTask(chunk_indices,image,image_without_planet,x_grid,y_grid,N,mask_radius,firstZone_radii,lastZone_radii):
+def get_image_probability_map_perPixMasking_threadTask(row_indices,
+                                                       col_indices,
+                                                       image,
+                                                       image_without_planet,
+                                                       x_grid,y_grid,
+                                                       N,
+                                                       mask_radius,
+                                                       firstZone_radii,lastZone_radii):
     ny,nx = image.shape
 
     image_without_planet_mask = np.ones((ny,nx))
@@ -424,56 +431,56 @@ def get_image_probability_map_perPixMasking_threadTask(chunk_indices,image,image
     r_grid = abs(x_grid +y_grid*1j)
     th_grid = np.arctan2(x_grid,y_grid)
 
-    probability_map = np.zeros((chunk_indices[1]-chunk_indices[0],nx)) + np.nan
-    for proba_map_k, k in enumerate(np.arange(chunk_indices[0],chunk_indices[1])):
-        #stdout.write("\r{0}/{1}".format(k,ny))
+    N_it = row_indices.size
+    probability_map = np.zeros((N_it)) + np.nan
+    #stdout.write("\r%d" % 0)
+    for id,k,l in zip(range(N_it),row_indices,col_indices):
+        #stdout.write("\r{0}/{1} {2}/{3}".format(k,ny,l,nx))
         #stdout.flush()
-        for l in np.arange(nx):
-            #stdout.write("\r{0}/{1} {2}/{3}".format(k,ny,l,nx))
-            #stdout.flush()
-            if not np.isnan(image[k,l]):
 
-                x = x_grid[(k,l)]
-                y = y_grid[(k,l)]
-                #print(x,y)
-                r = r_grid[(k,l)]
+        x = x_grid[(k,l)]
+        y = y_grid[(k,l)]
+        #print(x,y)
+        r = r_grid[(k,l)]
 
 
-                if r < r_limit_firstZone:
-                    #Calculate stat for pixels close to IWA
-                    r_min,r_max = r_min_firstZone,r_max_firstZone
-                elif r > r_limit_lastZone:
-                    r_min,r_max = r_min_lastZone,r_max_lastZone
-                else:
-                    dr = N/(4*np.pi*r)
-                    r_min,r_max = (r-dr, r+dr)
+        if r < r_limit_firstZone:
+            #Calculate stat for pixels close to IWA
+            r_min,r_max = r_min_firstZone,r_max_firstZone
+        elif r > r_limit_lastZone:
+            r_min,r_max = r_min_lastZone,r_max_lastZone
+        else:
+            dr = N/(4*np.pi*r)
+            r_min,r_max = (r-dr, r+dr)
 
-                where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
-                where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
-                #print(np.shape(where_ring_masked[0]))
+        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
+        where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
+        #print(np.shape(where_ring_masked[0]))
 
-                data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
+        data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
 
-                if 0:
-                    print(image[k,l])
-                    im_cpy = copy(image)
-                    im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
-                    plt.figure(1)
-                    plt.imshow(im_cpy)
-                    plt.show()
+        if 0:
+            print(image[k,l])
+            im_cpy = copy(image)
+            im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
+            plt.figure(1)
+            plt.imshow(im_cpy)
+            plt.show()
 
 
-                cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
+        cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
 
-                cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
-                probability_map[proba_map_k,l] = 1-cdf_fit(image[k,l])
-                #print(probability_map[proba_map_k,l])
+        cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
+        probability_map[id] = 1-cdf_fit(image[k,l])
+        #print(probability_map[proba_map_k,l])
 
 
     return probability_map
 
 def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radius = 7, IOWA = None,N = 3000,centroid = None, mute = True,N_threads = None):
     ny,nx = image.shape
+
+    image_noNans = np.where(np.isfinite(image))
 
     if IOWA is None:
         IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
@@ -504,69 +511,46 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
 
-        ## cut images in N_threads part
-        # get the first and last index of each chunck
-        chunk_size = ny/N_threads
-        N_chunks = ny/chunk_size
+        N_pix = image_noNans[0].size
+        chunk_size = N_pix/N_threads
+        N_chunks = N_pix/chunk_size
 
         # Get the chunks
-        chunks_indices = []
+        chunks_row_indices = []
+        chunks_col_indices = []
         for k in range(N_chunks-1):
-            chunks_indices.append(((k*chunk_size),((k+1)*chunk_size)))
-        chunks_indices.append((((N_chunks-1)*chunk_size),ny))
+            chunks_row_indices.append(image_noNans[0][(k*chunk_size):((k+1)*chunk_size)])
+            chunks_col_indices.append(image_noNans[1][(k*chunk_size):((k+1)*chunk_size)])
+        chunks_row_indices.append(image_noNans[0][((N_chunks-1)*chunk_size):N_pix])
+        chunks_col_indices.append(image_noNans[1][((N_chunks-1)*chunk_size):N_pix])
 
-        outputs_list = pool.map(get_image_probability_map_perPixMasking_threadTask_star, itertools.izip(chunks_indices,
-                                                                           itertools.repeat(image),
-                                                                           itertools.repeat(image_without_planet),
-                                                                           itertools.repeat(x_grid),
-                                                                           itertools.repeat(y_grid),
-                                                                           itertools.repeat(N),
-                                                                           itertools.repeat(mask_radius),
-                                                                           itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
-                                                                           itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone))))
+        outputs_list = \
+            pool.map(get_image_probability_map_perPixMasking_threadTask_star,
+                       itertools.izip(chunks_row_indices,
+                       chunks_col_indices,
+                       itertools.repeat(image),
+                       itertools.repeat(image_without_planet),
+                       itertools.repeat(x_grid),
+                       itertools.repeat(y_grid),
+                       itertools.repeat(N),
+                       itertools.repeat(mask_radius),
+                       itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
+                       itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone))))
 
-        for indices,out in zip(chunks_indices,outputs_list):
-            probability_map[indices[0]:indices[1]] = out
+        for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
+            probability_map[(row_indices,col_indices)] = out
 
     else:
-        for k in np.arange(ny):
-            stdout.write("\r{0}/{1}".format(k,ny))
-            stdout.flush()
-            for l in np.arange(nx):
-                if not np.isnan(image[k,l]):
-                    x = x_grid[(k,l)]
-                    y = y_grid[(k,l)]
-                    #print(x,y)
-                    r = r_grid[(k,l)]
-                    th = th_grid[(k,l)]
-
-
-                    if r < r_limit_firstZone:
-                        #Calculate stat for pixels close to IWA
-                        r_min,r_max = r_min_firstZone,r_max_firstZone
-                    elif r > r_limit_lastZone:
-                        r_min,r_max = r_min_lastZone,r_max_lastZone
-                    else:
-                        dr = N/(4*np.pi*r)
-                        r_min,r_max = (r-dr, r+dr)
-
-                    where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
-                    where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
-                    #print(np.shape(where_ring_masked[0]))
-                    if 0:
-                        print(image[k,l])
-                        im_cpy = copy(image)
-                        im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
-                        plt.figure(1)
-                        plt.imshow(im_cpy)
-                        plt.show()
-
-                    data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
-
-                    cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
-
-                    cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
-                    probability_map[k,l] = 1-cdf_fit(image[k,l])
+        probability_map[image_noNans] = \
+            get_image_probability_map_perPixMasking_threadTask(image_noNans[0],
+                                                               image_noNans[1],
+                                                               image,
+                                                               image_without_planet,
+                                                               x_grid,y_grid,
+                                                               N,
+                                                               mask_radius,
+                                                               (r_limit_firstZone,r_min_firstZone,r_max_firstZone),
+                                                               (r_limit_lastZone,r_min_lastZone,r_max_lastZone))
 
     return -np.log10(probability_map)
 
