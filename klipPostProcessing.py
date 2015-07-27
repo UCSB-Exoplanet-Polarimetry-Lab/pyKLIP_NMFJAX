@@ -1430,7 +1430,6 @@ def planet_detection_in_dir_per_file(filename,
         #pool = mp.Pool(processes=N_threads)
 
         N_threads_metric = mp.cpu_count()/N_threads
-        print(mp.cpu_count(),N_threads,N_threads_metric)
         if N_threads_metric <= 1:
             N_threads_metric = None
 
@@ -1622,7 +1621,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                               "."+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t600g32nc.flx",
                               ""]
     star_type = "G4"
-    metrics = ["weightedFlatCube","matchedFilter","shape"]
+    metrics = ["flatCube","weightedFlatCube","matchedFilter","shape"]
 
     if 0:
         if platform.system() == "Windows":
@@ -1633,15 +1632,16 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
         user_defined_PSF_cube = None
 
     if platform.system() == "Windows":
-        GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.txt"
+        GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.xml"
     elif platform.system() == "Linux":
-        GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+        GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.xml"
     else:
-        GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.txt"
+        GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.xml"
 
     inputDirs = []
     #for inputDir in os.listdir(campaign_dir):
-    for inputDir in ["c_Eri"]:
+    #["bet_Cir","c_Eri","HD_28287","HD_88117","HD_95086","HD_100491","HD_118991_A","HD_155114","HD_161719","HD_164249_A","HR_4669","V371_Nor","V1358_Ori"]
+    for inputDir in ["HD_155114","HD_161719","HD_164249_A","HR_4669","V371_Nor","V1358_Ori"]:
         if not inputDir.startswith('.'):
 
             inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
@@ -1661,10 +1661,10 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         threads = True,
                                         mute = False,
                                         GOI_list = GOI_list,
-                                        overwrite_metric=False,
-                                        overwrite_stat=False,
+                                        overwrite_metric=True,
+                                        overwrite_stat=True,
                                         proba_using_mask_per_pixel = True,
-                                        SNR = True,
+                                        SNR = False,
                                         probability = True)
 
     if 0 and 0:
