@@ -25,7 +25,7 @@ class NoDaemonProcess(mp.Process):
 class NoDaemonPool(mpPool.Pool):
     Process = NoDaemonProcess
 
-def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep):
+def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True):
     #objectsDir_list = []
     for objectsDir in os.listdir(campaign_dir):
         if not objectsDir.startswith('.'):
@@ -39,11 +39,16 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
 
             for planet_detec_dir in planet_detec_dir_list:
                 spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
-                src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates.png")
+                if metric is not None:
+                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates-"+metric+".png")
+                else:
+                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates.png")
+
                 for src in src_list:
                     src_splitted = src.split(os.path.sep)
                     dst = output_dir+src_splitted[len(src_splitted)-1]
-                    #print(dst)
+                    if not mute:
+                        print("Copying " + src + " to " + dst)
                     shutil.copyfile(src, dst)
 
 

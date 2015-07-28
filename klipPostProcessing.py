@@ -781,7 +781,8 @@ def calculate_metrics(filename,
 
 def candidate_detection(metrics_foldername,
                         mute = False,
-                        confirm_candidates = None):
+                        confirm_candidates = None,
+                        metric = None):
     '''
 
     Inputs:
@@ -836,8 +837,18 @@ def candidate_detection(metrics_foldername,
         star_name = "UNKNOWN_OBJECT"
 
 
-    #criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
-    criterion_map = shape_map
+    if metric is None:
+        metric = "shape"
+
+    if metric == "shape":
+        criterion_map = shape_map
+    elif metric == "matchedFilter":
+        criterion_map = matchedFilter_map
+    elif metric == "maxShapeMF":
+        criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
+    else:
+        return None
+
     criterion_map_cpy = copy(criterion_map)
     if 0:
         IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
@@ -923,7 +934,7 @@ def candidate_detection(metrics_foldername,
 
 
     tree = ET.ElementTree(root)
-    tree.write(metrics_foldername+os.path.sep+star_name+'-detections.xml')
+    tree.write(metrics_foldername+os.path.sep+star_name+'-detections-'+metric+'.xml')
 
     # Highlight the detected candidates in the criterion map
     if not mute:
@@ -946,7 +957,7 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
-    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates.png', bbox_inches='tight')
+    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
     plt.close(3)
@@ -967,10 +978,13 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
-    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all.png', bbox_inches='tight')
+    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
-def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
+def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = None):
+
+    if metric is None:
+        metric = "shape"
 
     spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
     N_spectra_folders = len(spectrum_folders_list)
@@ -1042,7 +1056,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
 
 
         # Gather the detection png in a single png
-        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections.xml")
+        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+metric+".xml")
         #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
         shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
         shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
@@ -1203,7 +1217,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
         ax.legend(legend_str, loc = 'upper right', fontsize=12)
         #print(planet_detec_dir)
         #plt.show()
-        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate'+"_"+ \
+        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+metric+"_"+ \
                     str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
         plt.close(2)
 
@@ -1212,11 +1226,11 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True):
 
 
     tree = ET.ElementTree(root)
-    print(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates.xml')
-    tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates.xml')
+    print(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.xml')
+    tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.xml')
 
 
-    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates.png', bbox_inches='tight')
+    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.png', bbox_inches='tight')
     plt.close(1)
 
 
@@ -1245,7 +1259,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                                   proba_using_mask_per_pixel = False,
                                                   SNR = True,
                                                   probability = True,
-                                                  N_threads_metric = None):
+                                                  N_threads_metric = None,
+                                                  detection_metric = None):
 
         # Define the output Foldername
         if spectrum_name_it != "":
@@ -1311,7 +1326,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
             if not mute:
                 print("Calling candidate_detection() on "+outputDir+folderName)
             candidate_detection(outputDir+folderName,
-                                mute = mute)
+                                mute = mute,
+                                metric = detection_metric)
 
 
 
@@ -1339,7 +1355,8 @@ def planet_detection_in_dir_per_file(filename,
                                       overwrite_stat = False,
                                       proba_using_mask_per_pixel = False,
                                       SNR = True,
-                                      probability = True):
+                                      probability = True,
+                                      detection_metric = None):
     # Get the number of KL_modes for this file based on the filename *-KL#-speccube*
     splitted_name = filename.split("-KL")
     splitted_after_KL = splitted_name[1].split("-speccube.")
@@ -1454,7 +1471,8 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(proba_using_mask_per_pixel),
                                                                            itertools.repeat(SNR),
                                                                            itertools.repeat(probability),
-                                                                           itertools.repeat(N_threads_metric)))
+                                                                           itertools.repeat(N_threads_metric),
+                                                                           itertools.repeat(detection_metric)))
         pool.close()
     else:
         for spectrum_name_it in spectrum_model:
@@ -1476,7 +1494,8 @@ def planet_detection_in_dir_per_file(filename,
                                                           proba_using_mask_per_pixel = proba_using_mask_per_pixel,
                                                           SNR = SNR,
                                                           probability = probability,
-                                                          N_threads_metric = None)
+                                                          N_threads_metric = None,
+                                                          detection_metric = detection_metric)
 
 
     if not metrics_only:
@@ -1509,7 +1528,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                             overwrite_stat = False,
                             proba_using_mask_per_pixel = False,
                             SNR = True,
-                            probability = True):
+                            probability = True,
+                            detection_metric = None):
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
@@ -1585,7 +1605,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                            itertools.repeat(overwrite_stat),
                                                                            itertools.repeat(proba_using_mask_per_pixel),
                                                                            itertools.repeat(SNR),
-                                                                           itertools.repeat(probability)))
+                                                                           itertools.repeat(probability),
+                                                                           itertools.repeat(detection_metric)))
             pool.close()
         else:
             for filename in filelist_klipped_cube:
@@ -1606,7 +1627,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                  overwrite_stat = overwrite_stat,
                                                  proba_using_mask_per_pixel = proba_using_mask_per_pixel,
                                                  SNR = SNR,
-                                                 probability = probability)
+                                                 probability = probability,
+                                                 detection_metric = detection_metric)
 
 
 
@@ -1627,6 +1649,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                               ""]
     star_type = "G4"
     metrics = ["flatCube","weightedFlatCube","matchedFilter","shape"]
+    detection_metric = "shape"
 
     if 0:
         if platform.system() == "Windows":
@@ -1671,7 +1694,8 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         overwrite_stat=True,
                                         proba_using_mask_per_pixel = True,
                                         SNR = False,
-                                        probability = True)
+                                        probability = True,
+                                        detection_metric = detection_metric)
 
     if 0 and 0:
         N_threads = len(inputDirs)
