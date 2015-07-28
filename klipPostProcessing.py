@@ -115,8 +115,8 @@ def calculate_shapeAndMF_metric(row_indices,col_indices,cube,PSF_cube_cpy,stamp_
 
     #stdout.write("\r%d" % 0)
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        stdout.flush()
-        stdout.write("\r%d" % k)
+        #stdout.flush()
+        #stdout.write("\r%d" % k)
 
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
         for slice_id in range(nl):
@@ -453,6 +453,7 @@ def calculate_metrics(filename,
 
                     for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
                         matchedFilter_map[(row_indices,col_indices)] = out
+                    pool.close()
                 else:
                     matchedFilter_map[flat_cube_wider_notNans] = calculate_MF_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
 
@@ -538,6 +539,7 @@ def calculate_metrics(filename,
 
                     for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
                         shape_map[(row_indices,col_indices)] = out
+                    pool.close()
                 else:
                     shape_map[flat_cube_wider_notNans] = calculate_shape_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
 
@@ -631,6 +633,7 @@ def calculate_metrics(filename,
                     for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
                         shape_map[(row_indices,col_indices)] = out[0]
                         matchedFilter_map[(row_indices,col_indices)] = out[1]
+                    pool.close()
                 else:
                     shape_map[flat_cube_wider_notNans],matchedFilter_map[flat_cube_wider_notNans] = \
                         calculate_shapeAndMF_metric(flat_cube_wider_notNans[0],flat_cube_wider_notNans[1],cube,PSF_cube_cpy,stamp_PSF_mask)
@@ -1452,6 +1455,7 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(SNR),
                                                                            itertools.repeat(probability),
                                                                            itertools.repeat(N_threads_metric)))
+        pool.close()
     else:
         for spectrum_name_it in spectrum_model:
             planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
@@ -1560,7 +1564,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
             for f_name in filelist_klipped_cube:
                 print(f_name)
 
-        if threads:
+        if 0 and threads:
             N_threads = np.size(filelist_klipped_cube)
             pool = NoDaemonPool(processes=N_threads)
             #pool = mp.Pool(processes=N_threads)
@@ -1582,6 +1586,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                            itertools.repeat(proba_using_mask_per_pixel),
                                                                            itertools.repeat(SNR),
                                                                            itertools.repeat(probability)))
+            pool.close()
         else:
             for filename in filelist_klipped_cube:
                 planet_detection_in_dir_per_file(filename,
@@ -1595,7 +1600,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                  metrics_only = metrics_only,
                                                  planet_detection_only = planet_detection_only,
                                                  mute = mute,
-                                                 threads = False,
+                                                 threads = threads,
                                                  GOI_list = GOI_list,
                                                  overwrite_metric = overwrite_metric,
                                                  overwrite_stat = overwrite_stat,
@@ -1639,9 +1644,9 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
         GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.xml"
 
     inputDirs = []
-    #for inputDir in os.listdir(campaign_dir):
+    for inputDir in os.listdir(campaign_dir):
     #["bet_Cir","c_Eri","HD_28287","HD_88117","HD_95086","HD_100491","HD_118991_A","HD_155114","HD_161719","HD_164249_A","HR_4669","V371_Nor","V1358_Ori"]
-    for inputDir in ["HD_155114","HD_161719","HD_164249_A","HR_4669","V371_Nor","V1358_Ori"]:
+    #for inputDir in ["V371_Nor","V1358_Ori"]:
         if not inputDir.startswith('.'):
 
             inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
@@ -1650,6 +1655,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
             print(inputDir)
             if 1:
                 planet_detection_in_dir(inputDir,
+                                        outputDir= outputDir,
                                         filename_prefix_is=filename_filter,
                                         spectrum_model=spectrum_model,
                                         star_type=star_type,
@@ -1685,4 +1691,5 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
         #                                                               itertools.repeat(True),
         #                                                               itertools.repeat(False),
         #                                                               itertools.repeat(False)))
+        pool.close()
 

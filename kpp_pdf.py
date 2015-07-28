@@ -421,6 +421,8 @@ def get_image_probability_map_perPixMasking_threadTask(row_indices,
                                                        firstZone_radii,lastZone_radii):
     ny,nx = image.shape
 
+    #print(row_indices)
+
     image_without_planet_mask = np.ones((ny,nx))
     image_without_planet_mask[np.where(np.isnan(image_without_planet))] = 0
 
@@ -435,7 +437,7 @@ def get_image_probability_map_perPixMasking_threadTask(row_indices,
     probability_map = np.zeros((N_it)) + np.nan
     #stdout.write("\r%d" % 0)
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        #stdout.write("\r{0}/{1} {2}/{3}".format(k,ny,l,nx))
+        #stdout.write("\r{0}/{1}".format(id,N_it))
         #stdout.flush()
 
         x = x_grid[(k,l)]
@@ -515,14 +517,23 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
         chunk_size = N_pix/N_threads
         N_chunks = N_pix/chunk_size
 
+        # Shuffle the list of indices such that a thread doesn't end up with only the outer most pixel (where the number
+        # of pixels in the pdf is much bigger which make it a lot slower compared to his brothers)
+        image_noNans_rows = copy(image_noNans[0])
+        image_noNans_cols = copy(image_noNans[1])
+        rng_state = np.random.get_state()
+        np.random.shuffle(image_noNans_rows)
+        np.random.set_state(rng_state)
+        np.random.shuffle(image_noNans_cols)
+
         # Get the chunks
         chunks_row_indices = []
         chunks_col_indices = []
         for k in range(N_chunks-1):
-            chunks_row_indices.append(image_noNans[0][(k*chunk_size):((k+1)*chunk_size)])
-            chunks_col_indices.append(image_noNans[1][(k*chunk_size):((k+1)*chunk_size)])
-        chunks_row_indices.append(image_noNans[0][((N_chunks-1)*chunk_size):N_pix])
-        chunks_col_indices.append(image_noNans[1][((N_chunks-1)*chunk_size):N_pix])
+            chunks_row_indices.append(image_noNans_rows[(k*chunk_size):((k+1)*chunk_size)])
+            chunks_col_indices.append(image_noNans_cols[(k*chunk_size):((k+1)*chunk_size)])
+        chunks_row_indices.append(image_noNans_rows[((N_chunks-1)*chunk_size):N_pix])
+        chunks_col_indices.append(image_noNans_cols[((N_chunks-1)*chunk_size):N_pix])
 
         outputs_list = \
             pool.map(get_image_probability_map_perPixMasking_threadTask_star,
@@ -539,6 +550,7 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
 
         for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
             probability_map[(row_indices,col_indices)] = out
+        pool.close()
 
     else:
         probability_map[image_noNans] = \
