@@ -166,7 +166,7 @@ def calculate_shapeAndMF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
         ampl = np.nansum(PSF_cube*stamp_cube)
-        matchedFilter_map[id] = np.sign(ampl)*ampl**2
+        matchedFilter_map[id] = ampl
         try:
             shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
         except:
