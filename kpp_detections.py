@@ -92,7 +92,7 @@ def candidate_detection(metrics_foldername,
         threshold = 4
     elif metric == "matchedFilter":
         criterion_map = matchedFilter_map
-        threshold = 5
+        threshold = 4
     elif metric == "maxShapeMF":
         criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
         threshold = 4
