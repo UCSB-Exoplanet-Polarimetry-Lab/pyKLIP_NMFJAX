@@ -355,7 +355,10 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating proba of flatCube for "+filename)
                 image = flat_cube
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 flat_cube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
@@ -395,7 +398,10 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating proba of weightedFlatCube for "+filename)
                 image = weightedFlatCube
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
@@ -481,7 +487,10 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating proba of matchedFilter (no shape) for "+filename)
                 image = matchedFilter_map
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
@@ -567,7 +576,10 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating proba of shape (no matchedFilter) for "+filename)
                 image = shape_map
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
@@ -671,11 +683,17 @@ def calculate_metrics(filename,
                     print("Calculating proba of shape and matchedFilter for "+filename)
                 center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
                 image = shape_map
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
                 image = matchedFilter_map
-                image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                if GOI_list is not None:
+                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
+                else:
+                    image_without_planet = image
                 #image_without_planet = copy(image)
                 matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
 
@@ -842,10 +860,13 @@ def candidate_detection(metrics_foldername,
 
     if metric == "shape":
         criterion_map = shape_map
+        threshold = 4
     elif metric == "matchedFilter":
         criterion_map = matchedFilter_map
+        threshold = 5
     elif metric == "maxShapeMF":
         criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
+        threshold = 4
     else:
         return None
 
@@ -909,7 +930,7 @@ def candidate_detection(metrics_foldername,
         # Mask the spot around the maximum we just found.
         criterion_map[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
 
-        potential_planet = max_val_criter > 4.0
+        potential_planet = max_val_criter > threshold
 
 
         ET.SubElement(all_elt,"localMax",
@@ -1070,7 +1091,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
             splitted_str =  candidates_log_file.split(os.path.sep)
             star_name = splitted_str[len(splitted_str)-1].split("-")[0]
 
-            # Read flatCube_file
+            # Read shape_file
             hdulist = pyfits.open(shape_proba_file)
             shape_proba = hdulist[1].data
             exthdr = hdulist[1].header
@@ -1501,7 +1522,7 @@ def planet_detection_in_dir_per_file(filename,
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
-        gather_detections(outputDir,PSF_cube, mute = mute)
+        gather_detections(outputDir,PSF_cube, mute = mute,metric = detection_metric)
 
 def planet_detection_in_dir_star(params):
     """
