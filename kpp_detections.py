@@ -231,10 +231,10 @@ def candidate_detection(metrics_foldername,
     plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
-def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = None):
+def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None):
 
-    if metric is None:
-        metric = "shape"
+    if which_metric is None:
+        which_metric = "shape"
 
     spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
     N_spectra_folders = len(spectrum_folders_list)
@@ -306,7 +306,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
 
 
         # Gather the detection png in a single png
-        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+metric+".xml")
+        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+which_metric+".xml")
         #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
         shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
         matchedFilter_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
@@ -330,13 +330,13 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
             star_name = splitted_str[len(splitted_str)-1].split("-")[0]
 
             # Read shape_file
-            if metric == "shape":
+            if which_metric == "shape":
                 hdulist = pyfits.open(shape_proba_file)
                 metric_proba = hdulist[1].data
-            elif metric == "matchedFilter":
+            elif which_metric == "matchedFilter":
                 hdulist = pyfits.open(matchedFilter_proba_file)
                 metric_proba = hdulist[1].data
-            elif metric == "maxShapeMF":
+            elif which_metric == "maxShapeMF":
                 hdulist = pyfits.open(shape_proba_file)
                 shape_proba = hdulist[1].data
                 hdulist = pyfits.open(matchedFilter_proba_file)
@@ -375,15 +375,15 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
             plt.clim(0.,5.0)
 
             # Read flatCube_file
-            if metric == "shape":
+            if which_metric == "shape":
                 hdulist = pyfits.open(shape_file)
                 metric = hdulist[1].data
                 hdulist.close()
-            elif metric == "matchedFilter":
+            elif which_metric == "matchedFilter":
                 hdulist = pyfits.open(matchedFilter_file)
                 metric = hdulist[1].data
                 hdulist.close()
-            elif metric == "maxShapeMF":
+            elif which_metric == "maxShapeMF":
                 metric = metric_proba
 
             plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
@@ -493,7 +493,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
         ax.legend(legend_str, loc = 'upper right', fontsize=12)
         #print(planet_detec_dir)
         #plt.show()
-        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+metric+"_"+ \
+        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+which_metric+"_"+ \
                     str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
         plt.close(2)
 
@@ -502,9 +502,9 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
 
 
     tree = ET.ElementTree(root)
-    print(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.xml')
-    tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.xml')
+    print(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
+    tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
 
 
-    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+metric+'.png', bbox_inches='tight')
+    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')
     plt.close(1)
