@@ -309,27 +309,46 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
         candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+metric+".xml")
         #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
         shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
+        matchedFilter_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
         shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
+        matchedFilter_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter.fits")
         template_spectrum_file_list = glob.glob(spectrum_folder+os.path.sep+"template_spectrum.fits")
-        if len(candidates_log_file_list) == 1 and len(shape_proba_file_list) == 1 and len(shape_file_list) == 1 and len(template_spectrum_file_list) == 1:
+        if len(candidates_log_file_list) == 1 and \
+                        len(shape_proba_file_list) == 1 and \
+                        len(shape_file_list) == 1 and \
+                        len(template_spectrum_file_list) == 1 and \
+                        len(matchedFilter_proba_file_list) == 1 and \
+                        len(matchedFilter_file_list) == 1:
             candidates_log_file = candidates_log_file_list[0]
             shape_proba_file = shape_proba_file_list[0]
             shape_file = shape_file_list[0]
+            matchedFilter_file = matchedFilter_file_list[0]
+            matchedFilter_proba_file = matchedFilter_proba_file_list[0]
             template_spectrum_file = template_spectrum_file_list[0]
 
             splitted_str =  candidates_log_file.split(os.path.sep)
             star_name = splitted_str[len(splitted_str)-1].split("-")[0]
 
             # Read shape_file
-            hdulist = pyfits.open(shape_proba_file)
-            shape_proba = hdulist[1].data
+            if metric == "shape":
+                hdulist = pyfits.open(shape_proba_file)
+                metric_proba = hdulist[1].data
+            elif metric == "matchedFilter":
+                hdulist = pyfits.open(matchedFilter_proba_file)
+                metric_proba = hdulist[1].data
+            elif metric == "maxShapeMF":
+                hdulist = pyfits.open(shape_proba_file)
+                shape_proba = hdulist[1].data
+                hdulist = pyfits.open(matchedFilter_proba_file)
+                matchedFilter_proba = hdulist[1].data
+                metric_proba = np.max([shape_proba,matchedFilter_proba],axis=0)
             exthdr = hdulist[1].header
             prihdr = hdulist[0].header
             hdulist.close()
             x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
 
             plt.subplot(2,N_spectra_folders,spec_id+1)
-            plt.imshow(shape_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
             ax = plt.gca()
 
 
@@ -356,12 +375,19 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,metric = 
             plt.clim(0.,5.0)
 
             # Read flatCube_file
-            hdulist = pyfits.open(shape_file)
-            shape = hdulist[1].data
-            hdulist.close()
+            if metric == "shape":
+                hdulist = pyfits.open(shape_file)
+                metric = hdulist[1].data
+                hdulist.close()
+            elif metric == "matchedFilter":
+                hdulist = pyfits.open(matchedFilter_file)
+                metric = hdulist[1].data
+                hdulist.close()
+            elif metric == "maxShapeMF":
+                metric = metric_proba
 
             plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
-            plt.imshow(shape[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
             plt.colorbar()
 
 

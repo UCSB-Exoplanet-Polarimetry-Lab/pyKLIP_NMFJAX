@@ -30,15 +30,15 @@ def calculate_shape_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask,
                         Indices should be given from a 2d image.
     :param col_indices: Column indices list of the pixels where to calculate the metric in cube.
                         Indices should be given from a 2d image.
-    :param cube: Cube from which one wants the shape metric map. PSF_cube should be norm-2 normalized.
+    :param cube: Cube from which one wants the metric map. PSF_cube should be norm-2 normalized.
                 PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
-    :param PSF_cube: PSF_cube template used for calculated the shape. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
+    :param PSF_cube: PSF_cube template used for calculated the metric. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
                      number of wavelength samples, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
     :param stamp_PSF_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
-                        a type of a high pass filter. Before calculating the shape value of a stamp cube around a given
+                        a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                         pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                         The pixel used for calculating the average are the one equal to one in the mask.
-    :return:
+    :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
     '''
 
     # Shape of the PSF cube
@@ -73,6 +73,7 @@ def calculate_shape_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask,
         try:
             shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
         except:
+            # In case ones divide by zero...
             shape_map[id] =  np.nan
 
     # The shape value here can be seen as a cosine square as it is a normalized squared dot product.
@@ -87,7 +88,7 @@ def calculate_MF_metric_star(params):
     """
     return calculate_MF_metric(*params)
 
-def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask):
+def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True):
     '''
     Calculate the matched filter metric on the given datacube for the pixels targeted by row_indices and col_indices.
     These lists of indices can basically be given from the numpy.where function following the example:
@@ -96,45 +97,51 @@ def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask):
     By truncating the given lists in small pieces it is then easy to parallelized.
 
     The matched filter is a metric allowing one to pull out a known signal from noisy (not correlated) data.
-    It is basically a squared dot product (meaning projection) of the template PSF cube with a stamp cube.
+    It is basically a dot product (meaning projection) of the template PSF cube with a stamp cube.
 
     :param row_indices: Row indices list of the pixels where to calculate the metric in cube.
                         Indices should be given from a 2d image.
     :param col_indices: Column indices list of the pixels where to calculate the metric in cube.
                         Indices should be given from a 2d image.
-    :param cube: Cube from which one wants the shape metric map. PSF_cube should be norm-2 normalized.
+    :param cube: Cube from which one wants the metric map. PSF_cube should be norm-2 normalized.
                 PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
-    :param PSF_cube: PSF_cube template used for calculated the shape. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
+    :param PSF_cube: PSF_cube template used for calculated the metric. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
                      number of wavelength samples, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
     :param stamp_PSF_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
-                        a type of a high pass filter. Before calculating the shape value of a stamp cube around a given
+                        a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                         pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                         The pixel used for calculating the average are the one equal to one in the mask.
-    :return:
+    :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
     '''
 
+    # Shape of the PSF cube
     nl,ny_PSF,nx_PSF = PSF_cube.shape
 
-    row_m = np.floor(ny_PSF/2.0)
-    row_p = np.ceil(ny_PSF/2.0)
-    col_m = np.floor(nx_PSF/2.0)
-    col_p = np.ceil(nx_PSF/2.0)
+    # Number of rows and columns to add around a given pixel in order to extract a stamp.
+    row_m = np.floor(ny_PSF/2.0)    # row_minus
+    row_p = np.ceil(ny_PSF/2.0)     # row_plus
+    col_m = np.floor(nx_PSF/2.0)    # col_minus
+    col_p = np.ceil(nx_PSF/2.0)     # col_plus
 
+    # Number of pixels on which the metric has to be computed
     N_it = row_indices.size
+    # Define an matched filter vector full of nans
     matchedFilter_map = np.zeros((N_it)) + np.nan
-    #stdout.write("\r%d" % 0)
+    # Loop over all pixels (row_indices[id],col_indices[id])
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        #stdout.flush()
-        #stdout.write("\r%d" % k)
+        if not mute:
+            # Print the progress of the function
+            stdout.write("\r{0}/{1}".format(id,N_it))
+            stdout.flush()
 
+        # Extract stamp cube around the current pixel from the whoel cube
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        # Remove average value of the surrounding pixels in each slice of the stamp cube
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-        ampl = np.nansum(PSF_cube*stamp_cube)
-        #matchedFilter_map[id] = np.sign(ampl)*ampl**2
-        matchedFilter_map[id] = ampl
+        # Dot product of the PSF with stamp cube which is the matched filter value.
+        matchedFilter_map[id] = np.nansum(PSF_cube*stamp_cube)
 
-    # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
     return matchedFilter_map
 
 def calculate_shapeAndMF_metric_star(params):
@@ -145,33 +152,77 @@ def calculate_shapeAndMF_metric_star(params):
     return calculate_shapeAndMF_metric(*params)
 
 def calculate_shapeAndMF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True):
+    '''
+    Calculate the shape and the matched filter metrics on the given datacube for the pixels targeted by row_indices and
+    col_indices.
+    These lists of indices can basically be given from the numpy.where function following the example:
+        import numpy as np
+        row_indices,col_indices = np.where(np.finite(np.mean(cube,axis=0)))
+    By truncating the given lists in small pieces it is then easy to parallelized.
+    Both metrics are calculated in one single loop which should make it slightly faster than running
+    calculate_MF_metric() and calculate_shape_metric() seperatly.
 
+    The matched filter is a metric allowing one to pull out a known signal from noisy (not correlated) data.
+    It is basically a dot product (meaning projection) of the template PSF cube with a stamp cube.
+
+    The shape metric is a normalized matched filter from which the flux component has been removed.
+    It is a sort of pattern recognition.
+    The shape value is a dot product normalized by the norm of the vectors
+
+    :param row_indices: Row indices list of the pixels where to calculate the metric in cube.
+                        Indices should be given from a 2d image.
+    :param col_indices: Column indices list of the pixels where to calculate the metric in cube.
+                        Indices should be given from a 2d image.
+    :param cube: Cube from which one wants the metric map. PSF_cube should be norm-2 normalized.
+                PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
+    :param PSF_cube: PSF_cube template used for calculated the metric. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
+                     number of wavelength samples, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
+    :param stamp_PSF_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
+                        a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
+                        pixel the average value of the surroundings of each slice of that stamp cube will be removed.
+                        The pixel used for calculating the average are the one equal to one in the mask.
+    :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
+    '''
+
+    # Shape of the PSF cube
     nl,ny_PSF,nx_PSF = PSF_cube.shape
 
-    row_m = np.floor(ny_PSF/2.0)
-    row_p = np.ceil(ny_PSF/2.0)
-    col_m = np.floor(nx_PSF/2.0)
-    col_p = np.ceil(nx_PSF/2.0)
+    # Number of rows and columns to add around a given pixel in order to extract a stamp.
+    row_m = np.floor(ny_PSF/2.0)    # row_minus
+    row_p = np.ceil(ny_PSF/2.0)     # row_plus
+    col_m = np.floor(nx_PSF/2.0)    # col_minus
+    col_p = np.ceil(nx_PSF/2.0)     # col_plus
 
+    # Number of pixels on which the metric has to be computed
     N_it = row_indices.size
+    # Define a matched filter vector and a shape vector both full of nans
     matchedFilter_map = np.zeros((N_it)) + np.nan
     shape_map = np.zeros((N_it)) + np.nan
-
-    #stdout.write("\r%d" % 0)
+    # Loop over all pixels (row_indices[id],col_indices[id])
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        #stdout.flush()
-        #stdout.write("\r%d" % k)
+        if not mute:
+            # Print the progress of the function
+            stdout.write("\r{0}/{1}".format(id,N_it))
+            stdout.flush()
 
+        # Extract stamp cube around the current pixel from the whoel cube
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        # Remove average value of the surrounding pixels in each slice of the stamp cube
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+        # Dot product of the PSF with stamp cube.
         ampl = np.nansum(PSF_cube*stamp_cube)
+        # The dot product is actually also the matched filter
         matchedFilter_map[id] = ampl
+        # Normalize the dot product square by the squared norm-2 of the stamp cube.
+        # Because we keep the sign shape value is then found in [-1.,1.]
         try:
             shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
         except:
+            # In case ones divide by zero...
             shape_map[id] =  np.nan
 
+    # The shape value here can be seen as a cosine square as it is a normalized squared dot product.
     shape_map = np.sign(shape_map)*np.sqrt(abs(shape_map))
 
     # criterion is here a cosine squared so we take the square root to get something similar to a cosine.
@@ -193,7 +244,7 @@ def calculate_metrics(filename,
                         proba_using_mask_per_pixel = False,
                         N_threads = None):
     '''
-    Calculate the metrics for future planet detection. The SNR map is a metric for example but JB thinks it's not the best one.
+    Calculate some metrics on a given data cube as well as the corresponding SNR and probability maps.
 
     Inputs:
         filename: Path and name of the fits file to be analyzed.

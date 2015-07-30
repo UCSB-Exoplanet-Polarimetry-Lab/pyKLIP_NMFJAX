@@ -34,7 +34,7 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
             objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep
             #print(inputDir)
 
-            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*-KL20")
+            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*k100a7s4m3-KL20")
             #print(planet_detec_dir_list)
 
             for planet_detec_dir in planet_detec_dir_list:
