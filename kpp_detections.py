@@ -28,50 +28,80 @@ from kpp_std import *
 
 def candidate_detection(metrics_foldername,
                         mute = False,
-                        confirm_candidates = None,
                         metric = None):
     '''
+    Run the candidate detection algorithm based on pre-calculated metric probability maps.
 
-    Inputs:
+    What candidate_detection() needs is a folder in which the outputs of the function calculate_metrics() for a given
+    data cube are saved. There should be only one *-shape_proba.fits file and one *-matchedFilter_proba.fits file.
+    The convention is to have one folder for a given data cube with a given spectrum template.
 
+    Candidate_detection needs both files (*-shape_proba.fits and *-matchedFilter_proba.fits) in order to work even if
+    only one of them is actually used. this could probably be corrected in the future.
 
-    Outputs:
-
+    :param metrics_foldername: Name of the folder containing the *-shape_proba.fits file and the
+                            *-matchedFilter_proba.fits.
+    :param mute: If True prevent printed log outputs.
+    :param metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells which
+                metric should be used for the detection. The default value is "shape".
+    :return: If successful the function returns 1 otherwise it returns None.
+            If everything went well the function will have created the following files in the folder metrics_foldername:
+            - <star_name>-detectionIm_all-<metric>.png:
+                An image of the metric probablity map with an arrow on all the local maxima that have been tested.
+                There is a limit of max_attempts = 60 (hard-coded in the function) local maxima. But there is also a
+                lower limit on the acceptable probability value (2.5) so there might not be 60 iterations.
+            - <star_name>-detectionIm_candidates-<metric>.png
+                Select only the points with a probability greater that 4. These are the candidates.
+            - <star_name>-detections-<metric>.xml
+                Store the position and probability for all local maxima and detections in a xml file.
+                The tree is composed of root, then <star_name>, then candidates and all. The childs of either
+                "candidates" or "all" are all "localMax" and their properties are id, max_val_criter, col_id, row_id,
+                x_max_pos and y_max_pos.
     '''
+    # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
     shape_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape_proba.fits")
     matchedFilter_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-matchedFilter_proba.fits")
+    # Abort if the shape proba file couldn't be found.
     if len(shape_filename_list) == 0:
         if not mute:
-            print("Couldn't find shape_SNR map in "+metrics_foldername)
-            return 0
+            print("Couldn't find shape_proba map in "+metrics_foldername)
+            return None
     else:
+        # Read the shape proba file if it was found.
         hdulist_shape = pyfits.open(shape_filename_list[0])
+    # Abort if the matched filter proba file couldn't be found.
     if len(matchedFilter_filename_list) == 0:
         if not mute:
             print("Couldn't find matchedFilter_SNR map in "+metrics_foldername)
-            return 0
+            return None
     else:
+        # Read the matched filter proba file if it was found.
         hdulist_matchedFilter = pyfits.open(matchedFilter_filename_list[0])
 
-    #grab the data and headers
+    # Try to grab the data and headers
     try:
         shape_map = hdulist_shape[1].data
         matchedFilter_map = hdulist_matchedFilter[1].data
         exthdr = hdulist_shape[1].header
         prihdr = hdulist_shape[0].header
     except:
-        print("Couldn't read the fits file normally. Try another way.")
+        # This except was used for datacube not following GPI headers convention.
+        # /!\ This is however not supported at the moment
+        print("Return None. Couldn't read the fits file normally.")
         shape_map = hdulist_shape[0].data
         prihdr = hdulist_shape[0].header
+        return None
 
+    # Shape of the images
     if np.size(shape_map.shape) == 2:
         ny,nx = shape_map.shape
 
+    # Get center of the image (star position)
     try:
-        # Retrieve the center of the image from the fits keyword.
+        # Retrieve the center of the image from the fits headers.
         center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
     except:
-        # If the keywords could not be found.
+        # If the keywords could not be found the center is defined as the middle of the image
         if not mute:
             print("Couldn't find PSFCENTX and PSFCENTY keywords.")
         center = [(nx-1)/2,(ny-1)/2]
@@ -81,12 +111,14 @@ def candidate_detection(metrics_foldername,
         # OBJECT: keyword in the primary header with the name of the star.
         star_name = prihdr['OBJECT'].strip().replace (" ", "_")
     except:
+        # If the object name could nto be found cal lit unknown_object
         star_name = "UNKNOWN_OBJECT"
 
-
+    # Default metric used is shape
     if metric is None:
         metric = "shape"
 
+    # If the user defined a metric to use. Define the the criterion_map accordingly as well as the threshold.
     if metric == "shape":
         criterion_map = shape_map
         threshold = 4
@@ -99,23 +131,13 @@ def candidate_detection(metrics_foldername,
     else:
         return None
 
+    # Make a copy of the criterion map because it will be modified in the following.
+    # Local maxima are indeed masked out when checked
     criterion_map_cpy = copy(criterion_map)
-    if 0:
-        IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
-
-        # Ignore all the pixel too close from an edge with nans
-        #flat_cube_nans = np.where(np.isnan(criterion_map))
-        #flat_cube_mask = np.ones((ny,nx))
-        #flat_cube_mask[flat_cube_nans] = np.nan
-        #widen the nans region
-        conv_kernel = np.ones((10,10))
-        flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
-        criterion_map[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
-
 
     # Build as grids of x,y coordinates.
     # The center is in the middle of the array and the unit is the pixel.
-    # If the size of the array is even 2n x 2n the center coordinates is [n,n].
+    # If the size of the array is even 2n x 2n the center coordinate in the array is [n,n].
     x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
 
 
@@ -128,14 +150,27 @@ def candidate_detection(metrics_foldername,
     r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
     stamp_mask[np.where(r_stamp < 4.0)] = np.nan
 
-    row_m = np.floor(stamp_nrow/2.0)
-    row_p = np.ceil(stamp_nrow/2.0)
-    col_m = np.floor(stamp_ncol/2.0)
-    col_p = np.ceil(stamp_ncol/2.0)
+    # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
+    # DISABLED: this is done in the metric calculation itself
+    if 0:
+        IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
+        conv_kernel = np.ones((10,10))
+        flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
+        criterion_map[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
 
+
+    # Number of rows and columns to add around a given pixel in order to extract a stamp.
+    row_m = np.floor(stamp_nrow/2.0)    # row_minus
+    row_p = np.ceil(stamp_nrow/2.0)     # row_plus
+    col_m = np.floor(stamp_ncol/2.0)    # col_minus
+    col_p = np.ceil(stamp_ncol/2.0)     # col_plus
+
+    # Define the tree for the xml file
     root = ET.Element("root")
     star_elt = ET.SubElement(root, star_name)
+    # Element where the candidates will be saved
     candidates_elt = ET.SubElement(star_elt, "candidates")
+    # Element where all local maxima will be saved
     all_elt = ET.SubElement(star_elt, "all")
 
     # Count the number of valid detected candidates.
@@ -231,6 +266,8 @@ def candidate_detection(metrics_foldername,
     plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
+    return 1
+
 def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None):
 
     if which_metric is None:
@@ -247,7 +284,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     if np.size(planet_detec_dir_glob) == 0:
         if not mute:
             print("/!\ Quitting! Couldn't find the following directory " + planet_detec_dir)
-        return 0
+        return None
     else:
         planet_detec_dir = planet_detec_dir_glob[0]
 

@@ -38,6 +38,7 @@ def calculate_shape_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask,
                         a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                         pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                         The pixel used for calculating the average are the one equal to one in the mask.
+    :param mute: If True prevent printed log outputs.
     :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
     '''
 
@@ -111,6 +112,7 @@ def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mu
                         a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                         pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                         The pixel used for calculating the average are the one equal to one in the mask.
+    :param mute: If True prevent printed log outputs.
     :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
     '''
 
@@ -181,6 +183,7 @@ def calculate_shapeAndMF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_
                         a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                         pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                         The pixel used for calculating the average are the one equal to one in the mask.
+    :param mute: If True prevent printed log outputs.
     :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
     '''
 
@@ -285,6 +288,8 @@ def calculate_metrics(filename,
     :param outputDir: Directory where to create the folder containing the outputs. default directory is "./"
     :param folderName: Name of the folder containing the outputs. It will be located in outputDir. Default folder name 
                     is "default_out".
+                    The convention is to have one folder for a given data cube with a given spectrum template.
+                    Therefore don't save the outputs of different calls to calculate_metrics() in the same folder.
     :param spectrum: Spectrum used for the metrics using a spectrum: weightedFlatCube, shape, matchedFilter.
                     It is combined with PSF_cube if PSF_cube is not None.
     :param mute: If True prevent printed log outputs.
@@ -305,6 +310,7 @@ def calculate_metrics(filename,
             Statistic maps are saved as outputDir+folderName+prefix+'-<myMetric>_<stat>.fits'
             Beside spectrum is saved as fits and png for information. The fits file contains the wavelength sampling
             (first row) as well as the spectrum (second row).
+            The function itself returns 1 if it successfully executed and None otherwise.
     '''
     # Load filename. It contains the data cube.
     hdulist = pyfits.open(filename)
@@ -432,6 +438,7 @@ def calculate_metrics(filename,
         # OBJECT: keyword in the primary header with the name of the star.
         prefix = prihdr['OBJECT'].strip().replace (" ", "_")
     except:
+        # If the object name could nto be found cal lit unknown_object
         prefix = "UNKNOWN_OBJECT"
 
 
@@ -627,6 +634,7 @@ def calculate_metrics(filename,
                     matchedFilter_map[flat_cube_noNans_noEdges] = calculate_MF_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask)
 
 
+                # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
                 IWA,OWA,inner_mask,outer_mask = get_occ(matchedFilter_map, centroid = center)
                 conv_kernel = np.ones((10,10))
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
@@ -724,6 +732,7 @@ def calculate_metrics(filename,
                     shape_map[flat_cube_noNans_noEdges] = calculate_shape_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask)
 
 
+                # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
                 IWA,OWA,inner_mask,outer_mask = get_occ(shape_map, centroid = center)
                 conv_kernel = np.ones((10,10))
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
@@ -833,6 +842,7 @@ def calculate_metrics(filename,
                         calculate_shapeAndMF_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask)
 
 
+                # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
                 IWA,OWA,inner_mask,outer_mask = get_occ(shape_map, centroid = center)
                 conv_kernel = np.ones((10,10))
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
