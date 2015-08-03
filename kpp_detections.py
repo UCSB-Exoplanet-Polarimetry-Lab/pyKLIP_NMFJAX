@@ -50,6 +50,9 @@ def candidate_detection(metrics_foldername,
                 An image of the metric probablity map with an arrow on all the local maxima that have been tested.
                 There is a limit of max_attempts = 60 (hard-coded in the function) local maxima. But there is also a
                 lower limit on the acceptable probability value (2.5) so there might not be 60 iterations.
+                You might think this output is useless and you were right. I just use it when I see that an object is
+                not detected to check what probability it has (because it usually is still a local maximum but just
+                fainter than the threshold).
             - <star_name>-detectionIm_candidates-<metric>.png
                 Select only the points with a probability greater that 4. These are the candidates.
             - <star_name>-detections-<metric>.xml
@@ -118,7 +121,7 @@ def candidate_detection(metrics_foldername,
     if metric is None:
         metric = "shape"
 
-    # If the user defined a metric to use. Define the the criterion_map accordingly as well as the threshold.
+    # If the user defined a metric to use. Define the criterion_map accordingly as well as the threshold.
     if metric == "shape":
         criterion_map = shape_map
         threshold = 4
@@ -178,13 +181,15 @@ def candidate_detection(metrics_foldername,
 
     # Maximum number of iterations on local maxima.
     max_attempts = 60
-                ## START FOR LOOP.
-                ## Each iteration looks at one local maximum in the criterion map.
+    ## START WHILE LOOP.
+    # Each iteration looks at one local maximum in the criterion map.
+    # Note: This loop is a bit dum. The same thing could be done more easily in a different way but it is an heritage
+    # from previous test and I am lazy to change it.
     k = 0
     max_val_criter = np.nanmax(criterion_map)
     while max_val_criter >= 2.5 and k <= max_attempts:
         k += 1
-        # Find the maximum value in the current SNR map. At each iteration the previous maximum is masked out.
+        # Find the maximum value in the current criterion map. At each iteration the previous maximum is masked out.
         max_val_criter = np.nanmax(criterion_map)
         # Locate the maximum by retrieving its coordinates
         max_ind = np.where( criterion_map == max_val_criter )
@@ -194,9 +199,10 @@ def candidate_detection(metrics_foldername,
         # Mask the spot around the maximum we just found.
         criterion_map[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
 
+        # If the criterion value is bigger than the threshold then it is considered as a candidate.
         potential_planet = max_val_criter > threshold
 
-
+        # Store the current local maximum information in the xml
         ET.SubElement(all_elt,"localMax",
                       id = str(k),
                       max_val_criter = str(max_val_criter),
@@ -206,6 +212,8 @@ def candidate_detection(metrics_foldername,
                       col_id= str(col_id))
 
         if potential_planet:
+            # If the current maximum has a value grater than the threshold its information is also stored in the xml as
+            # a candidate.
             ET.SubElement(candidates_elt, "localMax",
                           id = str(k),
                           max_val_criter = str(max_val_criter),
@@ -216,24 +224,32 @@ def candidate_detection(metrics_foldername,
 
             # Increment the number of detected candidates
             N_candidates += 1
+    ## END WHILE LOOP.
 
-
+    ## Save XML
+    # Save the xml file from the tree
     tree = ET.ElementTree(root)
     tree.write(metrics_foldername+os.path.sep+star_name+'-detections-'+metric+'.xml')
 
-    # Highlight the detected candidates in the criterion map
+    ## PLOTS to png
+    # The following plots the criterion map and locate the candidates or local maxima before saving the result as a png.
     if not mute:
         print("Number of candidates = " + str(N_candidates))
+    # Following paragraph plots the candidate image
     plt.close(3)
     plt.figure(3,figsize=(16,16))
+    # plot the criterion map. One axis has to be mirrored to get North up.
     plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
     ax = plt.gca()
+    # Loop over the candidates
     for candidate in candidates_elt:
+        # get the position of the candidate and the criterion value from the candidate tree
         candidate_id = int(candidate.attrib["id"])
         max_val_criter = float(candidate.attrib["max_val_criter"])
         x_max_pos = float(candidate.attrib["x_max_pos"])
         y_max_pos = float(candidate.attrib["y_max_pos"])
 
+        # Draw an arrow with some text to point at the candidate
         ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
                 xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
                 textcoords='data',
@@ -242,15 +258,21 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
+    # Save the candidate plot as png in the same folder as the metric maps.
+    # Filename is <star_name>-detectionIm_candidates-<metric>.png
     plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
+    # Following paragraph plots the all local maxima image
     plt.close(3)
     # Show the local maxima in the criterion map
     plt.figure(3,figsize=(16,16))
+    # plot the criterion map. One axis has to be mirrored to get North up.
     plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
     ax = plt.gca()
+    # Loop over all local maxima
     for spot in all_elt:
+        # get the position of the maximum and the criterion value from the all_elt tree
         candidate_id = int(spot.attrib["id"])
         max_val_criter = float(spot.attrib["max_val_criter"])
         x_max_pos = float(spot.attrib["x_max_pos"])
@@ -263,23 +285,56 @@ def candidate_detection(metrics_foldername,
                                 color = 'black')
                 )
     plt.clim(0.,10.0)
+    # Save the plot with all local maxima as png in the same folder as the metric maps.
+    # Filename is <star_name>-detectionIm_all-<metric>.png
     plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
     plt.close(3)
 
     return 1
 
-def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None):
+def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None,GOI_list = None):
+    '''
+    Gather the candidates detected with different spectrum templates for a given data cube into a single big image and
+    a single xml file.
 
+    Beside try to extract a very rough quicklook spectrum for these candidates in several png image (One per candidate).
+
+    The algorithm should detect if the same object was detected by several templates and consider that as a single
+    detection.
+
+    Note: If the algorithm fails at merging neighboring detections (less than pixel apart) it means the centroid
+    algorithm couldn't converge which means the detected object is not enough blob like in the flat cube.
+    Bad sign for being a planet...
+
+
+
+    :param planet_detec_dir: Directory of the detection folder. We recall that the convention is to create one folder
+                            per data cube to store the outputs of the detection algorithm. This folder will contain
+                            subfolder(s) for each spectrum template.
+    :param PSF_cube_filename: The name of the PSF cube fits file or directly a the numpy array of the PSF cube.
+                    If PSF_cube_filename is an array then nl,ny_PSF,nx_PSF=PSF_cube_filename.shape, nl is the number of
+                    wavelength samples and should be 37, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
+    :param mute: If True prevent printed log outputs.
+    :param which_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells which
+                metric should be used for the detection. The default value is "shape".
+    :param GOI_list: XML file with the list of known object in the campaign. If GOI_list is not none and if there is
+                    registered known GOI objects these objects will be marked with a circle in the png.
+    :return: 1 if successful and None otherwise.
+            Also creates some files in planet_detec_dir:
+            - <star_name>-<filter>-<date>-candidates-<which_metric>.xml
+                Non redundant detections in a xml file.
+            - <star_name>-<filter>-<date>-candidates-<which_metric>.png
+                All spectrum templates candidates and non redundant ones as a png image.
+            - One <star_name>-<filter>-<date>-candidates-<which_metric>_<ID>.png per candidate
+                Rough spectrum of each candidates
+    '''
+
+    # Default value of the metric used for the detection is "shape".
     if which_metric is None:
         which_metric = "shape"
 
-    spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
-    N_spectra_folders = len(spectrum_folders_list)
-    plt.figure(1,figsize=(8*N_spectra_folders,16))
 
-
-    # First let's recover the name of the file that was reduced for this folder.
-    # The name of the file is in the folder name
+    # Check that the input directory is a valid path
     planet_detec_dir_glob = glob.glob(planet_detec_dir)
     if np.size(planet_detec_dir_glob) == 0:
         if not mute:
@@ -288,31 +343,40 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     else:
         planet_detec_dir = planet_detec_dir_glob[0]
 
+    # First recover the name of the data cube file that was reduced for this folder.
+    # The name of the file is in the folder name so we can split the input directory
     planet_detec_dir_splitted = planet_detec_dir.split(os.path.sep)
-    # Filename of the original klipped cube
+    # original_cube_filename is the filename of the original klipped cube
     original_cube_filename = planet_detec_dir_splitted[len(planet_detec_dir_splitted)-2].split("planet_detec_")[1]
     original_cube_filename += "-speccube.fits"
 
+    # If PSF_cube_filename is a string read the corresponding fits file.
     if isinstance(PSF_cube_filename, basestring):
         hdulist = pyfits.open(PSF_cube_filename)
         PSF_cube = hdulist[1].data
         hdulist.close()
     else:
+        # If PSF_cube_filename is an array just copy the reference into PSF_cube
         PSF_cube = PSF_cube_filename
 
+    # Read the data cube fits with headers
     hdulist = pyfits.open(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename)
     cube = hdulist[1].data
     exthdr = hdulist[1].header
     prihdr = hdulist[0].header
     hdulist.close()
 
+    # Get shape of the data cube
     nl,ny,nx = np.shape(cube)
 
+    # Get center of the image (star position)
     try:
-        # Retrieve the center of the image from the fits keyword.
+        # Retrieve the center of the image from the fits headers.
         center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
     except:
-        # If the keywords could not be found.
+        # If the keywords could not be found the center is defined as the middle of the image
+        if not mute:
+            print("Couldn't find PSFCENTX and PSFCENTY keywords.")
         center = [(nx-1)/2,(ny-1)/2]
 
 
@@ -324,25 +388,46 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         date = "no_date"
         hdulist.close()
 
+    # Get the filter of the image
     try:
+        # Retrieve the filter used from the fits headers.
         filter = prihdr['IFSFILT'].split('_')[1]
     except:
-        # If the keywords could not be found.
+        # If the keywords could not be found assume that the filter is H...
+        if not mute:
+            print("Couldn't find IFSFILT keyword.")
         filter = "no_filter"
 
+    # Get current star name
+    try:
+        # OBJECT: keyword in the primary header with the name of the star.
+        star_name = prihdr['OBJECT'].strip().replace (" ", "_")
+    except:
+        # If the object name could nto be found cal lit unknown_object
+        star_name = "UNKNOWN_OBJECT"
+
+
+    # Get the list of folders in planet_detec_dir
+    # The list of folders should also be the list of spectrum templates for which a detection has been ran.
+    spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
+    N_spectra_folders = len(spectrum_folders_list)
+
+    # Open the figure in which the detections for different spectra will be plotted
+    plt.figure(1,figsize=(8*N_spectra_folders,16))
 
     if not mute:
         print("Looking for folders in " + planet_detec_dir + " ...")
         print("... They should contain spectrum template based detection algorithm outputs.")
     all_templates_detections = []
+    # Loop over the folders in spectrum_folders_list
     for spec_id,spectrum_folder in enumerate(spectrum_folders_list):
+        # Get the spectrum name which should be the name the of the folder
         spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
         spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
         if not mute:
             print("Found the folder " + spectrum_name)
 
-
-        # Gather the detection png in a single png
+        # Look for the metric, metric probability, detection xml file and spectrum template in the folder
         candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+which_metric+".xml")
         #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
         shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
@@ -350,21 +435,22 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
         matchedFilter_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter.fits")
         template_spectrum_file_list = glob.glob(spectrum_folder+os.path.sep+"template_spectrum.fits")
+
+        # Only if they are all found we process with the following
         if len(candidates_log_file_list) == 1 and \
                         len(shape_proba_file_list) == 1 and \
                         len(shape_file_list) == 1 and \
                         len(template_spectrum_file_list) == 1 and \
                         len(matchedFilter_proba_file_list) == 1 and \
                         len(matchedFilter_file_list) == 1:
+
+            # Get the path of the files from the results of the glob function
             candidates_log_file = candidates_log_file_list[0]
             shape_proba_file = shape_proba_file_list[0]
             shape_file = shape_file_list[0]
             matchedFilter_file = matchedFilter_file_list[0]
             matchedFilter_proba_file = matchedFilter_proba_file_list[0]
             template_spectrum_file = template_spectrum_file_list[0]
-
-            splitted_str =  candidates_log_file.split(os.path.sep)
-            star_name = splitted_str[len(splitted_str)-1].split("-")[0]
 
             # Read shape_file
             if which_metric == "shape":
@@ -384,14 +470,16 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             hdulist.close()
             x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
 
+            # Plot on the top line of the figure the probability map. One axis has to be mirrored to get North up.
             plt.subplot(2,N_spectra_folders,spec_id+1)
             plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
             ax = plt.gca()
 
-
+            # Get tree of the xml file with the candidates
             tree = ET.parse(candidates_log_file)
             root = tree.getroot()
             for candidate in root[0].find("candidates"):
+                # Get the information of the candidate from the element attributes
                 candidate_id = int(candidate.attrib["id"])
                 max_val_criter = float(candidate.attrib["max_val_criter"])
                 x_max_pos = float(candidate.attrib["x_max_pos"])
@@ -399,8 +487,10 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                 row_id = float(candidate.attrib["row_id"])
                 col_id = float(candidate.attrib["col_id"])
 
+                # Store the information in a simpler list (than the tree) for next time we will need it in this function
                 all_templates_detections.append((spectrum_name,int(candidate_id),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
 
+                # Draw an arrow with some text to point at the candidate
                 ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=30, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
                         xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
                         textcoords='data',
@@ -408,10 +498,28 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                                         linewidth = 2.,
                                         color = 'red')
                         )
+
+            # Draw a circle around the known objects if GOI_list is not None.
+            if GOI_list is not None:
+                # Read the GOI_list xml file
+                tree_GOI_list = ET.parse(GOI_list)
+                root_GOI_list = tree_GOI_list.getroot()
+
+                # Get the elements corresponding to the right star
+                root_GOI_list_givenObject = root_GOI_list.findall(star_name)
+                # Loop over these known elements and circle them
+                for object_elt in root_GOI_list_givenObject:
+                    #print(object_elt)
+                    for candidate in object_elt.findall("candidate"):
+                        col_centroid = float(candidate.attrib["col_centroid"])
+                        row_centroid = float(candidate.attrib["row_centroid"])
+                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                        ax.add_artist(circle)
+
             plt.title(star_name +" "+ spectrum_name)
             plt.clim(0.,5.0)
 
-            # Read flatCube_file
+            # Read metric fits file
             if which_metric == "shape":
                 hdulist = pyfits.open(shape_file)
                 metric = hdulist[1].data
@@ -423,8 +531,22 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             elif which_metric == "maxShapeMF":
                 metric = metric_proba
 
+            # Plot the metric for the given spectrum template in the lower row of the figure
             plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
             plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            ax = plt.gca()
+
+            # Draw a circle around the known objects if GOI_list is not None.
+            if GOI_list is not None:
+                # Loop over the known elements and circle them
+                for object_elt in root_GOI_list_givenObject:
+                    #print(object_elt)
+                    for candidate in object_elt.findall("candidate"):
+                        col_centroid = float(candidate.attrib["col_centroid"])
+                        row_centroid = float(candidate.attrib["row_centroid"])
+                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                        ax.add_artist(circle)
+
             plt.colorbar()
 
 
@@ -444,29 +566,42 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     #plt.show()
 
     ##
-    # Extract centroid for all detections
+    # Extract centroid for all detections. It will be used to determined if two detections are actually the same object.
+    # It can be two detections for the same template if the candidate is really bright but it is usually to gather
+    # detections from different templates.
+
+    # Define a tree to store the detection where the duplicates have been removed
     root = ET.Element("root")
     star_elt = ET.SubElement(root, star_name)
-    #position_no_duplicated_detec = []
+    # candidate index that is incremented only when a real new detection is made (one with a different centroid)
     no_duplicates_id = 0
     for detection in all_templates_detections:
+        # get the information on all the candidates detected (no matter what the spectrum was)
         spectrum_name,candidate_it,max_val_criter,x_max_pos,y_max_pos, row_id,col_id = detection
 
+        # Try to extract the centroid for the current candidate
         row_cen,col_cen = spec.extract_planet_centroid(cube, (row_id,col_id), PSF_cube)
 
+        # If the current has already been detected in another template candidate_already_seen will become True.
         candidate_already_seen = False
+        # If the current has already been detected in within the same template candidate_seen_with_template will become
+        # True.
         candidate_seen_with_template = False
 
 
-        #Check that the detection hasn't already been taken care of.
+        #Check that the candidate hasn't already been detected somewhere else
         for candidate in star_elt:
             if abs(col_cen-float(candidate.attrib['col_centroid'])) < 1. \
                 and abs(row_cen-float(candidate.attrib['row_centroid'])) < 1.:
                 candidate_already_seen = True
                 candidate_elt = candidate
 
+        # If the candidate is new then add it to the list
         if not candidate_already_seen:
+            # Increment the index for dectections without duplicates
             no_duplicates_id+=1
+
+            # Add this candidate to the tree
             candidate_elt = ET.SubElement(star_elt,"candidate",
                                           id = str(no_duplicates_id),
                                           x_max_pos= str(x_max_pos),
@@ -475,11 +610,14 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                                           row_centroid= str(row_cen),
                                           row_id= str(row_id),
                                           col_id= str(col_id))
+            # Add the information relative to the spectrum template that could detect it
             ET.SubElement(candidate_elt,"spectrumTemplate",
                           candidate_it = str(candidate_it),
                           name = spectrum_name,
                           max_val_criter = str(max_val_criter))
 
+            # Draw an arrow pointing to the candidate in all the lower plots of the figure. They are the plots with the
+            # metric maps
             for spec_id in range(N_spectra_folders):
                 plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
                 ax = plt.gca()
@@ -491,29 +629,39 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                                         color = 'black')
                         )
         else:
+            # If the candidate has already been seen we still want to add the know with which templates it was indeed
+            # detected.
+            # Nex loop just check that the current candidate was not detected in the same spectrum.
             for template in candidate_elt:
                 if template.attrib["name"] == spectrum_name:
                     candidate_seen_with_template = True
 
+            # If the current spectrum correspond to a new spectrum then we add it to the tree
             if not candidate_seen_with_template:
                 ET.SubElement(candidate_elt,"spectrumTemplate",
                               candidate_it = str(candidate_it),
                               name = spectrum_name,
                               max_val_criter = str(max_val_criter))
 
+    # Try to extract spectrum for all the candidates after removing duplicates and create a png for all of them.
     for candidate in star_elt:
+        # Extract rough spectrum with aperture photometry
         wave_samp,spectrum = spec.extract_planet_spectrum(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename,
                                                           (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
                                                           PSF_cube, method="aperture")
 
+        # Create the png with the extracted spectrum as well as all the spectrum templates used.
         plt.close(2)
         plt.figure(2)
         plt.plot(wave_samp,spectrum/np.nanmean(spectrum),"rx-",markersize = 7, linewidth = 2)
+        # legend string list. Will be updated as things get plotted
         legend_str = ["candidate spectrum"]
+        # Plot the spectrum templates
         for spectrum_folder in spectrum_folders_list:
             spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
             spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
 
+            # Read the fits file containing the spectrum in the folders insides the planet detection input folder
             hdulist = pyfits.open(spectrum_folder+os.path.sep+'template_spectrum.fits')
             spec_data = hdulist[1].data
             hdulist.close()
@@ -528,20 +676,21 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         plt.ylabel("Mean Normalized")
         ax = plt.gca()
         ax.legend(legend_str, loc = 'upper right', fontsize=12)
-        #print(planet_detec_dir)
-        #plt.show()
         plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+which_metric+"_"+ \
                     str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
         plt.close(2)
 
-        #myAttributes = {"proba":max_val_criter}
-        #ET.SubElement(object_elt, "detec "+str(candidate_it), name="coucou").text = "some value1"
 
-
+    # Save the xml file with the non redundant detection
     tree = ET.ElementTree(root)
-    print(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
+    if not mute:
+        print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
     tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
 
-
+    # Save the summary png image with the detection of all the spectrum templates.
+    if not mute:
+        print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png')
     plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')
     plt.close(1)
+
+    return 1

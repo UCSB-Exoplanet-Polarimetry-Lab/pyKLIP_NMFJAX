@@ -294,7 +294,7 @@ def planet_detection_in_dir_per_file(filename,
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
-        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric)
+        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list)
 
 def planet_detection_in_dir_star(params):
     """
