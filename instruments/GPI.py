@@ -310,7 +310,10 @@ class GPIData(Data):
         pykliproot = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
-        pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+        try:
+            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+        except:
+            pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = "pyKLIP"
         hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
         if self.creator is None:

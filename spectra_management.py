@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 from scipy.optimize import leastsq
 from scipy.optimize import minimize
 import glob
+import os
 
 
 # First and last wavelength of each band
@@ -108,12 +109,9 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
 
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
 
-    if platform.system() == "Windows":
-        filename_temp_lookup = '.\\pickles\\mainseq_colors.txt'
-        filename_pickles_lookup = '.\\pickles\\AA_README'
-    else:
-        filename_temp_lookup = './pickles/mainseq_colors.txt'
-        filename_pickles_lookup = './pickles/AA_README'
+    pykliproot = os.path.dirname(os.path.realpath(__file__))
+    filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
+    filename_pickles_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"AA_README"
 
     #a = np.genfromtxt(filename_temp_lookup, names=True, delimiter=' ', dtype=None)
 
@@ -158,12 +156,9 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
     upper_filename = dict_filename[upper_temp]
     lower_filename = dict_filename[lower_temp]
 
-    if platform.system() == "Windows":
-        upper_filename = ".\\pickles\\"+upper_filename+".fits"
-        lower_filename = ".\\pickles\\"+lower_filename+".fits"
-    else:
-        upper_filename = "./pickles/"+upper_filename+".fits"
-        lower_filename = "./pickles/"+lower_filename+".fits"
+    upper_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+upper_filename+".fits"
+    lower_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+lower_filename+".fits"
+
 
     hdulist = pyfits.open(upper_filename)
     cube = hdulist[1].data
