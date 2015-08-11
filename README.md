@@ -23,7 +23,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 
 ### Installation ###
 
-To install the most up to date developer versoin of *pyklip*, clone this repository
+To install the most up to date developer version of *pyklip*, clone this repository if you haven't already. 
 
     :::bash
         $ git clone git@bitbucket.org:pyKLIP/pyklip.git
