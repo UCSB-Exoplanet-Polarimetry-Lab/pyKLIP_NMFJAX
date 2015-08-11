@@ -2,13 +2,14 @@
 
 def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
     """
-    linear algebra of KLIP with linear perturbation 
+    linear algebra of KLIP with expansion of covariance matrix
     disks and point sources
     
     Args:
         sci: array of length p containing the science data
         refs: N x p array of the N reference PSFs that 
                   characterizes the extended source with p pixels
+        models: N x p array of N extended source models
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)  
         return_basis: If true, return KL basis vectors (used when onesegment==True)
 
@@ -61,7 +62,7 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
     
     for i in range(Nrefs):
         for j in range(Nrefs):
-            cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i])
+            cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
         
     for i in range(Nrefs):
         for j in range(Nrefs):
@@ -94,7 +95,7 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
 		
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None, minrot=0): #Zack
     """
-    KLIP PSF Subtraction using angular differential imaging, perturbed
+    KLIP PSF Subtraction using angular differential imaging, with expansion of covariance matrix
 
     Args:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
