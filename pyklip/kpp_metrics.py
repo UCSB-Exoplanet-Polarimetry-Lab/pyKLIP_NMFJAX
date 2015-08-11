@@ -3,7 +3,7 @@ __author__ = 'JB'
 from scipy.signal import convolve2d
 
 import spectra_management as spec
-from kpp_pdf import *
+from pyklip.kpp_pdf import *
 from kpp_std import *
 
 
@@ -280,7 +280,7 @@ def calculate_metrics(filename,
                     not part of metrics. So If metrics is None basically the function creates a flat cube only.
     :param PSF_cube: The PSF cube used for the matched filter and the shape metric. The spectrum in PSF_cube matters.
                     If spectrum is not None the spectrum of the PSF is multiplied by spectrum. If spectrum is None the
-                    spectrum of PSF_cube is taken as spectrum template. In order to remove confusion better giving a
+                    spectrum of PSF_cube is taken as spectral template. In order to remove confusion better giving a
                     flat spectrum to PSF_cube.
                     If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the number of wavelength samples and should be 37,
                     ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
@@ -288,7 +288,7 @@ def calculate_metrics(filename,
     :param outputDir: Directory where to create the folder containing the outputs. default directory is "./"
     :param folderName: Name of the folder containing the outputs. It will be located in outputDir. Default folder name 
                     is "default_out".
-                    The convention is to have one folder for a given data cube with a given spectrum template.
+                    The convention is to have one folder for a given data cube with a given spectral template.
                     Therefore don't save the outputs of different calls to calculate_metrics() in the same folder.
     :param spectrum: Spectrum used for the metrics using a spectrum: weightedFlatCube, shape, matchedFilter.
                     It is combined with PSF_cube if PSF_cube is not None.
@@ -975,7 +975,7 @@ def calculate_metrics(filename,
     """
     hdulist2.close()
 
-    # Save a plot of the spectrum template used as PNG
+    # Save a plot of the spectral template used as PNG
     spec_sampling = spec.get_gpi_wavelength_sampling(filter)
     plt.close(1)
     plt.figure(1)
@@ -986,7 +986,7 @@ def calculate_metrics(filename,
     plt.savefig(outputDir+folderName+'template_spectrum.png', bbox_inches='tight')
     plt.close(1)
 
-    # Save a fits file of the spectrum template used including the wavelengths.
+    # Save a fits file of the spectral template used including the wavelengths.
     hdulist2[1].data = [spec_sampling,spectrum_cpy]
     hdulist2.writeto(outputDir+folderName+'template_spectrum.fits', clobber=True)
 

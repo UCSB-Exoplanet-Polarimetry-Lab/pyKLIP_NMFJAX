@@ -11,19 +11,29 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
 [GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
 * If confused about what a function is doing, read the docstring for it.
-* Version 1.0
+* Version 1.1
 
 ### Dependencies ###
 
 * numpy
 * scipy
 * astropy
-* python2.7 or python3
-* Recommended: a computer with lots of cores (16+) and lots of memory (40 GB for a standard GPI 1hr sequence)
+* python2.7 or python3.4
+* Recommended: a computer with lots of cores (16+) and lots of memory (40 GB for a standard GPI 1hr sequence without using lite mode)
 
 ### Installation ###
 
-Put all of the files into a folder called *pyklip* and put the *pyklip* folder into either the directory in which your python script that will call ``pyklip`` resies or into a directory that is in your ``PYTHONPATH``.
+To install the most up to date developer versoin of *pyklip*, clone this repository
+
+    :::bash
+        $ git clone git@bitbucket.org:pyKLIP/pyklip.git
+
+Then ``cd`` into it and run ``setup.py`` with the ``develop`` option
+
+    :::bash
+        $ python setup.py develop
+
+If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).  
 
 ### Bugs/Feature Requests ###
 

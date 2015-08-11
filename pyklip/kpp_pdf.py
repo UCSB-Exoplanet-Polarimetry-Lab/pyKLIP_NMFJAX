@@ -1,23 +1,17 @@
 __author__ = 'JB'
 
-import numpy as np
-from scipy.interpolate import interp1d
-from scipy.optimize import curve_fit
-from scipy.optimize import minimize
-from scipy.optimize import leastsq
-import astropy.io.fits as pyfits
-from astropy.modeling import models, fitting
-from copy import copy
 import warnings
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
-from scipy.interpolate import interp1d
-from sys import stdout
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
 import itertools
 
-from kpp_utils import *
+from scipy.optimize import leastsq
+from astropy.modeling import models, fitting
+from matplotlib import rcParams
+from scipy.interpolate import interp1d
+from mpl_toolkits.axes_grid1 import host_subplot
+import mpl_toolkits.axisartist as AA
+
+from pyklip.kpp_utils import *
+
 
 def model_expExp(x,a,m,alpha):
     return np.exp(a*np.exp(-np.abs(x-m)/alpha))

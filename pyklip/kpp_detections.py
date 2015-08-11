@@ -1,28 +1,9 @@
 __author__ = 'JB'
 
-import numpy as np
-from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
-from scipy.signal import convolve
-from scipy.optimize import curve_fit
-import astropy.io.fits as pyfits
-from astropy.modeling import models, fitting
-from copy import copy
-import warnings
-from scipy.stats import nanmedian
-import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import multiprocessing as mp
-import itertools
-import glob, os
-from sys import stdout
-import platform
-import xml.etree.cElementTree as ET
 
 import spectra_management as spec
-from kpp_utils import *
-from kpp_pdf import *
+from pyklip.kpp_pdf import *
 from kpp_std import *
 
 
@@ -34,7 +15,7 @@ def candidate_detection(metrics_foldername,
 
     What candidate_detection() needs is a folder in which the outputs of the function calculate_metrics() for a given
     data cube are saved. There should be only one *-shape_proba.fits file and one *-matchedFilter_proba.fits file.
-    The convention is to have one folder for a given data cube with a given spectrum template.
+    The convention is to have one folder for a given data cube with a given spectral template.
 
     Candidate_detection needs both files (*-shape_proba.fits and *-matchedFilter_proba.fits) in order to work even if
     only one of them is actually used. this could probably be corrected in the future.
@@ -294,7 +275,7 @@ def candidate_detection(metrics_foldername,
 
 def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None,GOI_list = None):
     '''
-    Gather the candidates detected with different spectrum templates for a given data cube into a single big image and
+    Gather the candidates detected with different spectral templates for a given data cube into a single big image and
     a single xml file.
 
     Beside try to extract a very rough quicklook spectrum for these candidates in several png image (One per candidate).
@@ -310,7 +291,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
 
     :param planet_detec_dir: Directory of the detection folder. We recall that the convention is to create one folder
                             per data cube to store the outputs of the detection algorithm. This folder will contain
-                            subfolder(s) for each spectrum template.
+                            subfolder(s) for each spectral template.
     :param PSF_cube_filename: The name of the PSF cube fits file or directly a the numpy array of the PSF cube.
                     If PSF_cube_filename is an array then nl,ny_PSF,nx_PSF=PSF_cube_filename.shape, nl is the number of
                     wavelength samples and should be 37, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
@@ -324,7 +305,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             - <star_name>-<filter>-<date>-candidates-<which_metric>.xml
                 Non redundant detections in a xml file.
             - <star_name>-<filter>-<date>-candidates-<which_metric>.png
-                All spectrum templates candidates and non redundant ones as a png image.
+                All spectral templates candidates and non redundant ones as a png image.
             - One <star_name>-<filter>-<date>-candidates-<which_metric>_<ID>.png per candidate
                 Rough spectrum of each candidates
     '''
@@ -408,7 +389,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
 
 
     # Get the list of folders in planet_detec_dir
-    # The list of folders should also be the list of spectrum templates for which a detection has been ran.
+    # The list of folders should also be the list of spectral templates for which a detection has been ran.
     spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
     N_spectra_folders = len(spectrum_folders_list)
 
@@ -417,7 +398,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
 
     if not mute:
         print("Looking for folders in " + planet_detec_dir + " ...")
-        print("... They should contain spectrum template based detection algorithm outputs.")
+        print("... They should contain spectral template based detection algorithm outputs.")
     all_templates_detections = []
     # Loop over the folders in spectrum_folders_list
     for spec_id,spectrum_folder in enumerate(spectrum_folders_list):
@@ -427,7 +408,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         if not mute:
             print("Found the folder " + spectrum_name)
 
-        # Look for the metric, metric probability, detection xml file and spectrum template in the folder
+        # Look for the metric, metric probability, detection xml file and spectral template in the folder
         candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+which_metric+".xml")
         #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
         shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
@@ -531,7 +512,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             elif which_metric == "maxShapeMF":
                 metric = metric_proba
 
-            # Plot the metric for the given spectrum template in the lower row of the figure
+            # Plot the metric for the given spectral template in the lower row of the figure
             plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
             plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
             ax = plt.gca()
@@ -610,7 +591,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                                           row_centroid= str(row_cen),
                                           row_id= str(row_id),
                                           col_id= str(col_id))
-            # Add the information relative to the spectrum template that could detect it
+            # Add the information relative to the spectral template that could detect it
             ET.SubElement(candidate_elt,"spectrumTemplate",
                           candidate_it = str(candidate_it),
                           name = spectrum_name,
@@ -650,13 +631,13 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                                                           (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
                                                           PSF_cube, method="aperture")
 
-        # Create the png with the extracted spectrum as well as all the spectrum templates used.
+        # Create the png with the extracted spectrum as well as all the spectral templates used.
         plt.close(2)
         plt.figure(2)
         plt.plot(wave_samp,spectrum/np.nanmean(spectrum),"rx-",markersize = 7, linewidth = 2)
         # legend string list. Will be updated as things get plotted
         legend_str = ["candidate spectrum"]
-        # Plot the spectrum templates
+        # Plot the spectral templates
         for spectrum_folder in spectrum_folders_list:
             spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
             spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
@@ -687,7 +668,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
     tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
 
-    # Save the summary png image with the detection of all the spectrum templates.
+    # Save the summary png image with the detection of all the spectral templates.
     if not mute:
         print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png')
     plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')

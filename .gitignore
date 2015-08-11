@@ -2,4 +2,6 @@
 *.out
 *.pyc
 *.fits
+!pyklip/pickles/*.fits
+!pyklip/filters/*.fits
 version.py

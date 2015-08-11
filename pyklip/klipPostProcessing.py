@@ -1,31 +1,7 @@
+from pyklip.kpp_metrics import *
+from pyklip.kpp_detections import *
+from pyklip.instruments import GPI
 
-import numpy as np
-from scipy.interpolate import interp1d
-from scipy.signal import convolve2d
-from scipy.signal import convolve
-from scipy.optimize import curve_fit
-import astropy.io.fits as pyfits
-from astropy.modeling import models, fitting
-from copy import copy
-import warnings
-from scipy.stats import nanmedian
-import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import multiprocessing as mp
-import itertools
-import glob, os
-from sys import stdout
-import platform
-import xml.etree.cElementTree as ET
-
-import spectra_management as spec
-from kpp_utils import *
-from kpp_pdf import *
-from kpp_std import *
-from kpp_metrics import *
-from kpp_detections import *
-import instruments.GPI as GPI
 
 def planet_detection_in_dir_per_file_per_spectrum_star(params):
     """
@@ -34,7 +10,7 @@ def planet_detection_in_dir_per_file_per_spectrum_star(params):
     """
     return planet_detection_in_dir_per_file_per_spectrum(*params)
 
-def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
+def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                                                   filename,
                                                   filter,
                                                   sat_spot_spec = None,
@@ -54,73 +30,145 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
                                                   probability = True,
                                                   N_threads_metric = None,
                                                   detection_metric = None):
+    '''
+    Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given 
+    spectral template.
 
-        # Define the output Foldername
-        if spectrum_name_it != "":
-            spectrum_name = spectrum_name_it.split(os.path.sep)
-            spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
+    Combine the spectral template, the satellite spot spectrum and the spectral type (or temperature) of the star to
+    create a corrected spectrum as it would appear on GPI's detector using:
+        spectrum_on_the_detector = (sat_spot_spec/star_sp)*planet_sp
+    If either one these is missing it will try to do the best it can with what it has.
+    
+                
+    :param spectrum_filename: Path to one Mark Marley's spectrum file.
+                            If the satellite spots spectrum as well as the spectral type (or temperature) of the star is
+                            not given then it won't correct the spectrum for atmospheric and instrumental absorption.
+                            If the string is empty ("") it will by default take the satellite spots spectrum (if given)
+                            as spectral template. If sat_spot_spec is not given then it will take GPI's filter spectrum
+                            for the spectral band defined by filter.
+    :param filename: filename of the fits file containing the data cube to be analyzed. The cube should be a GPI cube
+                    with 37 slices.
+    :param filter: String with the name of the filter corresponding to filename fits file. It should have value in 'Z', 
+                'Y', 'J', 'H', 'K1' and 'K2'. 
+                The filter can be extracted from the header doing the following:
+                    hdulist = pyfits.open(filename)
+                    prihdr = hdulist[0].header
+                    filter = prihdr['IFSFILT'].split('_')[1]
+    :param sat_spot_spec: Vector with 37 elements containing the spectrum of the satellite spots.
+    :param metrics: List of strings giving the metrics to be calculated. E.g. ["shape", "matchedFilter"]
+                    The metrics available are "flatCube", "weightedFlatCube", "shape", "matchedFilter".
+                    Note by default the flatCube is always saved however its statistic is not computed if "flatcube" is
+                    not part of metrics. So If metrics is None basically the function creates a flat cube only.
+    :param outputDir: Directory where to create the folder containing the outputs. default directory is "./"
+    :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star. It is ignored 
+                    of temperature is defined.
+    :param star_temperature: Temperature of the star. Overwrite star_type if defined.
+    :param PSF_cube: The PSF cube used for the matched filter and the shape metric. The spectrum in PSF_cube matters.
+                    If spectrum is not None the spectrum of the PSF is multiplied by spectrum. If spectrum is None the
+                    spectrum of PSF_cube is taken as spectral template. In order to remove confusion better giving a
+                    flat spectrum to PSF_cube.
+                    If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the number of wavelength samples and should be 37,
+                    ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
+                    If PSF_cube is None then a default 2d gaussian is used with a width of 1.5 pix.
+    :param metrics_only: Boolean. If True the function call will only calculate the metrics and probabilities with 
+                        kpp_metrics.calculate_metrics() and will not run the candidate finder with 
+                        kpp_detections.candidate_detection().
+    :param planet_detection_only: Boolean. If True the function call will only run the candidate finder with 
+                        kpp_detections.candidate_detection() and will not calculate the metrics and probabilities with 
+                        kpp_metrics.calculate_metrics().
+    :param mute: If True prevent printed log outputs.
+    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
+                    before calculating the probability.
+    :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
+                            has been calculated and load the file if possible.
+    :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
+                            If False check if fits file exists before recalculating them.
+    :param proba_using_mask_per_pixel: Trigger a per pixel probability calculation. For each pixel it masks the small
+                                disk around it before calculating the statistic of the annulus at the same separation.
+    :param SNR: If True trigger SNR calculation.
+    :param probability: If True trigger probability calculation.
+    :param N_threads: Number of threads to be used for the metrics and the probability calculations.
+                    If None do it sequentially.
+    :param detection_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells 
+                            which metric should be used for the detection. The default value is "shape".
+    :return: 1
+            Return the outputs as defined in kpp_metrics.calculate_metrics() and kpp_detections.candidate_detection().
+    '''
+
+    # Define the output Foldername
+    if spectrum_filename != "":
+        spectrum_name = spectrum_filename.split(os.path.sep)
+        spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
+    else:
+        spectrum_name = "satSpotSpec"
+
+    folderName = spectrum_name+os.path.sep
+
+
+    # Do the best it can with the spectral information given in inputs.
+    if spectrum_filename != "":
+        # spectrum_filename is not empty it is assumed to be a valid path.
+        if not mute:
+            print("Spectrum model: "+spectrum_filename)
+        # Interpolate the spectrum of the planet based on the given filename
+        wv,planet_sp = spec.get_planet_spectrum(spectrum_filename,filter)
+
+        if sat_spot_spec is not None and (star_type !=  "" or star_temperature is not None):
+            # Interpolate a spectrum of the star based on its spectral type/temperature
+            wv,star_sp = spec.get_star_spectrum(filter,star_type,star_temperature)
+            # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+            spectrum = (sat_spot_spec/star_sp)*planet_sp
         else:
-            spectrum_name = "satSpotSpec"
-
-        folderName = spectrum_name+os.path.sep
-
-
-
-        if spectrum_name_it != "":
+            # If the sat spot spectrum or the spectral type of the star is missing it won't correct anything and keep
+            # the ideal spectrum as it is.
             if not mute:
-                print("spectrum model: "+spectrum_name_it)
-            # Interpolate the spectrum of the planet based on the given filename
-            wv,planet_sp = spec.get_planet_spectrum(spectrum_name_it,filter)
-
-            if sat_spot_spec is not None and (star_type !=  "" or star_temperature is not None):
-                # Interpolate a spectrum of the star based on its spectral type/temperature
-                wv,star_sp = spec.get_star_spectrum(filter,star_type,star_temperature)
-                spectrum = (sat_spot_spec/star_sp)*planet_sp
-            else:
-                if not mute:
-                    print("No star spec or sat spot spec so using sole planet spectrum.")
-                spectrum = copy(planet_sp)
+                print("No star spec or sat spot spec so using sole planet spectrum.")
+            spectrum = copy(planet_sp)
+    else:
+        # If spectrum_filename is an empty string the function takes the sat spot spectrum by default.
+        if sat_spot_spec is not None:
+            if not mute:
+                print("Default sat spot spectrum will be used.")
+            spectrum = copy(sat_spot_spec)
         else:
-            if sat_spot_spec is not None:
-                if not mute:
-                    print("Default sat spot spectrum will be used.")
-                spectrum = copy(sat_spot_spec)
-            else:
-                if not mute:
-                    print("Using gpi filter "+filter+" spectrum. Could find neither sat spot spectrum nor planet spectrum.")
-                wv,spectrum = spec.get_gpi_filter(filter)
-
-        if 0:
-            plt.plot(sat_spot_spec)
-            plt.plot(spectrum)
-            plt.show()
-
-
-        if not planet_detection_only:
+            # If the sat spot spectrum is also not given then it just take the band filter spectrum.
             if not mute:
-                print("Calling calculate_metrics() on "+filename)
-            calculate_metrics(filename,
-                              metrics,
-                                PSF_cube = PSF_cube,
-                                outputDir = outputDir,
-                                folderName = folderName,
-                                spectrum=spectrum,
-                                mute = mute,
-                                SNR = SNR,
-                                probability = probability,
-                                GOI_list = GOI_list,
-                                overwrite_metric = overwrite_metric,
-                                overwrite_stat = overwrite_stat,
-                                proba_using_mask_per_pixel = proba_using_mask_per_pixel,
-                                N_threads = N_threads_metric )
+                print("Using gpi filter "+filter+" spectrum. Could find neither sat spot spectrum nor planet spectrum.")
+            wv,spectrum = spec.get_gpi_filter(filter)
 
+    if 0:
+        plt.plot(sat_spot_spec)
+        plt.plot(spectrum)
+        plt.show()
 
-        if not metrics_only:
-            if not mute:
-                print("Calling candidate_detection() on "+outputDir+folderName)
-            candidate_detection(outputDir+folderName,
-                                mute = mute,
-                                metric = detection_metric)
+    # Compute the metrics and probability maps
+    if not planet_detection_only:
+        if not mute:
+            print("Calling calculate_metrics() on "+filename)
+        calculate_metrics(filename,
+                          metrics,
+                            PSF_cube = PSF_cube,
+                            outputDir = outputDir,
+                            folderName = folderName,
+                            spectrum=spectrum,
+                            mute = mute,
+                            SNR = SNR,
+                            probability = probability,
+                            GOI_list = GOI_list,
+                            overwrite_metric = overwrite_metric,
+                            overwrite_stat = overwrite_stat,
+                            proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                            N_threads = N_threads_metric )
+
+    # Run the candidate finder on the previously computed metrics
+    if not metrics_only:
+        if not mute:
+            print("Calling candidate_detection() on "+outputDir+folderName)
+        candidate_detection(outputDir+folderName,
+                            mute = mute,
+                            metric = detection_metric)
+
+    return 1
 
 
 
@@ -150,6 +198,60 @@ def planet_detection_in_dir_per_file(filename,
                                       SNR = True,
                                       probability = True,
                                       detection_metric = None):
+    '''
+    Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given
+    cube and several spectral templates.
+
+
+    :param filename: filename of the fits file containing the data cube to be analyzed. The cube should be a GPI cube
+                    with 37 slices.
+    :param metrics: List of strings giving the metrics to be calculated. E.g. ["shape", "matchedFilter"]
+                    The metrics available are "flatCube", "weightedFlatCube", "shape", "matchedFilter".
+                    Note by default the flatCube is always saved however its statistic is not computed if "flatcube" is
+                    not part of metrics. So If metrics is None basically the function creates a flat cube only.
+    :param directory: Directory of the folder containing the klipped cube and the data cubes reduced by the GPI
+                    pipeline. It is also where the planet detection output folder will be created by default.
+    :param outputDir: Directory in which to save the output folder of the planet detection. Value by default is
+                    directory.
+    :param spectrum_model: List containing the path to the different spectrum models to be used. The spectrum model has
+                        to be generated by Mark Marley.
+    :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star. It is ignored
+                    of temperature is defined.
+    :param star_temperature: Temperature of the star. Overwrite star_type if defined.
+    :param user_defined_PSF_cube: Filename of a PSF_cube to be used for the matched filtering. By default the function
+                                will try to look for a fits file named like
+                                <prefix><data><suffix>-original_radial_PSF_cube.fits". If it doesn't find any it will
+                                try to generate it by loading the entire data cube sequence. It is meant to work with
+                                the GPI dropbox. If it can't do that it will use a 2d gaussian.
+    :param metrics_only: Boolean. If True the function call will only calculate the metrics and probabilities with
+                        kpp_metrics.calculate_metrics() and will not run the candidate finder with
+                        kpp_detections.candidate_detection().
+    :param planet_detection_only: Boolean. If True the function call will only run the candidate finder with
+                        kpp_detections.candidate_detection() and will not calculate the metrics and probabilities with
+                        kpp_metrics.calculate_metrics().
+    :param mute: If True prevent printed log outputs.
+    :param threads: Boolean. If true a different process will be created for every single spectrum template for
+                    parallelization.
+    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
+                    before calculating the probability.
+    :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
+                            has been calculated and load the file if possible.
+    :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
+                            If False check if fits file exists before recalculating them.
+    :param proba_using_mask_per_pixel: Trigger a per pixel probability calculation. For each pixel it masks the small
+                                disk around it before calculating the statistic of the annulus at the same separation.
+    :param SNR: If True trigger SNR calculation.
+    :param probability: If True trigger probability calculation.
+    :param detection_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells
+                            which metric should be used for the detection. The default value is "shape".
+    :return: 1 if successful, None otherwise.
+            An output folder is created for filename as:
+                planetDetecFolder = outputDir + "/planet_detec_"+prefix+"_KL"+str(N_KL_modes)+"/"
+            Create a subfolder per spectrum in planetDetecFolder where the outputs of kpp_metrics.calculate_metrics()
+            and kpp_detections.candidate_detection() are saved.
+            Save also the outputs of kpp_detections.gather_detections() in planetDetecFolder.
+    '''
+
     # Get the number of KL_modes for this file based on the filename *-KL#-speccube*
     splitted_name = filename.split("-KL")
     splitted_after_KL = splitted_name[1].split("-speccube.")
@@ -159,13 +261,14 @@ def planet_detection_in_dir_per_file(filename,
     splitted_before_KL = splitted_name[0].split(os.path.sep)
     prefix = splitted_before_KL[np.size(splitted_before_KL)-1]
 
+    # Get the date from the filename SYYYYMMDD
     compact_date = prefix.split("-")[1]
 
-
-
-    #grab the headers
+    #grab the headers of the fits file
     hdulist = pyfits.open(filename)
     prihdr = hdulist[0].header
+
+    # Retrieve the filter used for the current data cube
     try:
         filter = prihdr['IFSFILT'].split('_')[1]
     except:
@@ -174,25 +277,31 @@ def planet_detection_in_dir_per_file(filename,
             print("Couldn't find IFSFILT keyword. Assuming H.")
         filter = "H"
 
+    # Look for the PSF cube dits file
     if user_defined_PSF_cube is not None:
+        # If the user gave his own PSF cube
         if not mute:
             print("User defined PSF cube: "+user_defined_PSF_cube)
         filelist_ori_PSFs_cube = glob.glob(user_defined_PSF_cube)
     else:
+        # If nothing was specified it tries to look for an existing PSF cube in directory
         filelist_ori_PSFs_cube = glob.glob(directory+os.path.sep+"*"+compact_date+"*-original_radial_PSF_cube.fits")
 
     if np.size(filelist_ori_PSFs_cube) == 1:
+        # Load the PSF cube if a file has been found
         if not mute:
             print("I found a radially averaged PSF. I'll take it.")
         hdulist = pyfits.open(filelist_ori_PSFs_cube[0])
         #print(hdulist[1].data.shape)
-        PSF_cube = hdulist[1].data[:,::-1,:]
-        #PSF_cube = np.transpose(hdulist[1].data,(1,2,0))[:,::-1,:] #np.swapaxes(np.rollaxis(hdulist[1].data,2,1),0,2)
+        PSF_cube = hdulist[1].data
         sat_spot_spec = np.nanmax(PSF_cube,axis=(1,2))
         # Remove the spectral shape from the psf cube because it is dealt with independently
         for l_id in range(PSF_cube.shape[0]):
             PSF_cube[l_id,:,:] /= sat_spot_spec[l_id]
     elif np.size(filelist_ori_PSFs_cube) == 0:
+        # If no PSF cube file has been try let's try to generate one.
+        # Indeed if the input directory is an autoreduced folder from the dropbox it also has all the data cube of the
+        # observation sequence.
         if not mute:
             print("I didn't find any PSFs file so trying to generate one.")
 
@@ -201,20 +310,26 @@ def planet_detection_in_dir_per_file(filename,
         if len(cube_filename_list) == 0:
             cube_filename_list = glob.glob(directory+os.path.sep+compact_date+"*_spdc.fits")
             if len(cube_filename_list) == 0:
+                # In this case the function couldn't find the data cube of the observation sequence and will therefore
+                # ask the next functions to use a default gaussian PSF.
                 if not mute:
                     print("I can't find the cubes to calculate the PSF from so I will use a default gaussian.")
                 sat_spot_spec = None
                 PSF_cube = None
 
+        # Load all the data cube into a dataset object
         dataset = GPI.GPIData(cube_filename_list)
         if not mute:
             print("Calculating the planet PSF from the satellite spots...")
+        # generate the PSF cube from the satellite spots
         dataset.generate_psf_cube(20)
         # Save the original PSF calculated from combining the sat spots
         dataset.savedata(directory + os.path.sep + prefix+"-original_PSF_cube.fits", dataset.psfs,
                                   astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube")
         # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
+        # Generate a radially averaged PSF cube and save it in directory
         PSF_cube = dataset.get_radial_psf(save = directory + os.path.sep + prefix)
+        # Extract the satellite spot spectrum for the PSF cube.
         sat_spot_spec = np.nanmax(PSF_cube,axis=(1,2))
         # Remove the spectral shape from the psf cube because it is dealt with independently
         for l_id in range(PSF_cube.shape[0]):
@@ -222,10 +337,8 @@ def planet_detection_in_dir_per_file(filename,
     else:
         if not mute:
             print("I found several files for the PSF cube matching the given filter so I don't know what to do and I quit")
-        return 0
+        return None
 
-
-    prefix = prefix+"-KL"+str(N_KL_modes)
 
     if len(spectrum_model) == 1 and not isinstance(spectrum_model,list):
         spectrum_model =[spectrum_model]
@@ -233,19 +346,26 @@ def planet_detection_in_dir_per_file(filename,
         if not mute:
             print("Iterating over several model spectra")
 
+    # Define the prefix used for the output folder name
+    prefix = prefix+"-KL"+str(N_KL_modes)
     if outputDir == '':
         outputDir = directory
     outputDir += os.path.sep+"planet_detec_"+prefix+os.path.sep
 
     if threads:
+        # If the parallelization is on then create as many processes as there are spectrum templates
         N_threads = np.size(spectrum_model)
+        # Create non deamonic processes such that they can themselves create child processes
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
 
+        # If there are many more cores than there are spectra then it will also parallelize the metric and probability
+        # calculation.
         N_threads_metric = mp.cpu_count()/N_threads
         if N_threads_metric <= 1:
             N_threads_metric = None
 
+        # Run planet dection on the given file with a given spectrum template in a parallelized fashion
         pool.map(planet_detection_in_dir_per_file_per_spectrum_star, itertools.izip(spectrum_model,
                                                                            itertools.repeat(filename),
                                                                            itertools.repeat(filter),
@@ -268,8 +388,9 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(detection_metric)))
         pool.close()
     else:
-        for spectrum_name_it in spectrum_model:
-            planet_detection_in_dir_per_file_per_spectrum(spectrum_name_it,
+        # Run planet dection on the given file with a given spectrum template sequentially (will be really slow...)
+        for spectrum_filename_it in spectrum_model:
+            planet_detection_in_dir_per_file_per_spectrum(spectrum_filename_it,
                                                           filename,
                                                           filter,
                                                           sat_spot_spec = sat_spot_spec,
@@ -290,7 +411,8 @@ def planet_detection_in_dir_per_file(filename,
                                                           N_threads_metric = None,
                                                           detection_metric = detection_metric)
 
-
+    # If the user didn't ask for the metrics only the next function gather the detection results with the different
+    # spectra. It creates outputs in the input directory.
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
@@ -326,57 +448,89 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
-    It will look for a PSF file like pyklip-*-KL*-speccube-solePSFs.fits to extract a klip reduced PSF.
-        Note: If you want to include a spectrum it can be already included in the PSF when reducing it with klip.
-            The other option if there is no psf available for example is to give a spectrum as an input.
-    If no pyklip-*-KL*-speccube-solePSFs.fits is found it will for a pyklip-*-original_radial_PSF_cube.fits which is a PSF
-    built from the sat spots but not klipped.
 
-    /!\ The klipped PSF was not well understood by JB so anything related to it in pyklip will not work. It needs to be
-    entirely "rethought" and implemented from scratch.
-
-    Inputs:
-        directory: directory in which the function will look for suitable fits files and run the planet detection algorithm.
-        filename_prefix_is: Look for file containing of the form "/"+filename_filter+"-KL*-speccube.fits"
-        numbasis: Integer. Apply algorithm only to klipped images that used numbasis KL modes.
-        outputDir: Directory to where to save the output folder. By default it is saved in directory.
-        spectrum_model: Mark Marley's spectrum filename. E.g. "/Users/jruffio/gpi/pyklip/t800g100nc.flx"
-        star_type: Spectral type of the star (works only for type V). E.g. "G5" for G5V type.
-        star_temperature: Temperature of the star. (replace star_type)
-        threads: If true, parallel computation of several files (no prints in the console).
-                Otherwise sequential with bunch of prints (for debugging).
-        metrics_only: If True, compute only the metrics (Matched filter SNR, shape SNR, ...) but the planet detection
-                algorithm is not applied.
-        planet_detection_only: ????????
-        mute: ???????????????
-
-    Outputs:
+    :param directory: Directory of the folder containing the klipped cube and the data cubes reduced by the GPI
+                    pipeline. It is also where the planet detection output folder will be created by default.
+    :param filename_prefix_is: Filename filter to selectively apply the planet detection algorithm.
+                            The filter is defined as <filename_prefix_is>-KL<numbasis>-speccube.fits
+    :param numbasis: Integer. The number of KL modes used as filename filter. See the input filename_prefix_is.
+                    numbasis can be defined without filename_prefix_is.
+    :param outputDir: Directory in which to save the output folder of the planet detection. Value by default is
+                    directory.
+    :param spectrum_model: List containing the path to the different spectrum models to be used. The spectrum model has
+                        to be generated by Mark Marley.
+    :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star. It is ignored
+                    of temperature is defined.
+    :param star_temperature: Temperature of the star. Overwrite star_type if defined.
+    :param user_defined_PSF_cube: Filename of a PSF_cube to be used for the matched filtering. By default the function
+                                will try to look for a fits file named like
+                                <prefix><data><suffix>-original_radial_PSF_cube.fits". If it doesn't find any it will
+                                try to generate it by loading the entire data cube sequence. It is meant to work with
+                                the GPI dropbox. If it can't do that it will use a 2d gaussian.
+    :param metrics: List of strings giving the metrics to be calculated. E.g. ["shape", "matchedFilter"]
+                    The metrics available are "flatCube", "weightedFlatCube", "shape", "matchedFilter".
+                    Note by default the flatCube is always saved however its statistic is not computed if "flatcube" is
+                    not part of metrics. So If metrics is None basically the function creates a flat cube only.
+    :param threads: Boolean. If true a different process will be created for every single spectrum template for
+                    parallelization.
+    :param metrics_only: Boolean. If True the function call will only calculate the metrics and probabilities with
+                        kpp_metrics.calculate_metrics() and will not run the candidate finder with
+                        kpp_detections.candidate_detection().
+    :param planet_detection_only: Boolean. If True the function call will only run the candidate finder with
+                        kpp_detections.candidate_detection() and will not calculate the metrics and probabilities with
+                        kpp_metrics.calculate_metrics().
+    :param mute: If True prevent printed log outputs.
+    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
+                    before calculating the probability.
+    :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
+                            has been calculated and load the file if possible.
+    :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
+                            If False check if fits file exists before recalculating them.
+    :param proba_using_mask_per_pixel: Trigger a per pixel probability calculation. For each pixel it masks the small
+                                disk around it before calculating the statistic of the annulus at the same separation.
+    :param SNR: If True trigger SNR calculation.
+    :param probability: If True trigger probability calculation.
+    :param detection_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells
+                            which metric should be used for the detection. The default value is "shape".
+    :return: 1 if successful, None otherwise.
         For each file an output folder is created:
             outputDir = directory + "/planet_detec_"+prefix+"_KL"+str(N_KL_modes)+"/"
+        For each spectrum template a subfolder is created in the planet detection one.
         The outputs of the detection can be found there.
 
     '''
 
+    # If a no given number of KL modes has been defined then take all of them.
     if numbasis is not None:
         numbasis = str(numbasis)
     else:
         numbasis = '*'
 
+    # Look for files following the filename filter
     if filename_prefix_is == '':
+        # Default filename filter. The pyklip- prefix is the default name of the data cruncher.
         filelist_klipped_cube = glob.glob(directory+os.path.sep+"pyklip-*-KL"+numbasis+"-speccube.fits")
     else:
+        # User defined filename filter.
         filelist_klipped_cube = glob.glob(directory+os.path.sep+filename_prefix_is+"-KL"+numbasis+"-speccube.fits")
         #print(directory+"/"+filename_prefix_is+"-KL"+numbasis+"-speccube.fits")
 
+
     if len(filelist_klipped_cube) == 0:
+        # No file following the filename filter could be found.
         if not mute:
             print("No suitable files found in: "+directory)
+        return None
     else:
         if not mute:
             print(directory+"contains suitable file for planet detection:")
             for f_name in filelist_klipped_cube:
                 print(f_name)
 
+        # Disabled feature to parallelize the call to planet_detection_in_dir_per_file. Was suppose to create one
+        # process per suitable file.
+        # It is disabled because the number of threads is actually automatically optimized later. Basically all the free
+        #  cores are used to parallelize the metric and probability calculation.
         if 0 and threads:
             N_threads = np.size(filelist_klipped_cube)
             pool = NoDaemonPool(processes=N_threads)
@@ -402,6 +556,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                            itertools.repeat(detection_metric)))
             pool.close()
         else:
+            # Run the planet dection for every single file sastisfying the filename filter.
             for filename in filelist_klipped_cube:
                 planet_detection_in_dir_per_file(filename,
                                                  metrics = metrics,
@@ -444,7 +599,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     Only the files reduced by the data cruncher with parameters k100a7s4m3 and 20KL modes will be used. The other files
     will be ignored.
 
-    - Spectrum templates:
+    - Spectral templates:
     Four spectra will be used for pattern recognition in the datacubes: t1500g100nc,t950g32nc,t600g32nc and default
     satellite spots spectrum. This is using Mark Marley's model and filename convention.
 
