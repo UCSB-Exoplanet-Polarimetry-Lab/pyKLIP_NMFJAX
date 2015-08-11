@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 from scipy.optimize import leastsq
 from scipy.optimize import minimize
@@ -338,17 +338,17 @@ def extract_planet_centroid(cube, position, PSF_cube):
     LSQ_func = lambda para: LSQ_place_model_PSF(flatPSF,para[0],para[1],flatCube_stamp)
     param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
 
-    if 0:
-        plt.figure(1)
-        plt.subplot(2,2,1)
-        plt.imshow(flatCube_stamp,interpolation="nearest")
-        plt.subplot(2,2,2)
-        plt.imshow(flatPSF,interpolation="nearest")
-        plt.subplot(2,2,3)
-        plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param0[0],param0[1],(ny_PSF,nx_PSF)),interpolation="nearest")
-        plt.subplot(2,2,4)
-        plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param_fit[0],param_fit[1],(ny_PSF,nx_PSF)),interpolation="nearest")
-        plt.show()
+    # if 0:
+        # plt.figure(1)
+        # plt.subplot(2,2,1)
+        # plt.imshow(flatCube_stamp,interpolation="nearest")
+        # plt.subplot(2,2,2)
+        # plt.imshow(flatPSF,interpolation="nearest")
+        # plt.subplot(2,2,3)
+        # plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param0[0],param0[1],(ny_PSF,nx_PSF)),interpolation="nearest")
+        # plt.subplot(2,2,4)
+        # plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param_fit[0],param_fit[1],(ny_PSF,nx_PSF)),interpolation="nearest")
+        # plt.show()
 
     return (param_fit[1]+row_id-row_m),(param_fit[0]+col_id-col_m)
 
@@ -413,13 +413,13 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     stamp_cube_small_mask = np.tile(stamp_mask_small[None,:,:],(nl,1,1))
 
 
-    if 0:
-        plt.figure(6)
-        plt.subplot(2,2,1)
-        plt.imshow(stamp_mask_small,interpolation="nearest")
-        plt.subplot(2,2,2)
-        plt.imshow(cube_stamp[10,:,:]*stamp_mask_small,interpolation="nearest")
-        plt.show()
+    # if 0:
+        # plt.figure(6)
+        # plt.subplot(2,2,1)
+        # plt.imshow(stamp_mask_small,interpolation="nearest")
+        # plt.subplot(2,2,2)
+        # plt.imshow(cube_stamp[10,:,:]*stamp_mask_small,interpolation="nearest")
+        # plt.show()
 
     if method is None or method == "max":
         spectrum = np.nanmax(cube_stamp*stamp_cube_small_mask,axis=(1,2))
@@ -433,19 +433,19 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
             param0 = np.nanmax(cube_stamp_slice)
             LSQ_func = lambda para: LSQ_scale_model_PSF(PSF_cube_slice,cube_stamp_slice,para)
             spectrum_fit[k] = minimize(LSQ_func,param0).x #, method="Nelder-Mead"
-            if 0:
-                plt.figure(1)
-                plt.subplot(2,2,1)
-                plt.imshow(cube_stamp_slice,interpolation="nearest")
-                plt.subplot(2,2,2)
-                plt.imshow(cube_stamp_slice*stamp_mask_small,interpolation="nearest")
-                plt.show()
+            # if 0:
+                # plt.figure(1)
+                # plt.subplot(2,2,1)
+                # plt.imshow(cube_stamp_slice,interpolation="nearest")
+                # plt.subplot(2,2,2)
+                # plt.imshow(cube_stamp_slice*stamp_mask_small,interpolation="nearest")
+                # plt.show()
 
     if 0:
         print(spectrum)
-        plt.figure(3)
-        plt.plot(get_gpi_wavelength_sampling(filter), spectrum)
-        plt.show()
+        # plt.figure(3)
+        # plt.plot(get_gpi_wavelength_sampling(filter), spectrum)
+        # plt.show()
 
     return get_gpi_wavelength_sampling(filter), spectrum
 
@@ -482,8 +482,8 @@ if __name__ == "__main__":
             user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/code/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
 
         wave_samp,spectrum = extract_planet_spectrum(cube_filename, (110, 135), user_defined_PSF_cube, method="aperture")
-        plt.plot(wave_samp,spectrum)
-        plt.show()
+        # plt.plot(wave_samp,spectrum)
+        # plt.show()
 
     if 1:
         if OS == "Windows":
@@ -498,8 +498,8 @@ if __name__ == "__main__":
             #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
             wv,spectrum  = get_planet_spectrum(spectrum_model,'H')
 
-            plt.plot(wv,spectrum/np.nanmean(spectrum))
-            plt.show()
+            # plt.plot(wv,spectrum/np.nanmean(spectrum))
+            # plt.show()
 
         # if 0:
         #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
