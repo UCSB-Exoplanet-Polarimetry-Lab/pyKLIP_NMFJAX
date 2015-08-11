@@ -1,16 +1,17 @@
 #KLIP Forward Modelling
 
-def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
+def klip_math(sci, refs, models, numbasis, covmat=None, return_basis=False):
     """
-    linear algebra of KLIP with expansion of covariance matrix
+    linear algebra of KLIP with linear perturbation 
     disks and point sources
     
     Args:
         sci: array of length p containing the science data
-        refs: N x p array of the N reference PSFs that 
+        refs: N x p array of the N reference images that 
                   characterizes the extended source with p pixels
-        models: N x p array of N extended source models
+        models: N x p array of the N models corresponding to reference images
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)  
+        covmat: covariance matrix of reference images (for large N, useful)
         return_basis: If true, return KL basis vectors (used when onesegment==True)
 
     Returns:
@@ -18,6 +19,7 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
 
     """
+    #remove means and nans
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
     sci_mean_sub[sci_nanpix] = 0
@@ -25,12 +27,14 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
     refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
-    models_mean_sub = models - np.nanmean(models, axis=1)[:,None]
+    models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
     models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
-    #if covar_psfs is None, disregarded scaling term:
-    covar_psfs = np.dot(refs_mean_sub,refs_mean_sub.T)  
-          
+    #calculate the covariance matrix of reference images
+    #numpy.cov normalizes by p-1, must remove
+    if covmat is None:      
+        covmat = np.cov(refs_mean_sub)
+        
     tot_basis = covar_psfs.shape[0]
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
     max_basis = np.max(numbasis) + 1
@@ -40,7 +44,8 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
     evecs = np.copy(evecs[:,::-1])
     
     KL_basis = np.dot(refs_mean_sub.T,evecs)
-    KL_basis = KL_basis * (1. / np.sqrt(evals))[None,:]
+    KL_basis = KL_basis * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:] #should scaling be there?
+    #Laurent's paper specifically removes 1/sqrt(Npix-1)
     
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
@@ -50,6 +55,7 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
     
+    #expansion of the covariance matrix
     CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
     
     Nrefs = evals.shape[0]
@@ -78,7 +84,8 @@ def klip_math(sci, refs, models, numbasis, return_basis=False): #Zack
         Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
         KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
     
-    KL_pert = KL_perturb + KL_basis
+    KL_pert = KL_perturb + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
+    #Perhaps scaling issue? or my coding failure?g
     
     inner_products = np.dot(sci_mean_sub_rows, KL_pert)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
@@ -192,16 +199,16 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
     #if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off the number of basis)
+    sub_imgs[:,allnans[0],allnans[1],allnans[2]] = np.nan
     if sub_imgs.shape[0] == 1:
         sub_imgs = sub_imgs[0]
-    #restore bad pixels
-    sub_imgs[:,allnans[0], allnans[1], allnans[2]] = np.nan
 
-    #derotate images
-    #imgs_list = []
-    #for a in sub_imgs:
-    #    imgs_list.append(np.array([rotate(img, pa, (140,140), center) for img,pa,center in zip(sub_imgs, parangs, centers)]))
-    #subimgs = np.asarray(imgs_list)
+    #derotate
+        #img_list = []
+        #for a in sub_imgs:
+        #    img_list.append(np.array([rotate(img,pa,(140,140),center) for img, pa,center in zip(a,parangs,centers)]))
+        #sub_imgs = np.asarray(img_list)
+    
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
