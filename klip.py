@@ -5,7 +5,7 @@ import scipy.ndimage as ndimage
 from scipy.stats import t
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False, return_basis_and_eig=False):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -19,11 +19,17 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
                               the klipping. ie from which the modes are calculated.
         return_basis: If true, return KL basis vectors (used when onesegment==True)
+        return_basis_and_eig: If true, return KL basis vectors as well as the eigenvalues and eigenvectors of the
+                                covariance matrix. Used for KLIP Forward Modelling of Laurent Pueyo.
 
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
-
+        KL_basis: array of shape (max(numbasis),p). Only if return_basis or return_basis_and_eig is True.
+        evals: Eigenvalues of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
+                Only if return_basis_and_eig is True.
+        evecs: Eigenvectors of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
+                Only if return_basis_and_eig is True.
     """
     # for the science image, subtract the mean and mask bad pixels
     sci_mean_sub = sci - np.nanmean(sci)
@@ -145,6 +151,8 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     if return_basis is True:
         return sub_img_rows_selected.transpose(), kl_basis.transpose()
+    elif return_basis_and_eig is True:
+        return sub_img_rows_selected.transpose(), kl_basis.transpose(),evals*(np.size(sci)-1), evecs
     else:
         return sub_img_rows_selected.transpose()
 
