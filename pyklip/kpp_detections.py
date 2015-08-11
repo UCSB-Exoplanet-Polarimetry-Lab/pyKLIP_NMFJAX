@@ -1,28 +1,9 @@
 __author__ = 'JB'
 
-import numpy as np
-from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
-from scipy.signal import convolve
-from scipy.optimize import curve_fit
-import astropy.io.fits as pyfits
-from astropy.modeling import models, fitting
-from copy import copy
-import warnings
-from scipy.stats import nanmedian
-import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import multiprocessing as mp
-import itertools
-import glob, os
-from sys import stdout
-import platform
-import xml.etree.cElementTree as ET
 
 import spectra_management as spec
-from kpp_utils import *
-from kpp_pdf import *
+from pyklip.kpp_pdf import *
 from kpp_std import *
 
 

@@ -1,11 +1,14 @@
+import os
+import re
+import subprocess
+
 import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
-import os
-import re
-import subprocess
+
+
 
 
 #different imports depending on if python2.7 or python3
@@ -14,8 +17,8 @@ from copy import copy
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
-    from Instrument import Data
-    from utils.nair import nMathar
+    from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
 else:
     import configparser as ConfigParser
     from pyklip.instruments.Instrument import Data
