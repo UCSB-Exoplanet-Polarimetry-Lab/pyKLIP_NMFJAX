@@ -1,16 +1,24 @@
 #KLIP Forward Modelling
+import pyklip.klip as klip
+import numpy as np
+import scipy.linalg as la
+from scipy.stats import norm
 
-def klip_math(sci, refs, models, numbasis, covmat=None, return_basis=False):
+import ctypes
+import multiprocessing as mp
+from pyklip.parallelized import _arraytonumpy
+
+def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
     """
-    linear algebra of KLIP with linear perturbation 
+    linear algebra of KLIP with linear perturbation
     disks and point sources
-    
+
     Args:
         sci: array of length p containing the science data
-        refs: N x p array of the N reference images that 
+        refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
         models: N x p array of the N models corresponding to reference images
-        numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)  
+        numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
         covmat: covariance matrix of reference images (for large N, useful)
         return_basis: If true, return KL basis vectors (used when onesegment==True)
 
@@ -23,41 +31,43 @@ def klip_math(sci, refs, models, numbasis, covmat=None, return_basis=False):
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
     sci_mean_sub[sci_nanpix] = 0
-        
+
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
     refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
     models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
-    #calculate the covariance matrix of reference images
-    #numpy.cov normalizes by p-1, must remove
-    if covmat is None:      
-        covmat = np.cov(refs_mean_sub)
-        
+    # calculate the covariance matrix for the reference PSFs
+    # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
+    # we have to correct for that a few lines down when consturcting the KL
+    # vectors since that's not part of the equation in the KLIP paper
+    if covar_psfs is None:
+        covar_psfs = np.cov(refs_mean_sub)
+
     tot_basis = covar_psfs.shape[0]
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
     max_basis = np.max(numbasis) + 1
-        
+
     evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-max_basis, tot_basis-1))
     evals = np.copy(evals[::-1])
     evecs = np.copy(evecs[:,::-1])
-    
+
     KL_basis = np.dot(refs_mean_sub.T,evecs)
     KL_basis = KL_basis * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:] #should scaling be there?
     #Laurent's paper specifically removes 1/sqrt(Npix-1)
-    
+
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
-    
+
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
     sci_mean_sub_rows[sci_nanpix] = 0
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
-    
+
     #expansion of the covariance matrix
     CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
-    
+
     Nrefs = evals.shape[0]
     KL_perturb = np.zeros(KL_basis.shape)
     Pert1 = np.zeros(KL_basis.shape)
@@ -65,11 +75,11 @@ def klip_math(sci, refs, models, numbasis, covmat=None, return_basis=False):
     CoreffsKL = np.zeros((Nrefs,Nrefs))
     Mult = np.zeros((Nrefs,Nrefs))
     cross = np.zeros((Nrefs,Nrefs))
-    
+
     for i in range(Nrefs):
         for j in range(Nrefs):
             cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
-        
+
     for i in range(Nrefs):
         for j in range(Nrefs):
             if j == i:
@@ -78,28 +88,28 @@ def klip_math(sci, refs, models, numbasis, covmat=None, return_basis=False):
                 Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
         CoreffsKL[i,:] = cross[i]*Mult[i]
 
-     
+
     for j in range(Nrefs):
         Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
         Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
         KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
-    
+
     KL_pert = KL_perturb + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
     #Perhaps scaling issue? or my coding failure?g
-    
+
     inner_products = np.dot(sci_mean_sub_rows, KL_pert)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
     inner_products = inner_products * lower_tri
     klip = np.dot(inner_products[numbasis,:], KL_pert.T)
-    
+
     sub_img_rows_selected = sci_rows_selected - klip
     sub_img_rows_selected[sci_nanpix] = np.nan
-    
+
     if return_basis is True:
         return sub_img_rows_selected.transpose(), KL_basis.transpose()
     else:
         return sub_img_rows_selected.transpose()
-		
+
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None, minrot=0): #Zack
     """
     KLIP PSF Subtraction using angular differential imaging, with expansion of covariance matrix
@@ -124,7 +134,7 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
                     specified by numbasis. Shape of (b,N,y,x). Exception is if b==1. Then sub_imgs has the first
                     array stripped away and is shape of (N,y,x).
     """
-    
+
     if numbasis is None:
         totalimgs = imgs.shape[0]
         numbasis = np.arange(1,totalimgs + 5,5)
@@ -134,41 +144,41 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
-        
+
     if aligned_center is None:
         aligned_center = [int(imgs.shape[2]//2),int(imgs.shape[1]//2)]
-        
+
     allnans = np.where(np.isnan(imgs))
-    
+
     #annuli
     dims = imgs.shape
     x,y = np.meshgrid(np.arange(dims[2] * 1.0),np.arange(dims[1]*1.0))
     nanpix = np.where(np.isnan(imgs[0]))
     OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-    dr = float(OWA - IWA) / (annuli) 
-    
+    dr = float(OWA - IWA) / (annuli)
+
     rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
     rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0] / 2)
 
     dphi = 2 * np.pi / subsections
     phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
     phi_bounds[-1][1] = 2. * np.pi
-    
+
     sub_imgs = np.zeros([dims[0], dims[1] * dims[2], numbasis.shape[0]])
 
     #begin KLIP process for each image
     for img_num, pa in enumerate(parangs):
-        recenteredimgs = np.array([align_and_scale(frame, aligned_center, oldcenter) for frame, oldcenter in zip(imgs, centers)])
-        recenteredmodels = np.array([align_and_scale(frame, aligned_center, oldcenter) for frame, oldcenter in zip(models, centers)])
-        
-        #create coordinate system 
+        recenteredimgs = np.array([klip.align_and_scale(frame, aligned_center, oldcenter) for frame, oldcenter in zip(imgs, centers)])
+        recenteredmodels = np.array([klip.align_and_scale(frame, aligned_center, oldcenter) for frame, oldcenter in zip(models, centers)])
+
+        #create coordinate system
         r = np.sqrt((x - aligned_center[0]) ** 2 + (y - aligned_center[1]) ** 2)
         phi = np.arctan2(y - aligned_center[1], x - aligned_center[0])
 
         #flatten img dimension
         flattenedimgs = recenteredimgs.reshape((dims[0], dims[1] * dims[2]))
         flattenedmodels = recenteredmodels.reshape((dims[0],dims[1] * dims[2]))
-        
+
         r.shape = (dims[1] * dims[2])
         phi.shape = (dims[1] * dims[2])
         #iterate over the different sections
@@ -180,7 +190,7 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
                     continue
                 #grab the files suitable for reference PSF
                 avg_rad = (radstart + radend) / 2.0
-                moves = estimate_movement(avg_rad, parang0=pa, parangs=parangs)
+                moves = klip.estimate_movement(avg_rad, parang0=pa, parangs=parangs)
                 file_ind = np.where((moves >= movement) & (np.abs(parangs - pa) > minrot))
 
                 if np.size(file_ind) < 2:
@@ -195,7 +205,7 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
                 models_math = models_math[:, section_ind[0]]
 
                 sub_imgs[img_num, section_ind, :] = klip_math(flattenedimgs[img_num, section_ind][0], images_math, models_math, numbasis)
-    
+
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
     #if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off the number of basis)
@@ -208,10 +218,377 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
         #for a in sub_imgs:
         #    img_list.append(np.array([rotate(img,pa,(140,140),center) for img, pa,center in zip(a,parangs,centers)]))
         #sub_imgs = np.asarray(img_list)
-    
+
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
-    
+
     return sub_imgs
-    
+
+
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
+                      numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, spectrum=None
+                      ):
+    """
+    multithreaded KLIP PSF Subtraction
+
+    Args:
+        imgs: array of 2D images for ADI. Shape of array (N,y,x)
+        centers: N by 2 array of (x,y) coordinates of image centers
+        parangs: N length array detailing parallactic angle of each image
+        wvs: N length array of the wavelengths
+        IWA: inner working angle (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        anuuli: number of annuli to use for KLIP
+        subsections: number of sections to break each annuli into
+        movement: minimum amount of movement (in pixels) of an astrophysical source
+                  to consider using that image for a refernece PSF
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
+        numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
+
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        maxrot: maximum PA rotation (in degrees) to be considered for use as a reference PSF (temporal variability)
+
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
+
+
+
+    Returns:
+        sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
+                    specified by numbasis. Shape of (b,N,y,x).
+    """
+
+    ################## Interpret input arguments ####################
+
+    #defaullt numbasis if none
+    if numbasis is None:
+        totalimgs = imgs.shape[0]
+        maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
+        numbasis = np.arange(1, maxbasis + 5, 5)
+        print("KL basis not specified. Using default.", numbasis)
+    else:
+        if hasattr(numbasis, "__len__"):
+            numbasis = np.array(numbasis)
+        else:
+            numbasis = np.array([numbasis])
+
+    #default aligned_center if none:
+    if aligned_center is None:
+        aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
+
+    #save all bad pixels
+    allnans = np.where(np.isnan(imgs))
+
+    #use first image to figure out how to divide the annuli
+    #TODO: what to do with OWA
+    #need to make the next 10 lines or so much smarter
+    dims = imgs.shape
+    x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+    nanpix = np.where(np.isnan(imgs[0]))
+    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    dr = float(OWA - IWA) / (annuli)
+
+    #error checking for too small of annuli go here
+
+    #calculate the annuli
+    rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+    #last annulus should mostly emcompass everything
+    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+
+    #divide annuli into subsections
+    dphi = 2 * np.pi / subsections
+    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+    phi_bounds[-1][1] = 2. * np.pi
+
+
+    #calculate how many iterations we need to do
+    global tot_iter
+    tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
+
+
+    ########################### Create Shared Memory ###################################
+
+    #implement the thread pool
+    #make a bunch of shared memory arrays to transfer data between threads
+    #make the array for the original images and initalize it
+    original_imgs = mp.Array(ctypes.c_double, np.size(imgs))
+    original_imgs_shape = imgs.shape
+    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape)
+    original_imgs_np[:] = imgs
+    #make array for recentered/rescaled image for each wavelength
+    unique_wvs = np.unique(wvs)
+    recentered_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(unique_wvs))
+    recentered_imgs_shape = (np.size(unique_wvs),) + imgs.shape
+    #make output array which also has an extra dimension for the number of KL modes to use
+    output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
+    output_imgs_np = _arraytonumpy(output_imgs)
+    output_imgs_np[:] = np.nan
+    output_imgs_shape = imgs.shape + numbasis.shape
+    #remake the PA, wv, and center arrays as shared arrays
+    pa_imgs = mp.Array(ctypes.c_double, np.size(parangs))
+    pa_imgs_np = _arraytonumpy(pa_imgs)
+    pa_imgs_np[:] = parangs
+    wvs_imgs = mp.Array(ctypes.c_double, np.size(wvs))
+    wvs_imgs_np = _arraytonumpy(wvs_imgs)
+    wvs_imgs_np[:] = wvs
+    centers_imgs = mp.Array(ctypes.c_double, np.size(centers))
+    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
+    centers_imgs_np[:] = centers
+
+
+    tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
+                   initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
+
+
+    #align and scale the images for each image. Use map to do this asynchronously
+    realigned_index = enumerate(unique_wvs)
+
+    #list to store each threadpool task
+    outputs = []
+    #as each is finishing, queue up the aligned data to be processed with KLIP
+    for wv_index, wv_value in realigned_index:
+        print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
+
+        #pick out the science images that need PSF subtraction for this wavelength
+        scidata_indicies = np.where(wvs == wv_value)[0]
+
+        # commented out code to do _klip_section instead of _klip_section_multifile
+        # outputs += [tpool.apply_async(_klip_section_profiler, args=(file_index, parang, wv_value, wv_index, numbasis,
+        #                                                   radstart, radend, phistart, phiend, movement))
+        #                     for phistart,phiend in phi_bounds
+        #                 for radstart, radend in rad_bounds
+        #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+
+        #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
+        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
+                                                                     radstart, radend, phistart, phiend, movement,
+                                                                     aligned_center, minrot, maxrot, spectrum,
+                                                                     mode))
+                    for phistart,phiend in phi_bounds
+                    for radstart, radend in rad_bounds]
+
+    #harness the data!
+    #check make sure we are completely unblocked before outputting the data
+    print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
+    for index, out in enumerate(outputs):
+        out.wait()
+        if (index + 1) % 10 == 0:
+            print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
+
+
+
+    #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
+    print("Closing threadpool")
+    tpool.close()
+    tpool.join()
+
+    #finished. Let's reshape the output images
+    #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
+    sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
+    sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
+
+    #restore bad pixels
+    sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
+
+    #scrapping this behavior for now because I don't feel like dealing with edge cases
+    ## if we only passed in one value for numbasis (i.e. only want one PSF subtraction), strip off that axis)
+    #if sub_imgs.shape[0] == 1:
+    #    sub_imgs = sub_imgs[0]
+
+    #all of the image centers are now at aligned_center
+    centers[:,0] = aligned_center[0]
+    centers[:,1] = aligned_center[1]
+
+    # Output for the sole PSFs
+    return sub_imgs
+
+
+def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,
+                            minmove, ref_center, minrot, maxrot, spectrum, mode):
+    """
+    Runs klip on a section of the image for all the images of a given wavelength.
+    Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
+    break it down even smaller when running on machines on the order of 32 cores.
+
+    Args:
+        scidata_indicies: array of file indicies that are the science images for this wavelength
+        wavelength: value of the wavelength we are processing
+        wv_index: index of the wavelenght we are processing
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        radstart: inner radius of the annulus (in pixels)
+        radend: outer radius of the annulus (in pixels)
+        phistart: lower bound in CCW angle from x axis for the start of the section
+        phiend: upper boundin CCW angle from y axis for the end of the section
+        minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        maxrot: maximum PA rotation (in degrees) to be considered for use as a reference PSF (temporal variability)
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        lite: if True, use low memory footprint mode
+
+    Return:
+        returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
+        Saves data to output array as defined in _tpool_init()
+    """
+
+
+    #export some of klip.klip_math functions to here to minimize computation repeats
+    #can't anymore
+
+
+    #grab the parangs
+    parangs = _arraytonumpy(img_pa)
+    for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+        try:
+            _klip_section_multifile_perfile(file_index,radstart, radend, phistart, phiend,
+                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove,
+                                            ref_center, minrot, maxrot, mode, spectrum=spectrum)
+        except (ValueError, RuntimeError, TypeError) as err:
+            print("({0}): {1}".format(err.errno, err.strerror))
+            return False
+
+
+    return True
+
+
+def _klip_section_multifile_perfile(img_num, radstart, radend, phistart, phiend, parang, wavelength, wv_index, avg_rad,
+                                    numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum=None, lite=False):
+    """
+    Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
+
+    Args:
+        img_num: file index for the science image to process
+        section_ind: np.where(pixels are in this section of the image). Note: coordinate system is collapsed into 1D
+        ref_psfs: reference psf images of this section
+        covar: the covariance matrix of the reference PSFs. Shape of (N,N)
+        corr: the correlation matrix of the refernece PSFs. Shape of (N,N)
+        parang: PA of science iamge
+        wavelength: wavelength of science image
+        wv_index: array index of the wavelength of the science image
+        avg_rad: average radius of this annulus
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
+
+    Return:
+        return True on success, False on failure.
+        Saves image to output array defined in _tpool_init()
+    """
+    #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
+    x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+    x.shape = (x.shape[0] * x.shape[1]) #Flatten
+    y.shape = (y.shape[0] * y.shape[1])
+    r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
+    phi = np.arctan2(y - ref_center[1], x - ref_center[0])
+
+    #grab the pixel location of the section we are going to anaylze
+    phi_rotate = phi +  + np.radians(parang)
+    section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+    if np.size(section_ind) <= 1:
+        print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
+        return False
+
+    #load aligned images for this wavelength
+    #if lite memory, the aligend array has a different size
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    ref_psfs = aligned_imgs[:,  section_ind[0]]
+
+    #do the same for the reference PSFs
+    #playing some tricks to vectorize the subtraction of the mean for each row
+    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+    ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
+
+    #calculate the covariance matrix for the reference PSFs
+    #note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
+    #we have to correct for that in the klip.klip_math routine when consturcting the KL
+    #vectors since that's not part of the equation in the KLIP paper
+    covar_psfs = np.cov(ref_psfs_mean_sub)
+    #also calculate correlation matrix since we'll use that to select reference PSFs
+    covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+    corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+
+
+    # grab the files suitable for reference PSF
+    # load shared arrays for wavelengths and PAs
+    wvs_imgs = _arraytonumpy(img_wv)
+    pa_imgs = _arraytonumpy(img_pa)
+    # calculate average movement in this section for each PSF reference image w.r.t the science image
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
+    # check all the PSF selection criterion
+    # enough movement of the astrophyiscal source
+    if spectrum is None:
+        goodmv = (moves >= minmove)
+    else:
+        # optimize the selection based on the spectral template rather than just an exclusion principle
+        goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+
+    # enough field rotation
+    if minrot > 0:
+        goodmv = (goodmv) & (np.abs(pa_imgs - parang) >= minrot)
+
+    # if no SDI, don't use other wavelengths
+    if "SDI" not in mode.upper():
+        goodmv = (goodmv) & (wvs_imgs == wavelength)
+    # if no ADI, don't use other parallactic angles
+    if "ADI" not in mode.upper():
+        goodmv = (goodmv) & (pa_imgs == parang)
+
+    # if minrot > 0:
+    #     file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
+    # else:
+    #     file_ind = np.where(moves >= minmove)
+    # select the good reference PSFs
+    file_ind = np.where(goodmv)
+    if np.size(file_ind[0]) < 2:
+        print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
+        return False
+    # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
+    covar_files = covar_psfs[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
+
+    # pick only the most correlated reference PSFs if there's more than enough PSFs
+    maxbasis_requested = np.max(numbasis)
+    maxbasis_possible = np.size(file_ind)
+    if maxbasis_possible > maxbasis_requested:
+        xcorr = corr_psfs[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
+        sort_ind = np.argsort(xcorr)
+        closest_matched = sort_ind[-maxbasis_requested:]  # sorted smallest first so need to grab from the end
+        # grab the new and smaller covariance matrix
+        covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
+        # grab smaller set of reference PSFs
+        ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
+
+    else:
+        # else just grab the reference PSFs for all the valid files
+        ref_psfs_selected = ref_psfs[file_ind[0], :]
+
+
+
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]))
+
+    try:
+        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
+    except (ValueError, RuntimeError, TypeError) as err:
+        print("({0}): {1}".format(err.errno, err.strerror))
+        return False
+
+    # write to output
+    output_imgs[img_num, section_ind[0], :] = klipped
+
+    return True
