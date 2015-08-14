@@ -25,8 +25,15 @@ class NoDaemonProcess(mp.Process):
 class NoDaemonPool(mpPool.Pool):
     Process = NoDaemonProcess
 
-def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True):
+def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True, suffix = None, folderNameFilter = None):
     #objectsDir_list = []
+
+    if suffix is None:
+        suffix = ""
+
+    if folderNameFilter is None:
+        folderNameFilter = "planet_detec*k100a7s4m3-KL20"
+
     for objectsDir in os.listdir(campaign_dir):
         if not objectsDir.startswith('.'):
             #objectsDir_list.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
@@ -34,7 +41,7 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
             objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep
             #print(inputDir)
 
-            planet_detec_dir_list = glob.glob(objectsDir+"planet_detec*k100a7s4m3-KL20")
+            planet_detec_dir_list = glob.glob(objectsDir+folderNameFilter)
             #print(planet_detec_dir_list)
 
             for planet_detec_dir in planet_detec_dir_list:
@@ -46,7 +53,8 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
 
                 for src in src_list:
                     src_splitted = src.split(os.path.sep)
-                    dst = output_dir+src_splitted[len(src_splitted)-1]
+                    src_splitted = src_splitted[len(src_splitted)-1].split(".")
+                    dst = output_dir+src_splitted[0]+"_"+suffix+"."+src_splitted[1]
                     if not mute:
                         print("Copying " + src + " to " + dst)
                     shutil.copyfile(src, dst)
