@@ -244,7 +244,8 @@ def calculate_metrics(filename,
                         overwrite_metric = False,
                         overwrite_stat = False,
                         proba_using_mask_per_pixel = False,
-                        N_threads = None):
+                        N_threads = None,
+                        noPlots = False):
     '''
     Calculate some metrics on a given data cube as well as the corresponding SNR and probability maps.
 
@@ -603,8 +604,8 @@ def calculate_metrics(filename,
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
                 if N_threads is not None:
-                    pool = NoDaemonPool(processes=N_threads)
-                    #pool = mp.Pool(processes=N_threads)
+                    #pool = NoDaemonPool(processes=N_threads)
+                    pool = mp.Pool(processes=N_threads)
 
                     ## cut images in N_threads part
                     # get the first and last index of each chunck
@@ -701,8 +702,8 @@ def calculate_metrics(filename,
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
                 if N_threads is not None:
-                    pool = NoDaemonPool(processes=N_threads)
-                    #pool = mp.Pool(processes=N_threads)
+                    #pool = NoDaemonPool(processes=N_threads)
+                    pool = mp.Pool(processes=N_threads)
 
                     ## cut images in N_threads part
                     # get the first and last index of each chunck
@@ -809,8 +810,8 @@ def calculate_metrics(filename,
                 stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
 
                 if N_threads is not None:
-                    pool = NoDaemonPool(processes=N_threads)
-                    #pool = mp.Pool(processes=N_threads)
+                    #pool = NoDaemonPool(processes=N_threads)
+                    pool = mp.Pool(processes=N_threads)
 
                     ## cut images in N_threads part
                     # get the first and last index of each chunck
@@ -977,14 +978,15 @@ def calculate_metrics(filename,
 
     # Save a plot of the spectral template used as PNG
     spec_sampling = spec.get_gpi_wavelength_sampling(filter)
-    plt.close(1)
-    plt.figure(1)
-    plt.plot(spec_sampling,spectrum_cpy,"rx-",markersize = 7, linewidth = 2)
-    plt.title("Template spectrum use in this folder")
-    plt.xlabel("Wavelength (mum)")
-    plt.ylabel("Norm-2 Normalized")
-    plt.savefig(outputDir+folderName+'template_spectrum.png', bbox_inches='tight')
-    plt.close(1)
+    if not noPlots:
+        plt.close(1)
+        plt.figure(1)
+        plt.plot(spec_sampling,spectrum_cpy,"rx-",markersize = 7, linewidth = 2)
+        plt.title("Template spectrum use in this folder")
+        plt.xlabel("Wavelength (mum)")
+        plt.ylabel("Norm-2 Normalized")
+        plt.savefig(outputDir+folderName+'template_spectrum.png', bbox_inches='tight')
+        plt.close(1)
 
     # Save a fits file of the spectral template used including the wavelengths.
     hdulist2[1].data = [spec_sampling,spectrum_cpy]

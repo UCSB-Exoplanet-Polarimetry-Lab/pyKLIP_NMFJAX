@@ -29,7 +29,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                                                   SNR = True,
                                                   probability = True,
                                                   N_threads_metric = None,
-                                                  detection_metric = None):
+                                                  detection_metric = None,
+                                                  noPlots = False):
     '''
     Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given 
     spectral template.
@@ -158,7 +159,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                             overwrite_metric = overwrite_metric,
                             overwrite_stat = overwrite_stat,
                             proba_using_mask_per_pixel = proba_using_mask_per_pixel,
-                            N_threads = N_threads_metric )
+                            N_threads = N_threads_metric,
+                            noPlots = noPlots)
 
     # Run the candidate finder on the previously computed metrics
     if not metrics_only:
@@ -166,7 +168,8 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
             print("Calling candidate_detection() on "+outputDir+folderName)
         candidate_detection(outputDir+folderName,
                             mute = mute,
-                            metric = detection_metric)
+                            metric = detection_metric,
+                            noPlots = noPlots)
 
     return 1
 
@@ -197,7 +200,8 @@ def planet_detection_in_dir_per_file(filename,
                                       proba_using_mask_per_pixel = False,
                                       SNR = True,
                                       probability = True,
-                                      detection_metric = None):
+                                      detection_metric = None,
+                                      noPlots = False):
     '''
     Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given
     cube and several spectral templates.
@@ -385,7 +389,8 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(SNR),
                                                                            itertools.repeat(probability),
                                                                            itertools.repeat(N_threads_metric),
-                                                                           itertools.repeat(detection_metric)))
+                                                                           itertools.repeat(detection_metric),
+                                                                           itertools.repeat(noPlots)))
         pool.close()
     else:
         # Run planet dection on the given file with a given spectrum template sequentially (will be really slow...)
@@ -409,14 +414,15 @@ def planet_detection_in_dir_per_file(filename,
                                                           SNR = SNR,
                                                           probability = probability,
                                                           N_threads_metric = None,
-                                                          detection_metric = detection_metric)
+                                                          detection_metric = detection_metric,
+                                                          noPlots = noPlots)
 
     # If the user didn't ask for the metrics only the next function gather the detection results with the different
     # spectra. It creates outputs in the input directory.
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
-        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list)
+        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list, noPlots = noPlots)
 
 def planet_detection_in_dir_star(params):
     """
@@ -444,7 +450,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                             proba_using_mask_per_pixel = False,
                             SNR = True,
                             probability = True,
-                            detection_metric = None):
+                            detection_metric = None,
+                            noPlots = False):
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
@@ -553,7 +560,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                                            itertools.repeat(proba_using_mask_per_pixel),
                                                                            itertools.repeat(SNR),
                                                                            itertools.repeat(probability),
-                                                                           itertools.repeat(detection_metric)))
+                                                                           itertools.repeat(detection_metric),
+                                                                           itertools.repeat(noPlots)))
             pool.close()
         else:
             # Run the planet dection for every single file sastisfying the filename filter.
@@ -576,7 +584,8 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                  proba_using_mask_per_pixel = proba_using_mask_per_pixel,
                                                  SNR = SNR,
                                                  probability = probability,
-                                                 detection_metric = detection_metric)
+                                                 detection_metric = detection_metric,
+                                                 noPlots = noPlots)
 
 
 

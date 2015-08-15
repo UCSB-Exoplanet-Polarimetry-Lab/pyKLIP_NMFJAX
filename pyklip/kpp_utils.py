@@ -54,7 +54,7 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
                 for src in src_list:
                     src_splitted = src.split(os.path.sep)
                     src_splitted = src_splitted[len(src_splitted)-1].split(".")
-                    dst = output_dir+src_splitted[0]+"_"+suffix+"."+src_splitted[1]
+                    dst = output_dir+src_splitted[0]+suffix+"."+src_splitted[1]
                     if not mute:
                         print("Copying " + src + " to " + dst)
                     shutil.copyfile(src, dst)
@@ -135,6 +135,12 @@ def clean_planet_detec_outputs(campaign_dir = "."+os.path.sep):
                             os.remove(conflicted_file)
 
 def GOI_list_add_object_from_coord(GOI_list_filename, object_name, col_centroid,row_centroid):
+    # xml files don't like element names starting with a digit so adding underscore if it happens...
+    if object_name[0].isdigit():
+        xml_object_name = "_"+object_name
+    else:
+        xml_object_name = object_name
+
     GOI_list_filename_list = glob.glob(GOI_list_filename)
     print(GOI_list_filename_list)
     if len(GOI_list_filename_list) == 0:
@@ -147,9 +153,9 @@ def GOI_list_add_object_from_coord(GOI_list_filename, object_name, col_centroid,
         tree_GOI_list = ET.parse(GOI_list_filename)
         root_GOI_list = tree_GOI_list.getroot()
 
-    object_elt_in_GOI_list = root_GOI_list.find(object_name)
+    object_elt_in_GOI_list = root_GOI_list.find(xml_object_name)
     if object_elt_in_GOI_list is None:
-        object_elt_in_GOI_list = ET.Element(object_name)
+        object_elt_in_GOI_list = ET.Element(xml_object_name)
         root_GOI_list.append(object_elt_in_GOI_list)
 
     ET.SubElement(object_elt_in_GOI_list, "candidate",
@@ -258,6 +264,11 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
     except:
         object_name = "UNKNOWN_OBJECT"
 
+    # xml files don't like element names starting with a digit so adding underscore if it happens...
+    if object_name[0].isdigit():
+        xml_object_name = "_"+object_name
+    else:
+        xml_object_name = object_name
     candidates_list = []
 
     tree_GOI_list = ET.parse(GOI_list_filename)
@@ -268,7 +279,7 @@ def mask_known_objects(cube,prihdr,GOI_list_filename, mask_radius = 7):
     col_m = np.floor(width/2.0)
     col_p = np.ceil(width/2.0)
 
-    for object_elt in root_GOI_list.findall(object_name):
+    for object_elt in root_GOI_list.findall(xml_object_name):
         #print(object_elt)
         for candidate in object_elt.findall("candidate"):
             k = round(float(candidate.attrib["row_centroid"]))
