@@ -9,7 +9,8 @@ from kpp_std import *
 
 def candidate_detection(metrics_foldername,
                         mute = False,
-                        metric = None):
+                        metric = None,
+                        noPlots = False):
     '''
     Run the candidate detection algorithm based on pre-calculated metric probability maps.
 
@@ -25,6 +26,7 @@ def candidate_detection(metrics_foldername,
     :param mute: If True prevent printed log outputs.
     :param metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells which
                 metric should be used for the detection. The default value is "shape".
+    :param noPlots: Prevent the use of matplotlib. No png will be produced.
     :return: If successful the function returns 1 otherwise it returns None.
             If everything went well the function will have created the following files in the folder metrics_foldername:
             - <star_name>-detectionIm_all-<metric>.png:
@@ -151,7 +153,12 @@ def candidate_detection(metrics_foldername,
 
     # Define the tree for the xml file
     root = ET.Element("root")
-    star_elt = ET.SubElement(root, star_name)
+    # xml files don't like element names starting with a digit so adding underscore if it happens...
+    if star_name[0].isdigit():
+        xml_star_name = "_"+star_name
+    else:
+        xml_star_name = star_name
+    star_elt = ET.SubElement(root, xml_star_name)
     # Element where the candidates will be saved
     candidates_elt = ET.SubElement(star_elt, "candidates")
     # Element where all local maxima will be saved
@@ -213,67 +220,68 @@ def candidate_detection(metrics_foldername,
     tree.write(metrics_foldername+os.path.sep+star_name+'-detections-'+metric+'.xml')
 
     ## PLOTS to png
-    # The following plots the criterion map and locate the candidates or local maxima before saving the result as a png.
-    if not mute:
-        print("Number of candidates = " + str(N_candidates))
-    # Following paragraph plots the candidate image
-    plt.close(3)
-    plt.figure(3,figsize=(16,16))
-    # plot the criterion map. One axis has to be mirrored to get North up.
-    plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-    ax = plt.gca()
-    # Loop over the candidates
-    for candidate in candidates_elt:
-        # get the position of the candidate and the criterion value from the candidate tree
-        candidate_id = int(candidate.attrib["id"])
-        max_val_criter = float(candidate.attrib["max_val_criter"])
-        x_max_pos = float(candidate.attrib["x_max_pos"])
-        y_max_pos = float(candidate.attrib["y_max_pos"])
+    if not noPlots:
+        # The following plots the criterion map and locate the candidates or local maxima before saving the result as a png.
+        if not mute:
+            print("Number of candidates = " + str(N_candidates))
+        # Following paragraph plots the candidate image
+        plt.close(3)
+        plt.figure(3,figsize=(16,16))
+        # plot the criterion map. One axis has to be mirrored to get North up.
+        plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+        ax = plt.gca()
+        # Loop over the candidates
+        for candidate in candidates_elt:
+            # get the position of the candidate and the criterion value from the candidate tree
+            candidate_id = int(candidate.attrib["id"])
+            max_val_criter = float(candidate.attrib["max_val_criter"])
+            x_max_pos = float(candidate.attrib["x_max_pos"])
+            y_max_pos = float(candidate.attrib["y_max_pos"])
 
-        # Draw an arrow with some text to point at the candidate
-        ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
-                xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
-                textcoords='data',
-                arrowprops=dict(arrowstyle="->",
-                                linewidth = 1.,
-                                color = 'black')
-                )
-    plt.clim(0.,10.0)
-    # Save the candidate plot as png in the same folder as the metric maps.
-    # Filename is <star_name>-detectionIm_candidates-<metric>.png
-    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates-'+metric+'.png', bbox_inches='tight')
-    plt.close(3)
+            # Draw an arrow with some text to point at the candidate
+            ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
+                    xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
+                    textcoords='data',
+                    arrowprops=dict(arrowstyle="->",
+                                    linewidth = 1.,
+                                    color = 'black')
+                    )
+        plt.clim(0.,10.0)
+        # Save the candidate plot as png in the same folder as the metric maps.
+        # Filename is <star_name>-detectionIm_candidates-<metric>.png
+        plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_candidates-'+metric+'.png', bbox_inches='tight')
+        plt.close(3)
 
-    # Following paragraph plots the all local maxima image
-    plt.close(3)
-    # Show the local maxima in the criterion map
-    plt.figure(3,figsize=(16,16))
-    # plot the criterion map. One axis has to be mirrored to get North up.
-    plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-    ax = plt.gca()
-    # Loop over all local maxima
-    for spot in all_elt:
-        # get the position of the maximum and the criterion value from the all_elt tree
-        candidate_id = int(spot.attrib["id"])
-        max_val_criter = float(spot.attrib["max_val_criter"])
-        x_max_pos = float(spot.attrib["x_max_pos"])
-        y_max_pos = float(spot.attrib["y_max_pos"])
-        ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
-                xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
-                textcoords='data',
-                arrowprops=dict(arrowstyle="->",
-                                linewidth = 1.,
-                                color = 'black')
-                )
-    plt.clim(0.,10.0)
-    # Save the plot with all local maxima as png in the same folder as the metric maps.
-    # Filename is <star_name>-detectionIm_all-<metric>.png
-    plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
-    plt.close(3)
+        # Following paragraph plots the all local maxima image
+        plt.close(3)
+        # Show the local maxima in the criterion map
+        plt.figure(3,figsize=(16,16))
+        # plot the criterion map. One axis has to be mirrored to get North up.
+        plt.imshow(criterion_map_cpy[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+        ax = plt.gca()
+        # Loop over all local maxima
+        for spot in all_elt:
+            # get the position of the maximum and the criterion value from the all_elt tree
+            candidate_id = int(spot.attrib["id"])
+            max_val_criter = float(spot.attrib["max_val_criter"])
+            x_max_pos = float(spot.attrib["x_max_pos"])
+            y_max_pos = float(spot.attrib["y_max_pos"])
+            ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
+                    xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
+                    textcoords='data',
+                    arrowprops=dict(arrowstyle="->",
+                                    linewidth = 1.,
+                                    color = 'black')
+                    )
+        plt.clim(0.,10.0)
+        # Save the plot with all local maxima as png in the same folder as the metric maps.
+        # Filename is <star_name>-detectionIm_all-<metric>.png
+        plt.savefig(metrics_foldername+os.path.sep+star_name+'-detectionIm_all-'+metric+'.png', bbox_inches='tight')
+        plt.close(3)
 
     return 1
 
-def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None,GOI_list = None):
+def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None,GOI_list = None, noPlots = False):
     '''
     Gather the candidates detected with different spectral templates for a given data cube into a single big image and
     a single xml file.
@@ -300,6 +308,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                 metric should be used for the detection. The default value is "shape".
     :param GOI_list: XML file with the list of known object in the campaign. If GOI_list is not none and if there is
                     registered known GOI objects these objects will be marked with a circle in the png.
+    :param noPlots: Prevent the use of matplotlib. No png will be produced.
     :return: 1 if successful and None otherwise.
             Also creates some files in planet_detec_dir:
             - <star_name>-<filter>-<date>-candidates-<which_metric>.xml
@@ -387,6 +396,11 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         # If the object name could nto be found cal lit unknown_object
         star_name = "UNKNOWN_OBJECT"
 
+    # xml files don't like element names starting with a digit so adding underscore if it happens...
+    if star_name[0].isdigit():
+        xml_star_name = "_"+star_name
+    else:
+        xml_star_name = star_name
 
     # Get the list of folders in planet_detec_dir
     # The list of folders should also be the list of spectral templates for which a detection has been ran.
@@ -451,12 +465,14 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             hdulist.close()
             x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
 
-            # Plot on the top line of the figure the probability map. One axis has to be mirrored to get North up.
-            plt.subplot(2,N_spectra_folders,spec_id+1)
-            plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-            ax = plt.gca()
+            if not noPlots:
+                # Plot on the top line of the figure the probability map. One axis has to be mirrored to get North up.
+                plt.subplot(2,N_spectra_folders,spec_id+1)
+                plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+                ax = plt.gca()
 
             # Get tree of the xml file with the candidates
+            #print(candidates_log_file)
             tree = ET.parse(candidates_log_file)
             root = tree.getroot()
             for candidate in root[0].find("candidates"):
@@ -471,34 +487,36 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                 # Store the information in a simpler list (than the tree) for next time we will need it in this function
                 all_templates_detections.append((spectrum_name,int(candidate_id),float(max_val_criter),float(x_max_pos),float(y_max_pos), int(row_id),int(col_id)))
 
-                # Draw an arrow with some text to point at the candidate
-                ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=30, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
-                        xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
-                        textcoords='data',
-                        arrowprops=dict(arrowstyle="->",
-                                        linewidth = 2.,
-                                        color = 'red')
-                        )
+                if not noPlots:
+                    # Draw an arrow with some text to point at the candidate
+                    ax.annotate(str(int(candidate_id))+","+"{0:02.1f}".format(float(max_val_criter)), fontsize=30, color = "red", xy=(float(x_max_pos), float(y_max_pos)),
+                            xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
+                            textcoords='data',
+                            arrowprops=dict(arrowstyle="->",
+                                            linewidth = 2.,
+                                            color = 'red')
+                            )
 
-            # Draw a circle around the known objects if GOI_list is not None.
-            if GOI_list is not None:
-                # Read the GOI_list xml file
-                tree_GOI_list = ET.parse(GOI_list)
-                root_GOI_list = tree_GOI_list.getroot()
+            if not noPlots:
+                # Draw a circle around the known objects if GOI_list is not None.
+                if GOI_list is not None:
+                    # Read the GOI_list xml file
+                    tree_GOI_list = ET.parse(GOI_list)
+                    root_GOI_list = tree_GOI_list.getroot()
 
-                # Get the elements corresponding to the right star
-                root_GOI_list_givenObject = root_GOI_list.findall(star_name)
-                # Loop over these known elements and circle them
-                for object_elt in root_GOI_list_givenObject:
-                    #print(object_elt)
-                    for candidate in object_elt.findall("candidate"):
-                        col_centroid = float(candidate.attrib["col_centroid"])
-                        row_centroid = float(candidate.attrib["row_centroid"])
-                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
-                        ax.add_artist(circle)
+                    # Get the elements corresponding to the right star
+                    root_GOI_list_givenObject = root_GOI_list.findall(xml_star_name)
+                    # Loop over these known elements and circle them
+                    for object_elt in root_GOI_list_givenObject:
+                        #print(object_elt)
+                        for candidate in object_elt.findall("candidate"):
+                            col_centroid = float(candidate.attrib["col_centroid"])
+                            row_centroid = float(candidate.attrib["row_centroid"])
+                            circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                            ax.add_artist(circle)
 
-            plt.title(star_name +" "+ spectrum_name)
-            plt.clim(0.,5.0)
+                plt.title(star_name +" "+ spectrum_name)
+                plt.clim(0.,5.0)
 
             # Read metric fits file
             if which_metric == "shape":
@@ -512,23 +530,24 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             elif which_metric == "maxShapeMF":
                 metric = metric_proba
 
-            # Plot the metric for the given spectral template in the lower row of the figure
-            plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
-            plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-            ax = plt.gca()
+            if not noPlots:
+                # Plot the metric for the given spectral template in the lower row of the figure
+                plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
+                plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+                ax = plt.gca()
 
-            # Draw a circle around the known objects if GOI_list is not None.
-            if GOI_list is not None:
-                # Loop over the known elements and circle them
-                for object_elt in root_GOI_list_givenObject:
-                    #print(object_elt)
-                    for candidate in object_elt.findall("candidate"):
-                        col_centroid = float(candidate.attrib["col_centroid"])
-                        row_centroid = float(candidate.attrib["row_centroid"])
-                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
-                        ax.add_artist(circle)
+                # Draw a circle around the known objects if GOI_list is not None.
+                if GOI_list is not None:
+                    # Loop over the known elements and circle them
+                    for object_elt in root_GOI_list_givenObject:
+                        #print(object_elt)
+                        for candidate in object_elt.findall("candidate"):
+                            col_centroid = float(candidate.attrib["col_centroid"])
+                            row_centroid = float(candidate.attrib["row_centroid"])
+                            circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                            ax.add_artist(circle)
 
-            plt.colorbar()
+                plt.colorbar()
 
 
             if 0:
@@ -553,7 +572,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
 
     # Define a tree to store the detection where the duplicates have been removed
     root = ET.Element("root")
-    star_elt = ET.SubElement(root, star_name)
+    star_elt = ET.SubElement(root, xml_star_name)
     # candidate index that is incremented only when a real new detection is made (one with a different centroid)
     no_duplicates_id = 0
     for detection in all_templates_detections:
@@ -596,19 +615,19 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                           candidate_it = str(candidate_it),
                           name = spectrum_name,
                           max_val_criter = str(max_val_criter))
-
-            # Draw an arrow pointing to the candidate in all the lower plots of the figure. They are the plots with the
-            # metric maps
-            for spec_id in range(N_spectra_folders):
-                plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
-                ax = plt.gca()
-                ax.annotate(str(int(no_duplicates_id)), fontsize=30, color = "black", xy=(float(x_max_pos), float(y_max_pos)),
-                        xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
-                        textcoords='data',
-                        arrowprops=dict(arrowstyle="->",
-                                        linewidth = 2.,
-                                        color = 'black')
-                        )
+            if not noPlots:
+                # Draw an arrow pointing to the candidate in all the lower plots of the figure. They are the plots with the
+                # metric maps
+                for spec_id in range(N_spectra_folders):
+                    plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
+                    ax = plt.gca()
+                    ax.annotate(str(int(no_duplicates_id)), fontsize=30, color = "black", xy=(float(x_max_pos), float(y_max_pos)),
+                            xycoords='data', xytext=(float(x_max_pos)+20, float(y_max_pos)-20),
+                            textcoords='data',
+                            arrowprops=dict(arrowstyle="->",
+                                            linewidth = 2.,
+                                            color = 'black')
+                            )
         else:
             # If the candidate has already been seen we still want to add the know with which templates it was indeed
             # detected.
@@ -624,42 +643,43 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                               name = spectrum_name,
                               max_val_criter = str(max_val_criter))
 
-    # Try to extract spectrum for all the candidates after removing duplicates and create a png for all of them.
-    for candidate in star_elt:
-        # Extract rough spectrum with aperture photometry
-        wave_samp,spectrum = spec.extract_planet_spectrum(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename,
-                                                          (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
-                                                          PSF_cube, method="aperture")
+    if not noPlots:
+        # Try to extract spectrum for all the candidates after removing duplicates and create a png for all of them.
+        for candidate in star_elt:
+            # Extract rough spectrum with aperture photometry
+            wave_samp,spectrum = spec.extract_planet_spectrum(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename,
+                                                              (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
+                                                              PSF_cube, method="aperture")
 
-        # Create the png with the extracted spectrum as well as all the spectral templates used.
-        plt.close(2)
-        plt.figure(2)
-        plt.plot(wave_samp,spectrum/np.nanmean(spectrum),"rx-",markersize = 7, linewidth = 2)
-        # legend string list. Will be updated as things get plotted
-        legend_str = ["candidate spectrum"]
-        # Plot the spectral templates
-        for spectrum_folder in spectrum_folders_list:
-            spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
-            spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
+            # Create the png with the extracted spectrum as well as all the spectral templates used.
+            plt.close(2)
+            plt.figure(2)
+            plt.plot(wave_samp,spectrum/np.nanmean(spectrum),"rx-",markersize = 7, linewidth = 2)
+            # legend string list. Will be updated as things get plotted
+            legend_str = ["candidate spectrum"]
+            # Plot the spectral templates
+            for spectrum_folder in spectrum_folders_list:
+                spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
+                spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
 
-            # Read the fits file containing the spectrum in the folders insides the planet detection input folder
-            hdulist = pyfits.open(spectrum_folder+os.path.sep+'template_spectrum.fits')
-            spec_data = hdulist[1].data
-            hdulist.close()
+                # Read the fits file containing the spectrum in the folders insides the planet detection input folder
+                hdulist = pyfits.open(spectrum_folder+os.path.sep+'template_spectrum.fits')
+                spec_data = hdulist[1].data
+                hdulist.close()
 
-            wave_samp = spec_data[0]
-            spectrum_template = spec_data[1]
+                wave_samp = spec_data[0]
+                spectrum_template = spec_data[1]
 
-            plt.plot(wave_samp,spectrum_template/np.nanmean(spectrum_template),"--")
-            legend_str.append(spectrum_name)
-        plt.title("Candidate spectrum and templates used")
-        plt.xlabel("Wavelength (mum)")
-        plt.ylabel("Mean Normalized")
-        ax = plt.gca()
-        ax.legend(legend_str, loc = 'upper right', fontsize=12)
-        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+which_metric+"_"+ \
-                    str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
-        plt.close(2)
+                plt.plot(wave_samp,spectrum_template/np.nanmean(spectrum_template),"--")
+                legend_str.append(spectrum_name)
+            plt.title("Candidate spectrum and templates used")
+            plt.xlabel("Wavelength (mum)")
+            plt.ylabel("Mean Normalized")
+            ax = plt.gca()
+            ax.legend(legend_str, loc = 'upper right', fontsize=12)
+            plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+which_metric+"_"+ \
+                        str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
+            plt.close(2)
 
 
     # Save the xml file with the non redundant detection
@@ -668,10 +688,11 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
     tree.write(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.xml')
 
-    # Save the summary png image with the detection of all the spectral templates.
-    if not mute:
-        print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png')
-    plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')
-    plt.close(1)
+    if not noPlots:
+        # Save the summary png image with the detection of all the spectral templates.
+        if not mute:
+            print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png')
+        plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')
+        plt.close(1)
 
     return 1
