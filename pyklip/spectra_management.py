@@ -34,11 +34,8 @@ def get_gpi_filter(filter_name):
     """
 
     # get the path to the file containing the spectrum in the pipeline directory
-    if platform.system() == "Windows":
-        filename = ".\\filters\\GPI-filter-"+filter_name+".fits"
-    else:
-        filename = "./filters/GPI-filter-"+filter_name+".fits"
-
+    pykliproot = os.path.dirname(os.path.realpath(__file__))
+    filename = pykliproot+os.path.sep+"filters"+os.path.sep+"GPI-filter-"+filter_name+".fits"
 
     # load the fits array
     hdulist = pyfits.open(filename)
