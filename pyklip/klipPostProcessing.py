@@ -92,6 +92,7 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                     If None do it sequentially.
     :param detection_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells 
                             which metric should be used for the detection. The default value is "shape".
+    :param noPlots: Prevent the use of matplotlib. No png will be produced.
     :return: 1
             Return the outputs as defined in kpp_metrics.calculate_metrics() and kpp_detections.candidate_detection().
     '''
@@ -200,8 +201,7 @@ def planet_detection_in_dir_per_file(filename,
                                       proba_using_mask_per_pixel = False,
                                       SNR = True,
                                       probability = True,
-                                      detection_metric = None,
-                                      noPlots = False):
+                                      detection_metric = None):
     '''
     Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given
     cube and several spectral templates.
@@ -390,7 +390,7 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(probability),
                                                                            itertools.repeat(N_threads_metric),
                                                                            itertools.repeat(detection_metric),
-                                                                           itertools.repeat(noPlots)))
+                                                                           itertools.repeat(True)))
         pool.close()
     else:
         # Run planet dection on the given file with a given spectrum template sequentially (will be really slow...)
@@ -415,14 +415,14 @@ def planet_detection_in_dir_per_file(filename,
                                                           probability = probability,
                                                           N_threads_metric = None,
                                                           detection_metric = detection_metric,
-                                                          noPlots = noPlots)
+                                                          noPlots = True)
 
     # If the user didn't ask for the metrics only the next function gather the detection results with the different
     # spectra. It creates outputs in the input directory.
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
-        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list, noPlots = noPlots)
+        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list, noPlots = False)
 
 def planet_detection_in_dir_star(params):
     """
@@ -450,8 +450,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                             proba_using_mask_per_pixel = False,
                             SNR = True,
                             probability = True,
-                            detection_metric = None,
-                            noPlots = False):
+                            detection_metric = None):
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
@@ -534,60 +533,27 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
             for f_name in filelist_klipped_cube:
                 print(f_name)
 
-        # Disabled feature to parallelize the call to planet_detection_in_dir_per_file. Was suppose to create one
-        # process per suitable file.
-        # It is disabled because the number of threads is actually automatically optimized later. Basically all the free
-        #  cores are used to parallelize the metric and probability calculation.
-        if 0 and threads:
-            N_threads = np.size(filelist_klipped_cube)
-            pool = NoDaemonPool(processes=N_threads)
-            #pool = mp.Pool(processes=N_threads)
-            pool.map(planet_detection_in_dir_per_file_star, itertools.izip(filelist_klipped_cube,
-                                                                           itertools.repeat(metrics),
-                                                                           itertools.repeat(directory),
-                                                                           itertools.repeat(outputDir),
-                                                                           itertools.repeat(spectrum_model),
-                                                                           itertools.repeat(star_type),
-                                                                           itertools.repeat(star_temperature),
-                                                                           itertools.repeat(user_defined_PSF_cube),
-                                                                           itertools.repeat(metrics_only),
-                                                                           itertools.repeat(planet_detection_only),
-                                                                           itertools.repeat(mute),
-                                                                           itertools.repeat(threads),
-                                                                           itertools.repeat(GOI_list),
-                                                                           itertools.repeat(overwrite_metric),
-                                                                           itertools.repeat(overwrite_stat),
-                                                                           itertools.repeat(proba_using_mask_per_pixel),
-                                                                           itertools.repeat(SNR),
-                                                                           itertools.repeat(probability),
-                                                                           itertools.repeat(detection_metric),
-                                                                           itertools.repeat(noPlots)))
-            pool.close()
-        else:
-            # Run the planet dection for every single file sastisfying the filename filter.
-            for filename in filelist_klipped_cube:
-                planet_detection_in_dir_per_file(filename,
-                                                 metrics = metrics,
-                                                 directory = directory,
-                                                 outputDir = outputDir,
-                                                 spectrum_model = spectrum_model,
-                                                 star_type = star_type,
-                                                 star_temperature = star_temperature,
-                                                 user_defined_PSF_cube = user_defined_PSF_cube,
-                                                 metrics_only = metrics_only,
-                                                 planet_detection_only = planet_detection_only,
-                                                 mute = mute,
-                                                 threads = threads,
-                                                 GOI_list = GOI_list,
-                                                 overwrite_metric = overwrite_metric,
-                                                 overwrite_stat = overwrite_stat,
-                                                 proba_using_mask_per_pixel = proba_using_mask_per_pixel,
-                                                 SNR = SNR,
-                                                 probability = probability,
-                                                 detection_metric = detection_metric,
-                                                 noPlots = noPlots)
-
-
+        # Run the planet dection for every single file sastisfying the filename filter.
+        for filename in filelist_klipped_cube:
+            planet_detection_in_dir_per_file(filename,
+                                             metrics = metrics,
+                                             directory = directory,
+                                             outputDir = outputDir,
+                                             spectrum_model = spectrum_model,
+                                             star_type = star_type,
+                                             star_temperature = star_temperature,
+                                             user_defined_PSF_cube = user_defined_PSF_cube,
+                                             metrics_only = metrics_only,
+                                             planet_detection_only = planet_detection_only,
+                                             mute = mute,
+                                             threads = threads,
+                                             GOI_list = GOI_list,
+                                             overwrite_metric = overwrite_metric,
+                                             overwrite_stat = overwrite_stat,
+                                             proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                                             SNR = SNR,
+                                             probability = probability,
+                                             detection_metric = detection_metric)
 
 
 
