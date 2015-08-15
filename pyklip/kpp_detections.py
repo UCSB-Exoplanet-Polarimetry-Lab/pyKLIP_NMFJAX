@@ -407,8 +407,9 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
     N_spectra_folders = len(spectrum_folders_list)
 
-    # Open the figure in which the detections for different spectra will be plotted
-    plt.figure(1,figsize=(8*N_spectra_folders,16))
+    if not noPlots:
+        # Open the figure in which the detections for different spectra will be plotted
+        plt.figure(1,figsize=(8*N_spectra_folders,16))
 
     if not mute:
         print("Looking for folders in " + planet_detec_dir + " ...")
@@ -694,5 +695,220 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             print("Saving "+planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png')
         plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidates-'+which_metric+'.png', bbox_inches='tight')
         plt.close(1)
+
+    return 1
+
+
+
+def generate_pngs_sequentially(planet_detec_dir, mute = True,which_metric = None):
+    '''
+    Generate the png for a the spectrum template of a planet detection folder (corresponding to one file) based on the
+    existing fits and the xml files.
+
+    The reason for the existence of this function is that matplotlib doesn't work well with multiprocessing; it would
+    crash once in a while. So the creation of the png can (and should) be disabled in the planet detection routines and
+    only after everything else has been computed one can generate sequentially the plots and save the pngs.
+
+    :param planet_detec_dir: Directory of the detection folder. We recall that the convention is to create one folder
+                            per data cube to store the outputs of the detection algorithm. This folder will contain
+                            subfolder(s) for each spectral template.
+                    wavelength samples and should be 37, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
+    :param mute: If True prevent printed log outputs.
+    :param which_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells which
+                metric should be used for the detection. The default value is "shape".
+    :return: 1 if successful and None otherwise.
+            Creates some pngs in the spectrum template subfolders
+            TBD
+    '''
+
+    # Default value of the metric used for the detection is "shape".
+    if which_metric is None:
+        which_metric = "shape"
+
+
+    # Check that the input directory is a valid path
+    planet_detec_dir_glob = glob.glob(planet_detec_dir)
+    if np.size(planet_detec_dir_glob) == 0:
+        if not mute:
+            print("/!\ Quitting! Couldn't find the following directory " + planet_detec_dir)
+        return None
+    else:
+        planet_detec_dir = planet_detec_dir_glob[0]
+
+    # First recover the name of the data cube file that was reduced for this folder.
+    # The name of the file is in the folder name so we can split the input directory
+    planet_detec_dir_splitted = planet_detec_dir.split(os.path.sep)
+    # original_cube_filename is the filename of the original klipped cube
+    original_cube_filename = planet_detec_dir_splitted[len(planet_detec_dir_splitted)-2].split("planet_detec_")[1]
+    original_cube_filename += "-speccube.fits"
+
+    # Read the data cube fits with headers
+    hdulist = pyfits.open(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename)
+    cube = hdulist[1].data
+    exthdr = hdulist[1].header
+    prihdr = hdulist[0].header
+    hdulist.close()
+
+    # Get shape of the data cube
+    nl,ny,nx = np.shape(cube)
+
+    # Get center of the image (star position)
+    try:
+        # Retrieve the center of the image from the fits headers.
+        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    except:
+        # If the keywords could not be found the center is defined as the middle of the image
+        if not mute:
+            print("Couldn't find PSFCENTX and PSFCENTY keywords.")
+        center = [(nx-1)/2,(ny-1)/2]
+
+
+    # Get current star name
+    try:
+        # OBJECT: keyword in the primary header with the name of the star.
+        star_name = prihdr['OBJECT'].strip().replace (" ", "_")
+    except:
+        # If the object name could nto be found cal lit unknown_object
+        star_name = "UNKNOWN_OBJECT"
+
+    # Get the list of folders in planet_detec_dir
+    # The list of folders should also be the list of spectral templates for which a detection has been ran.
+    spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
+    N_spectra_folders = len(spectrum_folders_list)
+
+    if not mute:
+        print("Looking for folders in " + planet_detec_dir + " ...")
+        print("... They should contain spectral template based detection algorithm outputs.")
+    all_templates_detections = []
+    # Loop over the folders in spectrum_folders_list
+    for spec_id,spectrum_folder in enumerate(spectrum_folders_list):
+        # Get the spectrum name which should be the name the of the folder
+        spectrum_folder_splitted = spectrum_folder.split(os.path.sep)
+        spectrum_name = spectrum_folder_splitted[len(spectrum_folder_splitted)-2]
+        if not mute:
+            print("Found the folder " + spectrum_name)
+
+
+        # Look for a spectrum template fits file
+        template_spectrum_file_list = glob.glob(spectrum_folder+os.path.sep+"template_spectrum.fits")
+        #print(template_spectrum_file_list)
+        if len(template_spectrum_file_list) == 1:
+            # Get the path of the file from the result of the glob function
+            spectrum_template_file = template_spectrum_file_list[0]
+            hdulist = pyfits.open(spectrum_template_file)
+            wave_and_spec = hdulist[1].data
+            spec_sampling = wave_and_spec[0]
+            spectrum = wave_and_spec[1]
+            plt.close(2)
+            plt.figure(2)
+            plt.plot(spec_sampling,spectrum,"rx-",markersize = 7, linewidth = 2)
+            plt.title("Template spectrum use in this folder")
+            plt.xlabel("Wavelength (mum)")
+            plt.ylabel("Norm-2 Normalized")
+            plt.savefig(spectrum_folder+'template_spectrum.png', bbox_inches='tight')
+            plt.close(2)
+
+
+        # Look for the metric, metric probability, detection xml file and spectral template in the folder
+        candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+which_metric+".xml")
+        #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
+        shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
+        matchedFilter_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
+        shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
+        matchedFilter_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter.fits")
+
+        # Only if they are all found we process with the following
+        if len(candidates_log_file_list) == 1 and \
+                        len(shape_proba_file_list) == 1 and \
+                        len(shape_file_list) == 1 and \
+                        len(template_spectrum_file_list) == 1 and \
+                        len(matchedFilter_proba_file_list) == 1 and \
+                        len(matchedFilter_file_list) == 1:
+
+            # Get the path of the files from the results of the glob function
+            candidates_log_file = candidates_log_file_list[0]
+            shape_proba_file = shape_proba_file_list[0]
+            shape_file = shape_file_list[0]
+            matchedFilter_file = matchedFilter_file_list[0]
+            matchedFilter_proba_file = matchedFilter_proba_file_list[0]
+            template_spectrum_file = template_spectrum_file_list[0]
+
+            # Read shape_file
+            if which_metric == "shape":
+                hdulist = pyfits.open(shape_proba_file)
+                metric_proba = hdulist[1].data
+            elif which_metric == "matchedFilter":
+                hdulist = pyfits.open(matchedFilter_proba_file)
+                metric_proba = hdulist[1].data
+            elif which_metric == "maxShapeMF":
+                hdulist = pyfits.open(shape_proba_file)
+                shape_proba = hdulist[1].data
+                hdulist = pyfits.open(matchedFilter_proba_file)
+                matchedFilter_proba = hdulist[1].data
+                metric_proba = np.max([shape_proba,matchedFilter_proba],axis=0)
+            hdulist.close()
+            x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
+
+
+            # Get tree of the xml file with the candidates
+            #print(candidates_log_file)
+            tree = ET.parse(candidates_log_file)
+            root = tree.getroot()
+
+            # The following plots the criterion map and locate the candidates or local maxima before saving the result as a png.
+            # Following paragraph plots the candidate image
+            plt.close(3)
+            plt.figure(3,figsize=(16,16))
+            # plot the criterion map. One axis has to be mirrored to get North up.
+            plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            ax = plt.gca()
+            # Loop over the candidates
+            for candidate in root[0].find("candidates"):
+                # get the position of the candidate and the criterion value from the candidate tree
+                candidate_id = int(candidate.attrib["id"])
+                max_val_criter = float(candidate.attrib["max_val_criter"])
+                x_max_pos = float(candidate.attrib["x_max_pos"])
+                y_max_pos = float(candidate.attrib["y_max_pos"])
+
+                # Draw an arrow with some text to point at the candidate
+                ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = "black", xy=(x_max_pos+0.0, y_max_pos+0.0),
+                        xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
+                        textcoords='data',
+                        arrowprops=dict(arrowstyle="->",
+                                        linewidth = 1.,
+                                        color = 'black')
+                        )
+            plt.clim(0.,10.0)
+            # Save the candidate plot as png in the same folder as the metric maps.
+            # Filename is <star_name>-detectionIm_candidates-<metric>.png
+            plt.savefig(spectrum_folder+os.path.sep+star_name+'-detectionIm_candidates-'+which_metric+'.png', bbox_inches='tight')
+            plt.close(3)
+
+            # Following paragraph plots the all local maxima image
+            plt.close(3)
+            # Show the local maxima in the criterion map
+            plt.figure(3,figsize=(16,16))
+            # plot the criterion map. One axis has to be mirrored to get North up.
+            plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            ax = plt.gca()
+            # Loop over all local maxima
+            for spot in root[0].find("all"):
+                # get the position of the maximum and the criterion value from the all_elt tree
+                candidate_id = int(spot.attrib["id"])
+                max_val_criter = float(spot.attrib["max_val_criter"])
+                x_max_pos = float(spot.attrib["x_max_pos"])
+                y_max_pos = float(spot.attrib["y_max_pos"])
+                ax.annotate(str(candidate_id)+","+"{0:02.1f}".format(max_val_criter), fontsize=20, color = 'black', xy=(x_max_pos+0.0, y_max_pos+0.0),
+                        xycoords='data', xytext=(x_max_pos+10, y_max_pos-10),
+                        textcoords='data',
+                        arrowprops=dict(arrowstyle="->",
+                                        linewidth = 1.,
+                                        color = 'black')
+                        )
+            plt.clim(0.,10.0)
+            # Save the plot with all local maxima as png in the same folder as the which_metric maps.
+            # Filename is <star_name>-detectionIm_all-<which_metric>.png
+            plt.savefig(spectrum_folder+os.path.sep+star_name+'-detectionIm_all-'+which_metric+'.png', bbox_inches='tight')
+            plt.close(3)
 
     return 1
