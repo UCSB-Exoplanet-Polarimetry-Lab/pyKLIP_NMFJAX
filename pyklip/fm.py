@@ -7,9 +7,9 @@ from scipy.stats import norm
 import ctypes
 import itertools
 import multiprocessing as mp
-from pyklip.parallelized import _arraytonumpy, _align_and_scale
+from pyklip.parallelized import _arraytonumpy
 
-def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
+def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb=None):
     """
     linear algebra of KLIP with linear perturbation
     disks and point sources
@@ -18,14 +18,16 @@ def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
         sci: array of length p containing the science data
         refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
-        models: N x p array of the N models corresponding to reference images
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
-        covmat: covariance matrix of reference images (for large N, useful)
-        return_basis: If true, return KL basis vectors (used when onesegment==True)
+        models: N x p array of the N models corresponding to reference images
+        covar_psfs: covariance matrix of reference images (for large N, useful)
+        process_perturb: function to process the perturbed KL modes. If not defined, will project on PSF and
+                            subtract on sci image
 
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
+        KL_basis: array of shape (p, b) that are the KL basis vectors
 
     """
     #remove means and nans
@@ -36,8 +38,6 @@ def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
     refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
-    models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
-    models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
     # calculate the covariance matrix for the reference PSFs
     # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
@@ -66,37 +66,46 @@ def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
 
-    #expansion of the covariance matrix
-    CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
 
-    Nrefs = evals.shape[0]
-    KL_perturb = np.zeros(KL_basis.shape)
-    Pert1 = np.zeros(KL_basis.shape)
-    Pert2 = np.zeros(KL_basis.shape)
-    CoreffsKL = np.zeros((Nrefs,Nrefs))
-    Mult = np.zeros((Nrefs,Nrefs))
-    cross = np.zeros((Nrefs,Nrefs))
 
-    for i in range(Nrefs):
+    if models is not None:
+
+        models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
+        models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+
+        #expansion of the covariance matrix
+        CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
+
+        Nrefs = evals.shape[0]
+        KL_perturb = np.zeros(KL_basis.shape)
+        Pert1 = np.zeros(KL_basis.shape)
+        Pert2 = np.zeros(KL_basis.shape)
+        CoreffsKL = np.zeros((Nrefs,Nrefs))
+        Mult = np.zeros((Nrefs,Nrefs))
+        cross = np.zeros((Nrefs,Nrefs))
+
+        for i in range(Nrefs):
+            for j in range(Nrefs):
+                cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
+
+        for i in range(Nrefs):
+            for j in range(Nrefs):
+                if j == i:
+                    Mult[i,j] = -1./(2.*evals[j])
+                else:
+                    Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
+            CoreffsKL[i,:] = cross[i]*Mult[i]
+
+
         for j in range(Nrefs):
-            cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
+            Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
+            Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
+            KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
 
-    for i in range(Nrefs):
-        for j in range(Nrefs):
-            if j == i:
-                Mult[i,j] = -1./(2.*evals[j])
-            else:
-                Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
-        CoreffsKL[i,:] = cross[i]*Mult[i]
-
-
-    for j in range(Nrefs):
-        Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
-        Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
-        KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
-
-    KL_pert = KL_perturb + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
-    #Perhaps scaling issue? or my coding failure?g
+        KL_pert = KL_perturb + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
+        #Perhaps scaling issue? or my coding failure?g
+    else:
+        KL_pert = KL_basis
 
     inner_products = np.dot(sci_mean_sub_rows, KL_pert)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
@@ -104,12 +113,13 @@ def klip_math(sci, refs, models, numbasis, covar_psfs=None, return_basis=False):
     klip = np.dot(inner_products[numbasis,:], KL_pert.T)
 
     sub_img_rows_selected = sci_rows_selected - klip
+
     sub_img_rows_selected[sci_nanpix] = np.nan
 
-    if return_basis is True:
-        return sub_img_rows_selected.transpose(), KL_basis.transpose()
-    else:
-        return sub_img_rows_selected.transpose()
+    return sub_img_rows_selected.transpose(), KL_basis.transpose()
+
+
+
 
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None, minrot=0): #Zack
     """
@@ -247,8 +257,9 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
         interm_imgs: intermediate data product shape - what is saved on a sector to sector basis before combining to
-                     form the output of that sector
-        interm_imgs_shape: shape of interm_imgs
+                     form the output of that sector. The first dimention should be N (i.e. same thing for each science
+                     image)
+        interm_imgs_shape: shape of interm_imgs. The first dimention should be N.
         aux_imgs: auxilliary data
         aux_imgs_shape: shape of aux_imgs
     """
@@ -298,7 +309,7 @@ def _align_and_scale_subset(thread_index, aligned_center):
     combos = [combo for combo in itertools.product(np.arange(original_imgs.shape[0]), np.arange(np.size(unique_wvs)))]
 
     # figure out which ones this thread should do
-    numframes_todo = np.round(len(combos)/mp.cpu_count())
+    numframes_todo = int(np.ceil(len(combos)/mp.cpu_count()))
     # the last thread needs to finish all of them
     if thread_index == mp.cpu_count() - 1:
         combos_todo = combos[thread_index*numframes_todo:]
@@ -313,8 +324,9 @@ def _align_and_scale_subset(thread_index, aligned_center):
     return
 
 
-def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
-                      numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, spectrum=None
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
+                      movement=3, numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
+                      spectrum=None
                       ):
     """
     multithreaded KLIP PSF Subtraction
@@ -326,6 +338,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
         wvs: N length array of the wavelengths
         IWA: inner working angle (in pixels)
         fm_class: class that implements the the forward modelling functionality
+        OWA: if defined, the outer working angle for pyklip. Otherwise, it will pick it as the cloest distance to a
+            nan in the first frame
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: Annuli to use for KLIP. Can be a number, or a list of 2-element tuples (a, b) specifying
                 the pixel bondaries (a <= r < b) for each annulus
@@ -384,20 +398,21 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
-    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    if OWA is None:
+        OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
     dr = float(OWA - IWA) / (annuli)
 
     # error checking for too small of annuli go here
 
     # calculate the annuli
     rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
-    #last annulus should mostly emcompass everything
-    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    # last annulus should mostly emcompass everything
+    # rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
 
     # divide annuli into subsections
     dphi = 2 * np.pi / subsections
-    phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
-    phi_bounds[-1][1] = 2. * np.pi
+    phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
+    phi_bounds[-1][1] = 2 * np.pi
 
 
     # calculate how many iterations we need to do
@@ -455,20 +470,17 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
         #save it to shared memory
     for aligned_output in aligned_outputs:
             aligned_output.wait()
-            print("got one")
 
-    import pdb
-    pdb.set_trace()
 
     # list to store each threadpool task
     tpool_outputs = []
-    first_pass = True # first pass after algin and scale
     sector_job_queued = np.zeros(tot_sectors) # count for jobs in the tpool queue for each sector
+
     # as each is finishing, queue up the aligned data to be processed with KLIP
     for sector_index, ((radstart, radend),(phistart,phiend)) in enumerate(itertools.product(rad_bounds, phi_bounds)):
         # calculate sector size
         # create a coordinate system.
-        x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+        x, y = np.meshgrid(np.arange(original_imgs_shape[2] * 1.0), np.arange(original_imgs_shape[1] * 1.0))
         x.shape = (x.shape[0] * x.shape[1]) #Flatten
         y.shape = (y.shape[0] * y.shape[1])
         r = np.sqrt((x - aligned_center[0])**2 + (y - aligned_center[1])**2)
@@ -477,10 +489,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
         #grab the pixel location of the section we are going to anaylze
         phi_rotate = ((phi) % (2.0 * np.pi)) - np.pi
         section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+        sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
 
-        interm_data, interm_shape = fm_class.alloc_interm(np.size(section_ind), original_imgs.shape[0])
+        interm_data, interm_shape = fm_class.alloc_interm(sector_size, original_imgs_shape[0])
 
-        for wv_index, wv_value in unique_wvs:
+        for wv_index, wv_value in enumerate(unique_wvs):
 
             # pick out the science images that need PSF subtraction for this wavelength
             scidata_indicies = np.where(wvs == wv_value)[0]
@@ -491,7 +504,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
                                                 args=(file_index, sector_index, radstart, radend, phistart, phiend,
                                                       parang, wv_value, wv_index, (radstart + radend) / 2., numbasis,
                                                       movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                      fm_class, interm_data, interm_shape, aux_data, aux_shape))
+                                                      fm_class))
                                 for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
 
@@ -499,21 +512,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
         while len(tpool_outputs) > 0:
-            finished_sector_index = tpool_outputs.pop(0)[0]
-            sector_job_queued[finished_sector_index] -= 1
+            tpool_outputs.pop(0).wait()
 
             # if this is the last job finished for this sector,
             # do something here?
 
         # run custom function to handle end of sector post-processing analysis
 
-    #harness the data!
-    #check make sure we are completely unblocked before outputting the data
-    print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
-    for index, out in enumerate(tpool_outputs):
-        out.wait()
-        if (index + 1) % 10 == 0:
-            print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
 
 
 
@@ -545,7 +550,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mode='ADI+SDI'
 
 
 def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phistart, phiend, parang, wavelength,
-                                    wv_index, avg_rad, numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum):
+                                    wv_index, avg_rad, numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
+                                    fm_class):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -582,11 +588,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     phi = np.arctan2(y - ref_center[1], x - ref_center[0])
 
     #grab the pixel location of the section we are going to anaylze based on the parallactic angle of the image
-    phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi)) - np.pi
-    section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+    phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
+    # in case of wrap around
+    if phistart < phiend:
+        section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+    else:
+        section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
+    #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
     #load aligned images for this wavelength
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
@@ -666,7 +677,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
 
     try:
-        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
+        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
         return False

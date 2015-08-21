@@ -14,7 +14,7 @@ class NoFM():
         Returns:
             None
         """
-        self.inputs_shape = numbasis
+        self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.outputs_shape = inputs_shape + numbasis.shape
         self.need_aux = False
@@ -40,13 +40,13 @@ class NoFM():
         return outputs, outputs_shape
 
 
-    def alloc_interm(self, sector_size, numsciframes):
+    def alloc_interm(self, max_sector_size, numsciframes):
         """Allocates shared memory array for intermediate step
 
         Intermediate step is allocated for a sector by sector basis
 
         Args:
-            sector_size: number of pixels in this sector
+            max_sector_size: number of pixels in this sector. Max because this can be variable. Stupid rotating sectors
 
         Returns:
             interm: mp.array to store intermediate products from one sector in
@@ -54,10 +54,10 @@ class NoFM():
 
         """
 
-        interm_size = sector_size * np.size(self.numbasis) * numsciframes
+        interm_size = max_sector_size * np.size(self.numbasis) * numsciframes
 
         interm = mp.Array(ctypes.c_double, interm_size)
-        interm_shape = [numsciframes, sector_size, np.size(self.numbasis)] # (numframes, size of sector, b)
+        interm_shape = [numsciframes, max_sector_size, np.size(self.numbasis)] # (numframes, size of sector, b)
 
         return interm, interm_shape
 
@@ -75,7 +75,5 @@ class NoFM():
             aux_shape: shape of auxilliary array
 
         """
-        self.aux = None
-        self.aux_shape = None
 
-        return self.aux, self.aux_shape
+        return None, None
