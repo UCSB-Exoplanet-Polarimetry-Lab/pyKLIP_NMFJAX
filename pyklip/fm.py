@@ -3,6 +3,7 @@ import pyklip.klip as klip
 import numpy as np
 import scipy.linalg as la
 from scipy.stats import norm
+import scipy.ndimage as ndimage
 
 import ctypes
 import itertools
@@ -242,6 +243,7 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
 #####################################################################
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
+                output_imgs_numstacked,
                 pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, aux_imgs, aux_imgs_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
@@ -252,8 +254,10 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         original_imgs_shape: (N,y,x), N = number of frames = num files * num wavelengths
         aligned: aligned and scaled images for processing.
         aligned_imgs_shape: (wv, N, y, x), wv = number of wavelengths per datacube
-        output_imgs: outputs after KLIP-FM processing (NOTE: Is a list of whatevers - top level strucutre must be list!)
-        output_imgs_shape: a list of shapes (if applicable) (NOTE: must be list!)
+        output_imgs: PSF subtraceted images
+        output_imgs_shape: (N, y, x, b)
+        output_imgs_numstacked: number of images stacked together for each pixel due to geometry overlap. Shape of
+                                (N, y x). Output without the b dimension
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
         interm_imgs: intermediate data product shape - what is saved on a sector to sector basis before combining to
@@ -263,8 +267,8 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         aux_imgs: auxilliary data
         aux_imgs_shape: shape of aux_imgs
     """
-    global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, img_pa, img_wv, img_center,\
-        interm, interm_shape,aux, aux_shape
+    global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, \
+        img_wv, img_center, interm, interm_shape,aux, aux_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -274,6 +278,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     # output images after KLIP processing
     outputs = output_imgs
     outputs_shape = output_imgs_shape
+    outputs_numstacked = output_imgs_numstacked
     # parameters for each image (PA, wavelegnth, image center)
     img_pa = pa_imgs
     img_wv = wvs_imgs
@@ -309,14 +314,24 @@ def _align_and_scale_subset(thread_index, aligned_center):
     combos = [combo for combo in itertools.product(np.arange(original_imgs.shape[0]), np.arange(np.size(unique_wvs)))]
 
     # figure out which ones this thread should do
-    numframes_todo = int(np.ceil(len(combos)/mp.cpu_count()))
+    numframes_todo = int(np.round(len(combos)/mp.cpu_count()))
+    leftovers = len(combos) % mp.cpu_count()
     # the last thread needs to finish all of them
     if thread_index == mp.cpu_count() - 1:
-        combos_todo = combos[thread_index*numframes_todo:]
+        combos_todo = combos[leftovers + thread_index*numframes_todo:]
+        print(len(combos), len(combos_todo), leftovers + thread_index*numframes_todo)
     else:
-        combos_todo = combos[thread_index*numframes_todo:(thread_index+1)*numframes_todo]
+        if thread_index < leftovers:
+            leftovers_completed = thread_index
+            plusone = 1
+        else:
+            leftovers_completed = leftovers
+            plusone = 0
 
-    print(len(combos), len(combos_todo))
+        combos_todo = combos[leftovers_completed + thread_index*numframes_todo:(thread_index+1)*numframes_todo + leftovers_completed + plusone]
+        print(len(combos), len(combos_todo), leftovers_completed + thread_index*numframes_todo, (thread_index+1)*numframes_todo + leftovers_completed + plusone)
+
+    #print(len(combos), len(combos_todo), leftovers, thread_index)
 
     for img_index, ref_wv_index in combos_todo:
         aligned_imgs[ref_wv_index,img_index,:,:] = klip.align_and_scale(original_imgs[img_index], aligned_center,
@@ -324,9 +339,150 @@ def _align_and_scale_subset(thread_index, aligned_center):
     return
 
 
+def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend, padding, parang):
+    """
+    Gets the pixels (via numpy.where) that correspond to this section
+
+    Args:
+        input_shape: shape of the image [ysize, xsize] [pixels]
+        img_center: [x,y] image center [pxiels]
+        radstart: minimum radial distance of sector [pixels]
+        radend: maximum radial distance of sector [pixels]
+        phistart: minimum azimuthal coordinate of sector [radians]
+        phiend: maximum azimuthal coordinate of sector [radians]
+        padding: number of pixels to pad to the sector [pixels]
+        parang: how much to rotate phi due to field rotation [IN DEGREES]
+
+    Returns:
+        sector_ind: the pixel coordinates that corespond to this sector
+    """
+    # create a coordinate system.
+    x, y = np.meshgrid(np.arange(input_shape[1] * 1.0), np.arange(input_shape[0] * 1.0))
+    x.shape = (x.shape[0] * x.shape[1]) #Flatten
+    y.shape = (y.shape[0] * y.shape[1])
+    r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
+    phi = np.arctan2(y - img_center[1], x - img_center[0])
+
+    # incorporate padding
+    radstart -= padding
+    radend += padding
+    phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
+    phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
+
+    # grab the pixel location of the section we are going to anaylze
+    phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
+    # normal case where there's no 2 pi wrap
+    if phistart < phiend:
+        section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+    # 2 pi wrap case
+    else:
+        section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
+
+    return section_ind
+
+
+
+def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding, img_center, flipx=True,
+                         new_center=None):
+    """
+    Rotate and save sector in output image at desired ranges
+
+    Args:
+        input_shape: shape of input_image
+        sector: data in the sector to save to output_img
+        sector_ind: index into input img (corresponding to input_shape) for the original sector
+        output_img: the array to save the data to
+        output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
+                               skipping bookkeeping
+        angle: angle that the sector needs to rotate (I forget the convention right now)
+
+        The next 6 parameters define the sector geometry in input image coordinates
+        radstart: radius from img_center of start of sector
+        radend: radius from img_center of end of sector
+        phistart: azimuthal start of sector
+        phiend: azimuthal end of sector
+        padding: amount of padding around each sector
+        img_center: center of image in input image coordinate
+
+        flipx: if true, flip the x coordinate to switch coordinate handiness
+        new_center: if not none, center of output_img. If none, center stays the same
+    """
+    # convert angle to radians
+    angle_rad = np.radians(angle)
+
+    #incorporate padding
+    radstart -= padding
+    radend += padding
+    phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
+    phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
+
+    # create the coordinate system of the image to manipulate for the transform
+    dims = input_shape
+    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+
+    # if necessary, move coordinates to new center
+    if new_center is not None:
+        dx = new_center[0] - img_center[0]
+        dy = new_center[1] - img_center[1]
+        x -= dx
+        y -= dy
+
+    # flip x if needed to get East left of North
+    if flipx is True:
+        x = img_center[0] - (x - img_center[0])
+
+    # do rotation. CW rotation formula to get a CCW of the image
+    xp = (x-img_center[0])*np.cos(angle_rad) + (y-img_center[1])*np.sin(angle_rad) + img_center[0]
+    yp = -(x-img_center[0])*np.sin(angle_rad) + (y-img_center[1])*np.cos(angle_rad) + img_center[1]
+
+    if new_center is None:
+        new_center = img_center
+
+    rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
+    phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
+
+    # normal case without 2 pi wrap
+    if phiend >=  phistart:
+        rot_sector_pix = np.where((rp >= radstart) & (rp < radend) & (phip >= phistart) & (phip < phiend))
+    # 2pi wrap
+    else:
+        rot_sector_pix = np.where((rp >= radstart) & (rp < radend) & ((phip >= phistart) | (phip < phiend)))
+
+    blank_input = np.zeros(dims[1] * dims[0])
+    blank_input[sector_ind] = sector
+    blank_input.shape = [dims[0], dims[1]]
+
+    # resample image based on new coordinates
+    # scipy uses y,x convention when meshgrid uses x,y
+    # stupid scipy functions can't work with masked arrays (NANs)
+    # and trying to use interp2d with sparse arrays is way to slow
+    # hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
+    # then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
+    minval = np.min([np.nanmin(blank_input), 0.0])
+    nanpix = np.where(np.isnan(blank_input))
+    medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
+    input_copy = np.copy(blank_input)
+    input_copy[nanpix] = minval * 5.0
+    rot_sector_mask = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=minval * 5.0)
+    input_copy[nanpix] = medval
+    rot_sector = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
+    rot_sector[np.where(rot_sector_mask < minval)] = np.nan
+
+    # save output sector. We need to reshape the array into 2d arrays to save it
+    output_img.shape = [outputs_shape[1], outputs_shape[2]]
+    output_img[rot_sector_pix] = np.nansum([output_img[rot_sector_pix], rot_sector], axis=0)
+    output_img.shape = [outputs_shape[1] * outputs_shape[2]]
+
+    # Increment the numstack counter if it is not None
+    if output_img_numstacked is not None:
+        output_img_numstacked.shape = [outputs_shape[1], outputs_shape[2]]
+        output_img_numstacked[rot_sector_pix] += 1
+        output_img_numstacked.shape = [outputs_shape[1] *  outputs_shape[2]]
+
+
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=3, numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
-                      spectrum=None
+                      spectrum=None, padding=3
                       ):
     """
     multithreaded KLIP PSF Subtraction
@@ -360,7 +516,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     the size of the PSF (TODO: make PSF size another quanitity)
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
-
+        padding: for each sector, how many extra pixels of padding should we have around the sides.
 
 
     Returns:
@@ -446,19 +602,29 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
     centers_imgs_np[:] = centers
 
-    # CREATE Custom Shared Memory Arrays: outputs and aux here
-    # make output array which is generated by the fm_class to be use case specific
-    output_imgs, output_imgs_shape = fm_class.alloc_output()
+
+    # make output array which also has an extra dimension for the number of KL modes to use
+    output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
     output_imgs_np = _arraytonumpy(output_imgs)
     output_imgs_np[:] = np.nan
+    output_imgs_shape = imgs.shape + numbasis.shape
+    # make an helper array to count how many frames overlap at each pixel
+    output_imgs_numstacked = mp.Array(ctypes.c_int, np.size(imgs))
+
+    # CREATE Custom Shared Memory array aux to save auxilliary sutff that is dependnet.
     aux_data, aux_shape = fm_class.alloc_aux()
 
 
     # align and scale the images for each image. Use map to do this asynchronously
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, output_imgs, output_imgs_shape,
+                             output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
                              aux_data, aux_shape), maxtasksperchild=50)
+
+    # SINGLE THREAD DEBUG PURPOSES ONLY
+    # _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+    #                          output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+    #                          aux_data, aux_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -471,6 +637,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     for aligned_output in aligned_outputs:
             aligned_output.wait()
 
+    print("Align and scale finished")
 
     # list to store each threadpool task
     tpool_outputs = []
@@ -478,19 +645,12 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     # as each is finishing, queue up the aligned data to be processed with KLIP
     for sector_index, ((radstart, radend),(phistart,phiend)) in enumerate(itertools.product(rad_bounds, phi_bounds)):
+        print("Starting KLIP for sector {0}".format(sector_index))
         # calculate sector size
-        # create a coordinate system.
-        x, y = np.meshgrid(np.arange(original_imgs_shape[2] * 1.0), np.arange(original_imgs_shape[1] * 1.0))
-        x.shape = (x.shape[0] * x.shape[1]) #Flatten
-        y.shape = (y.shape[0] * y.shape[1])
-        r = np.sqrt((x - aligned_center[0])**2 + (y - aligned_center[1])**2)
-        phi = np.arctan2(y - aligned_center[1], x - aligned_center[0])
+        section_ind = _get_section_indicies(original_imgs_shape[1:], aligned_center, radstart, radend, phistart, phiend,
+                                            padding, 0)
 
-        #grab the pixel location of the section we are going to anaylze
-        phi_rotate = ((phi) % (2.0 * np.pi)) - np.pi
-        section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
-
         interm_data, interm_shape = fm_class.alloc_interm(sector_size, original_imgs_shape[0])
 
         for wv_index, wv_value in enumerate(unique_wvs):
@@ -502,11 +662,19 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             sector_job_queued[sector_index] += scidata_indicies.shape[0]
             tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
                                                 args=(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                      parang, wv_value, wv_index, (radstart + radend) / 2., numbasis,
+                                                      parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+                                                      numbasis,
                                                       movement, aligned_center, minrot, maxrot, mode, spectrum,
                                                       fm_class))
                                 for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
+            # SINGLE THREAD DEBUG PURPOSES ONLY
+            # tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+            #                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+            #                                           numbasis,
+            #                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
+            #                                           fm_class)
+            #                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
@@ -527,9 +695,17 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     tpool.close()
     tpool.join()
 
-    #finished. Let's reshape the output images
-    #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
+    # finished!
+    # Let's take the mean based on number of images stacked at a location
     sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
+    sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
+    sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
+
+    import pdb
+    pdb.set_trace()
+
+    # Let's reshape the output images
+    # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
 
     #restore bad pixels
@@ -550,7 +726,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
 def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phistart, phiend, parang, wavelength,
-                                    wv_index, avg_rad, numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
+                                    wv_index, avg_rad, padding,
+                                    numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
                                     fm_class):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
@@ -566,6 +743,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         wavelength: wavelength of science image
         wv_index: array index of the wavelength of the science image
         avg_rad: average radius of this annulus
+        padding: number of pixels to pad the sector by
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         maxmove:minimum movement (opposite of minmove) - CURRENTLY NOT USED
@@ -581,19 +759,21 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         Saves image to output array defined in _tpool_init()
     """
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
-    x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
-    x.shape = (x.shape[0] * x.shape[1]) #Flatten
-    y.shape = (y.shape[0] * y.shape[1])
-    r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
-    phi = np.arctan2(y - ref_center[1], x - ref_center[0])
-
-    #grab the pixel location of the section we are going to anaylze based on the parallactic angle of the image
-    phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
-    # in case of wrap around
-    if phistart < phiend:
-        section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
-    else:
-        section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
+    # x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+    # x.shape = (x.shape[0] * x.shape[1]) #Flatten
+    # y.shape = (y.shape[0] * y.shape[1])
+    # r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
+    # phi = np.arctan2(y - ref_center[1], x - ref_center[0])
+    #
+    # #grab the pixel location of the section we are going to anaylze based on the parallactic angle of the image
+    # phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
+    # # in case of wrap around
+    # if phistart < phiend:
+    #     section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
+    # else:
+    #     section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
+    section_ind = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
+                                            padding, parang)
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
@@ -675,6 +855,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
+    output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     try:
         klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
@@ -683,6 +864,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         return False
 
     # write to output
-    output_imgs[img_num, section_ind[0], :] = klipped
+    for thisnumbasisindex in range(klipped.shape[1]):
+        if thisnumbasisindex == 0:
+            #only increment the numstack counter for the first KL mode
+            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:,thisnumbasisindex], section_ind,
+                             output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
+                             radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+        else:
+            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:,thisnumbasisindex], section_ind,
+                             output_imgs[img_num,:,thisnumbasisindex], None, parang,
+                             radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+    #output_imgs[img_num, section_ind[0], :] = klipped
 
     return sector_index

@@ -57,17 +57,18 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     seg_basis = seg_basis_shared
     seg_shape = seg_shape_shared
 
-def _arraytonumpy(shared_array, shape=None):
+def _arraytonumpy(shared_array, shape=None, dtype=float):
     """
     Covert a shared array to a numpy array
     Args:
         shared_array: a multiprocessing.Array array
         shape: a shape for the numpy array. otherwise, will assume a 1d array
+        dtype: type of element in array
 
     Return:
         numpy_array: numpy array for vectorized operation. still points to the same memory!
     """
-    numpy_array = np.frombuffer(shared_array.get_obj())
+    numpy_array = np.frombuffer(shared_array.get_obj(), dtype=dtype)
     if shape is not None:
         numpy_array.shape = shape
 
