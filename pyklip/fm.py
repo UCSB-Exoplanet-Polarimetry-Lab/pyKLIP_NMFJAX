@@ -75,7 +75,9 @@ def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb
         models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
         #expansion of the covariance matrix
-        CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
+        # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
+        CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T)
+        CAdeltaI += CAdeltaI.T
 
         Nrefs = evals.shape[0]
         KL_perturb = np.zeros(KL_basis.shape)
@@ -410,11 +412,15 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     # convert angle to radians
     angle_rad = np.radians(angle)
 
+    #wrap phi
+    phistart %= 2 * np.pi
+    phiend %= 2 * np.pi
+
     #incorporate padding
-    radstart -= padding
-    radend += padding
-    phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
-    phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
+    radstart_padded = radstart - padding
+    radend_padded = radend + padding
+    phistart_padded = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
+    phiend_padded = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
 
     # create the coordinate system of the image to manipulate for the transform
     dims = input_shape
@@ -441,12 +447,30 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
     phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
 
-    # normal case without 2 pi wrap
-    if phiend >=  phistart:
-        rot_sector_pix = np.where((rp >= radstart) & (rp < radend) & (phip >= phistart) & (phip < phiend))
-    # 2pi wrap
+    # grab sectors based on whether the phi coordinate wraps
+    # padded sector
+    # check to see if with padding, the phi coordinate wraps
+    if phiend_padded >=  phistart_padded:
+        # doesn't wrap
+        in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+                               (phip >= phistart_padded) & (phip < phiend_padded))
     else:
-        rot_sector_pix = np.where((rp >= radstart) & (rp < radend) & ((phip >= phistart) | (phip < phiend)))
+        # wraps
+        in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+                                            ((phip >= phistart_padded) | (phip < phiend_padded)))
+    rot_sector_pix = np.where(in_padded_sector)
+
+    # only padding
+    # check to see if without padding, the phi coordinate wraps
+    if phiend >=  phistart:
+        # no wrap
+        in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
+                                   & in_padded_sector)
+    else:
+        # wrap
+        in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
+                                    | (phip >= phiend & (phip < phistart_padded))) & in_padded_sector)
+    rot_sector_pix_onlypadding = np.where(in_only_padding)
 
     blank_input = np.zeros(dims[1] * dims[0])
     blank_input[sector_ind] = sector
@@ -548,27 +572,34 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # save all bad pixels
     allnans = np.where(np.isnan(imgs))
 
-    # use first image to figure out how to divide the annuli
-    # TODO: what to do with OWA
-    # need to make the next 10 lines or so much smarter
-    dims = imgs.shape
-    x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
-    nanpix = np.where(np.isnan(imgs[0]))
-    if OWA is None:
-        OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-    dr = float(OWA - IWA) / (annuli)
 
-    # error checking for too small of annuli go here
 
-    # calculate the annuli
-    rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
-    # last annulus should mostly emcompass everything
-    # rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    if isinstance(annuli, int):
+        # use first image to figure out how to divide the annuli
+        # TODO: what to do with OWA
+        # need to make the next 10 lines or so much smarter
 
-    # divide annuli into subsections
-    dphi = 2 * np.pi / subsections
-    phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
-    phi_bounds[-1][1] = 2 * np.pi
+        dims = imgs.shape
+        x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+        nanpix = np.where(np.isnan(imgs[0]))
+        if OWA is None:
+            OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+        dr = float(OWA - IWA) / (annuli)
+
+        # calculate the annuli
+        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+        # last annulus should mostly emcompass everything
+        # rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    else:
+        rad_bounds = annuli
+
+    if isinstance(subsections, int):
+        # divide annuli into subsections
+        dphi = 2 * np.pi / subsections
+        phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
+        phi_bounds[-1][1] = 2 * np.pi
+    else:
+        phi_bounds = subsections
 
 
     # calculate how many iterations we need to do
@@ -774,6 +805,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #     section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
     section_ind = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
                                             padding, parang)
+    section_ind_nopadding = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
+                                            0, parang)
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
