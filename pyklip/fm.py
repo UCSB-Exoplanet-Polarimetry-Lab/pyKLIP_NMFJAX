@@ -732,9 +732,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
     sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
-    import pdb
-    pdb.set_trace()
-
     # Let's reshape the output images
     # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
     sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
@@ -879,19 +876,22 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
+        ref_psfs_indicies = file_ind[0][closest_matched]
 
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[file_ind[0], :]
-
-
+        ref_psfs_indicies = file_ind[0]
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
+    # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
+    models = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang)
+
     try:
-        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
+        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models=models)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
         return False
