@@ -8,7 +8,7 @@ class NoFM():
         """ Initializes teh NoFM class
 
         Args:
-            inputs_shape: shape of the inputs numpy array. Typically (wv, y, x)
+            inputs_shape: shape of the inputs numpy array. Typically (N, y, x)
             numbasis: 1d numpy array consisting of the number of basis vectors to use
 
         Returns:
