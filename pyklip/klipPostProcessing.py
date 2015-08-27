@@ -339,9 +339,10 @@ def planet_detection_in_dir_per_file(filename,
         for l_id in range(PSF_cube.shape[0]):
             PSF_cube[l_id,:,:] /= sat_spot_spec[l_id]
     else:
-        if not mute:
-            print("I found several files for the PSF cube matching the given filter so I don't know what to do and I quit")
-        return None
+        #if not mute:
+        #    print("I found several files for the PSF cube matching the given filter so I don't know what to do and I quit")
+        #return None
+        raise Exception("I found several files for the PSF cube matching the given filter so I don't know what to do and I quit")
 
 
     if len(spectrum_model) == 1 and not isinstance(spectrum_model,list):
@@ -524,38 +525,44 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
 
     if len(filelist_klipped_cube) == 0:
         # No file following the filename filter could be found.
-        if not mute:
-            print("No suitable files found in: "+directory)
-        return None
+        #if not mute:
+        #    print("No suitable files found in: "+directory)
+        #return None
+        raise Exception("No suitable files found in: "+directory)
     else:
         if not mute:
             print(directory+"contains suitable file for planet detection:")
             for f_name in filelist_klipped_cube:
                 print(f_name)
 
-        # Run the planet dection for every single file sastisfying the filename filter.
+        # Run the planet detection for every single file sastisfying the filename filter.
+        err_list = []
         for filename in filelist_klipped_cube:
-            planet_detection_in_dir_per_file(filename,
-                                             metrics = metrics,
-                                             directory = directory,
-                                             outputDir = outputDir,
-                                             spectrum_model = spectrum_model,
-                                             star_type = star_type,
-                                             star_temperature = star_temperature,
-                                             user_defined_PSF_cube = user_defined_PSF_cube,
-                                             metrics_only = metrics_only,
-                                             planet_detection_only = planet_detection_only,
-                                             mute = mute,
-                                             threads = threads,
-                                             GOI_list = GOI_list,
-                                             overwrite_metric = overwrite_metric,
-                                             overwrite_stat = overwrite_stat,
-                                             proba_using_mask_per_pixel = proba_using_mask_per_pixel,
-                                             SNR = SNR,
-                                             probability = probability,
-                                             detection_metric = detection_metric)
-
-
+            try:
+                planet_detection_in_dir_per_file(filename,
+                                                 metrics = metrics,
+                                                 directory = directory,
+                                                 outputDir = outputDir,
+                                                 spectrum_model = spectrum_model,
+                                                 star_type = star_type,
+                                                 star_temperature = star_temperature,
+                                                 user_defined_PSF_cube = user_defined_PSF_cube,
+                                                 metrics_only = metrics_only,
+                                                 planet_detection_only = planet_detection_only,
+                                                 mute = mute,
+                                                 threads = threads,
+                                                 GOI_list = GOI_list,
+                                                 overwrite_metric = overwrite_metric,
+                                                 overwrite_stat = overwrite_stat,
+                                                 proba_using_mask_per_pixel = proba_using_mask_per_pixel,
+                                                 SNR = SNR,
+                                                 probability = probability,
+                                                 detection_metric = detection_metric)
+            except Exception as myErr:
+                err_list.append(myErr)
+                if not mute:
+                    print("//!\\\\ "+filename+" raised an Error. Candidate finder did not run.")
+        return err_list
 
 def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     '''
