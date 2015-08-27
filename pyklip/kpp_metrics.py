@@ -325,10 +325,26 @@ def calculate_metrics(filename,
         # This except was used for datacube not following GPI headers convention.
         # /!\ This is however not supported at the moment
         print("Couldn't read the fits file normally. Try another way.")
-        cube = hdulist[0].data
-        prihdr = hdulist[0].header
-        return None
+        raise
+        #cube = hdulist[0].data
+        #prihdr = hdulist[0].header
+        #return None
 
+
+
+    # Get input cube dimensions
+    if np.size(cube.shape) == 3:
+        nl,ny,nx = cube.shape
+        # Checking that the cube has the 37 spectral slices of a normal GPI cube.
+        if nl != 37:
+            #if not mute:
+            #    print("Returning None. Spectral dimension of "+filename+" is not correct...")
+            #return None
+            raise Exception("Returning None. Spectral dimension of "+filename+" is not correct...")
+    else:
+        #print("Returning None. fits file was not a cube...")
+        #return None
+        raise Exception("Returning None. fits file "+filename+" was not a cube...")
 
     # Normalization to have reasonable values of the pixel.
     # Indeed some image are in contrast units and the code below doesn't like slices with values around 10**-7.
@@ -337,19 +353,6 @@ def calculate_metrics(filename,
     # Besides one should check if it creates problem for the probability (JB doesn't thing so)
     cube /= np.nanstd(cube[10,:,:])
     #cube *= 10.0**7
-
-
-    # Get input cube dimensions
-    if np.size(cube.shape) == 3:
-        nl,ny,nx = cube.shape
-        # Checking that the cube has the 37 spectral slices of a normal GPI cube.
-        if nl != 37:
-            if not mute:
-                print("Returning None. Spectral dimension of "+filename+" is not correct...")
-            return None
-    else:
-        print("Returning None. fits file was not a cube...")
-        return None
 
     # Collapse the cube using a simple mean.
     flat_cube = np.mean(cube,0)
@@ -361,9 +364,10 @@ def calculate_metrics(filename,
     if PSF_cube is not None:
         # Check PSF_cube shape
         if np.size(np.shape(PSF_cube_cpy)) != 3:
-            if not mute:
-                print("Returning None. Wrong PSF dimensions. Image Should be 3D.")
-            return None
+            #if not mute:
+            #    print("Returning None. Wrong PSF dimensions. Image Should be 3D.")
+            #return None
+            raise Exception("Returning None. Wrong PSF dimensions. Image Should be 3D.")
         # The PSF is user-defined.
         nl, ny_PSF, nx_PSF = PSF_cube_cpy.shape
     else:

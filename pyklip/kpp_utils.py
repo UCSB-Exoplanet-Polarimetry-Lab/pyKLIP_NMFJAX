@@ -25,11 +25,14 @@ class NoDaemonProcess(mp.Process):
 class NoDaemonPool(mpPool.Pool):
     Process = NoDaemonProcess
 
-def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True, suffix = None, folderNameFilter = None):
+def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True, suffix = None, folderNameFilter = None, fileExtension = None):
     #objectsDir_list = []
 
     if suffix is None:
         suffix = ""
+
+    if fileExtension is None:
+        fileExtension = "png"
 
     if folderNameFilter is None:
         folderNameFilter = "planet_detec*k100a7s4m3-KL20"
@@ -47,9 +50,9 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.p
             for planet_detec_dir in planet_detec_dir_list:
                 spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
                 if metric is not None:
-                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates-"+metric+".png")
+                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates-"+metric+"."+fileExtension)
                 else:
-                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates.png")
+                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates."+fileExtension)
 
                 for src in src_list:
                     src_splitted = src.split(os.path.sep)
