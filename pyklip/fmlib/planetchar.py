@@ -6,6 +6,8 @@ import pyklip.spectra_management as specmanage
 import os
 import scipy.ndimage as ndimage
 
+debug = False
+
 class PlanetChar():
     """
     Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
@@ -42,7 +44,7 @@ class PlanetChar():
 
             # TODO: calibrate to contrast units
         # calibrate spectra to DN
-        self.spectrallib = [spectrum/specmanage.get_star_spectrum(wavelengths, star_type=star_spt) for spectrum in self.spectrallib]
+        self.spectrallib = [spectrum/(specmanage.get_star_spectrum(wavelengths, star_type=star_spt)[1]) for spectrum in self.spectrallib]
         self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
 
         self.input_psfs = input_psfs
@@ -89,7 +91,7 @@ class PlanetChar():
         return None, None
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -103,32 +105,58 @@ class PlanetChar():
             padding: amount of padding on each side of sector
             ref_center: center of image
             parang: parallactic angle of input image [DEGREES]
+            ref_wv: wavelength of science image
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
         """
         # create some parameters for a blank canvas to draw psfs on
-        xc, yc = np.meshgrid(np.arange(input_img_shape.shape[1] * 1.), np.arnage(input_img_shape.shape[0] * 1.))
+        xc, yc = np.meshgrid(np.arange(input_img_shape[1] * 1.), np.arange(input_img_shape[0] * 1.))
         rc = np.sqrt((xc - ref_center[0])**2 + (yc - ref_center[1])**2)
         phic = np.arctan2(yc - ref_center[1], xc - ref_center[0])
 
+        if debug:
+            canvases = []
         models = []
         for pa, wv in zip(pas, wvs):
-            #create a canvas to place the new PSF in the sector on
-            canvas = np.zeros(input_img_shape)
+            # grab PSF given wavelength
+            wv_index = np.where(wv == self.input_psfs_wvs)[0]
+            model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
-            #find center of psf
+            # find center of psf
+            # since images are aligned and scaled, need to scale wavelength
+            rc_scaled = rc * (wv/ref_wv)
+            xc_scaled = rc_scaled * np.cos(phic) + ref_center[0]
+            yc_scaled = rc_scaled * np.sin(phic) + ref_center[1]
+            # find location of psf in image given sep/pa of object
             psf_centx = self.sep * np.cos(np.radians(self.pa - pa)) + ref_center[0]#note self.pa is position angle, pa is parallactic angle
             psf_centy = self.sep * np.sin(np.radians(self.pa - pa)) + ref_center[1]
-            xc_psf = xc - psf_centx
-            yc_psf = yc - psf_centy
+            # chagne to coordiantes starting at center of image
+            xc_psf = xc_scaled - psf_centx
+            yc_psf = yc_scaled - psf_centy
+            # change to coordinates of the model PSF image. Center of psf is at size/2
+            xc_psf += model_psf.shape[1]/2
+            yc_psf += model_psf.shape[0]/2
 
-            wv_index = np.where(wv == self.input_psfs_wvs)[0]
-            model_psf = self.input_psfs[wv_index, :, :] * self.flux_conversion * self.spectrallib[0][wv_index]
-
-            segment_with_model = ndimage.map_coordinates(model_psf, [yc_psf[section_ind], xc_psf[section_ind]])
+            yc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
+            xc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
+            segment_with_model = ndimage.map_coordinates(model_psf, [yc_psf[section_ind], xc_psf[section_ind]], cval=0)
 
             models.append(segment_with_model)
+
+            # create a canvas to place the new PSF in the sector on
+            if debug:
+                canvas = np.zeros(input_img_shape)
+                canvas.shape = [input_img_shape[0] * input_img_shape[1]]
+                canvas[section_ind] = segment_with_model
+                canvas.shape = [input_img_shape[0], input_img_shape[1]]
+                canvases.append(canvas)
+
+        if debug:
+            import matplotlib.pylab as plt
+            im = plt.imshow(canvases[10])
+            plt.colorbar(im)
+            plt.show()
 
         return np.array(models)
 

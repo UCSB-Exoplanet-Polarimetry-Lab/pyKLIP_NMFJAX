@@ -10,7 +10,7 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb=None):
+def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, input_spectrum=None, process_perturb=None):
     """
     linear algebra of KLIP with linear perturbation
     disks and point sources
@@ -20,10 +20,13 @@ def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb
         refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
-        models: N x p array of the N models corresponding to reference images
         covar_psfs: covariance matrix of reference images (for large N, useful)
+        models: N x p array of the N models corresponding to reference images. Each model should be normalized to unity (no flux information)
+        Sel_wv: wv x N array of the the corresponding wavelength for each reference PSF
+        input_spectrum: array of size wv with the assumed spectrum of the model
         process_perturb: function to process the perturbed KL modes. If not defined, will project on PSF and
-                            subtract on sci image
+                            subtract on sci image.
+                            NOTE: eventaully will replace models, Sel_wv, input_spectrum
 
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
@@ -57,6 +60,7 @@ def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb
 
     KL_basis = np.dot(refs_mean_sub.T,evecs)
     KL_basis = KL_basis * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:] #should scaling be there?
+    KL_basis = KL_basis.T #flip dimensions to be consistent with Laurent's paper
     #Laurent's paper specifically removes 1/sqrt(Npix-1)
 
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
@@ -70,45 +74,84 @@ def klip_math(sci, refs, numbasis, models=None, covar_psfs=None, process_perturb
 
 
     if models is not None:
-
         models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
         models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
-        #expansion of the covariance matrix
-        # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
-        CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T)
-        CAdeltaI += CAdeltaI.T
-
-        Nrefs = evals.shape[0]
-        KL_perturb = np.zeros(KL_basis.shape)
-        Pert1 = np.zeros(KL_basis.shape)
-        Pert2 = np.zeros(KL_basis.shape)
-        CoreffsKL = np.zeros((Nrefs,Nrefs))
-        Mult = np.zeros((Nrefs,Nrefs))
-        cross = np.zeros((Nrefs,Nrefs))
-
-        for i in range(Nrefs):
-            for j in range(Nrefs):
-                cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
-
-        for i in range(Nrefs):
-            for j in range(Nrefs):
-                if j == i:
-                    Mult[i,j] = -1./(2.*evals[j])
-                else:
-                    Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
-            CoreffsKL[i,:] = cross[i]*Mult[i]
+        N_KL = np.max(numbasis)
+        deltaZ = np.zeros(KL_basis.shape) # (N_ref,N_pix)
 
 
-        for j in range(Nrefs):
-            Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
-            Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
-            KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
+        for k in range(N_KL):
+            # Define Z_{k}. Variable name: kl_basis_noPl[k,:], Shape: (1, N_pix)
+            Zk = np.reshape(KL_basis[k,:],(1,KL_basis[k,:].size))
+            # Define V_{k}. Variable name: eigvec_noPl[:,k], Shape: (1, N_ref)
+            Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
+            # Define bolt{V}_{k}. Variable name: diagV_k = np.diag(eigvec_noPl[:,k]), Shape: (N_ref,N_ref)
+            diagVk = np.diag(evecs[:,k])
 
-        KL_pert = KL_perturb + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
+
+            DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+diagVk.dot(models_mean_sub)
+            for j in range(k):
+                Zj = np.reshape(KL_basis[j,:],(1,KL_basis[j,:].size))
+                Vj = np.reshape(evecs[:,j],(evecs[:,j].size,1))
+                diagVj = np.diag(evecs[:,j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
+            for j in range(k+1,N_KL):
+                Zj = np.reshape(KL_basis[j,:],(1,KL_basis[j,:].size))
+                Vj = np.reshape(evecs[:,j],(evecs[:,j].size,1))
+                diagVj = np.diag(evecs[:,j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
+            #DeltaZk_noSpec = (S/np.sqrt(L[k])).dot(DeltaZk_noSpec)
+
+            #f = fake_planet_flux_ratio*np.reshape(corrected_spec,(1,nl))
+            #DeltaZk = f.dot(DeltaZk_noSpec)
+
+
+            #deltaZ[k,:] = DeltaZk
+            deltaZ[k,:] = np.dot(input_spectrum.reshape(1,np.size(input_spectrum)),(Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec))
+
+        import pdb
+        pdb.set_trace()
+
+        # #expansion of the covariance matrix
+        # # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
+        # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T)
+        # CAdeltaI += CAdeltaI.T
+        #
+        # Nrefs = evals.shape[0]
+        # KL_perturb = np.zeros(KL_basis.shape)
+        # Pert1 = np.zeros(KL_basis.shape)
+        # Pert2 = np.zeros(KL_basis.shape)
+        # CoreffsKL = np.zeros((Nrefs,Nrefs))
+        # Mult = np.zeros((Nrefs,Nrefs))
+        # cross = np.zeros((Nrefs,Nrefs))
+        #
+        # for i in range(Nrefs):
+        #     for j in range(Nrefs):
+        #         cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
+        #
+        # for i in range(Nrefs):
+        #     for j in range(Nrefs):
+        #         if j == i:
+        #             Mult[i,j] = -1./(2.*evals[j])
+        #         else:
+        #             Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
+        #     CoreffsKL[i,:] = cross[i]*Mult[i]
+        #
+        #
+        # for j in range(Nrefs):
+        #     Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
+        #     Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
+        #     KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
+        #
+        # KL_perturb = KL_perturb * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:]
+
+        KL_pert = deltaZ + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
         #Perhaps scaling issue? or my coding failure?g
     else:
         KL_pert = KL_basis
+
+    KL_pert = KL_pert.T
 
     inner_products = np.dot(sci_mean_sub_rows, KL_pert)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
@@ -573,13 +616,12 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     allnans = np.where(np.isnan(imgs))
 
 
-
+    dims = imgs.shape
     if isinstance(annuli, int):
         # use first image to figure out how to divide the annuli
         # TODO: what to do with OWA
         # need to make the next 10 lines or so much smarter
 
-        dims = imgs.shape
         x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(imgs[0]))
         if OWA is None:
@@ -652,10 +694,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
                              aux_data, aux_shape), maxtasksperchild=50)
 
-    # SINGLE THREAD DEBUG PURPOSES ONLY
-    # _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-    #                          output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-    #                          aux_data, aux_shape)
+    # # SINGLE THREAD DEBUG PURPOSES ONLY
+    _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                             output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                             aux_data, aux_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -691,27 +733,27 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
             # perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
             sector_job_queued[sector_index] += scidata_indicies.shape[0]
-            tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
-                                                args=(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                      parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-                                                      numbasis,
-                                                      movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                      fm_class))
-                                for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
-
-            # SINGLE THREAD DEBUG PURPOSES ONLY
-            # tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+            # tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
+            #                                     args=(file_index, sector_index, radstart, radend, phistart, phiend,
             #                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,
             #                                           numbasis,
             #                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
-            #                                           fm_class)
+            #                                           fm_class))
             #                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+
+            # # SINGLE THREAD DEBUG PURPOSES ONLY
+            tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+                                                      parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+                                                      numbasis,
+                                                      movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                      fm_class)
+                                for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
-        while len(tpool_outputs) > 0:
-            tpool_outputs.pop(0).wait()
+        # while len(tpool_outputs) > 0:
+        #     tpool_outputs.pop(0).wait()
 
             # if this is the last job finished for this sector,
             # do something here?
@@ -865,6 +907,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
     covar_files = covar_psfs[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
 
+
     # pick only the most correlated reference PSFs if there's more than enough PSFs
     maxbasis_requested = np.max(numbasis)
     maxbasis_possible = np.size(file_ind)
@@ -883,17 +926,27 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         ref_psfs_selected = ref_psfs[file_ind[0], :]
         ref_psfs_indicies = file_ind[0]
 
+    # create a selection matrix for selecting elements
+    unique_wvs = np.unique(wvs_imgs)
+    numwv = np.size(unique_wvs)
+    numref = np.size(unique_wvs)
+    L = np.tile(np.identity(numwv), [1,numref])
+    Sel_wv = L[:, ref_psfs_indicies]
+
+
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-    models = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang)
+    models = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
+    input_spectrum = fm_class.flux_conversion * fm_class.spectrallib[0] * fm_class.dflux
+
 
     try:
-        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models=models)
-    except (ValueError, RuntimeError, TypeError) as err:
-        print("({0}): {1}".format(err.errno, err.strerror))
+        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models=models, Sel_wv=Sel_wv, input_spectrum=input_spectrum)
+    except (RuntimeError) as err: #(ValueError, RuntimeError, TypeError) as err:
+        print(err.message)
         return False
 
     # write to output

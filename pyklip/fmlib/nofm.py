@@ -79,6 +79,7 @@ class NoFM():
         return None, None
 
     def generate_models(self, *arg):
+
         """
 
         :return:
