@@ -3,7 +3,11 @@ import ctypes
 
 import numpy as np
 
-class NoFM():
+class NoFM(object):
+    """
+    Super class for all forward modelling classes. Has fall-back functions for all fm dependent calls so that each FM class does
+    not need to implement functions it doesn't want to. Should do no forward modelling and just do regular KLIP by itself
+    """
     def __init__(self, inputs_shape, numbasis):
         """ Initializes teh NoFM class
 

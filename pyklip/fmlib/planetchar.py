@@ -5,10 +5,12 @@ import numpy as np
 import pyklip.spectra_management as specmanage
 import os
 import scipy.ndimage as ndimage
+import sys
+from pyklip.fmlib.nofm import NoFM
 
 debug = False
 
-class PlanetChar():
+class PlanetChar(NoFM):
     """
     Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
     """
@@ -30,6 +32,9 @@ class PlanetChar():
             star_spt: star spectral type, if None default to some random one
             refine_fit: refine the separation and pa supplied
         """
+        # allocate super class
+        super(PlanetChar, self).__init__(inputs_shape, numbasis)
+
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.sep = sep
