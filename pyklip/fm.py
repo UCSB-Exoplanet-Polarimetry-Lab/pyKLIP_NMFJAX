@@ -732,9 +732,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                              aux_data, aux_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
-    _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                             aux_data, aux_shape)
+    # _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+    #                          output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+    #                          aux_data, aux_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -770,27 +770,27 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
             # perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
             sector_job_queued[sector_index] += scidata_indicies.shape[0]
-            # tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
-            #                                     args=(file_index, sector_index, radstart, radend, phistart, phiend,
-            #                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-            #                                           numbasis,
-            #                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
-            #                                           fm_class))
-            #                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
-
-            # # SINGLE THREAD DEBUG PURPOSES ONLY
-            tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+            tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
+                                                args=(file_index, sector_index, radstart, radend, phistart, phiend,
                                                       parang, wv_value, wv_index, (radstart + radend) / 2., padding,
                                                       numbasis,
                                                       movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                      fm_class)
+                                                      fm_class))
                                 for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+
+            # # SINGLE THREAD DEBUG PURPOSES ONLY
+            # tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+            #                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+            #                                           numbasis,
+            #                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
+            #                                           fm_class)
+            #                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
-        # while len(tpool_outputs) > 0:
-        #     tpool_outputs.pop(0).wait()
+        while len(tpool_outputs) > 0:
+            tpool_outputs.pop(0).wait()
 
             # if this is the last job finished for this sector,
             # do something here?
