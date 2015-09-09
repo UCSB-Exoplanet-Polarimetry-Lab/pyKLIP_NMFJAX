@@ -10,7 +10,7 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, input_spectrum=None, process_perturb=None):
+def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=None, Sel_wv=None, input_spectrum=None, process_perturb=None):
     """
     linear algebra of KLIP with linear perturbation
     disks and point sources
@@ -20,8 +20,9 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
         refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
-        covar_psfs: covariance matrix of reference images (for large N, useful)
-        models: N x p array of the N models corresponding to reference images. Each model should be normalized to unity (no flux information)
+        covar_psfs: covariance matrix of reference images (for large N, useful). Normalized following numpy normalization in np.cov documentation
+        models_ref: N x p array of the N models corresponding to reference images. Each model should be normalized to unity (no flux information)
+        model_sci: array of size p corresponding to the PSF of the science frame
         Sel_wv: wv x N array of the the corresponding wavelength for each reference PSF
         input_spectrum: array of size wv with the assumed spectrum of the model
         process_perturb: function to process the perturbed KL modes. If not defined, will project on PSF and
@@ -31,7 +32,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
-        KL_basis: array of shape (p, b) that are the KL basis vectors
+        postklip_psf: array of shape (p, b) that is the postklip PSF
 
     """
     #remove means and nans
@@ -45,10 +46,12 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
 
     # calculate the covariance matrix for the reference PSFs
     # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
-    # we have to correct for that a few lines down when consturcting the KL
-    # vectors since that's not part of the equation in the KLIP paper
+    # we have to correct for that since that's not part of the equation in the KLIP paper
     if covar_psfs is None:
+        # call np.cov to make the covariance matrix
         covar_psfs = np.cov(refs_mean_sub)
+    # fix normalization of covariance matrix
+    covar_psfs *= (np.size(sci)-1)
 
     tot_basis = covar_psfs.shape[0]
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
@@ -59,7 +62,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
     evecs = np.copy(evecs[:,::-1])
 
     KL_basis = np.dot(refs_mean_sub.T,evecs)
-    KL_basis = KL_basis * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:] #should scaling be there?
+    KL_basis = KL_basis * (1. / np.sqrt(evals))[None,:] #should scaling be there?
     KL_basis = KL_basis.T #flip dimensions to be consistent with Laurent's paper
     #Laurent's paper specifically removes 1/sqrt(Npix-1)
 
@@ -73,9 +76,17 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
 
 
 
-    if models is not None:
-        models_mean_sub = models# - np.nanmean(models, axis=1)[:,None] should this be the case?
+    if models_ref is not None:
+        # reference PSF models
+        models_mean_sub = models_ref# - np.nanmean(models, axis=1)[:,None] should this be the case?
         models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+
+        # science PSF models
+        model_sci_mean_sub = model_sci
+        model_nanpix = np.where(np.isnan(model_sci_mean_sub))
+        model_sci_mean_sub[model_nanpix] = 0
+        model_sci_mean_sub_rows = np.tile(model_sci_mean_sub, (max_basis,1))
+        model_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
 
         N_KL = np.max(numbasis)
         deltaZ = np.zeros(KL_basis.shape) # (N_ref,N_pix)
@@ -110,8 +121,6 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
             #deltaZ[k,:] = DeltaZk
             deltaZ[k,:] = np.dot(input_spectrum.reshape(1,np.size(input_spectrum)),(Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec))
 
-        import pdb
-        pdb.set_trace()
 
         # #expansion of the covariance matrix
         # # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
@@ -146,23 +155,51 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models=None, Sel_wv=None, in
         #
         # KL_perturb = KL_perturb * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:]
 
-        KL_pert = deltaZ + KL_basis #this makes KL_perturb too large (on order of np.size(sci)-1)
-        #Perhaps scaling issue? or my coding failure?g
+        deltaZ = deltaZ.T
+        KL_basis = KL_basis.T
+
+
+        # do standard issue KLIP to get the residual after PSF subtractoin
+        inner_products = np.dot(sci_mean_sub_rows, KL_basis)
+        lower_tri = np.tril(np.ones([max_basis,max_basis]))
+        inner_products = inner_products * lower_tri
+        klipped_nofm = np.dot(inner_products[numbasis,:], KL_basis.T)
+
+        sub_img_rows_selected = sci_rows_selected - klipped_nofm
+
+        sub_img_rows_selected[sci_nanpix] = np.nan
+
+        # figure out the PSF after PFS subtraction
+        oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, KL_basis)
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, deltaZ)
+        selfsubtraction_2_inner_products = np.dot(sci_mean_sub_rows, KL_basis)
+
+        oversubtraction_inner_products = oversubtraction_inner_products * lower_tri
+        selfsubtraction_1_inner_products = selfsubtraction_1_inner_products * lower_tri
+        selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
+
+        klipped_oversub = np.dot(oversubtraction_inner_products[numbasis,:], KL_basis.T)
+        klipped_selfsub = np.dot(selfsubtraction_1_inner_products[numbasis,:], KL_basis.T) + np.dot(selfsubtraction_2_inner_products[numbasis,:], deltaZ.T)
+
+
+        postklip_psf = model_sci_mean_sub - klipped_oversub - klipped_selfsub
+
     else:
-        KL_pert = KL_basis
 
-    KL_pert = KL_pert.T
+        KL_basis = KL_basis.T
 
-    inner_products = np.dot(sci_mean_sub_rows, KL_pert)
-    lower_tri = np.tril(np.ones([max_basis,max_basis]))
-    inner_products = inner_products * lower_tri
-    klip = np.dot(inner_products[numbasis,:], KL_pert.T)
+        inner_products = np.dot(sci_mean_sub_rows, KL_basis)
+        lower_tri = np.tril(np.ones([max_basis,max_basis]))
+        inner_products = inner_products * lower_tri
+        klip = np.dot(inner_products[numbasis,:], KL_basis.T)
 
-    sub_img_rows_selected = sci_rows_selected - klip
+        sub_img_rows_selected = sci_rows_selected - klip
 
-    sub_img_rows_selected[sci_nanpix] = np.nan
+        sub_img_rows_selected[sci_nanpix] = np.nan
 
-    return sub_img_rows_selected.transpose(), KL_basis.transpose()
+        postklip_psf = None
+
+    return sub_img_rows_selected.transpose(), postklip_psf.T
 
 
 
@@ -938,13 +975,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
+    # generate models for the PSF of the science image
+    model_sci = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, [parang], [wavelength], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)[0]
+    model_sci *= fm_class.flux_conversion * fm_class.spectrallib[0][np.where(fm_class.input_psfs_wvs == wavelength)] * fm_class.dflux
     # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-    models = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
+    models_ref = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
     input_spectrum = fm_class.flux_conversion * fm_class.spectrallib[0] * fm_class.dflux
 
 
     try:
-        klipped, KL_basis = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models=models, Sel_wv=Sel_wv, input_spectrum=input_spectrum)
+        klipped, postklip_psf = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
     except (RuntimeError) as err: #(ValueError, RuntimeError, TypeError) as err:
         print(err.message)
         return False
@@ -953,11 +993,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     for thisnumbasisindex in range(klipped.shape[1]):
         if thisnumbasisindex == 0:
             #only increment the numstack counter for the first KL mode
-            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:,thisnumbasisindex], section_ind,
+            _save_rotated_section([original_shape[1], original_shape[2]], postklip_psf[:,thisnumbasisindex], section_ind,
                              output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
                              radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
         else:
-            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:,thisnumbasisindex], section_ind,
+            _save_rotated_section([original_shape[1], original_shape[2]], postklip_psf[:,thisnumbasisindex], section_ind,
                              output_imgs[img_num,:,thisnumbasisindex], None, parang,
                              radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
     #output_imgs[img_num, section_ind[0], :] = klipped

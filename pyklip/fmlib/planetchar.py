@@ -42,7 +42,7 @@ class PlanetChar():
             spectra_files = [spectra_folder + "t650g18nc.flx", spectra_folder + "t800g100nc.flx"]
             self.spectrallib = [specmanage.get_planet_spectrum(filename, wavelengths)[1] for filename in spectra_files]
 
-            # TODO: calibrate to contrast units
+        # TODO: calibrate to contrast units
         # calibrate spectra to DN
         self.spectrallib = [spectrum/(specmanage.get_star_spectrum(wavelengths, star_type=star_spt)[1]) for spectrum in self.spectrallib]
         self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
@@ -129,8 +129,9 @@ class PlanetChar():
             xc_scaled = rc_scaled * np.cos(phic) + ref_center[0]
             yc_scaled = rc_scaled * np.sin(phic) + ref_center[1]
             # find location of psf in image given sep/pa of object
-            psf_centx = self.sep * np.cos(np.radians(self.pa - pa)) + ref_center[0]#note self.pa is position angle, pa is parallactic angle
-            psf_centy = self.sep * np.sin(np.radians(self.pa - pa)) + ref_center[1]
+            psf_centx = self.sep * np.cos(np.radians(90. - self.pa - pa)) + ref_center[0]#note self.pa is position angle, pa is parallactic angle
+            psf_centy = self.sep * np.sin(np.radians(90. - self.pa - pa)) + ref_center[1]
+
             # chagne to coordiantes starting at center of image
             xc_psf = xc_scaled - psf_centx
             yc_psf = yc_scaled - psf_centy
