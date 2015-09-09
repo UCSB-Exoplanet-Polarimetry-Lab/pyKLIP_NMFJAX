@@ -10,7 +10,10 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=None, Sel_wv=None, input_spectrum=None, process_perturb=None):
+parallel = True
+
+
+def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, input_spectrum=None, Sel_wv=None):
     """
     linear algebra of KLIP with linear perturbation
     disks and point sources
@@ -25,9 +28,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
         model_sci: array of size p corresponding to the PSF of the science frame
         Sel_wv: wv x N array of the the corresponding wavelength for each reference PSF
         input_spectrum: array of size wv with the assumed spectrum of the model
-        process_perturb: function to process the perturbed KL modes. If not defined, will project on PSF and
-                            subtract on sci image.
-                            NOTE: eventaully will replace models, Sel_wv, input_spectrum
+
 
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
@@ -35,14 +36,13 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
         postklip_psf: array of shape (p, b) that is the postklip PSF
 
     """
-    #remove means and nans
+    # remove means and nans
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
     sci_mean_sub[sci_nanpix] = 0
 
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
     refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
-
 
     # calculate the covariance matrix for the reference PSFs
     # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
@@ -62,9 +62,8 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
     evecs = np.copy(evecs[:,::-1])
 
     KL_basis = np.dot(refs_mean_sub.T,evecs)
-    KL_basis = KL_basis * (1. / np.sqrt(evals))[None,:] #should scaling be there?
-    KL_basis = KL_basis.T #flip dimensions to be consistent with Laurent's paper
-    #Laurent's paper specifically removes 1/sqrt(Npix-1)
+    KL_basis = KL_basis * (1. / np.sqrt(evals))[None,:]
+    KL_basis = KL_basis.T # flip dimensions to be consistent with Laurent's paper
 
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
@@ -78,21 +77,21 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
 
     if models_ref is not None:
         # reference PSF models
-        models_mean_sub = models_ref# - np.nanmean(models, axis=1)[:,None] should this be the case?
+        models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
         models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
         # science PSF models
-        model_sci_mean_sub = model_sci
+        model_sci_mean_sub = model_sci # should be subtracting off the mean?
         model_nanpix = np.where(np.isnan(model_sci_mean_sub))
         model_sci_mean_sub[model_nanpix] = 0
         model_sci_mean_sub_rows = np.tile(model_sci_mean_sub, (max_basis,1))
-        model_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
+        # model_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1)) # don't need this because of python behavior where I don't need to duplicate rows
 
-        N_KL = np.max(numbasis)
-        deltaZ = np.zeros(KL_basis.shape) # (N_ref,N_pix)
+        # perturbed K lmodes
+        delta_KL = np.zeros(KL_basis.shape) # (N_ref,N_pix)
 
-
-        for k in range(N_KL):
+        # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
+        for k in range(max_basis):
             # Define Z_{k}. Variable name: kl_basis_noPl[k,:], Shape: (1, N_pix)
             Zk = np.reshape(KL_basis[k,:],(1,KL_basis[k,:].size))
             # Define V_{k}. Variable name: eigvec_noPl[:,k], Shape: (1, N_ref)
@@ -102,62 +101,27 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
 
 
             DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+diagVk.dot(models_mean_sub)
+            # TODO: Make this NOT a for loop
             for j in range(k):
-                Zj = np.reshape(KL_basis[j,:],(1,KL_basis[j,:].size))
-                Vj = np.reshape(evecs[:,j],(evecs[:,j].size,1))
-                diagVj = np.diag(evecs[:,j])
+                Zj = np.reshape(KL_basis[j, :], (1, KL_basis[j, :].size))
+                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
+                diagVj = np.diag(evecs[:, j])
                 DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
-            for j in range(k+1,N_KL):
-                Zj = np.reshape(KL_basis[j,:],(1,KL_basis[j,:].size))
-                Vj = np.reshape(evecs[:,j],(evecs[:,j].size,1))
-                diagVj = np.diag(evecs[:,j])
+            for j in range(k+1, max_basis):
+                Zj = np.reshape(KL_basis[j, :], (1, KL_basis[j, :].size))
+                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
+                diagVj = np.diag(evecs[:, j])
                 DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
-            #DeltaZk_noSpec = (S/np.sqrt(L[k])).dot(DeltaZk_noSpec)
 
-            #f = fake_planet_flux_ratio*np.reshape(corrected_spec,(1,nl))
-            #DeltaZk = f.dot(DeltaZk_noSpec)
+            DeltaZk_noSpec = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
 
+            # Putting in the spectral dependence
+            delta_KL[k,:] = np.dot(input_spectrum.reshape(1,np.size(input_spectrum)),DeltaZk_noSpec)
 
-            #deltaZ[k,:] = DeltaZk
-            deltaZ[k,:] = np.dot(input_spectrum.reshape(1,np.size(input_spectrum)),(Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec))
-
-
-        # #expansion of the covariance matrix
-        # # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T) + np.dot(models_mean_sub,refs_mean_sub.T)
-        # CAdeltaI = np.dot(refs_mean_sub,models_mean_sub.T)
-        # CAdeltaI += CAdeltaI.T
-        #
-        # Nrefs = evals.shape[0]
-        # KL_perturb = np.zeros(KL_basis.shape)
-        # Pert1 = np.zeros(KL_basis.shape)
-        # Pert2 = np.zeros(KL_basis.shape)
-        # CoreffsKL = np.zeros((Nrefs,Nrefs))
-        # Mult = np.zeros((Nrefs,Nrefs))
-        # cross = np.zeros((Nrefs,Nrefs))
-        #
-        # for i in range(Nrefs):
-        #     for j in range(Nrefs):
-        #         cross[i,j] = np.transpose(evecs[:,j]).dot(CAdeltaI).dot(evecs[:,i]) #I don't think transpose does anything here
-        #
-        # for i in range(Nrefs):
-        #     for j in range(Nrefs):
-        #         if j == i:
-        #             Mult[i,j] = -1./(2.*evals[j])
-        #         else:
-        #             Mult[i,j] = np.sqrt(evals[j]/evals[i])/(evals[i]-evals[j])
-        #     CoreffsKL[i,:] = cross[i]*Mult[i]
-        #
-        #
-        # for j in range(Nrefs):
-        #     Pert1[:,j] = np.dot(CoreffsKL[j],KL_basis.T).T
-        #     Pert2[:,j] = (1./np.sqrt(evals[j])*np.transpose(evecs[:,j]).dot(models_mean_sub))
-        #     KL_perturb[:,j] = (Pert1[:,j]+Pert2[:,j])
-        #
-        # KL_perturb = KL_perturb * (1. / np.sqrt(evals *(np.size(sci) -1)))[None,:]
-
-        deltaZ = deltaZ.T
+        # flip the dimensions of the array again (from what Laurent uses in his paper to what I've been using which
+        # I think is computationally faster but I should check again)
+        delta_KL = delta_KL.T
         KL_basis = KL_basis.T
-
 
         # do standard issue KLIP to get the residual after PSF subtractoin
         inner_products = np.dot(sci_mean_sub_rows, KL_basis)
@@ -169,9 +133,11 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
 
         sub_img_rows_selected[sci_nanpix] = np.nan
 
-        # figure out the PSF after PFS subtraction
+        # Forward model the PSF
+        # 3 terms: 1 for oversubtracton (planet attenauted by speckle KL modes),
+        # and 2 terms for self subtraction (planet signal leaks in KL modes which get projected onto speckles)
         oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, KL_basis)
-        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, deltaZ)
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, delta_KL)
         selfsubtraction_2_inner_products = np.dot(sci_mean_sub_rows, KL_basis)
 
         oversubtraction_inner_products = oversubtraction_inner_products * lower_tri
@@ -179,9 +145,10 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
         selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
 
         klipped_oversub = np.dot(oversubtraction_inner_products[numbasis,:], KL_basis.T)
-        klipped_selfsub = np.dot(selfsubtraction_1_inner_products[numbasis,:], KL_basis.T) + np.dot(selfsubtraction_2_inner_products[numbasis,:], deltaZ.T)
+        klipped_selfsub = np.dot(selfsubtraction_1_inner_products[numbasis,:], KL_basis.T) + np.dot(selfsubtraction_2_inner_products[numbasis,:], delta_KL.T)
 
-
+        # so apprently even though the model_sci_mean_sub is only an array of p and the other two terms are
+        # arrays of b x p, the operation will still succeed as if model_sci_mean_sub is duplicated b times
         postklip_psf = model_sci_mean_sub - klipped_oversub - klipped_selfsub
 
     else:
@@ -200,8 +167,6 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, models_ref=None, model_sci=N
         postklip_psf = None
 
     return sub_img_rows_selected.transpose(), postklip_psf.T
-
-
 
 
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None, minrot=0): #Zack
@@ -440,7 +405,7 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     """
     # create a coordinate system.
     x, y = np.meshgrid(np.arange(input_shape[1] * 1.0), np.arange(input_shape[0] * 1.0))
-    x.shape = (x.shape[0] * x.shape[1]) #Flatten
+    x.shape = (x.shape[0] * x.shape[1]) # Flatten
     y.shape = (y.shape[0] * y.shape[1])
     r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
     phi = np.arctan2(y - img_center[1], x - img_center[0])
@@ -712,7 +677,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
     centers_imgs_np[:] = centers
 
-
     # make output array which also has an extra dimension for the number of KL modes to use
     output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
     output_imgs_np = _arraytonumpy(output_imgs)
@@ -724,17 +688,17 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # CREATE Custom Shared Memory array aux to save auxilliary sutff that is dependnet.
     aux_data, aux_shape = fm_class.alloc_aux()
 
-
-    # align and scale the images for each image. Use map to do this asynchronously
+    # align and scale the images for each image. Use map to do this asynchronously]
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
                              aux_data, aux_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
-    # _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-    #                          output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-    #                          aux_data, aux_shape)
+    if not parallel:
+        _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                                 output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                                 aux_data, aux_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -770,27 +734,30 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
             # perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
             sector_job_queued[sector_index] += scidata_indicies.shape[0]
-            tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
-                                                args=(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                      parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-                                                      numbasis,
-                                                      movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                      fm_class))
-                                for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+            if parallel:
+                tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
+                                                    args=(file_index, sector_index, radstart, radend, phistart, phiend,
+                                                          parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+                                                          numbasis,
+                                                          movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                          fm_class))
+                                    for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
-            # tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
-            #                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-            #                                           numbasis,
-            #                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
-            #                                           fm_class)
-            #                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+            if not parallel:
+                tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
+                                                          parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+                                                          numbasis,
+                                                          movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                          fm_class)
+                                    for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
-        while len(tpool_outputs) > 0:
-            tpool_outputs.pop(0).wait()
+        if parallel:
+            while len(tpool_outputs) > 0:
+                tpool_outputs.pop(0).wait()
 
             # if this is the last job finished for this sector,
             # do something here?
