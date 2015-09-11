@@ -82,10 +82,8 @@ class NoFM(object):
 
         return None, None
 
-    def generate_models(self, *arg):
+    def generate_models(self, **kwargs):
+        """Generate model PSFs in this sector for each image denoated by its wv and parallactic angle
 
-        """
-
-        :return:
         """
         return None
