@@ -221,7 +221,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, input_s
               (shape of b,p)
     """
     max_basis = original_KL.shape[0]
-    numbasis_index = numbasis - 1
+    numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     # remove means and nans from science image
     sci_mean_sub = sci - np.nanmean(sci)
