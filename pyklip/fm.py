@@ -1025,7 +1025,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # create a selection matrix for selecting elements
     unique_wvs = np.unique(wvs_imgs)
     numwv = np.size(unique_wvs)
-    numref = np.size(unique_wvs)
+    numref = np.size(wvs_imgs)/numwv
     L = np.tile(np.identity(numwv), [1,numref])
     Sel_wv = L[:, ref_psfs_indicies]
 
