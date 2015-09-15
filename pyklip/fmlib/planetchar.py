@@ -119,6 +119,8 @@ class PlanetChar(NoFM):
         xc, yc = np.meshgrid(np.arange(input_img_shape[1] * 1.), np.arange(input_img_shape[0] * 1.))
         rc = np.sqrt((xc - ref_center[0])**2 + (yc - ref_center[1])**2)
         phic = np.arctan2(yc - ref_center[1], xc - ref_center[0])
+        cos_phic = np.cos(phic)
+        sin_phic = np.sin(phic)
 
         if debug:
             canvases = []
@@ -131,8 +133,8 @@ class PlanetChar(NoFM):
             # find center of psf
             # since images are aligned and scaled, need to scale wavelength
             rc_scaled = rc * (wv/ref_wv)
-            xc_scaled = rc_scaled * np.cos(phic) + ref_center[0]
-            yc_scaled = rc_scaled * np.sin(phic) + ref_center[1]
+            xc_scaled = rc_scaled * cos_phic  + ref_center[0]
+            yc_scaled = rc_scaled * sin_phic + ref_center[1]
             # find location of psf in image given sep/pa of object
             psf_centx = self.sep * np.cos(np.radians(90. - self.pa - pa)) + ref_center[0]#note self.pa is position angle, pa is parallactic angle
             psf_centy = self.sep * np.sin(np.radians(90. - self.pa - pa)) + ref_center[1]
