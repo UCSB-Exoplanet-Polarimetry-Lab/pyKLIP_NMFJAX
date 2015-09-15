@@ -269,7 +269,7 @@ class GPIData(Data):
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.mean(spot_fluxes)
+        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 

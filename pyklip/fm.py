@@ -249,7 +249,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, input_s
               (shape of b,p)
     """
     max_basis = original_KL.shape[0]
-    numbasis_index = numbasis - 1
+    numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     # remove means and nans from science image
     sci_mean_sub = sci - np.nanmean(sci)
@@ -1053,7 +1053,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # create a selection matrix for selecting elements
     unique_wvs = np.unique(wvs_imgs)
     numwv = np.size(unique_wvs)
-    numref = np.size(unique_wvs)
+    numref = np.size(wvs_imgs)/numwv
     L = np.tile(np.identity(numwv), [1,numref])
     Sel_wv = L[:, ref_psfs_indicies]
 
@@ -1064,10 +1064,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # generate models for the PSF of the science image
     model_sci = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, [parang], [wavelength], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)[0]
-    model_sci *= fm_class.flux_conversion * fm_class.spectrallib[0][np.where(fm_class.input_psfs_wvs == wavelength)] * fm_class.dflux
+    model_sci *= fm_class.flux_conversion[img_num] * fm_class.spectrallib[0][np.where(fm_class.input_psfs_wvs == wavelength)] * fm_class.dflux
     # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
     models_ref = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
-    input_spectrum = fm_class.flux_conversion * fm_class.spectrallib[0] * fm_class.dflux
+    input_spectrum = fm_class.flux_conversion[:fm_class.spectrallib[0].shape[0]] * fm_class.spectrallib[0] * fm_class.dflux
 
 
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
