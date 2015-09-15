@@ -171,30 +171,58 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
     # perturbed K lmodes
     delta_KL_nospec = np.zeros([original_KL.shape[0], Sel_wv.shape[0], original_KL.shape[1]]) # (numKL,N_lambda,N_pix)
 
-    # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
-    for k in range(max_basis):
-        # Define Z_{k}. Variable name: kl_basis_noPl[k,:], Shape: (1, N_pix)
-        Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
-        # Define V_{k}. Variable name: eigvec_noPl[:,k], Shape: (1, N_ref)
-        Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
-        # Define bolt{V}_{k}. Variable name: diagV_k = np.diag(eigvec_noPl[:,k]), Shape: (N_ref,N_ref)
-        diagVk = np.diag(evecs[:,k])
+    if 1:
+        # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
+        for k in range(max_basis):
+            Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
+            #Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
+            Vk = (evecs[:,k])[:,None]
+            #diagVk = np.diag(evecs[:,k])
 
 
-        DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+diagVk.dot(models_mean_sub)
-        # TODO: Make this NOT a for loop
-        for j in range(k):
-            Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
-            Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
-            diagVj = np.diag(evecs[:, j])
-            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
-        for j in range(k+1, max_basis):
-            Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
-            Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
-            diagVj = np.diag(evecs[:, j])
-            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
+            DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*(Vk*models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+Vk*models_mean_sub
+            # TODO: Make this NOT a for loop
+            models_mean_sub_X_refs_mean_sub_T = models_mean_sub.dot(refs_mean_sub.transpose())
+            diagVk_X_models_mean_sub_X_refs_mean_sub_T = Vk*models_mean_sub_X_refs_mean_sub_T
+            models_mean_sub_X_refs_mean_sub_T_X_Vk = models_mean_sub.dot(refs_mean_sub.transpose()).dot(Vk)
+            for j in range(k):
+                Zj = original_KL[j, :]
+                Vj = evecs[:, j]
+                #diagVj = np.diag(evecs[:, j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj[:,None]*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
+            for j in range(k+1, max_basis):
+                Zj = original_KL[j, :]
+                Vj = evecs[:, j]
+                #diagVj = np.diag(evecs[:, j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj[:,None]*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
 
-        delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
+            delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
+
+    else:  # backup slow version
+        # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
+        for k in range(max_basis):
+            # Define Z_{k}. Variable name: kl_basis_noPl[k,:], Shape: (1, N_pix)
+            Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
+            # Define V_{k}. Variable name: eigvec_noPl[:,k], Shape: (1, N_ref)
+            Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
+            # Define bolt{V}_{k}. Variable name: diagV_k = np.diag(eigvec_noPl[:,k]), Shape: (N_ref,N_ref)
+            diagVk = np.diag(evecs[:,k])
+
+
+            DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+diagVk.dot(models_mean_sub)
+            # TODO: Make this NOT a for loop
+            for j in range(k):
+                Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
+                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
+                diagVj = np.diag(evecs[:, j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
+            for j in range(k+1, max_basis):
+                Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
+                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
+                diagVj = np.diag(evecs[:, j])
+                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
+
+            delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
 
     return delta_KL_nospec
 
