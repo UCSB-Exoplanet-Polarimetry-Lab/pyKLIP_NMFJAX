@@ -185,16 +185,19 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
         diagVk_X_models_mean_sub_X_refs_mean_sub_T = Vk*models_mean_sub_X_refs_mean_sub_T
         models_mean_sub_X_refs_mean_sub_T_X_Vk = models_mean_sub.dot(refs_mean_sub.transpose()).dot(Vk)
         for j in range(k):
-            Zj = original_KL[j, :]
-            Vj = evecs[:, j]
+            Zj = original_KL[j, :][None,:]
+            Vj = evecs[:, j][:,None]
             #diagVj = np.diag(evecs[:, j])
-            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj[:,None]*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
-        #for j in range(k+1, max_basis):
+            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
         for j in range(k+1, 10):
-            Zj = original_KL[j, :]
-            Vj = evecs[:, j]
+            Zj = original_KL[j, :][None,:]
+            Vj = evecs[:, j][:,None]
             #diagVj = np.diag(evecs[:, j])
-            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj[:,None]*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
+            #print(diagVk_X_models_mean_sub_X_refs_mean_sub_T.shape)
+            #print(Vj[:,None].shape)
+            #print(models_mean_sub_X_refs_mean_sub_T_X_Vk.shape)
+            #print(Zj.shape)
+            DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
 
         delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
 
