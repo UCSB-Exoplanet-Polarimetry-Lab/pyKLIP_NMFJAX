@@ -2,9 +2,9 @@ __author__ = 'JB'
 
 from scipy.signal import convolve2d
 
-import spectra_management as spec
+import pyklip.spectra_management as spec
 from pyklip.kpp_pdf import *
-from kpp_std import *
+from pyklip.kpp_std import *
 
 
 def calculate_shape_metric_star(params):

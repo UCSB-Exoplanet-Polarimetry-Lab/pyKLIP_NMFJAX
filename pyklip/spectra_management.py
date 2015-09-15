@@ -95,7 +95,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
 
     Inputs:
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
-        star_type: 'A5','F4',... Assume type V star. Is ignored of temperature is defined.
+        star_type: 'A5','F4',... Assume type V star. Is ignored if temperature is defined.
         temperature: temperature of the star. Overwrite star_type if defined.
 
     Output:
@@ -130,6 +130,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
         target_temp = temperature
 
     dict_filename = dict()
+    temp_list=[]
     with open(filename_pickles_lookup, 'r') as f:
         for line in f:
             if line.startswith('pickles_uk_'):
@@ -142,9 +143,10 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
                 spec_type = splitted_line[1]
                 if splitted_line[0][len(splitted_line[0])-1].isdigit() and not (spec_type.endswith('IV') or spec_type.endswith('I')):
                     dict_filename[float(splitted_line[2])] = splitted_line[0]
+                    temp_list.append(float(splitted_line[2]))
 
-    temp_list = np.array(dict_filename.keys())
-    #print(temp_list)
+    #temp_list = np.array(dict_filename.keys())
+    temp_list = np.array(temp_list)
     # won't work for the hottest and coldest spectra.
     upper_temp, upper_temp_id = find_upper_nearest(temp_list,target_temp)
     lower_temp, lower_temp_id = find_lower_nearest(temp_list,target_temp)
