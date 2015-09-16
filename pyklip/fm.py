@@ -10,7 +10,9 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-parallel = False
+#import matplotlib.pyplot as plt
+
+parallel = True
 
 
 def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, input_spectrum=None, Sel_wv=None):
@@ -105,7 +107,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         # model_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1)) # don't need this because of python behavior where I don't need to duplicate rows
 
 
-        delta_KL_nospec = pertrub_nospec(evals, evecs, KL_basis, Sel_wv, refs_mean_sub, models_ref, model_sci)
+        delta_KL_nospec = pertrub_nospec(evals, evecs, KL_basis, refs_mean_sub, models_ref, model_sci)
 
 
         return sub_img_rows_selected.transpose(), KL_basis,  delta_KL_nospec
@@ -138,7 +140,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
 
-def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sci):
+def pertrub_nospec(evals, evecs, original_KL, refs, models_ref, model_sci):
     """
     Perturb the KL modes using a model of the PSF but with no assumption on the spectrum. Useful for planets
 
@@ -156,6 +158,8 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
         delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
                          Shape is (numKL, wv, pix)
     """
+    perturb_KL_precision = 0.01
+
     max_basis = original_KL.shape[0]
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
     refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
@@ -169,8 +173,15 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
     model_sci_mean_sub[model_nanpix] = 0
 
     # perturbed K lmodes
-    delta_KL_nospec = np.zeros([original_KL.shape[0], Sel_wv.shape[0], original_KL.shape[1]]) # (numKL,N_lambda,N_pix)
+    delta_KL_nospec = np.zeros([original_KL.shape[0], refs.shape[0], original_KL.shape[1]]) # (numKL,N_ref,N_pix)
 
+    #plt.figure(1)
+    #plt.plot(evals)
+    #ax = plt.gca()
+    #ax.set_yscale('log')
+    #plt.show()
+
+    models_mean_sub_X_refs_mean_sub_T = models_mean_sub.dot(refs_mean_sub.transpose())
     # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
     for k in range(max_basis):
         Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
@@ -178,18 +189,16 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
         Vk = (evecs[:,k])[:,None]
         #diagVk = np.diag(evecs[:,k])
 
-
-        DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*(Vk*models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+Vk*models_mean_sub
+        DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*(Vk*models_mean_sub_X_refs_mean_sub_T).dot(Vk).dot(Zk)+Vk*models_mean_sub
         # TODO: Make this NOT a for loop
-        models_mean_sub_X_refs_mean_sub_T = models_mean_sub.dot(refs_mean_sub.transpose())
         diagVk_X_models_mean_sub_X_refs_mean_sub_T = Vk*models_mean_sub_X_refs_mean_sub_T
-        models_mean_sub_X_refs_mean_sub_T_X_Vk = models_mean_sub.dot(refs_mean_sub.transpose()).dot(Vk)
+        models_mean_sub_X_refs_mean_sub_T_X_Vk = models_mean_sub_X_refs_mean_sub_T.dot(Vk)
         for j in range(k):
             Zj = original_KL[j, :][None,:]
             Vj = evecs[:, j][:,None]
             #diagVj = np.diag(evecs[:, j])
             DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
-        for j in range(k+1, 10):
+        for j in range(k+1, max_basis):
             Zj = original_KL[j, :][None,:]
             Vj = evecs[:, j][:,None]
             #diagVj = np.diag(evecs[:, j])
@@ -199,8 +208,8 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
             #print(Zj.shape)
             DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
 
-        delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
-
+        delta_KL_nospec[k] = DeltaZk_noSpec/np.sqrt(evals[k])
+    '''
     if 0:  # backup slow version
         # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
         for k in range(max_basis):
@@ -226,6 +235,7 @@ def pertrub_nospec(evals, evecs, original_KL, Sel_wv, refs, models_ref, model_sc
                 DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
 
             delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
+    '''
 
     return delta_KL_nospec
 
@@ -1057,8 +1067,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     unique_wvs = np.unique(wvs_imgs)
     numwv = np.size(unique_wvs)
     numref = np.size(wvs_imgs)/numwv
-    L = np.tile(np.identity(numwv), [1,numref])
-    Sel_wv = L[:, ref_psfs_indicies]
+    #L = np.tile(np.identity(numwv), [1,numref])
+    #Sel_wv = L[:, ref_psfs_indicies]
 
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
@@ -1071,9 +1081,12 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
     models_ref = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
     input_spectrum = fm_class.flux_conversion[:fm_class.spectrallib[0].shape[0]] * fm_class.spectrallib[0] * fm_class.dflux
+    inputflux = np.ravel(np.tile(input_spectrum,(1,numref)))
+    #print(inputflux.shape, input_spectrum.shape)
+    #print(ref_psfs_indicies)
+    inputflux = inputflux[ref_psfs_indicies]
 
-
-    klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
+    klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, input_spectrum=inputflux, model_sci=model_sci)
     # try:
     #     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
     # except (RuntimeError) as err: #(ValueError, RuntimeError, TypeError) as err:
@@ -1090,7 +1103,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         delta_KL_nospec = None
 
 
-    postklip_psf, oversubtraction, selfsubtraction = calculate_fm(delta_KL_nospec, original_KL, numbasis, aligned_imgs[img_num, section_ind[0]], model_sci, input_spectrum)
+    postklip_psf, oversubtraction, selfsubtraction = calculate_fm(delta_KL_nospec, original_KL, numbasis, aligned_imgs[img_num, section_ind[0]], model_sci, inputflux)
 
     # write to output
     for thisnumbasisindex in range(klipped.shape[1]):
