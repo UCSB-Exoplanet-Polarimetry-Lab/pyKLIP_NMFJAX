@@ -15,7 +15,7 @@ from pyklip.parallelized import _arraytonumpy
 parallel = True
 
 
-def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, spec_included = False):
+def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, spec_included = False,spec_from_model=False):
     """
     linear algebra of KLIP with linear perturbation
     disks and point source
@@ -95,9 +95,11 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     sub_img_rows_selected[sci_nanpix] = np.nan
 
     if models_ref is not None:
-        # reference PSF models
-        models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
-        models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+        # Already existing in the pertrub functions
+        ## reference PSF models
+        ## /!\ Caution if activated /!\ The shape of models_ref depends on spec_from_model
+        #models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
+        #models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
         ## science PSF models
         #model_sci_mean_sub = model_sci # should be subtracting off the mean?
@@ -110,6 +112,9 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         if spec_included:
             delta_KL = pertrub_specIncluded(evals, evecs, KL_basis, refs_mean_sub, models_ref)
             return sub_img_rows_selected.transpose(), KL_basis,  delta_KL
+        elif spec_from_model:
+            delta_KL_nospec = pertrub_nospec_modelsBased(evals, evecs, KL_basis, refs_mean_sub, models_ref)
+            return sub_img_rows_selected.transpose(), KL_basis,  delta_KL_nospec
         else:
             delta_KL_nospec = pertrub_nospec(evals, evecs, KL_basis, refs_mean_sub, models_ref)
             return sub_img_rows_selected.transpose(), KL_basis,  delta_KL_nospec
@@ -168,26 +173,63 @@ def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
 
     evals_tiled = np.tile(evals,(N_ref,1))
     np.fill_diagonal(evals_tiled,np.nan)
-    #print(evals_tiled)
     evals_sqrt = np.sqrt(evals)
     evalse_inv_sqrt = 1./evals_sqrt
     evals_ratio = (evalse_inv_sqrt[:,None]).dot(evals_sqrt[None,:])
-    #print(evals_ratio.shape)
-    #print(evals_tiled- evals_tiled.transpose())
     beta_tmp = 1./(evals_tiled.transpose()- evals_tiled)
     beta_tmp[np.diag_indices(N_ref)] = -0.5/evals
     beta = evals_ratio*beta_tmp
-    #print(beta)
 
     C =  models_mean_sub.dot(refs.transpose())+refs.dot(models_mean_sub.transpose())
     alpha = (evecs.transpose()).dot(C).dot(evecs)
 
     delta_KL = (beta*alpha).dot(original_KL)+(evalse_inv_sqrt[:,None]*evecs.transpose()).dot(models_mean_sub)
 
-    #plt.figure(1)
-    #plt.show()
 
     return delta_KL
+
+
+def pertrub_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
+    """
+
+    :param evals:
+    :param evecs:
+    :param original_KL:
+    :param refs:
+    :param models_ref:
+    :return:
+    """
+
+    max_basis = original_KL.shape[0]
+    N_wv,N_ref,N_pix = models_ref_list.shape
+
+    refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
+    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+
+    # perturbed KL modes
+    delta_KL_nospec = np.zeros([max_basis, N_wv, N_pix]) # (numKL,N_ref,N_pix)
+
+    for k,models_ref in enumerate(models_ref_list):
+        models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
+        models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+
+        evals_tiled = np.tile(evals,(N_ref,1))
+        np.fill_diagonal(evals_tiled,np.nan)
+        evals_sqrt = np.sqrt(evals)
+        evalse_inv_sqrt = 1./evals_sqrt
+        evals_ratio = (evalse_inv_sqrt[:,None]).dot(evals_sqrt[None,:])
+        beta_tmp = 1./(evals_tiled.transpose()- evals_tiled)
+        beta_tmp[np.diag_indices(N_ref)] = -0.5/evals
+        beta = evals_ratio*beta_tmp
+
+        C =  models_mean_sub.dot(refs.transpose())+refs.dot(models_mean_sub.transpose())
+        alpha = (evecs.transpose()).dot(C).dot(evecs)
+
+        delta_KL = (beta*alpha).dot(original_KL)+(evalse_inv_sqrt[:,None]*evecs.transpose()).dot(models_mean_sub)
+        delta_KL_nospec[:,k,:] = delta_KL[:,:]
+
+
+    return delta_KL_nospec
 
 def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
     """
@@ -207,7 +249,6 @@ def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
         delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
                          Shape is (numKL, wv, pix)
     """
-    #perturb_KL_precision = 0.01
 
     max_basis = original_KL.shape[0]
     N_ref = refs.shape[0]
@@ -224,7 +265,7 @@ def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
     #model_nanpix = np.where(np.isnan(model_sci_mean_sub))
     #model_sci_mean_sub[model_nanpix] = 0
 
-    # perturbed K lmodes
+    # perturbed KL modes
     delta_KL_nospec = np.zeros([max_basis, N_ref, N_pix]) # (numKL,N_ref,N_pix)
 
     #plt.figure(1)
@@ -237,9 +278,7 @@ def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
     # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
     for k in range(max_basis):
         Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
-        #Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
         Vk = (evecs[:,k])[:,None]
-        #diagVk = np.diag(evecs[:,k])
 
         DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*(Vk*models_mean_sub_X_refs_mean_sub_T).dot(Vk).dot(Zk)+Vk*models_mean_sub
         # TODO: Make this NOT a for loop
@@ -248,16 +287,10 @@ def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
         for j in range(k):
             Zj = original_KL[j, :][None,:]
             Vj = evecs[:, j][:,None]
-            #diagVj = np.diag(evecs[:, j])
             DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
         for j in range(k+1, max_basis):
             Zj = original_KL[j, :][None,:]
             Vj = evecs[:, j][:,None]
-            #diagVj = np.diag(evecs[:, j])
-            #print(diagVk_X_models_mean_sub_X_refs_mean_sub_T.shape)
-            #print(Vj[:,None].shape)
-            #print(models_mean_sub_X_refs_mean_sub_T_X_Vk.shape)
-            #print(Zj.shape)
             DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
 
         delta_KL_nospec[k] = DeltaZk_noSpec/np.sqrt(evals[k])
@@ -325,6 +358,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
 
 
     # science PSF models, ready for FM
+    # /!\ JB: If subtracting the mean. It should be done here. not in klip_math since we don't use model_sci there.
     model_sci_mean_sub = model_sci # should be subtracting off the mean?
     model_nanpix = np.where(np.isnan(model_sci_mean_sub))
     model_sci_mean_sub[model_nanpix] = 0
@@ -739,7 +773,8 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=3, numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=3,
-                      include_spec_in_model = False):
+                      include_spec_in_model = False,
+                      spec_from_model = False):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -928,17 +963,19 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                           numbasis,
                                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
                                                           fm_class,
-                                                          include_spec_in_model))
+                                                          include_spec_in_model,
+                                                          spec_from_model))
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
             if not parallel:
                 tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                          parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-                                                          numbasis,
-                                                          movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                          fm_class,
-                                                          include_spec_in_model)
+                                                                  parang, wv_value, wv_index, (radstart + radend) / 2., padding,
+                                                                  numbasis,
+                                                                  movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                                  fm_class,
+                                                                  include_spec_in_model,
+                                                                  spec_from_model)
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
@@ -992,7 +1029,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                     wv_index, avg_rad, padding,
                                     numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
                                     fm_class,
-                                    include_spec_in_model = False):
+                                    include_spec_in_model = False,
+                                    spec_from_model = False):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -1123,7 +1161,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # create a selection matrix for selecting elements
     unique_wvs = np.unique(wvs_imgs)
     numwv = np.size(unique_wvs)
-    numref = np.size(wvs_imgs)/numwv
+    numcubes = np.size(wvs_imgs)/numwv
+    numpix = np.shape(section_ind)[1]
+    numref = np.shape(ref_psfs_indicies)[0]
+    #print(numwv,numcubes,numpix,numref)
     #L = np.tile(np.identity(numwv), [1,numref])
     #Sel_wv = L[:, ref_psfs_indicies]
 
@@ -1139,18 +1180,31 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
     models_ref = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
     input_spectrum = fm_class.flux_conversion[:fm_class.spectrallib[0].shape[0]] * fm_class.spectrallib[0] * fm_class.dflux
-    inputflux = np.ravel(np.tile(input_spectrum,(1,numref)))
-    #print(inputflux.shape, input_spectrum.shape)
-    #print(ref_psfs_indicies)
-    inputflux = inputflux[ref_psfs_indicies]
+
     if include_spec_in_model:
-        #print(models_ref.shape)
-        #print(inputflux.shape)
+        inputflux = np.ravel(np.tile(input_spectrum,(1,numcubes)))
+        inputflux = inputflux[ref_psfs_indicies]
         models_ref = inputflux[:,None]*models_ref
         inputflux = None
+    elif spec_from_model:
+        models_ref_wvSorted = np.zeros((numwv,numref,numpix))
+        wvs_refs = wvs_imgs[ref_psfs_indicies]
+        for wv_id,wv in enumerate(unique_wvs):
+            where_ref_at_wv = np.where(wvs_refs == wv)[0]
+            models_ref_wvSorted[wv_id,where_ref_at_wv,:] = models_ref[where_ref_at_wv,:]
+        models_ref = models_ref_wvSorted
+        inputflux = input_spectrum
+    else:
+        inputflux = np.ravel(np.tile(input_spectrum,(1,numcubes)))
+        inputflux = inputflux[ref_psfs_indicies]
 
-    # JB: We can get rid of the input para model_sci
-    klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, model_sci=model_sci,spec_included = include_spec_in_model)
+    # JB: We can get rid of the input para model_sci. But there is commented code in klip_math that is using it.
+    klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
+                                 covar_psfs=covar_files,
+                                 models_ref=models_ref,
+                                 model_sci=model_sci,
+                                 spec_included = include_spec_in_model,
+                                 spec_from_model=spec_from_model)
     # try:
     #     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
     # except (RuntimeError) as err: #(ValueError, RuntimeError, TypeError) as err:
