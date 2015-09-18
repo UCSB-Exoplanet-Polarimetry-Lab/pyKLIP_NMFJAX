@@ -7,8 +7,12 @@ import os
 import scipy.ndimage as ndimage
 import sys
 from pyklip.fmlib.nofm import NoFM
+from scipy import interpolate
+from copy import copy
 
+#import matplotlib.pyplot as plt
 debug = False
+
 
 class PlanetChar(NoFM):
     """
@@ -55,6 +59,40 @@ class PlanetChar(NoFM):
         self.input_psfs = input_psfs
         self.input_psfs_wvs = input_psfs_wvs
         self.flux_conversion = flux_conversion
+
+        self.psf_centx_notscaled = {}
+        self.psf_centy_notscaled = {}
+
+        numwv,ny_psf,nx_psf =  self.input_psfs.shape
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(ny_psf* 1.)-ny_psf/2, np.arange(nx_psf * 1.)-nx_psf/2)
+        psfs_func_list = []
+        for wv_index in range(numwv):
+            model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+            #psfs_interp_model_list.append(interpolate.bisplrep(x_psf_grid,y_psf_grid,model_psf))
+            #psfs_interp_model_list.append(interpolate.SmoothBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel()))
+            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+            #psfs_interp_model_list.append(interpolate.interp2d(x_psf_grid,y_psf_grid,model_psf,kind="cubic",bounds_error=False,fill_value=0.0))
+            #psfs_interp_model_list.append(interpolate.Rbf(x_psf_grid,y_psf_grid,model_psf,function="gaussian"))
+
+            if 0:
+                import matplotlib.pylab as plt
+                #print(x_psf_grid.shape)
+                #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
+                plt.figure(1)
+                plt.subplot(1,3,1)
+                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0])
+                plt.imshow(a,interpolation="nearest")
+                plt.colorbar()
+                ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
+                plt.subplot(1,3,2)
+                plt.imshow(self.input_psfs[wv_index, :, :],interpolation="nearest")
+                plt.colorbar()
+                plt.subplot(1,3,3)
+                plt.imshow(abs(self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
+                plt.colorbar()
+                plt.show()
+
+        self.psfs_func_list = psfs_func_list
 
 
     def alloc_interm(self, max_sector_size, numsciframes):
@@ -116,55 +154,109 @@ class PlanetChar(NoFM):
             models: array of size (N, p) where p is the number of pixels in the segment
         """
         # create some parameters for a blank canvas to draw psfs on
-        xc, yc = np.meshgrid(np.arange(input_img_shape[1] * 1.), np.arange(input_img_shape[0] * 1.))
-        rc = np.sqrt((xc - ref_center[0])**2 + (yc - ref_center[1])**2)
-        phic = np.arctan2(yc - ref_center[1], xc - ref_center[0])
-        cos_phic = np.cos(phic)
-        sin_phic = np.sin(phic)
+        ny = input_img_shape[1]
+        nx = input_img_shape[0]
+        x_grid, y_grid = np.meshgrid(np.arange(ny * 1.)-ref_center[0], np.arange(nx * 1.)-ref_center[1])
+        #print(x_grid)
+        #r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
+        #phic = np.arctan2(yc,xc)
+        # No need to call cos and sin here actually. These are just x and y
+        #cos_phic = np.cos(phic)
+        #sin_phic = np.sin(phic)
 
+        numwv,ny_psf,nx_psf =  self.input_psfs.shape
+
+        row_m = np.floor(ny_psf/2.0)    # row_minus
+        row_p = np.ceil(ny_psf/2.0)     # row_plus
+        col_m = np.floor(nx_psf/2.0)    # col_minus
+        col_p = np.ceil(nx_psf/2.0)     # col_plus
+
+        whiteboard = np.zeros((ny,nx))
         if debug:
             canvases = []
         models = []
+        #print(self.input_psfs.shape)
         for pa, wv in zip(pas, wvs):
+            #print(self.pa,self.sep)
+            #print(pa,wv)
             # grab PSF given wavelength
             wv_index = np.where(wv == self.input_psfs_wvs)[0]
-            model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+            #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
             # since images are aligned and scaled, need to scale wavelength
-            rc_scaled = rc * (wv/ref_wv)
-            xc_scaled = rc_scaled * cos_phic  + ref_center[0]
-            yc_scaled = rc_scaled * sin_phic + ref_center[1]
+            #rc_scaled = rc * (wv/ref_wv)
+            #xc_scaled = rc_scaled * xc
+            #yc_scaled = rc_scaled * yc
             # find location of psf in image given sep/pa of object
-            psf_centx = self.sep * np.cos(np.radians(90. - self.pa - pa)) + ref_center[0]#note self.pa is position angle, pa is parallactic angle
-            psf_centy = self.sep * np.sin(np.radians(90. - self.pa - pa)) + ref_center[1]
+            # JB: Should be calculated outside. cos and sin are too slow
+            #psf_centx = (ref_wv/wv) * self.sep * np.cos(np.radians(90. - self.pa - pa))#note self.pa is position angle, pa is parallactic angle
+            #psf_centy = (ref_wv/wv) * self.sep * np.sin(np.radians(90. - self.pa - pa))
+            try:
+                psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
+                psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
+            except:
+                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - self.pa - pa))
+                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - self.pa - pa))
+                psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
+                psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
-            # chagne to coordiantes starting at center of image
-            xc_psf = xc_scaled - psf_centx
-            yc_psf = yc_scaled - psf_centy
-            # change to coordinates of the model PSF image. Center of psf is at size/2
-            xc_psf += model_psf.shape[1]/2
-            yc_psf += model_psf.shape[0]/2
+            k = round(psf_centy) + ref_center[1]# check k/x ou k/y
+            l = round(psf_centx) + ref_center[0]
+            # probably no need to keep the grid
+            #x_grid_stamp_centered = x_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centx
+            #y_grid_stamp_centered = y_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centy
+            x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
+            y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            x_vec_stamp_centered /= (ref_wv/wv)
+            y_vec_stamp_centered /= (ref_wv/wv)
 
-            yc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
-            xc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
-            segment_with_model = ndimage.map_coordinates(model_psf, [yc_psf[section_ind], xc_psf[section_ind]], cval=0)
+            #yc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
+            #xc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
+            #segment_with_model = ndimage.map_coordinates(model_psf, [yc_psf[section_ind], xc_psf[section_ind]], cval=0)
+            #segment_with_model = interpolate.bisplev(np.arange(100), np.arange(100),psfs_interp_model_list[wv_index[0]])
+            #print(psfs_interp_model_list[wv_index[0]])
+            #print(yc_psf[section_ind], xc_psf[section_ind])
+            #segment_with_model = psfs_interp_model_list[wv_index[0]].ev(np.ndarray.tolist(xc_psf[section_ind]), np.ndarray.tolist(yc_psf[section_ind]))
+
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
+
+            whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
+            segment_with_model = copy(whiteboard[section_ind])
+            whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
             models.append(segment_with_model)
 
             # create a canvas to place the new PSF in the sector on
             if debug:
+                print(x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0])
                 canvas = np.zeros(input_img_shape)
                 canvas.shape = [input_img_shape[0] * input_img_shape[1]]
                 canvas[section_ind] = segment_with_model
                 canvas.shape = [input_img_shape[0], input_img_shape[1]]
                 canvases.append(canvas)
+                import matplotlib.pyplot as plt
+                plt.figure(1)
+                plt.subplot(2,2,1)
+                im = plt.imshow(canvas)
+                plt.colorbar(im)
+                plt.subplot(2,2,2)
+                im = plt.imshow(whiteboard)
+                plt.colorbar(im)
+                plt.subplot(2,2,3)
+                plt.imshow(psfs_interp_model_list[wv_index[0]](np.arange(-20,20,1.),np.arange(-20,20,1.)),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
+                plt.subplot(2,2,4)
+                plt.imshow(psfs_interp_model_list[wv_index[0]](x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0]),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
+                plt.show()
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
 
         if debug:
-            import matplotlib.pylab as plt
-            im = plt.imshow(canvases[10])
-            plt.colorbar(im)
-            plt.show()
+            #import matplotlib.pylab as plt
+            for canvas in canvases:
+                im = plt.imshow(canvas)
+                plt.colorbar(im)
+                plt.show()
 
         return np.array(models)
 
