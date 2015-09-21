@@ -265,8 +265,14 @@ def planet_detection_in_dir_per_file(filename,
     splitted_before_KL = splitted_name[0].split(os.path.sep)
     prefix = splitted_before_KL[np.size(splitted_before_KL)-1]
 
+    #grab the headers of the fits file
+    hdulist = pyfits.open(filename)
+    prihdr = hdulist[0].header
+
     # Get the date from the filename SYYYYMMDD
-    compact_date = prefix.split("-")[1]
+    date = prihdr['DATE']
+    compact_date = "S"+date.replace("-","")
+    #compact_date = prefix.split("-")[1]
 
     #grab the headers of the fits file
     hdulist = pyfits.open(filename)
