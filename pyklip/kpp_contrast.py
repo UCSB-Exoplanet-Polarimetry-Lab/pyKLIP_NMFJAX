@@ -16,34 +16,44 @@ def generate_fakes(inputdir,
                    N_repeat = 5,
                    init_sep_list = [0.0],
                    contrast_list = [1.0],
+                   planet_spectrum_list = [None],
                    annuli_list = [7],
                    subsections_list = [4],
                    movement_list = [3],
                    klip_spectrum_list = [None],
                    numbasis = [1,10,20,100],
-                   metric_spectrum = None,
                    star_type = "G4",
                    compact_date = None,
                    filter_check = None,
+                   satSpot_based_contrast = True,
                    GOI_list = None,
                    mute = False):
 
     if filename_filter is None:
         if compact_date is not None:
-            filename_filter = "S"+compact_date+"S*_spdc_distorcorr.fit"
+            filename_filter = "S"+compact_date+"S*_spdc_distorcorr.fits"
         else:
             filename_filter = "S*_spdc_distorcorr.fits"
 
-    if metric_spectrum is None:
-        pyklip_dir = os.path.dirname(os.path.realpath(__file__))
-        spectrum_model = [pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx"]
+    pyklip_dir = os.path.dirname(os.path.realpath(__file__))
+    if planet_spectrum_list[0] is None:
+        planet_spectrum_dir_list = [pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx"]
+    else:
+        planet_spectrum_dir_list = []
+        for plspec_it in planet_spectrum_list:
+            planet_spectrum_dir_list.append(pyklip_dir+os.path.sep+"spectra"+os.path.sep+plspec_it)
 
     # generate database of klipped fakes
     filelist = glob.glob(inputdir+filename_filter)
+    #print(inputdir+filename_filter)
     dataset = GPI.GPIData(filelist)
 
     prihdr = dataset.prihdrs[0]
     exthdr = dataset.exthdrs[0]
+
+    if satSpot_based_contrast:
+        spot_ratio = dataset.spot_ratio[dataset.prihdrs[0]['IFSFILT'].split('_')[1]]
+        contrast_list = np.ndarray.tolist(spot_ratio*np.array(contrast_list))
 
     # Retrieve the filter used from the fits headers.
     filter = prihdr['IFSFILT'].split('_')[1]
@@ -88,7 +98,7 @@ def generate_fakes(inputdir,
         xml_star_name = star_name
 
     # Define the tree for the xml file
-    xml_filename = outputdir+os.path.sep+star_name+"_"+compact_date+"_"+filter+"_"+'-fakes.xml'
+    xml_filename = outputdir+os.path.sep+star_name+"_"+compact_date+"_"+filter+"_"+'fakes.xml'
     xml_filename_list = glob.glob(xml_filename)
     if np.size(xml_filename_list) == 0:
         root = ET.Element("root")
@@ -99,8 +109,9 @@ def generate_fakes(inputdir,
         star_elt = root[0]
 
     cpy_dataset = deepcopy(dataset)
-    for init_sep,fake_planet_contrast,annuli,subsections,movement,klip_spectrum in itertools.product(init_sep_list,
+    for init_sep,fake_planet_contrast,planet_spectrum,annuli,subsections,movement,klip_spectrum in itertools.product(init_sep_list,
                                                                                           contrast_list,
+                                                                                          planet_spectrum_dir_list,
                                                                                           annuli_list,
                                                                                           subsections_list,
                                                                                           movement_list,
@@ -138,7 +149,7 @@ def generate_fakes(inputdir,
             # Interpolate a spectrum of the star based on its spectral type/temperature
             wv,star_sp = spec.get_star_spectrum(filter,star_type,None)
             # Interpolate the spectrum of the planet based on the given filename
-            wv,planet_sp = spec.get_planet_spectrum(spectrum_model[0],filter)
+            wv,planet_sp = spec.get_planet_spectrum(planet_spectrum,filter)
             ratio_spec_models = planet_sp/star_sp
             for k in range(N_cubes):
                 inputflux[37*k:37*(k+1)] = dataset.spot_flux[37*k:37*(k+1)]*ratio_spec_models
@@ -170,33 +181,43 @@ def generate_fakes(inputdir,
             #print(pa_grid)
             #print(radii_grid)
 
-
-            fileprefix = compact_date+"_"+filter+"_" + \
-                         "_k{0}a{1}s{2}m{3}".format(np.max(numbasis),annuli,subsections,movement)+klip_spectrum + \
-                         "_r{0:.2f}_a{1:.2f}_c{2:.2f}".format(init_sep,init_pa,-np.log10(fake_planet_contrast))
+            planet_spectrum_str = planet_spectrum.split(os.path.sep)[-1].split(".")[0]
+            if klip_spectrum is None:
+                fileprefix = compact_date+"_"+filter+"_" + \
+                         "_k{0}a{1}s{2}m{3}".format(np.max(numbasis),annuli,subsections,movement) + \
+                         "_r{0:.2f}_a{1:.2f}_c{2:.2f}".format(init_sep,init_pa,-np.log10(fake_planet_contrast)) + \
+                         planet_spectrum_str
+            else:
+                fileprefix = compact_date+"_"+filter + \
+                         "_k{0}a{1}s{2}m{3}".format(np.max(numbasis),annuli,subsections,movement) + \
+                         klip_spectrum + \
+                         "_r{0:.2f}_a{1:.2f}_c{2:.2f}".format(init_sep,init_pa,-np.log10(fake_planet_contrast)) + \
+                         planet_spectrum_str
 
             file_info = ET.SubElement(star_elt,"file",
                           fileprefix = fileprefix,
                           init_sep = str(init_sep),
                           fake_planet_contrast_log = str(-np.log10(fake_planet_contrast)),
+                          planet_spectrum = planet_spectrum_str,
                           init_pa = str(init_pa),
                           outputdir = str(outputdir),
                           N_repeat = str(N_repeat),
                           star_type = star_type,
                           filter = filter,
-                          metric_spectrum = metric_spectrum,
                           compact_date = compact_date,
-                          maxKL = np.max(numbasis),
-                          annuli=annuli,
-                          subsections=subsections,
-                          movement=movement,
-                          klip_spectrum=klip_spectrum)
+                          maxKL = str(np.max(numbasis)),
+                          annuli=str(annuli),
+                          subsections=str(subsections),
+                          movement=str(movement),
+                          klip_spectrum=str(klip_spectrum))
 
             # Loop for injecting fake planets. One planet per section of the image.
             # Too many hard-coded parameters because still work in progress.
             for pa, radius in itertools.izip(np.reshape(pa_grid,np.size(pa_grid)),np.reshape(radii_grid,np.size(radii_grid))):
                 x_max_pos = radius*np.cos(np.radians(pa))
                 y_max_pos = radius*np.sin(np.radians(pa))
+                if not mute:
+                    print("injecting planet for "+fileprefix+". Position ("+str(x_max_pos)+","+str(y_max_pos)+")")
                 ET.SubElement(file_info,"fake",
                               pa = str(pa),
                               radius = str(radius),
@@ -205,6 +226,7 @@ def generate_fakes(inputdir,
                               x_max_pos=str(x_max_pos),
                               y_max_pos=str(y_max_pos))
                 fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
+
 
             parallelized.klip_dataset(dataset,
                                       outputdir=outputdir,
@@ -217,4 +239,4 @@ def generate_fakes(inputdir,
 
     # Save the xml file from the tree
     tree = ET.ElementTree(root)
-    tree.write(outputdir+os.path.sep+star_name+"_"+compact_date+"_"+filter+"_"+'-fakes.xml')
+    tree.write(xml_filename)
