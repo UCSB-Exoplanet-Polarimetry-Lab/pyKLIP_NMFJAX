@@ -214,8 +214,8 @@ def generate_fakes(inputdir,
             # Loop for injecting fake planets. One planet per section of the image.
             # Too many hard-coded parameters because still work in progress.
             for pa, radius in itertools.izip(np.reshape(pa_grid,np.size(pa_grid)),np.reshape(radii_grid,np.size(radii_grid))):
-                x_max_pos = radius*np.cos(np.radians(pa))
-                y_max_pos = radius*np.sin(np.radians(pa))
+                x_max_pos = radius*np.cos(np.radians(90+pa))
+                y_max_pos = radius*np.sin(np.radians(90+pa))
                 if not mute:
                     print("injecting planet for "+fileprefix+". Position ("+str(x_max_pos)+","+str(y_max_pos)+")")
                 ET.SubElement(file_info,"fake",
@@ -240,3 +240,283 @@ def generate_fakes(inputdir,
     # Save the xml file from the tree
     tree = ET.ElementTree(root)
     tree.write(xml_filename)
+
+
+                   annuli_list = [7],
+                   subsections_list = [4],
+                   movement_list = [3],
+                   klip_spectrum_list = [None],
+                   numbasis = [1,10,20,100],
+def analysis_contrast(inputdir_data,
+                      inputdir_fakes,
+                      filename_filter = None,
+                      compact_date = None,
+                      annuli = 7,
+                      subsections = 4,
+                      movement = 3,
+                      klip_spectrum = None,
+                      N_KL = 20):
+        star_name = target
+        N_KL = 10
+        N = 3000
+        stamp_width = 20
+        mask_radius = 7
+        contrast_metric = "matchedFilter"
+
+        if filename_filter is None:
+            if compact_date is not None:
+                filename_filter = "S"+compact_date+"S*_spdc_distorcorr.fits"
+            else:
+                filename_filter = "S*_spdc_distorcorr.fits"
+
+
+
+        # retrieve and plot Jason's contrast curve
+        data = ascii.read(inputdir_data+"contrast-S"+date+".txt")
+        sep_sampling = np.array(data['Seps'])
+        contrast_flat = np.array(data['Flat Spectrum'])
+        contrast_meth = np.array(data['Methane Spectrum'])
+
+        if 0:
+            plt.figure(1)
+            plt.plot(sep_sampling,contrast_flat)
+            plt.xlabel('Separation', fontsize=20)
+            plt.ylabel('Contrast', fontsize=20)
+            #plt.xlim((-30.* im_std,20.*im_std))
+            plt.grid(True)
+            ax = plt.gca()
+            ax.tick_params(axis='x', labelsize=20)
+            ax.tick_params(axis='y', labelsize=20)
+            ax.set_yscale('log')
+            #plt.ylim((10**-5,100000))
+            plt.show()
+
+
+        radial_PSF_cube_filename = glob.glob(inputdir+"*-original_radial_PSF_cube.fits")[0]
+        # generate normalized PSF
+        hdulist = pyfits.open(radial_PSF_cube_filename)
+        radial_psfs = hdulist[1].data
+
+        ori_cube_filename = glob.glob(inputdir+"pyklip-S"+date+"-k100a7s4m3-KL"+str(N_KL)+"-speccube.fits")[0]
+        #hdulist = pyfits.open(ori_cube_filename)
+        #ori_cube = hdulist[1].data
+        #hdulist.close()
+
+        if 0:
+            planet_detection_in_dir_per_file(ori_cube_filename,
+                                              metrics = ["shape", "matchedFilter"],
+                                              directory = inputdir,
+                                              outputDir = outputdir,
+                                              spectrum_model = spectrum_model,
+                                              star_type = "G5",
+                                              star_temperature = None,
+                                              user_defined_PSF_cube = radial_PSF_cube_filename,
+                                              metrics_only = True,
+                                              planet_detection_only = False,
+                                              mute = False,
+                                              threads = True,
+                                              GOI_list = GOI_list,
+                                              overwrite_metric = True,
+                                              overwrite_stat = False,
+                                              proba_using_mask_per_pixel = False,
+                                              SNR = False,
+                                              probability = False,
+                                              detection_metric = None)
+
+        ori_foldername = outputdir+"planet_detec_pyklip-S"+date+"-k100a7s4m3"+"-KL"+str(N_KL)
+        print(ori_foldername)
+
+        ori_shape_map_filename = ori_foldername+os.path.sep+"t950g32nc"+os.path.sep+target+"-"+contrast_metric+".fits"
+        hdulist = pyfits.open(ori_shape_map_filename)
+        ori_shape_map = hdulist[1].data
+        exthdr = hdulist[1].header
+        prihdr = hdulist[0].header
+        hdulist.close()
+        flatCube_filename = ori_foldername+os.path.sep+"t950g32nc"+os.path.sep+target+"-flatCube.fits"
+        hdulist = pyfits.open(flatCube_filename)
+        ori_flatCube = hdulist[1].data
+        hdulist.close()
+
+        tree = ET.parse(outputdir+os.path.sep+star_name+'-fakes.xml')
+        root = tree.getroot()
+        star_elt = root[0]
+        contrast_and_radius_list = []
+        proba_table = []
+        for file_elt in star_elt:
+            # Get the information of the candidate from the element attributes
+            fileprefix = file_elt.attrib["fileprefix"]
+            fake_planet_contrast = float(file_elt.attrib["fake_planet_contrast"])
+            outputdir = file_elt.attrib["outputdir"]
+            #outputdir = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\contrast\\outputs\\"
+
+
+            fakePl_filelist = glob.glob(outputdir+fileprefix+"*KL"+str(N_KL)+"-speccube.fits")
+
+            fakePl_filename = fakePl_filelist[0]
+            #hdulist = pyfits.open(fakePl_filename)
+            #cube = hdulist[1].data
+            #hdulist.close()
+
+            if 0:
+                planet_detection_in_dir_per_file(fakePl_filename,
+                                                  metrics = ["shape", "matchedFilter"],
+                                                  directory = inputdir,
+                                                  outputDir = outputdir,
+                                                  spectrum_model = spectrum_model,
+                                                  star_type = star_type,
+                                                  star_temperature = None,
+                                                  user_defined_PSF_cube = radial_PSF_cube_filename,
+                                                  metrics_only = True,
+                                                  planet_detection_only = False,
+                                                  mute = False,
+                                                  threads = True,
+                                                  GOI_list = GOI_list,
+                                                  overwrite_metric = True,
+                                                  overwrite_stat = False,
+                                                  proba_using_mask_per_pixel = False,
+                                                  SNR = False,
+                                                  probability = False,
+                                                  detection_metric = None)
+
+
+            foldername = outputdir+"planet_detec_"+fileprefix+"-KL"+str(N_KL)
+            print(glob.glob(foldername+os.path.sep+"t950g32nc"+os.path.sep+target+"-"+contrast_metric+".fits"))
+
+
+            shape_map_filename = foldername+os.path.sep+"t950g32nc"+os.path.sep+target+"-"+contrast_metric+".fits"
+            hdulist = pyfits.open(shape_map_filename)
+            fakePl_shape_map = hdulist[1].data
+            hdulist.close()
+            flatCube_filename = foldername+os.path.sep+"t950g32nc"+os.path.sep+target+"-flatCube.fits"
+            hdulist = pyfits.open(flatCube_filename)
+            fakePl_flatCube = hdulist[1].data
+            hdulist.close()
+
+            # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list is not None:
+                ori_shape_map_without_planet = mask_known_objects(ori_shape_map,prihdr,GOI_list, mask_radius = 7)
+            else:
+                ori_shape_map_without_planet = ori_shape_map
+
+            ny,nx = ori_shape_map.shape
+            try:
+                # Retrieve the center of the image from the fits keyword.
+                center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+            except:
+                # If the keywords could not be found.
+                if not mute:
+                    print("Couldn't find PSFCENTX and PSFCENTY keywords.")
+                center = [(nx-1)/2,(ny-1)/2]
+
+            IWA,OWA,inner_mask,outer_mask = get_occ(ori_shape_map, centroid = center)
+
+            if center is None :
+                x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+            else:
+                x_cen, y_cen = center
+
+            image_without_planet_mask = np.ones((ny,nx))
+            image_without_planet_mask[np.where(np.isnan(ori_shape_map_without_planet))] = 0
+
+            # Build the x and y coordinates grids
+            x_grid, y_grid = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
+            # Calculate the radial distance of each pixel
+            r_grid = abs(x_grid +y_grid*1j)
+            th_grid = np.arctan2(x_grid,y_grid)
+
+            r_min_firstZone,r_max_firstZone = (IWA,np.sqrt(N/np.pi+IWA**2))
+            r_limit_firstZone = (r_min_firstZone + r_max_firstZone)/2.
+            r_min_lastZone,r_max_lastZone = (OWA,np.max([ny,nx]))
+            r_limit_lastZone = OWA - N/(4*np.pi*OWA)
+            #(r_limit_firstZone,r_min_firstZone,r_max_firstZone)
+            #(r_limit_lastZone,r_min_lastZone,r_max_lastZone
+
+            for fake_elt in file_elt:
+                # Get the information of the candidate from the element attributes
+                x_max_pos = float(fake_elt.attrib["x_max_pos"])
+                y_max_pos = float(fake_elt.attrib["y_max_pos"])
+                col_centroid = float(fake_elt.attrib["col_centroid"])
+                row_centroid = float(fake_elt.attrib["row_centroid"])
+                pa = float(fake_elt.attrib["pa"])
+                radius = float(fake_elt.attrib["radius"])
+                #print(pa,radius)
+
+                if (fake_planet_contrast,radius) in contrast_and_radius_list:
+                    curr_proba_list = proba_table[contrast_and_radius_list.index((fake_planet_contrast,radius))]
+                    #print(contrast_and_radius_list.index((fake_planet_contrast,radius)))
+                else:
+                    contrast_and_radius_list.append((fake_planet_contrast,radius))
+                    curr_proba_list = []
+                    proba_table.append(curr_proba_list)
+
+                #print(contrast_and_radius_list)
+                #print(proba_table)
+                #print(curr_proba_list)
+
+                #TO BE REMOVED
+                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                col_centroid = x_max_pos+center[0]
+                row_centroid = y_max_pos+center[1]
+
+                #print(radius,pa)
+                #print(x_max_pos,y_max_pos,col_centroid,row_centroid)
+                k = round(row_centroid)
+                l = round(col_centroid)
+
+                stamp = fakePl_flatCube[(k-np.floor(stamp_width/2.)):(k+np.ceil(stamp_width/2.)),
+                                                            (l-np.floor(stamp_width/2.)):(l+np.ceil(stamp_width/2.))]
+
+
+                x = x_grid[(k,l)]
+                y = y_grid[(k,l)]
+                #print(x,y)
+                r = r_grid[(k,l)]
+
+
+                if r < r_limit_firstZone:
+                    #Calculate stat for pixels close to IWA
+                    r_min,r_max = r_min_firstZone,r_max_firstZone
+                elif r > r_limit_lastZone:
+                    r_min,r_max = r_min_lastZone,r_max_lastZone
+                else:
+                    dr = N/(4*np.pi*r)
+                    r_min,r_max = (r-dr, r+dr)
+
+                where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
+                where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
+                #print(np.shape(where_ring_masked[0]))
+
+                data = ori_shape_map_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
+
+                cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
+
+                cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
+
+                curr_proba_list.append(-np.log10(1-cdf_fit(fakePl_shape_map[k,l])))
+                print(-np.log10(1-cdf_fit(fakePl_shape_map[k,l])))
+                if 0:
+                    plt.figure(1)
+                    plt.imshow(stamp,interpolation="nearest")
+                    plt.show()
+
+        contrast_and_radius_list = np.array(contrast_and_radius_list)
+        proba_table = np.array(proba_table)
+
+        print(contrast_and_radius_list)
+        print(proba_table)
+
+        print(proba_table.shape,contrast_and_radius_list.shape)
+
+        detected = proba_table > 4.
+        print(np.sum(detected,axis=1))
+        print(detected)
+
+        plt.figure(1)
+        plt.scatter(contrast_and_radius_list[:,1],contrast_and_radius_list[:,0],c=np.sum(detected,axis=1))
+        plt.plot(sep_sampling/0.01414,contrast_flat)
+        ax = plt.gca()
+        ax.set_yscale('log')
+        plt.ylim((10**-7,10**-3))
+        plt.show()
