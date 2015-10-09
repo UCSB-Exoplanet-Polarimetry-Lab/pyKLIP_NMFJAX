@@ -135,6 +135,7 @@ class PlanetChar(NoFM):
 
 
     def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
+        # TODO: change this to **kwargsgi t
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -154,23 +155,19 @@ class PlanetChar(NoFM):
             models: array of size (N, p) where p is the number of pixels in the segment
         """
         # create some parameters for a blank canvas to draw psfs on
-        ny = input_img_shape[1]
-        nx = input_img_shape[0]
-        x_grid, y_grid = np.meshgrid(np.arange(ny * 1.)-ref_center[0], np.arange(nx * 1.)-ref_center[1])
-        #print(x_grid)
-        #r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
-        #phic = np.arctan2(yc,xc)
-        # No need to call cos and sin here actually. These are just x and y
-        #cos_phic = np.cos(phic)
-        #sin_phic = np.sin(phic)
+        nx = input_img_shape[1]
+        ny = input_img_shape[0]
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
-        numwv,ny_psf,nx_psf =  self.input_psfs.shape
+        numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
+        # create bounds for PSF stamp size
         row_m = np.floor(ny_psf/2.0)    # row_minus
         row_p = np.ceil(ny_psf/2.0)     # row_plus
         col_m = np.floor(nx_psf/2.0)    # col_minus
         col_p = np.ceil(nx_psf/2.0)     # col_plus
 
+        # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
         if debug:
             canvases = []
@@ -184,44 +181,30 @@ class PlanetChar(NoFM):
             #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
-            # since images are aligned and scaled, need to scale wavelength
-            #rc_scaled = rc * (wv/ref_wv)
-            #xc_scaled = rc_scaled * xc
-            #yc_scaled = rc_scaled * yc
-            # find location of psf in image given sep/pa of object
-            # JB: Should be calculated outside. cos and sin are too slow
-            #psf_centx = (ref_wv/wv) * self.sep * np.cos(np.radians(90. - self.pa - pa))#note self.pa is position angle, pa is parallactic angle
-            #psf_centy = (ref_wv/wv) * self.sep * np.sin(np.radians(90. - self.pa - pa))
-            try:
-                psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
-                psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
-            except:
+            # to reduce calculation of sin and cos, see if it has already been calculated before
+            if pa not in self.psf_centx_notscaled:
                 self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - self.pa - pa))
                 self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - self.pa - pa))
-                psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
-                psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
+            psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
+            psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
-            k = round(psf_centy) + ref_center[1]# check k/x ou k/y
-            l = round(psf_centx) + ref_center[0]
-            # probably no need to keep the grid
-            #x_grid_stamp_centered = x_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centx
-            #y_grid_stamp_centered = y_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centy
+            # create a coordinate system for the image that is with respect to the model PSF
+            # round to nearest pixel and add offset for center
+            l = round(psf_centx + ref_center[0])
+            k = round(psf_centy + ref_center[1]) 
+            # recenter coordinate system about the location of the planet
             x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
             y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            # rescale to account for the align and scaling of the refernce PSFs
+            # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
-            #yc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
-            #xc_psf.shape = [input_img_shape[0] * input_img_shape[1]]
-            #segment_with_model = ndimage.map_coordinates(model_psf, [yc_psf[section_ind], xc_psf[section_ind]], cval=0)
-            #segment_with_model = interpolate.bisplev(np.arange(100), np.arange(100),psfs_interp_model_list[wv_index[0]])
-            #print(psfs_interp_model_list[wv_index[0]])
-            #print(yc_psf[section_ind], xc_psf[section_ind])
-            #segment_with_model = psfs_interp_model_list[wv_index[0]].ev(np.ndarray.tolist(xc_psf[section_ind]), np.ndarray.tolist(yc_psf[section_ind]))
-
+            # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
 
+            # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
             segment_with_model = copy(whiteboard[section_ind])
             whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
