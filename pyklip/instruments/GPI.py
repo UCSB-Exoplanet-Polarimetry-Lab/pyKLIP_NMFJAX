@@ -432,7 +432,7 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-    def generate_psf_cube(self, boxw=14):
+    def generate_psf_cube(self, boxw=14, threshold=0.05):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -445,6 +445,7 @@ class GPIData(Data):
         Args:
             boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
+            threashold: fractional pixel value of max pixel value below which everything gets set to 0's
 
         Returns:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
@@ -556,7 +557,7 @@ class GPIData(Data):
         for l in range(numwaves):
             #PSF_cube[l,:,:] -= np.nanmedian(PSF_cube[l,:,:][stamp_center])
             PSF_cube[l,:,:] *= sat_spot_spec[l]/np.nanmax(PSF_cube[l,:,:])
-            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])/np.nanmax(abs(PSF_cube[l,:,:]))<0.05)] = 0.0
+            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])/np.nanmax(abs(PSF_cube[l,:,:]))< threshold)] = 0.0
 
         if 0:
             import matplotlib.pyplot as plt
