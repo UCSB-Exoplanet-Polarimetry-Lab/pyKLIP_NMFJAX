@@ -300,14 +300,17 @@ class PlanetChar(NoFM):
         input_spectrum = input_spectrum[ref_psfs_indicies]
         models_ref = models_ref * input_spectrum[:, None]
 
+        # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
         delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
 
+        # calculate postklip_psf using delta_KL
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
 
 
         fmout_shape = fmout.shape
 
-        # write to output
+        # write forward modelled PSF to fmout (as output)
+        # need to derotate the image in this step
         for thisnumbasisindex in range(np.size(numbasis)):
                 fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                  fmout[input_img_num, :, :,thisnumbasisindex], None, parang,

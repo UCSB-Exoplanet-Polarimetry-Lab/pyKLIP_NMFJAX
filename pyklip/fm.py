@@ -10,9 +10,7 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-#import matplotlib.pyplot as plt
-
-parallel = False
+parallel = True
 
 
 def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, spec_included=False, spec_from_model=False):
@@ -1033,20 +1031,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         sector_index: used for tracking jobs
         Saves image to output array defined in _tpool_init()
     """
-    #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
-    # x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
-    # x.shape = (x.shape[0] * x.shape[1]) #Flatten
-    # y.shape = (y.shape[0] * y.shape[1])
-    # r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
-    # phi = np.arctan2(y - ref_center[1], x - ref_center[0])
-    #
-    # #grab the pixel location of the section we are going to anaylze based on the parallactic angle of the image
-    # phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
-    # # in case of wrap around
-    # if phistart < phiend:
-    #     section_ind = np.where((r >= radstart) & (r < radend) & (phi_rotate >= phistart) & (phi_rotate < phiend))
-    # else:
-    #     section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
+
+    # get the indicies in the aligned data that correspond to the section and the section without padding
     section_ind = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
                                             padding, parang)
     section_ind_nopadding = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
@@ -1137,71 +1123,29 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numcubes = np.size(wvs_imgs)/numwv
     numpix = np.shape(section_ind)[1]
     numref = np.shape(ref_psfs_indicies)[0]
-    #print(numwv,numcubes,numpix,numref)
-    #L = np.tile(np.identity(numwv), [1,numref])
-    #Sel_wv = L[:, ref_psfs_indicies]
 
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
-    fmout_np = _arraytonumpy(fmout, fmout_shape)
+    if fmout is not None:
+        fmout_np = _arraytonumpy(fmout, fmout_shape)
+    else:
+        fmout_np = None
 
-    # # generate models for the PSF of the science image
-    # model_sci = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, [parang], [wavelength], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)[0]
-    # model_sci *= fm_class.flux_conversion[img_num] * fm_class.spectrallib[0][np.where(fm_class.input_psfs_wvs == wavelength)] * fm_class.dflux
-    #
-    # # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-    # models_ref = fm_class.generate_models([original_shape[1], original_shape[2]], section_ind, pa_imgs[ref_psfs_indicies], wvs_imgs[ref_psfs_indicies], radstart, radend, phistart, phiend, padding, ref_center, parang, wavelength)
-    # input_spectrum = fm_class.flux_conversion[:fm_class.spectrallib[0].shape[0]] * fm_class.spectrallib[0] * fm_class.dflux
-    #
-    # if include_spec_in_model:
-    #     inputflux = np.ravel(np.tile(input_spectrum,(1,numcubes)))
-    #     inputflux = inputflux[ref_psfs_indicies]
-    #     models_ref = inputflux[:,None]*models_ref
-    #     inputflux = None
-    # elif spec_from_model:
-    #     models_ref_wvSorted = np.zeros((numwv,numref,numpix))
-    #     wvs_refs = wvs_imgs[ref_psfs_indicies]
-    #     for wv_id,wv in enumerate(unique_wvs):
-    #         where_ref_at_wv = np.where(wvs_refs == wv)[0]
-    #         models_ref_wvSorted[wv_id,where_ref_at_wv,:] = models_ref[where_ref_at_wv,:]
-    #     models_ref = models_ref_wvSorted
-    #     inputflux = input_spectrum
-    # else:
-    #     inputflux = np.ravel(np.tile(input_spectrum,(1,numcubes)))
-    #     inputflux = inputflux[ref_psfs_indicies]
 
-    # JB: We can get rid of the input para model_sci. But there is commented code in klip_math that is using it.
+    # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
                                  covar_psfs=covar_files,)
-
     klipped, original_KL, evals, evecs = klip_math_return
 
-    # try:
-    #     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)
-    # except (RuntimeError) as err: #(ValueError, RuntimeError, TypeError) as err:
-    #     print(err.message)
-    #     return -1
-    #
-    # if models_ref is not None:
-    #     # passed in models, so perturbed KL modes were partially calculated already
-    #     klipped, original_KL, delta_KL_nospec = klip_math_return
-    #     evals = None
-    #     evecs = None
-    # else:
-    #     klipped, original_KL, evals, evecs = klip_math_return
-    #     delta_KL_nospec = None
-    #
-    #
-    # postklip_psf, oversubtraction, selfsubtraction = calculate_fm(delta_KL_nospec, original_KL, numbasis, aligned_imgs[img_num, section_ind[0]], model_sci, inputflux = inputflux)
 
 
 
-    # write to output
+    # write standard klipped image to output
     for thisnumbasisindex in range(klipped.shape[1]):
         if thisnumbasisindex == 0:
-            #only increment the numstack counter for the first KL mode
+            # only increment the numstack counter for the first KL mode
             _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
                              output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
                              radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
@@ -1209,7 +1153,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
             _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
                              output_imgs[img_num,:,thisnumbasisindex], None, parang,
                              radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
-    #output_imgs[img_num, section_ind[0], :] = klipped
+
 
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable
     # and it can choose which variables it wants to deal with using **kwargs
