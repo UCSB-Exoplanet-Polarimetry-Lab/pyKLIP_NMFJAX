@@ -98,13 +98,13 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
 
         if spec_included:
-            delta_KL = pertrub_specIncluded(evals, evecs, KL_basis, refs_mean_sub, models_ref)
+            delta_KL = perturb_specIncluded(evals, evecs, KL_basis, refs_mean_sub, models_ref)
             return sub_img_rows_selected.transpose(), KL_basis,  delta_KL
         elif spec_from_model:
-            delta_KL_nospec = pertrub_nospec_modelsBased(evals, evecs, KL_basis, refs_mean_sub, models_ref)
+            delta_KL_nospec = perturb_nospec_modelsBased(evals, evecs, KL_basis, refs_mean_sub, models_ref)
             return sub_img_rows_selected.transpose(), KL_basis,  delta_KL_nospec
         else:
-            delta_KL_nospec = pertrub_nospec(evals, evecs, KL_basis, refs_mean_sub, models_ref)
+            delta_KL_nospec = pertrurb_nospec(evals, evecs, KL_basis, refs_mean_sub, models_ref)
             return sub_img_rows_selected.transpose(), KL_basis,  delta_KL_nospec
 
 
@@ -112,7 +112,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
-def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
+def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
@@ -160,7 +160,7 @@ def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
     return delta_KL
 
 
-def pertrub_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
+def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
     """
 
     :param evals:
@@ -202,7 +202,7 @@ def pertrub_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list)
 
     return delta_KL_nospec
 
-def pertrub_nospec(evals, evecs, original_KL, refs, models_ref):
+def pertrurb_nospec(evals, evecs, original_KL, refs, models_ref):
     """
     Perturb the KL modes using a model of the PSF but with no assumption on the spectrum. Useful for planets
 
@@ -707,7 +707,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     else:
         # wrap
         in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
-                                    | (phip >= phiend & (phip < phistart_padded))) & in_padded_sector)
+                                    | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
     rot_sector_pix_onlypadding = np.where(in_only_padding)
 
     blank_input = np.zeros(dims[1] * dims[0])
@@ -747,7 +747,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                       spectrum=None, padding=3,
                       include_spec_in_model = False,
                       spec_from_model = False):
-    #TODO MAKE THIS PAS FOR REALZZZ
     """
     multithreaded KLIP PSF Subtraction
 
@@ -763,8 +762,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: Annuli to use for KLIP. Can be a number, or a list of 2-element tuples (a, b) specifying
                 the pixel bondaries (a <= r < b) for each annulus
-        subsections: Sections to break each annuli into. Can be a number of a list of 2-element tuples (a, b) specifying
-                     the PA boundaries (a <= PA < b) for each sectgion
+        subsections: Sections to break each annuli into. Can be a number [integer], or a list of 2-element tuples (a, b)
+                     specifying the positon angle boundaries (a <= PA < b) for each section [radians]
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
@@ -839,9 +838,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
         phi_bounds[-1][1] = 2 * np.pi
     else:
-        phi_bounds = subsections
+        phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
 
-
+    print(phi_bounds)
     # calculate how many iterations we need to do
     global tot_iter
     tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
