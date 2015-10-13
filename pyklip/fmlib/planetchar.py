@@ -4,9 +4,10 @@ import ctypes
 import numpy as np
 import pyklip.spectra_management as specmanage
 import os
-import scipy.ndimage as ndimage
-import sys
+
 from pyklip.fmlib.nofm import NoFM
+import pyklip.fm as fm
+
 from scipy import interpolate
 from copy import copy
 
@@ -95,47 +96,49 @@ class PlanetChar(NoFM):
         self.psfs_func_list = psfs_func_list
 
 
-    def alloc_interm(self, max_sector_size, numsciframes):
-        """Allocates shared memory array for intermediate step
+    # def alloc_interm(self, max_sector_size, numsciframes):
+    #     """Allocates shared memory array for intermediate step
+    #
+    #     Intermediate step is allocated for a sector by sector basis
+    #
+    #     Args:
+    #         max_sector_size: number of pixels in this sector. Max because this can be variable. Stupid rotating sectors
+    #
+    #     Returns:
+    #         interm: mp.array to store intermediate products from one sector in
+    #         interm_shape:shape of interm array (used to convert to numpy arrays)
+    #
+    #     """
+    #
+    #     interm_size = max_sector_size * np.size(self.numbasis) * numsciframes * len(self.spectrallib)
+    #
+    #     interm = mp.Array(ctypes.c_double, interm_size)
+    #     interm_shape = [numsciframes, len(self.spectrallib), max_sector_size, np.size(self.numbasis)]
+    #
+    #     return interm, interm_shape
 
-        Intermediate step is allocated for a sector by sector basis
 
-        Args:
-            max_sector_size: number of pixels in this sector. Max because this can be variable. Stupid rotating sectors
+    def alloc_fmout(self, output_img_shape):
+        """Allocates shared memory for the output of the shared memory
 
-        Returns:
-            interm: mp.array to store intermediate products from one sector in
-            interm_shape:shape of interm array (used to convert to numpy arrays)
-
-        """
-
-        interm_size = max_sector_size * np.size(self.numbasis) * numsciframes * len(self.spectrallib)
-
-        interm = mp.Array(ctypes.c_double, interm_size)
-        interm_shape = [numsciframes, len(self.spectrallib), max_sector_size, np.size(self.numbasis)]
-
-        return interm, interm_shape
-
-
-    def alloc_aux(self):
-        """Allocates shared memory of an auxilliary array used in the start
-
-        Note: It might be useful to store the pointer to the aux array into the state of this class if you use it
-        for easy access
 
         Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
 
         Returns:
-            aux: mp.array to store auxilliary data in
-            aux_shape: shape of auxilliary array
+            fmout: mp.array to store auxilliary data in
+            fmout_shape: shape of auxilliary array
 
         """
+        fmout_size = np.prod(output_img_shape)
+        fmout = mp.Array(ctypes.c_double, fmout_size)
+        fmout_shape = output_img_shape
+        print(fmout_shape)
 
-        return None, None
+        return fmout, fmout_shape
 
 
     def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
-        # TODO: change this to **kwargsgi t
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -246,7 +249,83 @@ class PlanetChar(NoFM):
 
 
 
+    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
+                     wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None, ref_center=None,
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, **kwargs):
+        """
+        Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
+        perform the forward modelling
+
+        Args:
+            klmodes: unpertrubed KL modes
+            evals: eigenvalues of the covariance matrix that generated the KL modes in ascending order
+                   (lambda_0 is the 0 index) (shape of [nummaxKL])
+            evecs: corresponding eigenvectors (shape of [p, nummaxKL])
+            input_image_shape: 2-D shape of inpt images ([ysize, xsize])
+            input_img_num: index of sciece frame
+            ref_psfs_indicies: array of indicies for each reference PSF
+            section_ind: array indicies into the 2-D x-y image that correspond to this section.
+                         Note needs be called as section_ind[0]
+            pas: array of N parallactic angles corresponding to N reference images [degrees]
+            wvs: array of N wavelengths of those referebce images
+            radstart: radius of start of segment
+            radend: radius of end of segment
+            phistart: azimuthal start of segment [radians]
+            phiend: azimuthal end of segment [radians]
+            padding: amount of padding on each side of sector
+            ref_center: center of image
+            numbasis: array of KL basis cutoffs
+            parang: parallactic angle of input image [DEGREES]
+            ref_wv: wavelength of science image
+            fmout: numpy output array for FM output. Shape is (N, y, x, b)
+            kwargs: any other variables that we don't use but are part of the input
+        """
+        sci = aligned_imgs[input_img_num, section_ind[0]]
+        refs = aligned_imgs[ref_psfs_indicies, :]
+        refs = refs[:, section_ind[0]]
+
+
+        # generate models for the PSF of the science image
+        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)[0]
+        model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
+
+        # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
+        # Calculate the spectra to determine the flux of each model reference PSF
+        total_imgs = np.size(self.flux_conversion)
+        num_wvs = self.spectrallib[0].shape[0]
+        input_spectrum = self.flux_conversion.reshape([total_imgs/num_wvs, num_wvs]) * self.spectrallib[0][None, :] * self.dflux
+        input_spectrum.shape = [np.size(input_spectrum)]
+        models_ref = models_ref * input_spectrum[ref_psfs_indicies, None]
+
+        delta_KL = fm.pertrub_specIncluded(evals, evecs, klmodes, refs, models_ref)
+
+        postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
+
+        fmout_shape = fmout.shape
+
+        # write to output
+        for thisnumbasisindex in range(np.size(numbasis)):
+                fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
+                                 fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
+                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
 
 
 
+    def cleanup_fmout(self, fmout):
+        """
+        After running KLIP-FM, we need to reshape fmout so that the numKL dimension is the first one and not the last
+
+        Args:
+            fmout: numpy array of ouput of FM
+
+        Returns:
+            fmout: same but cleaned up if necessary
+        """
+
+        # Let's reshape the output images
+        # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
+        dims = fmout.shape
+        fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
+        return fmout
 

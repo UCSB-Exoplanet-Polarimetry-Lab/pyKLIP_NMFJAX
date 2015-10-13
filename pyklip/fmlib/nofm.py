@@ -9,7 +9,8 @@ class NoFM(object):
     not need to implement functions it doesn't want to. Should do no forward modelling and just do regular KLIP by itself
     """
     def __init__(self, inputs_shape, numbasis):
-        """ Initializes teh NoFM class
+        """
+        Initializes the NoFM class
 
         Args:
             inputs_shape: shape of the inputs numpy array. Typically (N, y, x)
@@ -25,7 +26,8 @@ class NoFM(object):
 
 
     def alloc_output(self):
-        """Allocates shared memory array for final output
+        """
+        Allocates shared memory array for final output
 
         Only use multiprocessing data structors as we are using the multiprocessing class
 
@@ -45,7 +47,8 @@ class NoFM(object):
 
 
     def alloc_interm(self, max_sector_size, numsciframes):
-        """Allocates shared memory array for intermediate step
+        """
+        Allocates shared memory array for intermediate step
 
         Intermediate step is allocated for a sector by sector basis
 
@@ -58,32 +61,45 @@ class NoFM(object):
 
         """
 
-        interm_size = max_sector_size * np.size(self.numbasis) * numsciframes
-
-        interm = mp.Array(ctypes.c_double, interm_size)
-        interm_shape = [numsciframes, max_sector_size, np.size(self.numbasis)] # (numframes, size of sector, b)
-
-        return interm, interm_shape
+        return None, None
 
 
-    def alloc_aux(self):
-        """Allocates shared memory of an auxilliary array used in the start
-
-        Note: It might be useful to store the pointer to the aux array into the state of this class if you use it
-        for easy access
+    def alloc_fmout(self, output_img_shape):
+        """
+        Allocates shared memory for the output of the forward modelling
 
         Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
 
         Returns:
-            aux: mp.array to store auxilliary data in
-            aux_shape: shape of auxilliary array
+            fmout: mp.array to store auxilliary data in
+            fmout_shape: shape of auxilliary array
 
         """
 
         return None, None
 
-    def generate_models(self, **kwargs):
-        """Generate model PSFs in this sector for each image denoated by its wv and parallactic angle
+
+
+    def fm_from_eigen(self, **kwargs):
+        """
+        Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP
+        This is called immediately after regular KLIP
 
         """
-        return None
+
+        return
+
+    def cleanup_fmout(self, fmout):
+        """
+        After running KLIP-FM, if there's anything to do to the fmout array (such as reshaping it), now's the time
+        to do that before outputting it
+
+        Args:
+            fmout: numpy array of ouput of FM
+
+        Returns:
+            fmout: same but cleaned up if necessary
+        """
+
+        return fmout
