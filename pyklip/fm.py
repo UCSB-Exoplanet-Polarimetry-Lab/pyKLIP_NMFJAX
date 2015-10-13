@@ -114,13 +114,20 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
 def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
     """
+    Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
-    :param evals:
-    :param evecs:
-    :param original_KL:
-    :param refs:
-    :param models_ref:
-    :return:
+    Args:
+        evals: array of eigenvalues of the reference PSF covariance matrix (array of size numbasis)
+        evecs: corresponding eigenvectors (array of size [p, numbasis])
+        orignal_KL: unpertrubed KL modes (array of size [numbasis, p])
+        refs: N x p array of the N reference images that
+                  characterizes the extended source with p pixels
+        models_ref: N x p array of the N models corresponding to reference images.
+                    Each model should contain spectral informatoin
+        model_sci: array of size p corresponding to the PSF of the science frame
+
+    Returns:
+        delta_KL_nospec: perturbed KL modes. Shape is (numKL, wv, pix)
     """
 
     max_basis = original_KL.shape[0]
@@ -135,7 +142,7 @@ def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
 
     #print(evals.shape,evecs.shape,original_KL.shape,refs.shape,models_ref.shape)
 
-    evals_tiled = np.tile(evals,(N_ref,1))
+    evals_tiled = np.tile(evals,(max_basis,1))
     np.fill_diagonal(evals_tiled,np.nan)
     evals_sqrt = np.sqrt(evals)
     evalse_inv_sqrt = 1./evals_sqrt
@@ -144,7 +151,7 @@ def pertrub_specIncluded(evals, evecs, original_KL, refs, models_ref):
     beta_tmp[np.diag_indices(N_ref)] = -0.5/evals
     beta = evals_ratio*beta_tmp
 
-    C =  models_mean_sub.dot(refs.transpose())+refs.dot(models_mean_sub.transpose())
+    C =  models_mean_sub.dot(refs_mean_sub.transpose())+refs_mean_sub.dot(models_mean_sub.transpose())
     alpha = (evecs.transpose()).dot(C).dot(evecs)
 
     delta_KL = (beta*alpha).dot(original_KL)+(evalse_inv_sqrt[:,None]*evecs.transpose()).dot(models_mean_sub)
@@ -740,6 +747,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                       spectrum=None, padding=3,
                       include_spec_in_model = False,
                       spec_from_model = False):
+    #TODO MAKE THIS PAS FOR REALZZZ
     """
     multithreaded KLIP PSF Subtraction
 
@@ -1170,8 +1178,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                  covar_psfs=covar_files,)
 
     klipped, original_KL, evals, evecs = klip_math_return
-    import pdb
-    pdb.set_trace()
 
     # try:
     #     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files, models_ref=models_ref, Sel_wv=Sel_wv, input_spectrum=input_spectrum, model_sci=model_sci)

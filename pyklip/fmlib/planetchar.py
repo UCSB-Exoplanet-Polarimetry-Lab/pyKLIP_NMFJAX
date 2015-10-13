@@ -291,16 +291,19 @@ class PlanetChar(NoFM):
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
         models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
+
         # Calculate the spectra to determine the flux of each model reference PSF
         total_imgs = np.size(self.flux_conversion)
         num_wvs = self.spectrallib[0].shape[0]
-        input_spectrum = self.flux_conversion.reshape([total_imgs/num_wvs, num_wvs]) * self.spectrallib[0][None, :] * self.dflux
-        input_spectrum.shape = [np.size(input_spectrum)]
-        models_ref = models_ref * input_spectrum[ref_psfs_indicies, None]
+        input_spectrum = self.flux_conversion[:self.spectrallib[0].shape[0]] * self.spectrallib[0] * self.dflux
+        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs/num_wvs)))
+        input_spectrum = input_spectrum[ref_psfs_indicies]
+        models_ref = models_ref * input_spectrum[:, None]
 
-        delta_KL = fm.pertrub_specIncluded(evals, evecs, klmodes, refs, models_ref)
+        delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
 
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
+
 
         fmout_shape = fmout.shape
 
@@ -329,3 +332,7 @@ class PlanetChar(NoFM):
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
+
+
+def calculate_annuli_bounds(num_annuli, annuli_index, iwa, owa):
+    pass
