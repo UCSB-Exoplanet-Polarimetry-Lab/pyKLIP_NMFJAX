@@ -742,7 +742,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=3, numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
-                      spectrum=None, padding=3,
+                      spectrum=None, padding=3, save_klipped=True,
                       include_spec_in_model = False,
                       spec_from_model = False):
     """
@@ -778,11 +778,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         padding: for each sector, how many extra pixels of padding should we have around the sides.
+        save_klipped: if True, will save the regular klipped image. If false, it wil not and sub_imgs will return None
 
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x).
+                  Note: this will be None if save_klipped is False
         fmout_np: output of forward modelling.
     """
 
@@ -871,12 +873,18 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     centers_imgs_np[:] = centers
 
     # make output array which also has an extra dimension for the number of KL modes to use
-    output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
-    output_imgs_np = _arraytonumpy(output_imgs)
-    output_imgs_np[:] = np.nan
+    if save_klipped:
+        output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
+        output_imgs_np = _arraytonumpy(output_imgs)
+        output_imgs_np[:] = np.nan
+        output_imgs_numstacked = mp.Array(ctypes.c_int, np.size(imgs))
+    else:
+        output_imgs = None
+        output_imgs_numstacked = None
+
     output_imgs_shape = imgs.shape + numbasis.shape
     # make an helper array to count how many frames overlap at each pixel
-    output_imgs_numstacked = mp.Array(ctypes.c_int, np.size(imgs))
+
 
     # Create Custom Shared Memory array fmout to save output of forward modelling
     fmout_data, fmout_shape = fm_class.alloc_fmout(output_imgs_shape)
@@ -961,7 +969,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             # do something here?
 
         # run custom function to handle end of sector post-processing analysis
-
+        interm_data_np = _arraytonumpy(interm_data, interm_shape)
+        fmout_np = _arraytonumpy(fmout_data, fmout_shape)
+        fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
+                               section_indicies=section_ind)
 
 
 
@@ -971,17 +982,21 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     tpool.join()
 
     # finished!
-    # Let's take the mean based on number of images stacked at a location
-    sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
-    sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
-    sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
+    # Mean the output images if save_klipped is True
+    if save_klipped:
+        # Let's take the mean based on number of images stacked at a location
+        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
+        sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
+        sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
-    # Let's reshape the output images
-    # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
-    sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
+        # Let's reshape the output images
+        # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
+        sub_imgs = np.rollaxis(sub_imgs.reshape((dims[0], dims[1], dims[2], numbasis.shape[0])), 3)
 
-    #restore bad pixels
-    sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
+        #restore bad pixels
+        sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
+    else:
+        sub_imgs = None
 
     # put any finishing touches on the FM Output
     fmout_np = _arraytonumpy(fmout_data, fmout_shape)
@@ -1126,13 +1141,13 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+
+    # convert to numpy array if we are saving outputs
     output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
-    if fmout is not None:
-        fmout_np = _arraytonumpy(fmout, fmout_shape)
-    else:
-        fmout_np = None
 
+    # convert to numpy array if fmout is defined
+    fmout_np = _arraytonumpy(fmout, fmout_shape)
 
     # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
@@ -1140,19 +1155,18 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     klipped, original_KL, evals, evecs = klip_math_return
 
 
-
-
-    # write standard klipped image to output
-    for thisnumbasisindex in range(klipped.shape[1]):
-        if thisnumbasisindex == 0:
-            # only increment the numstack counter for the first KL mode
-            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
-                             output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
-                             radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
-        else:
-            _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
-                             output_imgs[img_num,:,thisnumbasisindex], None, parang,
-                             radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+    # write standard klipped image to output if we are saving outputs
+    if output_imgs is not None:
+        for thisnumbasisindex in range(klipped.shape[1]):
+            if thisnumbasisindex == 0:
+                # only increment the numstack counter for the first KL mode
+                _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
+                                 output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
+                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+            else:
+                _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
+                                 output_imgs[img_num,:,thisnumbasisindex], None, parang,
+                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
 
 
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable

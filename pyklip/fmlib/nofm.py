@@ -80,7 +80,6 @@ class NoFM(object):
         return None, None
 
 
-
     def fm_from_eigen(self, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP
@@ -88,6 +87,14 @@ class NoFM(object):
 
         """
 
+        return
+
+
+    def fm_end_sector(selfself, **kwargs):
+        """
+        Does some forward modelling at the end of a sector after all images have been klipped for that sector.
+
+        """
         return
 
     def cleanup_fmout(self, fmout):

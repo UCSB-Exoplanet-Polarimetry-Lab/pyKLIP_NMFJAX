@@ -67,7 +67,12 @@ def _arraytonumpy(shared_array, shape=None, dtype=float):
 
     Return:
         numpy_array: numpy array for vectorized operation. still points to the same memory!
+                     returns None is shared_array is None
     """
+    # if you passed in nothing you get nothing
+    if shared_array is None:
+        return None
+
     numpy_array = np.frombuffer(shared_array.get_obj(), dtype=dtype)
     if shape is not None:
         numpy_array.shape = shape
