@@ -43,6 +43,7 @@ class GPIData(Data):
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         spot_flux: Array of N of average satellite spot flux for each frame
         contrast_scaling: Flux calibration factors (multiply by image to "calibrate" flux)
+        flux_units: units of output data [DN, contrast]
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
 
@@ -113,6 +114,7 @@ class GPIData(Data):
             self.contrast_scaling = None
             self.prihdrs = None
             self.exthdrs = None
+            self.flux_units = None
         else:
             self.readdata(filepaths, skipslices=skipslices)
 
@@ -270,6 +272,7 @@ class GPIData(Data):
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.mean(spot_fluxes)
+        self.flux_units = "DN"
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
@@ -299,7 +302,7 @@ class GPIData(Data):
         # remove duplicates from list
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
-        hdulist[0].header["DRPNFILE"] = nfiles
+        hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
         for i, thispath in enumerate(filenames):
             thispath = thispath.replace("\\", '/')
             splited = thispath.split("/")
@@ -317,35 +320,42 @@ class GPIData(Data):
             pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
         except:
             pyklipver = "unknown"
-        hdulist[0].header['PSFSUB'] = "pyKLIP"
+        hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")
         hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
         if self.creator is None:
             hdulist[0].header['CREATOR'] = "pyKLIP-{0}".format(pyklipver)
         else:
             hdulist[0].header['CREATOR'] = self.creator
-            hdulist[0].header.add_history("Reduced by {0}".self.creator)
+            hdulist[0].header.add_history("Reduced by {0}".format(self.creator))
 
         # store commit number for pyklip
-        hdulist[0].header['pyklipv'] = pyklipver
+        hdulist[0].header['pyklipv'] = (pyklipver, "pyKLIP version that was used")
 
         if klipparams is not None:
-            hdulist[0].header['PSFPARAM'] = klipparams
+            hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
         if fakePlparams is not None:
-            hdulist[0].header['FAKPLPAR'] = fakePlparams
+            hdulist[0].header['FAKPLPAR'] = (fakePlparams, "Fake planet parameters")
             hdulist[0].header.add_history("pyKLIP reduction with fake planet injection parameters {0}".format(fakePlparams))
-
+        # store file type
         if filetype is not None:
-            hdulist[0].header['FILETYPE'] = filetype
+            hdulist[0].header['FILETYPE'] = (filetype, "GPI File type")
 
+        #write flux units/conversion
+        hdulist[1].header['FUNIT'] = (self.flux_units, "Flux units of data")
+        if self.flux_units.upper() == 'CONTRAST':
+            hdulist[1].header['DN2CON'] = (self.contrast_scaling, "Contrast/DN")
+            hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(self.contrast_scaling))
+
+        # write z axis units if necessary
         if zaxis is not None:
             #Writing a KL mode Cube
             if "KL Mode" in filetype:
                 hdulist[1].header['CTYPE3'] = 'KLMODES'
                 #write them individually
                 for i, klmode in enumerate(zaxis):
-                    hdulist[1].header['KLMODE{0}'.format(i)] = klmode
+                    hdulist[1].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
 
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:
@@ -396,6 +406,7 @@ class GPIData(Data):
         """
         if units == "contrast":
             self.output *= self.contrast_scaling
+            self.flux_units = "contrast"
         
 
     def generate_psfs(self, boxrad=7):
