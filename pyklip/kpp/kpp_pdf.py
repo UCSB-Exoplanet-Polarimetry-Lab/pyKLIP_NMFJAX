@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 from mpl_toolkits.axes_grid1 import host_subplot
 import mpl_toolkits.axisartist as AA
 
-from pyklip.kpp_utils import *
+from pyklip.kpp.kpp_utils import *
 
 
 def model_expExp(x,a,m,alpha):

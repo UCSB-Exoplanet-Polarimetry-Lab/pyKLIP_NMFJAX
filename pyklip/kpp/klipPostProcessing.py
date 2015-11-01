@@ -1,5 +1,5 @@
-from pyklip.kpp_metrics import *
-from pyklip.kpp_detections import *
+from pyklip.kpp.kpp_metrics import *
+from pyklip.kpp.kpp_detections import *
 from pyklip.instruments import GPI
 
 

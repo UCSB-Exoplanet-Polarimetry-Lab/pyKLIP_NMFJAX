@@ -2,16 +2,9 @@ __author__ = 'jruffio'
 
 import glob
 import os
-from copy import deepcopy
-from astropy.io import ascii
-from time import sleep
 
-import pyklip.parallelized as parallelized
-import pyklip.instruments.GPI as GPI
-import pyklip.spectra_management as spec
-import pyklip.fakes as fakes
-import pyklip.kpp_std as kpp_std
-from pyklip.klipPostProcessing import *
+from pyklip.kpp.klipPostProcessing import *
+
 
 def optimize_klip(inputdir,
                     contrast_log,
