@@ -7,6 +7,72 @@ from pyklip.kpp_pdf import *
 from pyklip.kpp_std import *
 
 
+def calculate_matchedFilterWithVar_metric_star(params):
+    """
+    Convert `f([1,2])` to `f(1,2)` call.
+    It allows one to call calculate_shape_metric() with a tuple of parameters.
+    """
+    return calculate_shape_metric(*params)
+
+def calculate_matchedFilterWithVar_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True):
+    '''
+    Calculate the ???? metric on the given datacube for the pixels targeted by row_indices and col_indices.
+    These lists of indices can basically be given from the numpy.where function following the example:
+        import numpy as np
+        row_indices,col_indices = np.where(np.finite(np.mean(cube,axis=0)))
+    By truncating the given lists in small pieces it is then easy to parallelized.
+
+    TODO description of the metric
+
+    :param row_indices: Row indices list of the pixels where to calculate the metric in cube.
+                        Indices should be given from a 2d image.
+    :param col_indices: Column indices list of the pixels where to calculate the metric in cube.
+                        Indices should be given from a 2d image.
+    :param cube: Cube from which one wants the metric map. PSF_cube should be norm-2 normalized.
+                PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
+    :param PSF_cube: PSF_cube template used for calculated the metric. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
+                     number of wavelength samples, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
+    :param stamp_PSF_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
+                        a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
+                        pixel the average value of the surroundings of each slice of that stamp cube will be removed.
+                        The pixel used for calculating the average are the one equal to one in the mask.
+    :param mute: If True prevent printed log outputs.
+    :return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
+    '''
+
+    # Shape of the PSF cube
+    nl,ny_PSF,nx_PSF = PSF_cube.shape
+
+    # Number of rows and columns to add around a given pixel in order to extract a stamp.
+    row_m = np.floor(ny_PSF/2.0)    # row_minus
+    row_p = np.ceil(ny_PSF/2.0)     # row_plus
+    col_m = np.floor(nx_PSF/2.0)    # col_minus
+    col_p = np.ceil(nx_PSF/2.0)     # col_plus
+
+    # Number of pixels on which the metric has to be computed
+    N_it = row_indices.size
+    # Define an metric vector full of nans
+    metric_map = np.zeros((N_it,)) + np.nan
+    # Loop over all pixels (row_indices[id],col_indices[id])
+    for id,k,l in zip(range(N_it),row_indices,col_indices):
+        if not mute:
+            # Print the progress of the function
+            stdout.write("\r{0}/{1}".format(id,N_it))
+            stdout.flush()
+
+        # Extract stamp cube around the current pixel from the whoel cube
+        stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        slice_var = np.zeros(nl)
+        # Remove average value of the surrounding pixels in each slice of the stamp cube
+        # + calculate the variance as a normalization
+        for slice_id in range(nl):
+            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+            stamp_cube[slice_id,:,:] /= np.nanstd(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+        # Dot product of the PSF with stamp cube.
+        metric_map[id] = np.nansum(PSF_cube*stamp_cube)
+
+    return metric_map
+
 def calculate_shape_metric_star(params):
     """
     Convert `f([1,2])` to `f(1,2)` call.
@@ -240,7 +306,7 @@ def calculate_metrics(filename,
                         mute = False,
                         SNR = True,
                         probability = True,
-                        GOI_list = None,
+                        GOI_list_folder = None,
                         overwrite_metric = False,
                         overwrite_stat = False,
                         proba_using_mask_per_pixel = False,
@@ -271,7 +337,7 @@ def calculate_metrics(filename,
         - SNR
             Calculated using radialStdMap(). Should be changed.
         - probability
-            Calculated using get_image_probability_map() with a per pixel mask if proba_using_mask_per_pixel is True.
+            Calculated using get_image_stat_map() with a per pixel mask if proba_using_mask_per_pixel is True.
 
     :param filename: filename of the fits file containing the data cube to be analyzed. The cube should be a GPI cube
                     with 37 slices.
@@ -296,8 +362,7 @@ def calculate_metrics(filename,
     :param mute: If True prevent printed log outputs.
     :param SNR: If True trigger SNR calculation.
     :param probability: If True trigger probability calculation.
-    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
-                    before calculating the probability.
+    :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
                             has been calculated and load the file if possible.
     :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
@@ -465,14 +530,18 @@ def calculate_metrics(filename,
 
     # Define the function used to calculate the standard deviation
     # It probably shouldn't be hard coded but JB is not using the SNR maps anymore anyway...
-    std_function = radialStdMap
+    #std_function = radialStdMap
     #std_function = ringSection_based_StdMap
+
+    # If not None use rings with constant width = Dr. otherwise using rings of 3000pix.
+    Dr = 2
 
     # Define booleans triggering a metric calculation.
     # Their values will depend on overwrite_metric and if the fits file already exist.
     activate_metric_calc_WFC = True
     activate_metric_calc_MF = True
     activate_metric_calc_shape = True
+    activate_metric_calc_MFWithVar = True
 
     # Define booleans triggering a probability map calculation.
     # Their values will depend on overwrite_stat and if the fits file already exist.
@@ -480,6 +549,7 @@ def calculate_metrics(filename,
     activate_proba_calc_WFC = True
     activate_proba_calc_MF = True
     activate_proba_calc_shape = True
+    activate_proba_calc_MFWithVar = True
 
     # Define booleans triggering a SNR map calculation.
     # Their values will depend on overwrite_stat and if the fits file already exist.
@@ -487,6 +557,7 @@ def calculate_metrics(filename,
     activate_SNR_calc_WFC = True
     activate_SNR_calc_MF = True
     activate_SNR_calc_shape = True
+    activate_SNR_calc_MFWithVar = True
 
     if metrics is not None:
         if len(metrics) == 1 and not isinstance(metrics,list):
@@ -505,28 +576,29 @@ def calculate_metrics(filename,
                     if len(doesFileExist) != 0:
                         activate_proba_calc_FC = False
 
+            image = flat_cube
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                image_without_planet = mask_known_objects(image,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                image_without_planet = image
             # Calculate the SNR of the flat cube only if required.
             if SNR and activate_SNR_calc_FC:
                 if not mute:
                     print("Calculating SNR of flatCube for "+filename)
                 # Calculate the standard deviation map.
-                flat_cube_std = std_function(flat_cube, centroid=center)
+                #flat_cube_std = std_function(flat_cube, centroid=center)
                 # Divide the flat cube by the standard deviation map to get the SNR.
-                flat_cube_SNR = flat_cube/flat_cube_std
+                #flat_cube_SNR = flat_cube/flat_cube_std
+                flat_cube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
             # Calculate the probability map of the flat cube only if required.
             if probability and activate_proba_calc_FC:
                 if not mute:
                     print("Calculating proba of flatCube for "+filename)
-                image = flat_cube
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
                 #image_without_planet = copy(image)
                 # Get the probability map
-                flat_cube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+                flat_cube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
 
         # Calculate a weighted flat cube only if the user asked for it through "metrics".
         if "weightedFlatCube" in metrics:
@@ -558,25 +630,26 @@ def calculate_metrics(filename,
                     if len(doesFileExist) != 0:
                         activate_proba_calc_WFC = False
 
+            image = weightedFlatCube
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                image_without_planet = mask_known_objects(image,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                image_without_planet = image
             # Calculate the SNR of the weighted flat cube only if required.
             if SNR and activate_SNR_calc_WFC:
                 if not mute:
                     print("Calculating SNR of weightedFlatCube for "+filename)
-                weightedFlatCube_SNR = weightedFlatCube/std_function(weightedFlatCube,centroid=center)
+                #weightedFlatCube_SNR = weightedFlatCube/std_function(weightedFlatCube,centroid=center)
+                weightedFlatCube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
             # Calculate the probability map of the weighted flat cube only if required.
             if probability and activate_proba_calc_WFC:
                 if not mute:
                     print("Calculating proba of weightedFlatCube for "+filename)
-                image = weightedFlatCube
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
                 #image_without_planet = copy(image)
                 # Get the probability map
-                weightedFlatCube_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+                weightedFlatCube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
 
         # Calculate the matched filter metric only if the user asked for it through "metrics".
         if "matchedFilter" in metrics and "shape" not in metrics:
@@ -656,25 +729,26 @@ def calculate_metrics(filename,
                     if len(doesFileExist) != 0:
                         activate_proba_calc_MF = False
 
+            image = matchedFilter_map
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                image_without_planet = mask_known_objects(image,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                image_without_planet = image
             # Calculate the SNR of the matched filter only if required.
             if SNR and activate_SNR_calc_MF:
                 if not mute:
                     print("Calculating SNR of matchedFilter (no shape) for "+filename)
-                matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map, centroid=center)
+                #matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map, centroid=center)
+                matchedFilter_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
             # Calculate the probability map of the matched filter only if required.
             if probability and activate_proba_calc_MF:
                 if not mute:
                     print("Calculating proba of matchedFilter (no shape) for "+filename)
-                image = matchedFilter_map
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
                 #image_without_planet = copy(image)
                 # Get the probability map
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+                matchedFilter_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
 
         # Calculate the shape metric only if the user asked for it through "metrics".
         if "shape" in metrics and "matchedFilter" not in metrics:
@@ -754,25 +828,126 @@ def calculate_metrics(filename,
                     if len(doesFileExist) != 0:
                         activate_proba_calc_shape = False
 
+            image = shape_map
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                image_without_planet = mask_known_objects(image,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                image_without_planet = image
             # Calculate the SNR of the shape metric only if required.
             if SNR and activate_SNR_calc_shape:
                 if not mute:
                     print("Calculating SNR of shape (no matchedFilter) for "+filename)
-                shape_SNR_map = shape_map/std_function(shape_map, centroid=center)
+                #shape_SNR_map = shape_map/std_function(shape_map, centroid=center)
+                shape_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
             # Calculate the probability map of the shape metric only if required.
             if probability and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape (no matchedFilter) for "+filename)
-                image = shape_map
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
                 #image_without_planet = copy(image)
                 # Get the probability map
-                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+                shape_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+
+
+        # Calculate the MFWithVar metric only if the user asked for it through "metrics".
+        if "matchedFilterWithVar" in metrics:
+            # If overwrite_metric is False check if the fits file already exists. If not make sure it is calculated.
+            if not overwrite_metric:
+                activate_metric_calc_MFWithVar = False
+                try:
+                    hdulist = pyfits.open(outputDir+folderName+prefix+'-MFWithVar.fits')
+                    MFWithVar_map = hdulist[1].data
+                    hdulist.close()
+                except:
+                    activate_metric_calc_MFWithVar = True
+
+            # Build the MFWithVar metric if required.
+            if activate_metric_calc_MFWithVar:
+                if not mute:
+                    print("Calculating matchedFilterWithVar for "+filename)
+                MFWithVar_map = -np.ones((ny,nx)) + np.nan
+
+                # Calculate the criterion map.
+                # For each pixel calculate the dot product of a stamp around it with the PSF.
+                # We use the PSF cube to consider also the spectrum of the planet we are looking for.
+                if not mute:
+                    print("Calculate the criterion map. It is done pixel per pixel so it might take a while...")
+                stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF/2,np.arange(0,ny_PSF,1)-ny_PSF/2)
+                stamp_PSF_mask = np.ones((nl,ny_PSF,nx_PSF))
+                r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
+                #r_PSF_stamp = np.tile(r_PSF_stamp,(nl,1,1))
+                stamp_PSF_mask[np.where(r_PSF_stamp < 2.5)] = np.nan
+
+                if N_threads is not None:
+                    #pool = NoDaemonPool(processes=N_threads)
+                    pool = mp.Pool(processes=N_threads)
+
+                    ## cut images in N_threads part
+                    # get the first and last index of each chunck
+                    N_pix = flat_cube_noNans_noEdges[0].size
+                    chunk_size = N_pix/N_threads
+                    N_chunks = N_pix/chunk_size
+
+                    # Get the chunks
+                    chunks_row_indices = []
+                    chunks_col_indices = []
+                    for k in range(N_chunks-1):
+                        chunks_row_indices.append(flat_cube_noNans_noEdges[0][(k*chunk_size):((k+1)*chunk_size)])
+                        chunks_col_indices.append(flat_cube_noNans_noEdges[1][(k*chunk_size):((k+1)*chunk_size)])
+                    chunks_row_indices.append(flat_cube_noNans_noEdges[0][((N_chunks-1)*chunk_size):N_pix])
+                    chunks_col_indices.append(flat_cube_noNans_noEdges[1][((N_chunks-1)*chunk_size):N_pix])
+
+                    outputs_list = pool.map(calculate_matchedFilterWithVar_metric_star, itertools.izip(chunks_row_indices,
+                                                                                       chunks_col_indices,
+                                                                                       itertools.repeat(cube),
+                                                                                       itertools.repeat(PSF_cube_cpy),
+                                                                                       itertools.repeat(stamp_PSF_mask)))
+
+                    for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
+                        MFWithVar_map[(row_indices,col_indices)] = out
+                    pool.close()
+                else:
+                    MFWithVar_map[flat_cube_noNans_noEdges] = calculate_matchedFilterWithVar_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask)
+
+
+                # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
+                IWA,OWA,inner_mask,outer_mask = get_occ(MFWithVar_map, centroid = center)
+                conv_kernel = np.ones((10,10))
+                wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
+                MFWithVar_map[np.where(np.isnan(wider_mask))] = np.nan
+
+            # If overwrite_stat is False check if the fits files already exists. If not make sure it is calculated.
+            if not overwrite_stat:
+                if SNR:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-MFWithVar_SNR.fits')
+                    if len(doesFileExist) != 0:
+                        activate_SNR_calc_MFWithVar = False
+                if probability:
+                    doesFileExist = glob.glob(outputDir+folderName+prefix+'-MFWithVar_proba.fits')
+                    if len(doesFileExist) != 0:
+                        activate_proba_calc_MFWithVar = False
+
+            image = MFWithVar_map
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                image_without_planet = mask_known_objects(image,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                image_without_planet = image
+            # Calculate the SNR of the MFWithVar metric only if required.
+            if SNR and activate_SNR_calc_MFWithVar:
+                if not mute:
+                    print("Calculating SNR of matchedFilterWithVar for "+filename)
+                #MFWithVar_SNR_map = MFWithVar_map/std_function(MFWithVar_map, centroid=center)
+                MFWithVar_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+            # Calculate the probability map of the MFWithVar metric only if required.
+            if probability and activate_proba_calc_MFWithVar:
+                if not mute:
+                    print("Calculating proba of matchedFilterWithVar for "+filename)
+                #image_without_planet = copy(image)
+                # Get the probability map
+                MFWithVar_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
 
 
         # Calculate the shape metric and the matched filter metric only if the user asked for it through "metrics".
@@ -869,36 +1044,29 @@ def calculate_metrics(filename,
                         activate_proba_calc_MF = False
                         activate_proba_calc_shape = False
 
+            # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
+            # PDF. This masked image is given separately to the probability calculation function.
+            if GOI_list_folder is not None:
+                shape_map_without_planet = mask_known_objects(shape_map,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+                matchedFilter_map_without_planet = mask_known_objects(matchedFilter_map,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+            else:
+                shape_map_without_planet = shape_map
+                matchedFilter_map_without_planet = matchedFilter_map
             # Calculate the SNR of the shape and matched filter metrics only if required.
             if SNR and activate_SNR_calc_MF and activate_SNR_calc_shape:
                 if not mute:
                     print("Calculating SNR of shape and matchedFilter for "+filename)
-                shape_SNR_map = shape_map/std_function(shape_map,centroid=center)
-                matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map,centroid=center)
+                #shape_SNR_map = shape_map/std_function(shape_map,centroid=center)
+                #matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map,centroid=center)
+                shape_SNR_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                matchedFilter_SNR_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
             # Calculate the probability map of the shape and matched filter metrics  only if required.
             if probability and activate_proba_calc_MF and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape and matchedFilter for "+filename)
-                image = shape_map
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
-                #image_without_planet = copy(image)
                 # Get the probability map
-                shape_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
-                image = matchedFilter_map
-                # If GOI_list is not None. Mask the known objects from the image that will be used for calculating the
-                # PDF. This masked image is given separately to the probability calculation function.
-                if GOI_list is not None:
-                    image_without_planet = mask_known_objects(image,prihdr,GOI_list, mask_radius = 7)
-                else:
-                    image_without_planet = image
-                #image_without_planet = copy(image)
-                # Get the probability map
-                matchedFilter_proba_map = get_image_probability_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads)
+                shape_proba_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                matchedFilter_proba_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
 
 
     # The core of the function is here over.
@@ -952,6 +1120,17 @@ def calculate_metrics(filename,
             if probability and activate_proba_calc_shape:
                 hdulist2[1].data = shape_proba_map
                 hdulist2.writeto(outputDir+folderName+prefix+'-shape_proba.fits', clobber=True)
+        if "matchedFilterWithVar" in metrics:
+            if activate_metric_calc_MFWithVar:
+                hdulist2[1].data = MFWithVar_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-MFWithVar.fits', clobber=True)
+            if SNR and activate_SNR_calc_MFWithVar:
+                hdulist2[1].data = MFWithVar_SNR_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-MFWithVar_SNR.fits', clobber=True)
+            if probability and activate_proba_calc_MFWithVar:
+                hdulist2[1].data = MFWithVar_proba_map
+                hdulist2.writeto(outputDir+folderName+prefix+'-MFWithVar_proba.fits', clobber=True)
+
     # The following commented code was used when analyzing fits files that didn't follow GPI headers conventions.
     """
     except:
@@ -999,3 +1178,4 @@ def calculate_metrics(filename,
     # Successful return
     return 1
 # END calculate_metrics() DEFINITION
+                # Get the probability map

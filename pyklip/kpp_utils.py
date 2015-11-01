@@ -26,7 +26,13 @@ class NoDaemonProcess(mp.Process):
 class NoDaemonPool(mpPool.Pool):
     Process = NoDaemonProcess
 
-def get_campaign_candidates(campaign_dir = "."+os.path.sep,output_dir = "."+os.path.sep, metric = None, mute = True, suffix = None, folderNameFilter = None, fileExtension = None):
+def get_campaign_candidates(campaign_dir = "."+os.path.sep,
+                            output_dir = "."+os.path.sep,
+                            metric = None,
+                            mute = True,
+                            suffix = None,
+                            folderNameFilter = None,
+                            fileExtension = None):
     #objectsDir_list = []
 
     if suffix is None:
@@ -243,10 +249,10 @@ def make_GOI_list(outputDir,GOI_list_csv,GPI_TID_csv):
             where_same_star = np.where(TID_GOI == TID_it)
 
             with open(outputDir+os.path.sep+dict_matching_TID_to_name[TID_it]+'_GOI.csv', 'w+') as csvfile:
-                spamwriter = csv.writer(csvfile, delimiter=';')
+                csvwriter = csv.writer(csvfile, delimiter=';')
                 table_to_csv = [attrib_name]+np.ndarray.tolist(GOI_list[where_same_star[0],:])#.insert(0,attrib_name)
                 #print(table_to_csv)
-                spamwriter.writerows(table_to_csv)
+                csvwriter.writerows(table_to_csv)
 
 
         #for row in spamreader:
@@ -337,36 +343,37 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7):
 
     object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
 
-    with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
-        GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
-        GOI_csv_as_list = list(GOI_list_reader)
-        N_objects = len(GOI_csv_as_list)-1
-        attrib_name = GOI_csv_as_list[0]
-        GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
+    if len(glob.glob(object_GOI_filename)) != 0:
+        with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+            GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+            GOI_csv_as_list = list(GOI_list_reader)
+            N_objects = len(GOI_csv_as_list)-1
+            attrib_name = GOI_csv_as_list[0]
+            GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
 
-        pa_id = attrib_name.index("PA")
-        sep_id = attrib_name.index("SEP")
-        MJDOBS_id = attrib_name.index("MJDOBS")
+            pa_id = attrib_name.index("PA")
+            sep_id = attrib_name.index("SEP")
+            MJDOBS_id = attrib_name.index("MJDOBS")
 
-        MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
-        MJDOBS_unique = np.unique(MJDOBS_arr)
-        MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
-        MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
-        #Check that the closest MJDOBS is closer than 2 hours
-        if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
-            # Skip if we couldn't find a matching date.
-            return np.squeeze(cube_cpy)
+            MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
+            MJDOBS_unique = np.unique(MJDOBS_arr)
+            MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
+            MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
+            #Check that the closest MJDOBS is closer than 2 hours
+            if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
+                # Skip if we couldn't find a matching date.
+                return np.squeeze(cube_cpy)
 
-        for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-            pa = float(GOI_list[obj_id,pa_id])
-            radius = float(GOI_list[obj_id,sep_id])/0.01414
-            x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-            y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-            col_centroid = x_max_pos+center[0]
-            row_centroid = y_max_pos+center[1]
-            k = round(row_centroid)
-            l = round(col_centroid)
-            cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+            for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
+                pa = float(GOI_list[obj_id,pa_id])
+                radius = float(GOI_list[obj_id,sep_id])/0.01414
+                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                col_centroid = x_max_pos+center[0]
+                row_centroid = y_max_pos+center[1]
+                k = round(row_centroid)
+                l = round(col_centroid)
+                cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
     return np.squeeze(cube_cpy)
 
@@ -390,38 +397,39 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False):
 
     object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
 
-    with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
-        GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
-        GOI_csv_as_list = list(GOI_list_reader)
-        attrib_name = GOI_csv_as_list[0]
-        GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
+    x_vec = []
+    y_vec = []
+    col_vec = []
+    row_vec = []
+    if len(glob.glob(object_GOI_filename)) != 0:
+        with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+            GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+            GOI_csv_as_list = list(GOI_list_reader)
+            attrib_name = GOI_csv_as_list[0]
+            GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
 
-        pa_id = attrib_name.index("PA")
-        sep_id = attrib_name.index("SEP")
-        MJDOBS_id = attrib_name.index("MJDOBS")
+            pa_id = attrib_name.index("PA")
+            sep_id = attrib_name.index("SEP")
+            MJDOBS_id = attrib_name.index("MJDOBS")
 
-        MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
-        MJDOBS_unique = np.unique(MJDOBS_arr)
-        MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
-        MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
-        #Check that the closest MJDOBS is closer than 2 hours
-        if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
-            # Skip if we couldn't find a matching date.
-            return [],[]
+            MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
+            MJDOBS_unique = np.unique(MJDOBS_arr)
+            MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
+            MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
+            #Check that the closest MJDOBS is closer than 2 hours
+            if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
+                # Skip if we couldn't find a matching date.
+                return [],[]
 
-        x_vec = []
-        y_vec = []
-        col_vec = []
-        row_vec = []
-        for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-            pa = float(GOI_list[obj_id,pa_id])
-            radius = float(GOI_list[obj_id,sep_id])/0.01414
-            x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-            y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-            x_vec.append(x_max_pos)
-            y_vec.append(y_max_pos)
-            row_vec.append(y_max_pos+center[1])
-            col_vec.append(x_max_pos+center[0])
+            for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
+                pa = float(GOI_list[obj_id,pa_id])
+                radius = float(GOI_list[obj_id,sep_id])/0.01414
+                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                x_vec.append(x_max_pos)
+                y_vec.append(y_max_pos)
+                row_vec.append(y_max_pos+center[1])
+                col_vec.append(x_max_pos+center[0])
 
     if xy:
         return x_vec,y_vec

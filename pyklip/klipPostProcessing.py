@@ -22,7 +22,7 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                                                   metrics_only = False,
                                                   planet_detection_only = False,
                                                   mute = False,
-                                                  GOI_list = None,
+                                                  GOI_list_folder = None,
                                                   overwrite_metric = False,
                                                   overwrite_stat = False,
                                                   proba_using_mask_per_pixel = False,
@@ -78,8 +78,7 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                         kpp_detections.candidate_detection() and will not calculate the metrics and probabilities with 
                         kpp_metrics.calculate_metrics().
     :param mute: If True prevent printed log outputs.
-    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
-                    before calculating the probability.
+    :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
                             has been calculated and load the file if possible.
     :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
@@ -156,7 +155,7 @@ def planet_detection_in_dir_per_file_per_spectrum(spectrum_filename,
                             mute = mute,
                             SNR = SNR,
                             probability = probability,
-                            GOI_list = GOI_list,
+                            GOI_list_folder = GOI_list_folder,
                             overwrite_metric = overwrite_metric,
                             overwrite_stat = overwrite_stat,
                             proba_using_mask_per_pixel = proba_using_mask_per_pixel,
@@ -195,13 +194,14 @@ def planet_detection_in_dir_per_file(filename,
                                       planet_detection_only = False,
                                       mute = False,
                                       threads = False,
-                                      GOI_list = None,
+                                      GOI_list_folder = None,
                                       overwrite_metric = False,
                                       overwrite_stat = False,
                                       proba_using_mask_per_pixel = False,
                                       SNR = True,
                                       probability = True,
-                                      detection_metric = None):
+                                      detection_metric = None,
+                                      N_cores = None):
     '''
     Calculate the metrics and probabilities of a given datacube and/or run the candidate finder algorithm for a given
     cube and several spectral templates.
@@ -236,8 +236,8 @@ def planet_detection_in_dir_per_file(filename,
     :param mute: If True prevent printed log outputs.
     :param threads: Boolean. If true a different process will be created for every single spectrum template for
                     parallelization.
-    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
-                    before calculating the probability.
+    :param N_cores: Number of cores to be used. If None use all existing cores.
+    :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
                             has been calculated and load the file if possible.
     :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
@@ -295,7 +295,8 @@ def planet_detection_in_dir_per_file(filename,
         filelist_ori_PSFs_cube = glob.glob(user_defined_PSF_cube)
     else:
         # If nothing was specified it tries to look for an existing PSF cube in directory
-        filelist_ori_PSFs_cube = glob.glob(directory+os.path.sep+"*"+compact_date+"*-original_radial_PSF_cube.fits")
+        #print(directory+os.path.sep+prefix+"-original_radial_PSF_cube.fits")
+        filelist_ori_PSFs_cube = glob.glob(directory+os.path.sep+prefix+"-original_radial_PSF_cube.fits")
 
     if np.size(filelist_ori_PSFs_cube) == 1:
         # Load the PSF cube if a file has been found
@@ -315,35 +316,45 @@ def planet_detection_in_dir_per_file(filename,
         if not mute:
             print("I didn't find any PSFs file so trying to generate one.")
 
-        print(directory+os.path.sep+compact_date+"*_spdc_distorcorr.fits")
-        cube_filename_list = glob.glob(directory+os.path.sep+compact_date+"*_spdc_distorcorr.fits")
-        if len(cube_filename_list) == 0:
-            cube_filename_list = glob.glob(directory+os.path.sep+compact_date+"*_spdc.fits")
-            if len(cube_filename_list) == 0:
-                # In this case the function couldn't find the data cube of the observation sequence and will therefore
-                # ask the next functions to use a default gaussian PSF.
-                if not mute:
-                    print("I can't find the cubes to calculate the PSF from so I will use a default gaussian.")
-                sat_spot_spec = None
-                PSF_cube = None
+        ##print(directory+os.path.sep+compact_date+"*_spdc_distorcorr.fits")
+        #cube_filename_list = glob.glob(directory+os.path.sep+compact_date+"*_spdc_distorcorr.fits")
+        cube_filename_list = []
+        file_index = 0
+        EOList = False
+        while not EOList:
+            try:
+                curr_spdc_filename = prihdr["FILE_{0}".format(file_index)]
+                cube_filename_list.append(directory+os.path.sep+curr_spdc_filename.split(".")[0]+"_spdc_distorcorr.fits")
+            except:
+                EOList = True
+            file_index = file_index +1
 
-        # Load all the data cube into a dataset object
-        dataset = GPI.GPIData(cube_filename_list)
-        if not mute:
-            print("Calculating the planet PSF from the satellite spots...")
-        # generate the PSF cube from the satellite spots
-        dataset.generate_psf_cube(20)
-        # Save the original PSF calculated from combining the sat spots
-        dataset.savedata(directory + os.path.sep + prefix+"-original_PSF_cube.fits", dataset.psfs,
-                                  astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube")
-        # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
-        # Generate a radially averaged PSF cube and save it in directory
-        PSF_cube = dataset.get_radial_psf(save = directory + os.path.sep + prefix)
-        # Extract the satellite spot spectrum for the PSF cube.
-        sat_spot_spec = np.nanmax(PSF_cube,axis=(1,2))
-        # Remove the spectral shape from the psf cube because it is dealt with independently
-        for l_id in range(PSF_cube.shape[0]):
-            PSF_cube[l_id,:,:] /= sat_spot_spec[l_id]
+        if len(cube_filename_list) == 0:
+            # In this case the function couldn't find the data cube of the observation sequence and will therefore
+            # ask the next functions to use a default gaussian PSF.
+            if not mute:
+                print("I can't find the cubes to calculate the PSF from so I will use a default gaussian.")
+            sat_spot_spec = None
+            PSF_cube = None
+        else:
+            print(cube_filename_list)
+            # Load all the data cube into a dataset object
+            dataset = GPI.GPIData(cube_filename_list)
+            if not mute:
+                print("Calculating the planet PSF from the satellite spots...")
+            # generate the PSF cube from the satellite spots
+            dataset.generate_psf_cube(20)
+            # Save the original PSF calculated from combining the sat spots
+            dataset.savedata(directory + os.path.sep + prefix+"-original_PSF_cube.fits", dataset.psfs,
+                                      astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube")
+            # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
+            # Generate a radially averaged PSF cube and save it in directory
+            PSF_cube = dataset.get_radial_psf(save = directory + os.path.sep + prefix)
+            # Extract the satellite spot spectrum for the PSF cube.
+            sat_spot_spec = np.nanmax(PSF_cube,axis=(1,2))
+            # Remove the spectral shape from the psf cube because it is dealt with independently
+            for l_id in range(PSF_cube.shape[0]):
+                PSF_cube[l_id,:,:] /= sat_spot_spec[l_id]
     else:
         #if not mute:
         #    print("I found several files for the PSF cube matching the given filter so I don't know what to do and I quit")
@@ -372,7 +383,10 @@ def planet_detection_in_dir_per_file(filename,
 
         # If there are many more cores than there are spectra then it will also parallelize the metric and probability
         # calculation.
-        N_threads_metric = mp.cpu_count()/N_threads
+        if N_cores is not None:
+            N_threads_metric = N_cores/N_threads
+        else:
+            N_threads_metric = mp.cpu_count()/N_threads
         if N_threads_metric <= 1:
             N_threads_metric = None
 
@@ -389,7 +403,7 @@ def planet_detection_in_dir_per_file(filename,
                                                                            itertools.repeat(metrics_only),
                                                                            itertools.repeat(planet_detection_only),
                                                                            itertools.repeat(mute),
-                                                                           itertools.repeat(GOI_list),
+                                                                           itertools.repeat(GOI_list_folder),
                                                                            itertools.repeat(overwrite_metric),
                                                                            itertools.repeat(overwrite_stat),
                                                                            itertools.repeat(proba_using_mask_per_pixel),
@@ -414,7 +428,7 @@ def planet_detection_in_dir_per_file(filename,
                                                           metrics_only = metrics_only,
                                                           planet_detection_only = planet_detection_only,
                                                           mute = mute,
-                                                          GOI_list = GOI_list,
+                                                          GOI_list_folder = GOI_list_folder,
                                                           overwrite_metric = overwrite_metric,
                                                           overwrite_stat = overwrite_stat,
                                                           proba_using_mask_per_pixel = proba_using_mask_per_pixel,
@@ -429,7 +443,7 @@ def planet_detection_in_dir_per_file(filename,
     if not metrics_only:
         if not mute:
             print("Calling gather_detections() on "+outputDir)
-        gather_detections(outputDir,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list = GOI_list, noPlots = False)
+        gather_detections(outputDir,filename,PSF_cube, mute = mute,which_metric = detection_metric, GOI_list_folder = GOI_list_folder, noPlots = False)
 
 def planet_detection_in_dir_star(params):
     """
@@ -447,17 +461,18 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                             star_temperature = None,
                             user_defined_PSF_cube = None,
                             metrics = None,
-                            threads = False,
+                            threads = 0,
                             metrics_only = False,
                             planet_detection_only = False,
                             mute = True,
-                            GOI_list = None,
+                            GOI_list_folder = None,
                             overwrite_metric = False,
                             overwrite_stat = False,
                             proba_using_mask_per_pixel = False,
                             SNR = True,
                             probability = True,
-                            detection_metric = None):
+                            detection_metric = None,
+                            N_cores = None):
     '''
     Apply the planet detection algorithm for all pyklip reduced cube respecting a filter in a given folder.
     By default the filename filter used is pyklip-*-KL*-speccube.fits.
@@ -486,6 +501,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                     not part of metrics. So If metrics is None basically the function creates a flat cube only.
     :param threads: Boolean. If true a different process will be created for every single spectrum template for
                     parallelization.
+    :param N_cores: Number of cores to be used. If None use all existing cores.
     :param metrics_only: Boolean. If True the function call will only calculate the metrics and probabilities with
                         kpp_metrics.calculate_metrics() and will not run the candidate finder with
                         kpp_detections.candidate_detection().
@@ -493,8 +509,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                         kpp_detections.candidate_detection() and will not calculate the metrics and probabilities with
                         kpp_metrics.calculate_metrics().
     :param mute: If True prevent printed log outputs.
-    :param GOI_list: XML file with the list of known object in the campaign. These object will be mask from the images
-                    before calculating the probability.
+    :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param overwrite_metric: If True force recalculate and overwrite existing metric fits file. If False check if metric
                             has been calculated and load the file if possible.
     :param overwrite_stat: If True force recalculate and overwrite existing SNR or probability map fits file.
@@ -530,11 +545,11 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
 
 
     if len(filelist_klipped_cube) == 0:
-        # No file following the filename filter could be found.
-        #if not mute:
-        #    print("No suitable files found in: "+directory)
-        #return None
-        raise Exception("No suitable files found in: "+directory)
+        #No file following the filename filter could be found.
+        if not mute:
+            print("No suitable files found in: "+directory)
+        return None
+        #raise Exception("No suitable files found in: "+directory)
     else:
         if not mute:
             print(directory+"contains suitable file for planet detection:")
@@ -544,6 +559,7 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
         # Run the planet detection for every single file sastisfying the filename filter.
         err_list = []
         for filename in filelist_klipped_cube:
+            #if 1:
             try:
                 planet_detection_in_dir_per_file(filename,
                                                  metrics = metrics,
@@ -557,13 +573,14 @@ def planet_detection_in_dir(directory = "."+os.path.sep,
                                                  planet_detection_only = planet_detection_only,
                                                  mute = mute,
                                                  threads = threads,
-                                                 GOI_list = GOI_list,
+                                                 GOI_list_folder = GOI_list_folder,
                                                  overwrite_metric = overwrite_metric,
                                                  overwrite_stat = overwrite_stat,
                                                  proba_using_mask_per_pixel = proba_using_mask_per_pixel,
                                                  SNR = SNR,
                                                  probability = probability,
-                                                 detection_metric = detection_metric)
+                                                 detection_metric = detection_metric,
+                                                 N_cores = N_cores)
             except Exception as myErr:
                 err_list.append(myErr)
                 if not mute:
@@ -579,7 +596,7 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
     be displayed. You will also find the metric maps as well as probability maps corresponding to the different spectrum
     template.
 
-    /!\ Still partially hardcoded: GOI_list.xml path. Works only for JB.
+    /!\ Still partially hardcoded: GOI_list_folder.xml path. Works only for JB.
 
     /!\ Function needs cleaning and comments.
 
@@ -628,14 +645,17 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
         user_defined_PSF_cube = None
 
     if platform.system() == "Windows":
-        GOI_list = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list.xml"
+        GOI_list_folder = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\GOI_list\\"
     elif platform.system() == "Linux":
-        GOI_list = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.xml"
+        GOI_list_folder = "/home/sda/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list/"
     else:
-        GOI_list = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list.xml"
+        GOI_list_folder = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/GOI_list/"
 
     inputDirs = []
-    for inputDir in os.listdir(campaign_dir):
+    #dirs_to_reduce = os.listdir(campaign_dir) #all
+    dirs_to_reduce = ["AU_Mic","bet_Cir","c_Eri","d_Sco","HD_984","HD_28287","HD_88117","HD_95086","HD_100491","HD_118991_A","HD_123058",
+                      "HD_133803","HD_155114","HD_157587","HD_161719","HD_164249_A","HR_4669","HR_5663","V343_Nor","V371_Nor","V1358_Ori"]
+    for inputDir in ["c_Eri"]:
         if not inputDir.startswith('.'):
 
             inputDirs.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
@@ -655,14 +675,13 @@ def planet_detection_campaign(campaign_dir = "."+os.path.sep):
                                         planet_detection_only = False,
                                         threads = True,
                                         mute = False,
-                                        GOI_list = GOI_list,
+                                        GOI_list_folder = GOI_list_folder,
                                         overwrite_metric=True,
                                         overwrite_stat=True,
                                         proba_using_mask_per_pixel = True,
                                         SNR = False,
                                         probability = True,
                                         detection_metric = detection_metric)
-
     if 0 and 0:
         N_threads = len(inputDirs)
         print(N_threads)

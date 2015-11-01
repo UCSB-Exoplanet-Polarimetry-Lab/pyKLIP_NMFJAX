@@ -36,7 +36,6 @@ def LSQ_model_gauss1D(x,y,a,m,sigma):
     return (y-y_model)
 
 def get_pdf_model(data):
-
     im_std = np.std(data)
     bins = np.arange(np.min(data),np.max(data),im_std/5.)
     im_histo = np.histogram(data, bins=bins)[0]
@@ -51,7 +50,7 @@ def get_pdf_model(data):
         g_init = models.Gaussian1D(amplitude=np.max(im_histo), mean=0.0, stddev=im_std)
         fit_g = fitting.LevMarLSQFitter()
         warnings.simplefilter('ignore')
-        g = fit_g(g_init, center_bins, im_histo)
+        g = fit_g(g_init, center_bins, im_histo)#, weights=1/im_histo)
         g.stddev = abs(g.stddev)
 
         right_side_noZeros = np.where((center_bins > (g.mean+2*g.stddev))*(im_histo != 0))
@@ -229,7 +228,8 @@ def get_pdf_model(data):
 
     if 0:
         rcParams.update({'font.size': 20})
-        fig = 1
+        fig = 2
+        plt.close(2)
         plt.figure(fig,figsize=(16,8))
         plt.subplot(121)
         plt.plot(new_sampling,pdf_model,'r-',linewidth=5)
@@ -283,7 +283,7 @@ def get_cdf_model(data):
     return np.cumsum(pdf_model),pdf_model,sampling,im_histo,center_bins
 
 
-def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
+def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
     IWA,OWA = IOWA
     ny,nx = image.shape
 
@@ -324,18 +324,23 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
     th_grid = np.arctan2(x,y)
 
     # Define the radii intervals for each annulus
-    r0 = IWA
-    annuli_radii = []
-    if r_step is None:
-        while np.sqrt(N/np.pi+r0**2) < OWA:
-            annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-            r0 = np.sqrt(N/np.pi+r0**2)
-    else:
-        while np.sqrt(N/np.pi+r0**2) < OWA:
-            annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-            r0 += r_step
+    if Dr is None:
+        r0 = IWA
+        annuli_radii = []
+        if r_step is None:
+            while np.sqrt(N/np.pi+r0**2) < OWA:
+                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                r0 = np.sqrt(N/np.pi+r0**2)
+        else:
+            while np.sqrt(N/np.pi+r0**2) < OWA:
+                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                r0 += r_step
 
-    annuli_radii.append((r0,np.max([ny,nx])))
+        annuli_radii.append((r0,np.max([ny,nx])))
+    else:
+        annuli_radii = []
+        for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+            annuli_radii.append((r-Dr,r+Dr))
     N_annuli = len(annuli_radii)
 
 
@@ -392,27 +397,86 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None):
 
     return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
-def get_image_probability_map(image,image_without_planet,mask_radius = 7, use_mask_per_pixel = False, IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True,N_threads =None):
-    if use_mask_per_pixel:
-        return get_image_probability_map_perPixMasking(image,image_without_planet,mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads)
-    else:
-        return get_image_probability_map_noPlanet(image,image_without_planet = image_without_planet,IOWA = IOWA,N = N,centroid = centroid, r_step = r_step, mute = mute)
 
-def get_image_probability_map_perPixMasking_threadTask_star(params):
+def get_image_stddev(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
+    IWA,OWA = IOWA
+    ny,nx = image.shape
+
+    image_mask = np.ones((ny,nx))
+    image_mask[np.where(np.isnan(image))] = 0
+
+    if centroid is None :
+        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+    else:
+        x_cen, y_cen = centroid
+
+    # Build the x and y coordinates grids
+    x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
+    # Calculate the radial distance of each pixel
+    r_grid = abs(x +y*1j)
+    th_grid = np.arctan2(x,y)
+
+    # Define the radii intervals for each annulus
+    if Dr is None:
+        r0 = IWA
+        annuli_radii = []
+        if r_step is None:
+            while np.sqrt(N/np.pi+r0**2) < OWA:
+                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                r0 = np.sqrt(N/np.pi+r0**2)
+        else:
+            while np.sqrt(N/np.pi+r0**2) < OWA:
+                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                r0 += r_step
+
+        annuli_radii.append((r0,np.max([ny,nx])))
+    else:
+        annuli_radii = []
+        for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+            annuli_radii.append((r-Dr,r+Dr))
+    #N_annuli = len(annuli_radii)
+
+
+    stddev_list = []
+    annulus_radii_list = []
+    for it, rminmax in enumerate(annuli_radii):
+        r_min,r_max = rminmax
+
+        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
+
+        data = image[where_ring]
+
+        stddev_list.append(np.nanstd(data))
+        annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
+
+    return stddev_list, annulus_radii_list
+
+
+def get_image_stat_map(image,image_without_planet,mask_radius = 7, use_mask_per_pixel = False, IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True,N_threads =None,Dr= None, proba = True):
+    if use_mask_per_pixel:
+        return get_image_stat_map_perPixMasking(image,image_without_planet,mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads,Dr= Dr, proba = proba)
+    else:
+        return get_image_stat_map_noPlanet(image,image_without_planet = image_without_planet,IOWA = IOWA,N = N,centroid = centroid, r_step = r_step, mute = mute,Dr= Dr, proba = proba)
+
+def get_image_stat_map_perPixMasking_threadTask_star(params):
     """
     Convert `f([1,2])` to `f(1,2)` call.
     It allows one to call get_image_probability_map_perPixMasking_threadTask() with a tuple of parameters.
     """
-    return get_image_probability_map_perPixMasking_threadTask(*params)
+    return get_image_stat_map_perPixMasking_threadTask(*params)
 
-def get_image_probability_map_perPixMasking_threadTask(row_indices,
-                                                       col_indices,
-                                                       image,
-                                                       image_without_planet,
-                                                       x_grid,y_grid,
-                                                       N,
-                                                       mask_radius,
-                                                       firstZone_radii,lastZone_radii):
+def get_image_stat_map_perPixMasking_threadTask(row_indices,
+                                               col_indices,
+                                               image,
+                                               image_without_planet,
+                                               x_grid,
+                                               y_grid,
+                                               N,
+                                               mask_radius,
+                                               firstZone_radii,
+                                               lastZone_radii,
+                                               Dr = None,
+                                               proba = True):
     ny,nx = image.shape
 
     #print(row_indices)
@@ -428,7 +492,7 @@ def get_image_probability_map_perPixMasking_threadTask(row_indices,
     th_grid = np.arctan2(x_grid,y_grid)
 
     N_it = row_indices.size
-    probability_map = np.zeros((N_it)) + np.nan
+    proba_or_SNR_map = np.zeros((N_it)) + np.nan
     #stdout.write("\r%d" % 0)
     for id,k,l in zip(range(N_it),row_indices,col_indices):
         #stdout.write("\r{0}/{1}".format(id,N_it))
@@ -439,15 +503,18 @@ def get_image_probability_map_perPixMasking_threadTask(row_indices,
         #print(x,y)
         r = r_grid[(k,l)]
 
-
-        if r < r_limit_firstZone:
-            #Calculate stat for pixels close to IWA
-            r_min,r_max = r_min_firstZone,r_max_firstZone
-        elif r > r_limit_lastZone:
-            r_min,r_max = r_min_lastZone,r_max_lastZone
+        if Dr is None:
+            if r < r_limit_firstZone:
+                #Calculate stat for pixels close to IWA
+                r_min,r_max = r_min_firstZone,r_max_firstZone
+            elif r > r_limit_lastZone:
+                r_min,r_max = r_min_lastZone,r_max_lastZone
+            else:
+                dr = N/(4*np.pi*r)
+                r_min,r_max = (r-dr, r+dr)
         else:
-            dr = N/(4*np.pi*r)
-            r_min,r_max = (r-dr, r+dr)
+            r_min,r_max = (r-Dr, r+Dr)
+
 
         where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
         where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
@@ -463,17 +530,42 @@ def get_image_probability_map_perPixMasking_threadTask(row_indices,
             plt.imshow(im_cpy)
             plt.show()
 
+        if proba:
+            cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
 
-        cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
-
-        cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
-        probability_map[id] = 1-cdf_fit(image[k,l])
+            cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
+            proba_or_SNR_map[id] = 1-cdf_fit(image[k,l])
+        else:
+            proba_or_SNR_map[id] = image[k,l]/np.nanstd(data)
         #print(probability_map[proba_map_k,l])
 
 
-    return probability_map
+    return proba_or_SNR_map
 
-def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radius = 7, IOWA = None,N = 3000,centroid = None, mute = True,N_threads = None):
+def get_image_stat_map_perPixMasking(image,
+                                     image_without_planet,
+                                     mask_radius = 7,
+                                     IOWA = None,
+                                     N = 3000,
+                                     centroid = None,
+                                     mute = True,
+                                     N_threads = None,
+                                     Dr = None,
+                                     proba = True):
+    """
+
+    :param image:
+    :param image_without_planet:
+    :param mask_radius:
+    :param IOWA:
+    :param N: Defines the width of the ring by the number of pixels it has to contain
+    :param centroid:
+    :param mute:
+    :param N_threads:
+    :param Dr: If not None defines the width of the ring as Dr. N is then ignored.
+    :param proba: If True triggers proba calculation with pdf fitting. Otherwise simple stddev calculation and returns SNR.
+    :return:
+    """
     ny,nx = image.shape
 
     image_noNans = np.where(np.isfinite(image))
@@ -502,7 +594,7 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
     r_min_lastZone,r_max_lastZone = (OWA,np.max([ny,nx]))
     r_limit_lastZone = OWA - N/(4*np.pi*OWA)
 
-    probability_map = np.zeros(image.shape) + np.nan
+    stat_map = np.zeros(image.shape) + np.nan
     if N_threads is not None:
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
@@ -530,7 +622,7 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
         chunks_col_indices.append(image_noNans_cols[((N_chunks-1)*chunk_size):N_pix])
 
         outputs_list = \
-            pool.map(get_image_probability_map_perPixMasking_threadTask_star,
+            pool.map(get_image_stat_map_perPixMasking_threadTask_star,
                        itertools.izip(chunks_row_indices,
                        chunks_col_indices,
                        itertools.repeat(image),
@@ -540,15 +632,17 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
                        itertools.repeat(N),
                        itertools.repeat(mask_radius),
                        itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
-                       itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone))))
+                       itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone)),
+                       itertools.repeat(Dr),
+                       itertools.repeat(proba)))
 
         for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
-            probability_map[(row_indices,col_indices)] = out
+            stat_map[(row_indices,col_indices)] = out
         pool.close()
 
     else:
-        probability_map[image_noNans] = \
-            get_image_probability_map_perPixMasking_threadTask(image_noNans[0],
+        stat_map[image_noNans] = \
+            get_image_stat_map_perPixMasking_threadTask(image_noNans[0],
                                                                image_noNans[1],
                                                                image,
                                                                image_without_planet,
@@ -556,78 +650,117 @@ def get_image_probability_map_perPixMasking(image,image_without_planet,mask_radi
                                                                N,
                                                                mask_radius,
                                                                (r_limit_firstZone,r_min_firstZone,r_max_firstZone),
-                                                               (r_limit_lastZone,r_min_lastZone,r_max_lastZone))
+                                                               (r_limit_lastZone,r_min_lastZone,r_max_lastZone),
+                                                               Dr = Dr,
+                                                               proba = proba)
+    if proba:
+        return -np.log10(stat_map)
+    else:
+        return stat_map
 
-    return -np.log10(probability_map)
 
 
-
-def get_image_probability_map_noPlanet(image,image_without_planet,IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True):
+def get_image_stat_map_noPlanet(image,
+                                image_without_planet,
+                                IOWA = None,
+                                N = 3000,
+                                centroid = None,
+                                r_step = 5,
+                                mute = True,
+                                Dr = None,
+                                proba = True):
     if IOWA is None:
         IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
     else:
         IWA,OWA = IOWA
 
-    pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step)
+    if proba:
+        pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr)
 
-    pdf_radii = np.array(annulus_radii_list)[:,0]
+        pdf_radii = np.array(annulus_radii_list)[:,0]
 
-    probability_map = np.zeros(image.shape) + np.nan
-    ny,nx = image.shape
+        stat_map = np.zeros(image.shape) + np.nan
+        ny,nx = image.shape
 
-    # Build the x and y coordinates grids
-    x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
+        # Build the x and y coordinates grids
+        x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
 
-    # Calculate the radial distance of each pixel
-    r_grid = abs(x_grid +y_grid*1j)
+        # Calculate the radial distance of each pixel
+        r_grid = abs(x_grid +y_grid*1j)
 
-    image_finite = np.where(np.isfinite(image))
+        image_finite = np.where(np.isfinite(image))
 
-    #Build the cdf_models from interpolation
-    cdf_interp_list = []
-    for sampling,cdf_sampled in zip(sampling_list,cdf_list):
-        cdf_interp_list.append(interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0))
+        #Build the cdf_models from interpolation
+        cdf_interp_list = []
+        for sampling,cdf_sampled in zip(sampling_list,cdf_list):
+            cdf_interp_list.append(interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0))
 
-        #f = interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0)
-        #plt.plot(np.arange(-10,10,0.1),f(np.arange(-10,10,0.1)))
-        #plt.show()
+            #f = interp1d(sampling,cdf_sampled,kind = "linear",bounds_error = False, fill_value=1.0)
+            #plt.plot(np.arange(-10,10,0.1),f(np.arange(-10,10,0.1)))
+            #plt.show()
 
-    for k,l in zip(image_finite[0],image_finite[1]):
-        #stdout.flush()
-        #stdout.write("\r%d" % k)
-        r = r_grid[k,l]
+        for k,l in zip(image_finite[0],image_finite[1]):
+            #stdout.flush()
+            #stdout.write("\r%d" % k)
+            r = r_grid[k,l]
 
-        if r < OWA:
-            r_closest_id, r_closest = min(enumerate(pdf_radii), key=lambda x: abs(x[1]-r))
+            if r < OWA:
+                r_closest_id, r_closest = min(enumerate(pdf_radii), key=lambda x: abs(x[1]-r))
 
 
-            if (r-r_closest) < 0:
-                r_closest_id2 = r_closest_id - 1
+                if (r-r_closest) < 0:
+                    r_closest_id2 = r_closest_id - 1
+                else:
+                    r_closest_id2 = r_closest_id + 1
+                r_closest2 = pdf_radii[r_closest_id2]
+
+                if (r_closest_id2 < 0) or (r_closest_id2 > (pdf_radii.size-1)):
+                    stat_map[k,l] = 1-cdf_interp_list[r_closest_id](image[k,l])
+                    #plt.plot(np.arange(-10,10,0.1),cdf(np.arange(-10,10,0.1)))
+                    #plt.show()
+                else:
+                    stat_map[k,l] = 1-(cdf_interp_list[r_closest_id](image[k,l])*abs(r-r_closest2)+cdf_interp_list[r_closest_id2](image[k,l])*abs(r-r_closest))/abs(r_closest-r_closest2)
             else:
-                r_closest_id2 = r_closest_id + 1
-            r_closest2 = pdf_radii[r_closest_id2]
+                    stat_map[k,l] = 1-cdf_interp_list[pdf_radii.size-1](image[k,l])
 
-            if (r_closest_id2 < 0) or (r_closest_id2 > (pdf_radii.size-1)):
-                probability_map[k,l] = 1-cdf_interp_list[r_closest_id](image[k,l])
-                #plt.plot(np.arange(-10,10,0.1),cdf(np.arange(-10,10,0.1)))
-                #plt.show()
-            else:
-                probability_map[k,l] = 1-(cdf_interp_list[r_closest_id](image[k,l])*abs(r-r_closest2)+cdf_interp_list[r_closest_id2](image[k,l])*abs(r-r_closest))/abs(r_closest-r_closest2)
-        else:
-                probability_map[k,l] = 1-cdf_interp_list[pdf_radii.size-1](image[k,l])
+        if 0:
+            plt.figure(1)
+            plt.subplot(1,3,1)
+            plt.imshow(np.log10(stat_map),interpolation="nearest")
+            plt.colorbar()
+            plt.subplot(1,3,2)
+            plt.imshow(image,interpolation="nearest")
+            plt.subplot(1,3,3)
+            plt.imshow(image_without_planet,interpolation="nearest")
+            plt.show()
 
-    if 0:
-        plt.figure(1)
-        plt.subplot(1,3,1)
-        plt.imshow(np.log10(probability_map),interpolation="nearest")
-        plt.colorbar()
-        plt.subplot(1,3,2)
-        plt.imshow(image,interpolation="nearest")
-        plt.subplot(1,3,3)
-        plt.imshow(image_without_planet,interpolation="nearest")
-        plt.show()
+        return -np.log10(stat_map)
+    else:
+        stddev_list, annulus_radii_list = get_image_stddev(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr)
 
-    return -np.log10(probability_map)
+        radii = np.array(annulus_radii_list)[:,0]
+
+        stddev_func = interp1d(radii,stddev_list,kind = "linear",bounds_error = False, fill_value=np.nan)
+
+        stat_map = np.zeros(image.shape) + np.nan
+        ny,nx = image.shape
+
+        # Build the x and y coordinates grids
+        x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
+
+        # Calculate the radial distance of each pixel
+        r_grid = abs(x_grid +y_grid*1j)
+
+        image_finite = np.where(np.isfinite(image))
+
+        for k,l in zip(image_finite[0],image_finite[1]):
+            #stdout.flush()
+            #stdout.write("\r%d" % k)
+            r = r_grid[k,l]
+            stat_map[k,l] = image[k,l]/stddev_func(r)
+
+        return stat_map
+
 
 
 

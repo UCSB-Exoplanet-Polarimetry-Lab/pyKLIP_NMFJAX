@@ -402,7 +402,6 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     nl_stamp, ny_stamp,nx_stamp = cube_stamp.shape
 
 
-    # Mask to remove the spots already checked in criterion_map.
     stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,nx_stamp,1),np.arange(0,ny_stamp,1))
     r_stamp = np.sqrt((stamp_x_grid-(col_cen-(col_id-col_m)))**2 +(stamp_y_grid-(row_cen-(row_id-row_m)))**2)
     #stamp_mask = np.ones((stamp_nrow,stamp_ncol))

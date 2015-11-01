@@ -44,43 +44,116 @@ def candidate_detection(metrics_foldername,
                 "candidates" or "all" are all "localMax" and their properties are id, max_val_criter, col_id, row_id,
                 x_max_pos and y_max_pos.
     '''
-    # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
-    shape_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape_proba.fits")
-    matchedFilter_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-matchedFilter_proba.fits")
-    # Abort if the shape proba file couldn't be found.
-    if len(shape_filename_list) == 0:
-        if not mute:
-            print("Couldn't find shape_proba map in "+metrics_foldername)
-            return None
-    else:
-        # Read the shape proba file if it was found.
-        hdulist_shape = pyfits.open(shape_filename_list[0])
-    # Abort if the matched filter proba file couldn't be found.
-    if len(matchedFilter_filename_list) == 0:
-        if not mute:
-            print("Couldn't find matchedFilter_SNR map in "+metrics_foldername)
-            return None
-    else:
-        # Read the matched filter proba file if it was found.
-        hdulist_matchedFilter = pyfits.open(matchedFilter_filename_list[0])
 
     # Try to grab the data and headers
-    try:
-        shape_map = hdulist_shape[1].data
-        matchedFilter_map = hdulist_matchedFilter[1].data
-        exthdr = hdulist_shape[1].header
-        prihdr = hdulist_shape[0].header
-    except:
-        # This except was used for datacube not following GPI headers convention.
-        # /!\ This is however not supported at the moment
-        print("Return None. Couldn't read the fits file normally.")
-        shape_map = hdulist_shape[0].data
-        prihdr = hdulist_shape[0].header
+    #try:
+    #    shape_map = hdulist_shape[1].data
+    #    matchedFilter_map = hdulist_matchedFilter[1].data
+    #except:
+    #    # This except was used for datacube not following GPI headers convention.
+    #    # /!\ This is however not supported at the moment
+    #    print("Return None. Couldn't read the fits file normally.")
+    #    shape_map = hdulist_shape[0].data
+    #    prihdr = hdulist_shape[0].header
+    #    return None
+
+    # Default metric used is shape
+    if metric is None:
+        metric = "shape"
+
+    # If the user defined a metric to use. Define the criterion_map accordingly as well as the threshold.
+    if metric == "shape":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape_proba.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find shape_proba map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 4
+        threshold_for_all = 2.0
+    elif metric == "shapeRaw":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find shape map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 0.4
+        threshold_for_all = 0.20
+    elif metric == "shapeSNR":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-shape_SNR.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find shape_SNR map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 4.
+        threshold_for_all = 2.
+    elif metric == "matchedFilter":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-matchedFilter_proba.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find matchedFilter_proba map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 4
+        threshold_for_all = 2.
+    elif metric == "matchedFilterSNR":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-matchedFilter_SNR.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find matchedFilter_SNR map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 4.
+        threshold_for_all = 2.
+    elif metric == "weightedFlatCubeSNR":
+        # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+        metric_filename_list = glob.glob(metrics_foldername+os.path.sep+"*-weightedFlatCube_SNR.fits")
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            if not mute:
+                print("Couldn't find weightedFlatCube_SNR map in "+metrics_foldername)
+                return None
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        threshold = 4.
+        threshold_for_all = 2.
+    #elif metric == "maxShapeMF":
+    #    criterion_map = np.max([shape_proba_map,matchedFilter_proba_map],axis=0)
+    #    threshold = 4
+    #    threshold_for_all = 2.5
+    else:
         return None
+    criterion_map = hdulist[1].data
+    exthdr = hdulist[1].header
+    prihdr = hdulist[0].header
+    hdulist.close()
 
     # Shape of the images
-    if np.size(shape_map.shape) == 2:
-        ny,nx = shape_map.shape
+    if np.size(criterion_map.shape) == 2:
+        ny,nx = criterion_map.shape
 
     # Get center of the image (star position)
     try:
@@ -100,22 +173,6 @@ def candidate_detection(metrics_foldername,
         # If the object name could nto be found cal lit unknown_object
         star_name = "UNKNOWN_OBJECT"
 
-    # Default metric used is shape
-    if metric is None:
-        metric = "shape"
-
-    # If the user defined a metric to use. Define the criterion_map accordingly as well as the threshold.
-    if metric == "shape":
-        criterion_map = shape_map
-        threshold = 4
-    elif metric == "matchedFilter":
-        criterion_map = matchedFilter_map
-        threshold = 4
-    elif metric == "maxShapeMF":
-        criterion_map = np.max([shape_map,matchedFilter_map],axis=0)
-        threshold = 4
-    else:
-        return None
 
     # Make a copy of the criterion map because it will be modified in the following.
     # Local maxima are indeed masked out when checked
@@ -138,7 +195,7 @@ def candidate_detection(metrics_foldername,
 
     # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
     # DISABLED: this is done in the metric calculation itself
-    if 0:
+    if 1:
         IWA,OWA,inner_mask,outer_mask = get_occ(criterion_map, centroid = center)
         conv_kernel = np.ones((10,10))
         flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
@@ -168,14 +225,14 @@ def candidate_detection(metrics_foldername,
     N_candidates = 0.0
 
     # Maximum number of iterations on local maxima.
-    max_attempts = 60
+    #max_attempts = 60
     ## START WHILE LOOP.
     # Each iteration looks at one local maximum in the criterion map.
     # Note: This loop is a bit dum. The same thing could be done more easily in a different way but it is an heritage
     # from previous test and I am lazy to change it.
     k = 0
     max_val_criter = np.nanmax(criterion_map)
-    while max_val_criter >= 2.5 and k <= max_attempts:
+    while max_val_criter >= threshold_for_all:# and k <= max_attempts:
         k += 1
         # Find the maximum value in the current criterion map. At each iteration the previous maximum is masked out.
         max_val_criter = np.nanmax(criterion_map)
@@ -281,7 +338,7 @@ def candidate_detection(metrics_foldername,
 
     return 1
 
-def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_metric = None,GOI_list = None, noPlots = False):
+def gather_detections(planet_detec_dir,original_cube_filename, PSF_cube_filename, mute = True,which_metric = None,GOI_list_folder = None, noPlots = False):
     '''
     Gather the candidates detected with different spectral templates for a given data cube into a single big image and
     a single xml file.
@@ -300,14 +357,14 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     :param planet_detec_dir: Directory of the detection folder. We recall that the convention is to create one folder
                             per data cube to store the outputs of the detection algorithm. This folder will contain
                             subfolder(s) for each spectral template.
+    :param original_cube_filename: Name of the fits file with the klipped cube used when running the planet detection.
     :param PSF_cube_filename: The name of the PSF cube fits file or directly a the numpy array of the PSF cube.
                     If PSF_cube_filename is an array then nl,ny_PSF,nx_PSF=PSF_cube_filename.shape, nl is the number of
                     wavelength samples and should be 37, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
     :param mute: If True prevent printed log outputs.
     :param which_metric: String matching either of the following: "shape", "matchedFilter", "maxShapeMF". It tells which
                 metric should be used for the detection. The default value is "shape".
-    :param GOI_list: XML file with the list of known object in the campaign. If GOI_list is not none and if there is
-                    registered known GOI objects these objects will be marked with a circle in the png.
+    :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param noPlots: Prevent the use of matplotlib. No png will be produced.
     :return: 1 if successful and None otherwise.
             Also creates some files in planet_detec_dir:
@@ -333,12 +390,13 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
     else:
         planet_detec_dir = planet_detec_dir_glob[0]
 
-    # First recover the name of the data cube file that was reduced for this folder.
-    # The name of the file is in the folder name so we can split the input directory
-    planet_detec_dir_splitted = planet_detec_dir.split(os.path.sep)
-    # original_cube_filename is the filename of the original klipped cube
-    original_cube_filename = planet_detec_dir_splitted[len(planet_detec_dir_splitted)-2].split("planet_detec_")[1]
-    original_cube_filename += "-speccube.fits"
+    if 0:
+        # First recover the name of the data cube file that was reduced for this folder.
+        # The name of the file is in the folder name so we can split the input directory
+        planet_detec_dir_splitted = planet_detec_dir.split(os.path.sep)
+        # original_cube_filename is the filename of the original klipped cube
+        original_cube_filename = planet_detec_dir_splitted[len(planet_detec_dir_splitted)-2].split("planet_detec_")[1]
+        original_cube_filename += "-speccube.fits"
 
     # If PSF_cube_filename is a string read the corresponding fits file.
     if isinstance(PSF_cube_filename, basestring):
@@ -350,7 +408,8 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         PSF_cube = PSF_cube_filename
 
     # Read the data cube fits with headers
-    hdulist = pyfits.open(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename)
+    #hdulist = pyfits.open(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename)
+    hdulist = pyfits.open(original_cube_filename)
     cube = hdulist[1].data
     exthdr = hdulist[1].header
     prihdr = hdulist[0].header
@@ -425,51 +484,92 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
 
         # Look for the metric, metric probability, detection xml file and spectral template in the folder
         candidates_log_file_list = glob.glob(spectrum_folder+os.path.sep+"*-detections-"+which_metric+".xml")
-        #weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
-        shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
-        matchedFilter_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
-        shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
-        matchedFilter_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter.fits")
+
+        file_not_found = False
+        # If the user defined a metric to use. Define the criterion_map accordingly as well as the threshold.
+        if which_metric == "shape":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
+        elif which_metric == "shapeRaw":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
+        elif which_metric == "shapeSNR":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_SNR.fits")
+        elif which_metric == "matchedFilter":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
+        elif which_metric == "matchedFilterSNR":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_SNR.fits")
+        elif which_metric == "weightedFlatCubeSNR":
+            # Look for files in metrics_foldername that have the name matching *-shape_proba.fits and *-matchedFilter_proba.fits
+            metric_filename_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_SNR.fits")
+        else:
+            return None
+        #print(metric_filename_list)
+
+        # Abort if the shape proba file couldn't be found.
+        if len(metric_filename_list) == 0:
+            file_not_found = True
+        else:
+            # Read the shape proba file if it was found.
+            hdulist = pyfits.open(metric_filename_list[0])
+        criterion_map = hdulist[1].data
+        exthdr = hdulist[1].header
+        prihdr = hdulist[0].header
+        hdulist.close()
+
+        ##weightedFlatCube_file_list = glob.glob(spectrum_folder+os.path.sep+"*-weightedFlatCube_proba.fits")
+        #shape_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape_proba.fits")
+        #matchedFilter_proba_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter_proba.fits")
+        #shape_file_list = glob.glob(spectrum_folder+os.path.sep+"*-shape.fits")
+        #matchedFilter_file_list = glob.glob(spectrum_folder+os.path.sep+"*-matchedFilter.fits")
+
         template_spectrum_file_list = glob.glob(spectrum_folder+os.path.sep+"template_spectrum.fits")
 
-        # Only if they are all found we process with the following
+        ## Only if they are all found we process with the following
+        #if len(candidates_log_file_list) == 1 and \
+        #                len(shape_proba_file_list) == 1 and \
+        #                len(shape_file_list) == 1 and \
+        #                len(template_spectrum_file_list) == 1 and \
+        #                len(matchedFilter_proba_file_list) == 1 and \
+        #                len(matchedFilter_file_list) == 1:
         if len(candidates_log_file_list) == 1 and \
-                        len(shape_proba_file_list) == 1 and \
-                        len(shape_file_list) == 1 and \
-                        len(template_spectrum_file_list) == 1 and \
-                        len(matchedFilter_proba_file_list) == 1 and \
-                        len(matchedFilter_file_list) == 1:
+                        not file_not_found and \
+                        len(template_spectrum_file_list) == 1:
 
             # Get the path of the files from the results of the glob function
             candidates_log_file = candidates_log_file_list[0]
-            shape_proba_file = shape_proba_file_list[0]
-            shape_file = shape_file_list[0]
-            matchedFilter_file = matchedFilter_file_list[0]
-            matchedFilter_proba_file = matchedFilter_proba_file_list[0]
+            #shape_proba_file = shape_proba_file_list[0]
+            #shape_file = shape_file_list[0]
+            #matchedFilter_file = matchedFilter_file_list[0]
+            #matchedFilter_proba_file = matchedFilter_proba_file_list[0]
             template_spectrum_file = template_spectrum_file_list[0]
 
-            # Read shape_file
-            if which_metric == "shape":
-                hdulist = pyfits.open(shape_proba_file)
-                metric_proba = hdulist[1].data
-            elif which_metric == "matchedFilter":
-                hdulist = pyfits.open(matchedFilter_proba_file)
-                metric_proba = hdulist[1].data
-            elif which_metric == "maxShapeMF":
-                hdulist = pyfits.open(shape_proba_file)
-                shape_proba = hdulist[1].data
-                hdulist = pyfits.open(matchedFilter_proba_file)
-                matchedFilter_proba = hdulist[1].data
-                metric_proba = np.max([shape_proba,matchedFilter_proba],axis=0)
-            exthdr = hdulist[1].header
-            prihdr = hdulist[0].header
-            hdulist.close()
+
+            ## Read shape_file
+            #if which_metric == "shape":
+            #    hdulist = pyfits.open(shape_proba_file)
+            #    metric_proba = hdulist[1].data
+            #elif which_metric == "matchedFilter":
+            #    hdulist = pyfits.open(matchedFilter_proba_file)
+            #    metric_proba = hdulist[1].data
+            #elif which_metric == "maxShapeMF":
+            #    hdulist = pyfits.open(shape_proba_file)
+            #    shape_proba = hdulist[1].data
+            #    hdulist = pyfits.open(matchedFilter_proba_file)
+            #    matchedFilter_proba = hdulist[1].data
+            #    metric_proba = np.max([shape_proba,matchedFilter_proba],axis=0)
+            #exthdr = hdulist[1].header
+            #prihdr = hdulist[0].header
+            #hdulist.close()
             x_grid, y_grid = np.meshgrid(np.arange(0,nx,1)-center[0],np.arange(0,ny,1)-center[1])
 
             if not noPlots:
                 # Plot on the top line of the figure the probability map. One axis has to be mirrored to get North up.
                 plt.subplot(2,N_spectra_folders,spec_id+1)
-                plt.imshow(metric_proba[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+                plt.imshow(criterion_map[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
                 ax = plt.gca()
 
             # Get tree of the xml file with the candidates
@@ -499,54 +599,40 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
                             )
 
             if not noPlots:
-                # Draw a circle around the known objects if GOI_list is not None.
-                if GOI_list is not None:
-                    # Read the GOI_list xml file
-                    tree_GOI_list = ET.parse(GOI_list)
-                    root_GOI_list = tree_GOI_list.getroot()
-
-                    # Get the elements corresponding to the right star
-                    root_GOI_list_givenObject = root_GOI_list.findall(xml_star_name)
-                    # Loop over these known elements and circle them
-                    for object_elt in root_GOI_list_givenObject:
-                        #print(object_elt)
-                        for candidate in object_elt.findall("candidate"):
-                            col_centroid = float(candidate.attrib["col_centroid"])
-                            row_centroid = float(candidate.attrib["row_centroid"])
-                            circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
-                            ax.add_artist(circle)
+                # Draw a circle around the known objects if GOI_list_folder is not None.
+                if GOI_list_folder is not None:
+                    row_centroid_vec,col_centroid_vec = get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False)
+                    for row_centroid,col_centroid in zip(row_centroid_vec,col_centroid_vec):
+                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                        ax.add_artist(circle)
 
                 plt.title(star_name +" "+ spectrum_name)
                 plt.clim(0.,5.0)
 
-            # Read metric fits file
-            if which_metric == "shape":
-                hdulist = pyfits.open(shape_file)
-                metric = hdulist[1].data
-                hdulist.close()
-            elif which_metric == "matchedFilter":
-                hdulist = pyfits.open(matchedFilter_file)
-                metric = hdulist[1].data
-                hdulist.close()
-            elif which_metric == "maxShapeMF":
-                metric = metric_proba
+            ## Read metric fits file
+            #if which_metric == "shape":
+            #    hdulist = pyfits.open(shape_file)
+            #    metric = hdulist[1].data
+            #    hdulist.close()
+            #elif which_metric == "matchedFilter":
+            #    hdulist = pyfits.open(matchedFilter_file)
+            #    metric = hdulist[1].data
+            #    hdulist.close()
+            #elif which_metric == "maxShapeMF":
+            #    metric = metric_proba
 
             if not noPlots:
                 # Plot the metric for the given spectral template in the lower row of the figure
                 plt.subplot(2,N_spectra_folders,N_spectra_folders+spec_id+1)
-                plt.imshow(metric[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+                plt.imshow(criterion_map[::-1,:], interpolation="nearest",extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
                 ax = plt.gca()
 
-                # Draw a circle around the known objects if GOI_list is not None.
-                if GOI_list is not None:
+                # Draw a circle around the known objects if GOI_list_folder is not None.
+                if GOI_list_folder is not None:
                     # Loop over the known elements and circle them
-                    for object_elt in root_GOI_list_givenObject:
-                        #print(object_elt)
-                        for candidate in object_elt.findall("candidate"):
-                            col_centroid = float(candidate.attrib["col_centroid"])
-                            row_centroid = float(candidate.attrib["row_centroid"])
-                            circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
-                            ax.add_artist(circle)
+                    for row_centroid,col_centroid in zip(row_centroid_vec,col_centroid_vec):
+                        circle=plt.Circle((float(col_centroid)-center[0], float(row_centroid)-center[1]),radius=7.,color='r',fill=False)
+                        ax.add_artist(circle)
 
                 plt.colorbar()
 
@@ -648,7 +734,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
         # Try to extract spectrum for all the candidates after removing duplicates and create a png for all of them.
         for candidate in star_elt:
             # Extract rough spectrum with aperture photometry
-            wave_samp,spectrum = spec.extract_planet_spectrum(planet_detec_dir+os.path.sep+".."+os.path.sep+original_cube_filename,
+            wave_samp,spectrum = spec.extract_planet_spectrum(original_cube_filename,
                                                               (float(candidate.attrib["row_centroid"]), float(candidate.attrib['col_centroid'])),
                                                               PSF_cube, method="aperture")
 
@@ -680,6 +766,7 @@ def gather_detections(planet_detec_dir, PSF_cube_filename, mute = True,which_met
             ax.legend(legend_str, loc = 'upper right', fontsize=12)
             plt.savefig(planet_detec_dir+os.path.sep+star_name+'-'+filter+'-'+date+'-candidate-'+which_metric+"_"+ \
                         str(candidate.attrib["id"]) +'.png', bbox_inches='tight')
+            #plt.show()
             plt.close(2)
 
 
