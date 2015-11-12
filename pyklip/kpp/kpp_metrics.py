@@ -3,7 +3,7 @@ __author__ = 'JB'
 from scipy.signal import convolve2d
 
 import pyklip.spectra_management as spec
-from pyklip.kpp_pdf import *
+from pyklip.kpp.kpp_pdf import *
 from pyklip.kpp.kpp_std import *
 
 
@@ -14,7 +14,8 @@ def calculate_matchedFilterWithVar_metric_star(params):
     """
     return calculate_shape_metric(*params)
 
-def calculate_matchedFilterWithVar_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True):
+
+def calculate_matchedFilterWithVar_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True,cube_stddev_map = None):
     '''
     Calculate the ???? metric on the given datacube for the pixels targeted by row_indices and col_indices.
     These lists of indices can basically be given from the numpy.where function following the example:
@@ -23,6 +24,7 @@ def calculate_matchedFilterWithVar_metric(row_indices,col_indices,cube,PSF_cube,
     By truncating the given lists in small pieces it is then easy to parallelized.
 
     TODO description of the metric
+    TODO add the centroid as input para
 
     :param row_indices: Row indices list of the pixels where to calculate the metric in cube.
                         Indices should be given from a 2d image.
@@ -62,14 +64,16 @@ def calculate_matchedFilterWithVar_metric(row_indices,col_indices,cube,PSF_cube,
 
         # Extract stamp cube around the current pixel from the whoel cube
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        stddev_stamp_cube = cube_stddev_map[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
         slice_var = np.zeros(nl)
         # Remove average value of the surrounding pixels in each slice of the stamp cube
         # + calculate the variance as a normalization
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-            stamp_cube[slice_id,:,:] /= np.nanstd(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+            #stamp_cube[slice_id,:,:] /= np.nanstd(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
         # Dot product of the PSF with stamp cube.
-        metric_map[id] = np.nansum(PSF_cube*stamp_cube)
+        metric_map[id] = np.nansum(PSF_cube*stamp_cube/stddev_stamp_cube**2)
+
 
     return metric_map
 
@@ -197,18 +201,35 @@ def calculate_MF_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mu
     matchedFilter_map = np.zeros((N_it)) + np.nan
     # Loop over all pixels (row_indices[id],col_indices[id])
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        if not mute:
-            # Print the progress of the function
-            stdout.write("\r{0}/{1}".format(id,N_it))
-            stdout.flush()
+        if 1:#k == 108 and l == 135:
+            if not mute:
+                # Print the progress of the function
+                stdout.write("\r{0}/{1}".format(id,N_it))
+                stdout.flush()
 
-        # Extract stamp cube around the current pixel from the whoel cube
-        stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
-        # Remove average value of the surrounding pixels in each slice of the stamp cube
-        for slice_id in range(nl):
-            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-        # Dot product of the PSF with stamp cube which is the matched filter value.
-        matchedFilter_map[id] = np.nansum(PSF_cube*stamp_cube)
+            # Extract stamp cube around the current pixel from the whoel cube
+            stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+            # Remove average value of the surrounding pixels in each slice of the stamp cube
+            for slice_id in range(nl):
+                stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+                 #print(np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask))
+            # Dot product of the PSF with stamp cube which is the matched filter value.
+            matchedFilter_map[id] = np.nansum(PSF_cube*stamp_cube)
+
+            if 0:
+                print(matchedFilter_map[id])
+                plt.figure(1)
+                plt.imshow(np.nansum(stamp_cube,axis=0),interpolation="nearest")
+                plt.colorbar()
+                plt.show()
+                plt.figure(1)
+                plt.imshow(np.nansum(PSF_cube,axis=0),interpolation="nearest")
+                plt.colorbar()
+                plt.show()
+                plt.figure(1)
+                plt.imshow(np.nansum((PSF_cube*stamp_cube),axis=0),interpolation="nearest")
+                plt.colorbar()
+                plt.show()
 
     return matchedFilter_map
 
@@ -311,7 +332,9 @@ def calculate_metrics(filename,
                         overwrite_stat = False,
                         proba_using_mask_per_pixel = False,
                         N_threads = None,
-                        noPlots = False):
+                        noPlots = False,
+                        prihdr = None,
+                        exthdr = None):
     '''
     Calculate some metrics on a given data cube as well as the corresponding SNR and probability maps.
 
@@ -390,7 +413,7 @@ def calculate_metrics(filename,
         # This except was used for datacube not following GPI headers convention.
         # /!\ This is however not supported at the moment
         print("Couldn't read the fits file normally. Try another way.")
-        raise
+        cube = hdulist[0].data
         #cube = hdulist[0].data
         #prihdr = hdulist[0].header
         #return None
@@ -440,12 +463,12 @@ def calculate_metrics(filename,
         if not mute:
             print("No specified PSF cube so one is built with simple gaussian PSF. (no spectral widening)")
         # Build the grid for PSF stamp.
-        ny_PSF = 8 # should be even
-        nx_PSF = 8 # should be even
+        ny_PSF = 20 # should be even
+        nx_PSF = 20 # should be even
         x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,ny_PSF,1)-ny_PSF/2,np.arange(0,nx_PSF,1)-nx_PSF/2)
         # Use a simple 2d gaussian PSF for now. The width is probably not even the right one.
         # I just set it so that "it looks" right.
-        PSF = gauss2d(x_PSF_grid, y_PSF_grid,1.0,0.0,0.0,1.5,1.5)
+        PSF = gauss2d(x_PSF_grid, y_PSF_grid,1.0,0.0,0.0,1.25,1.25)
         # Normalize the PSF with a norm 2
         PSF /= np.sqrt(np.sum(PSF**2))
 
@@ -591,14 +614,14 @@ def calculate_metrics(filename,
                 #flat_cube_std = std_function(flat_cube, centroid=center)
                 # Divide the flat cube by the standard deviation map to get the SNR.
                 #flat_cube_SNR = flat_cube/flat_cube_std
-                flat_cube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                flat_cube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the flat cube only if required.
             if probability and activate_proba_calc_FC:
                 if not mute:
                     print("Calculating proba of flatCube for "+filename)
                 #image_without_planet = copy(image)
                 # Get the probability map
-                flat_cube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                flat_cube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
         # Calculate a weighted flat cube only if the user asked for it through "metrics".
         if "weightedFlatCube" in metrics:
@@ -642,14 +665,14 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating SNR of weightedFlatCube for "+filename)
                 #weightedFlatCube_SNR = weightedFlatCube/std_function(weightedFlatCube,centroid=center)
-                weightedFlatCube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                weightedFlatCube_SNR = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the weighted flat cube only if required.
             if probability and activate_proba_calc_WFC:
                 if not mute:
                     print("Calculating proba of weightedFlatCube for "+filename)
                 #image_without_planet = copy(image)
                 # Get the probability map
-                weightedFlatCube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                weightedFlatCube_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
         # Calculate the matched filter metric only if the user asked for it through "metrics".
         if "matchedFilter" in metrics and "shape" not in metrics:
@@ -717,6 +740,9 @@ def calculate_metrics(filename,
                 conv_kernel = np.ones((10,10))
                 wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
                 matchedFilter_map[np.where(np.isnan(wider_mask))] = np.nan
+                #plt.figure(1)
+                #plt.imshow(matchedFilter_map,interpolation="nearest")
+                #plt.show()
 
             # If overwrite_stat is False check if the fits files already exists. If not make sure it is calculated.
             if not overwrite_stat:
@@ -741,14 +767,14 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating SNR of matchedFilter (no shape) for "+filename)
                 #matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map, centroid=center)
-                matchedFilter_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                matchedFilter_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the matched filter only if required.
             if probability and activate_proba_calc_MF:
                 if not mute:
                     print("Calculating proba of matchedFilter (no shape) for "+filename)
                 #image_without_planet = copy(image)
                 # Get the probability map
-                matchedFilter_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                matchedFilter_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
         # Calculate the shape metric only if the user asked for it through "metrics".
         if "shape" in metrics and "matchedFilter" not in metrics:
@@ -840,14 +866,14 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating SNR of shape (no matchedFilter) for "+filename)
                 #shape_SNR_map = shape_map/std_function(shape_map, centroid=center)
-                shape_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                shape_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the shape metric only if required.
             if probability and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape (no matchedFilter) for "+filename)
                 #image_without_planet = copy(image)
                 # Get the probability map
-                shape_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                shape_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
 
         # Calculate the MFWithVar metric only if the user asked for it through "metrics".
@@ -867,6 +893,13 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating matchedFilterWithVar for "+filename)
                 MFWithVar_map = -np.ones((ny,nx)) + np.nan
+
+
+                if GOI_list_folder is not None:
+                    cube_without_planet = mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7)
+                else:
+                    cube_without_planet = cube
+                cube_stddev_map = get_image_stat_map(cube,cube_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "stddev")
 
                 # Calculate the criterion map.
                 # For each pixel calculate the dot product of a stamp around it with the PSF.
@@ -902,13 +935,14 @@ def calculate_metrics(filename,
                                                                                        chunks_col_indices,
                                                                                        itertools.repeat(cube),
                                                                                        itertools.repeat(PSF_cube_cpy),
-                                                                                       itertools.repeat(stamp_PSF_mask)))
+                                                                                       itertools.repeat(stamp_PSF_mask),
+                                                                                       itertools.repeat(cube_stddev_map)))
 
                     for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
                         MFWithVar_map[(row_indices,col_indices)] = out
                     pool.close()
                 else:
-                    MFWithVar_map[flat_cube_noNans_noEdges] = calculate_matchedFilterWithVar_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask)
+                    MFWithVar_map[flat_cube_noNans_noEdges] = calculate_matchedFilterWithVar_metric(flat_cube_noNans_noEdges[0],flat_cube_noNans_noEdges[1],cube,PSF_cube_cpy,stamp_PSF_mask,cube_stddev_map = cube_stddev_map)
 
 
                 # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
@@ -940,14 +974,14 @@ def calculate_metrics(filename,
                 if not mute:
                     print("Calculating SNR of matchedFilterWithVar for "+filename)
                 #MFWithVar_SNR_map = MFWithVar_map/std_function(MFWithVar_map, centroid=center)
-                MFWithVar_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                MFWithVar_SNR_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the MFWithVar metric only if required.
             if probability and activate_proba_calc_MFWithVar:
                 if not mute:
                     print("Calculating proba of matchedFilterWithVar for "+filename)
                 #image_without_planet = copy(image)
                 # Get the probability map
-                MFWithVar_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                MFWithVar_proba_map = get_image_stat_map(image,image_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
 
         # Calculate the shape metric and the matched filter metric only if the user asked for it through "metrics".
@@ -1058,15 +1092,15 @@ def calculate_metrics(filename,
                     print("Calculating SNR of shape and matchedFilter for "+filename)
                 #shape_SNR_map = shape_map/std_function(shape_map,centroid=center)
                 #matchedFilter_SNR_map = matchedFilter_map/std_function(matchedFilter_map,centroid=center)
-                shape_SNR_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
-                matchedFilter_SNR_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,proba = False)
+                shape_SNR_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
+                matchedFilter_SNR_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=Dr,type = "SNR")
             # Calculate the probability map of the shape and matched filter metrics  only if required.
             if probability and activate_proba_calc_MF and activate_proba_calc_shape:
                 if not mute:
                     print("Calculating proba of shape and matchedFilter for "+filename)
                 # Get the probability map
-                shape_proba_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
-                matchedFilter_proba_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,proba = True)
+                shape_proba_map = get_image_stat_map(shape_map,shape_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
+                matchedFilter_proba_map = get_image_stat_map(matchedFilter_map,matchedFilter_map_without_planet,use_mask_per_pixel = proba_using_mask_per_pixel,centroid = center,N_threads = N_threads,Dr=None,type = "proba")
 
 
     # The core of the function is here over.

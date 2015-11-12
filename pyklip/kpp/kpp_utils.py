@@ -48,26 +48,31 @@ def get_campaign_candidates(campaign_dir = "."+os.path.sep,
         if not objectsDir.startswith('.'):
             #objectsDir_list.append(campaign_dir+inputDir+os.path.sep+"autoreduced"+os.path.sep)
 
-            objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep
-            #print(inputDir)
+            objectsDir = campaign_dir+objectsDir+os.path.sep+"autoreduced"+os.path.sep+"*_Spec"+os.path.sep
+            #print(objectsDir)
 
-            planet_detec_dir_list = glob.glob(objectsDir+folderNameFilter)
-            #print(planet_detec_dir_list)
-
-            for planet_detec_dir in planet_detec_dir_list:
-                spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
-                if metric is not None:
-                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates-"+metric+"."+fileExtension)
-                else:
-                    src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates."+fileExtension)
-
-                for src in src_list:
-                    src_splitted = src.split(os.path.sep)
-                    src_splitted = src_splitted[len(src_splitted)-1].split(".")
-                    dst = output_dir+src_splitted[0]+suffix+"."+src_splitted[1]
-                    if not mute:
-                        print("Copying " + src + " to " + dst)
-                    shutil.copyfile(src, dst)
+            epoch_dir_list = glob.glob(objectsDir)
+            #print(epoch_dir_list)
+            for epoch_dir in epoch_dir_list:
+                print(epoch_dir)
+                if len(glob.glob(epoch_dir+"*_spdc_distorcorr.fits")) >= 20:
+                    print(len(glob.glob(epoch_dir+"*_spdc_distorcorr.fits")))
+                    planet_detec_dir_list = glob.glob(epoch_dir+folderNameFilter)
+                    for planet_detec_dir in planet_detec_dir_list:
+                        print(planet_detec_dir)
+                        #spectrum_folders_list = glob.glob(planet_detec_dir+os.path.sep+"*"+os.path.sep)
+                        if metric is not None:
+                            src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates-"+metric+"."+fileExtension)
+                        else:
+                            src_list = glob.glob(planet_detec_dir+os.path.sep+"*-candidates."+fileExtension)
+                        print(src_list)
+                        for src in src_list:
+                            src_splitted = src.split(os.path.sep)
+                            src_splitted = src_splitted[len(src_splitted)-1].split(".")
+                            dst = output_dir+src_splitted[0]+suffix+"."+src_splitted[1]
+                            if not mute:
+                                print("Copying " + src + " to " + dst)
+                            shutil.copyfile(src, dst)
 
 
     '''
@@ -293,7 +298,7 @@ def get_occ(image, centroid = None):
     mask[np.where(np.isnan(image))] = np.nan
 
     inner_mask = copy(mask)
-    inner_mask[np.where(r > IWA+2.)] = 1
+    inner_mask[np.where(r > IWA+3.)] = 1
 
     outer_mask = copy(mask)
     outer_mask[np.where(np.isnan(inner_mask))] = 1

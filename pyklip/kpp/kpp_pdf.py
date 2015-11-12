@@ -35,7 +35,7 @@ def LSQ_model_gauss1D(x,y,a,m,sigma):
     y_model = model_gauss1D(x,a,m,sigma)
     return (y-y_model)
 
-def get_pdf_model(data):
+def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
     im_std = np.std(data)
     bins = np.arange(np.min(data),np.max(data),im_std/5.)
     im_histo = np.histogram(data, bins=bins)[0]
@@ -97,118 +97,123 @@ def get_pdf_model(data):
         plt.ylim((10**-5,100000))
         plt.show()
 
-    if N_right_bins_noZeros < 5:
-        where_pos_zero = np.where((im_histo == 0) * (center_bins > g.mean))
-        if len(where_pos_zero[0]) != 0:
-            right_side_noZeros = (range(where_pos_zero[0][0]-5,where_pos_zero[0][0]),)
-            right_side = (range(where_pos_zero[0][0]-5,center_bins.size),)
+    if not pure_gauss:
+        if N_right_bins_noZeros < 5:
+            where_pos_zero = np.where((im_histo == 0) * (center_bins > g.mean))
+            if len(where_pos_zero[0]) != 0:
+                right_side_noZeros = (range(where_pos_zero[0][0]-5,where_pos_zero[0][0]),)
+                right_side = (range(where_pos_zero[0][0]-5,center_bins.size),)
+            else:
+                right_side_noZeros = (range(center_bins.size-5,center_bins.size),)
+                right_side = right_side_noZeros
+            N_right_bins_noZeros = 5
+
+        if N_left_bins_noZeros < 5:
+            where_neg_zero = np.where((im_histo == 0) * (center_bins < g.mean))
+            if len(where_neg_zero[0]) != 0:
+                left_side_noZeros = (range(where_neg_zero[0][len(where_neg_zero[0])-1]+1,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
+                left_side = (range(0,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
+            else:
+                left_side_noZeros = (range(0,5),)
+                left_side = left_side_noZeros
+            N_left_bins_noZeros = 5
+
+        #print(left_side,right_side)
+        #print(im_histo[left_side],im_histo[right_side])
+        #print(right_side_noZeros,left_side_noZeros)
+        #print(im_histo[right_side_noZeros],im_histo[left_side_noZeros])
+
+
+
+        #print(N_right_bins_noZeros,N_left_bins_noZeros)
+        if N_right_bins_noZeros >= 2:
+            alpha0 = (np.log(im_histo[right_side_noZeros[0][N_right_bins_noZeros-1]])-np.log(im_histo[right_side_noZeros[0][0]]))/(center_bins[right_side_noZeros[0][0]]-center_bins[right_side_noZeros[0][N_right_bins_noZeros-1]])
+            m_alpha0 = -np.log(im_histo[right_side_noZeros[0][0]])-alpha0*center_bins[right_side_noZeros[0][0]]
+            param0_rightExp = (m_alpha0,alpha0)
+
+            LSQ_func = lambda para: LSQ_model_exp((bins[0:bins.size-1])[right_side], im_histo[right_side],para[0],para[1])
+            param_fit_rightExp = leastsq(LSQ_func,param0_rightExp)
         else:
-            right_side_noZeros = (range(center_bins.size-5,center_bins.size),)
-            right_side = right_side_noZeros
-        N_right_bins_noZeros = 5
+            param_fit_rightExp = None
+        #print(param0_rightExp,param_fit_rightExp)
 
-    if N_left_bins_noZeros < 5:
-        where_neg_zero = np.where((im_histo == 0) * (center_bins < g.mean))
-        if len(where_neg_zero[0]) != 0:
-            left_side_noZeros = (range(where_neg_zero[0][len(where_neg_zero[0])-1]+1,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
-            left_side = (range(0,where_neg_zero[0][len(where_neg_zero[0])-1]+6),)
+        if N_left_bins_noZeros >= 2:
+            alpha0 = (np.log(im_histo[left_side_noZeros[0][N_left_bins_noZeros-1]])-np.log(im_histo[left_side_noZeros[0][0]]))/(center_bins[left_side_noZeros[0][0]]-center_bins[left_side_noZeros[0][N_left_bins_noZeros-1]])
+            m_alpha0 = -np.log(im_histo[left_side_noZeros[0][0]])-alpha0*center_bins[left_side_noZeros[0][0]]
+            param0_leftExp = (m_alpha0,alpha0)
+
+            LSQ_func = lambda para: LSQ_model_exp((bins[0:bins.size-1])[left_side], im_histo[left_side],para[0],para[1])
+            param_fit_leftExp = leastsq(LSQ_func,param0_leftExp)
         else:
-            left_side_noZeros = (range(0,5),)
-            left_side = left_side_noZeros
-        N_left_bins_noZeros = 5
-
-    #print(left_side,right_side)
-    #print(im_histo[left_side],im_histo[right_side])
-    #print(right_side_noZeros,left_side_noZeros)
-    #print(im_histo[right_side_noZeros],im_histo[left_side_noZeros])
-
-
-
-    #print(N_right_bins_noZeros,N_left_bins_noZeros)
-    if N_right_bins_noZeros >= 2:
-        alpha0 = (np.log(im_histo[right_side_noZeros[0][N_right_bins_noZeros-1]])-np.log(im_histo[right_side_noZeros[0][0]]))/(center_bins[right_side_noZeros[0][0]]-center_bins[right_side_noZeros[0][N_right_bins_noZeros-1]])
-        m_alpha0 = -np.log(im_histo[right_side_noZeros[0][0]])-alpha0*center_bins[right_side_noZeros[0][0]]
-        param0_rightExp = (m_alpha0,alpha0)
-
-        LSQ_func = lambda para: LSQ_model_exp((bins[0:bins.size-1])[right_side], im_histo[right_side],para[0],para[1])
-        param_fit_rightExp = leastsq(LSQ_func,param0_rightExp)
-    else:
-        param_fit_rightExp = None
-    #print(param0_rightExp,param_fit_rightExp)
-
-    if N_left_bins_noZeros >= 2:
-        alpha0 = (np.log(im_histo[left_side_noZeros[0][N_left_bins_noZeros-1]])-np.log(im_histo[left_side_noZeros[0][0]]))/(center_bins[left_side_noZeros[0][0]]-center_bins[left_side_noZeros[0][N_left_bins_noZeros-1]])
-        m_alpha0 = -np.log(im_histo[left_side_noZeros[0][0]])-alpha0*center_bins[left_side_noZeros[0][0]]
-        param0_leftExp = (m_alpha0,alpha0)
-
-        LSQ_func = lambda para: LSQ_model_exp((bins[0:bins.size-1])[left_side], im_histo[left_side],para[0],para[1])
-        param_fit_leftExp = leastsq(LSQ_func,param0_leftExp)
-    else:
-        param_fit_leftExp = None
-    #print(param0_leftExp,param_fit_leftExp)
+            param_fit_leftExp = None
+        #print(param0_leftExp,param_fit_leftExp)
 
 
     new_sampling = np.arange(2*np.min(data),4*np.max(data),im_std/100.)
 
-    #pdf_model_gaussian = g(new_sampling)
-    pdf_model_gaussian = interp1d(center_bins,np.array(im_histo,dtype="double"),kind = "cubic",bounds_error = False, fill_value=0.0)(new_sampling)
-
-
-    if use_gauss:
-        right_side2 = np.where((new_sampling >= g.mean))
-        left_side2 = np.where((new_sampling < g.mean))
-    elif use_exp:
-        right_side2 = np.where((new_sampling >= param_fit_expExp[0][1]))
-        left_side2 = np.where((new_sampling < param_fit_expExp[0][1]))
-
-    #print(g.mean+0.0,g.stddev+0.0)
-    pdf_model_exp = np.zeros(new_sampling.size)
-    weights = np.zeros(new_sampling.size)
-    if param_fit_rightExp is not None:
-        pdf_model_exp[right_side2] = model_exp(new_sampling[right_side2],*param_fit_rightExp[0])
-        if use_gauss:
-            weights[right_side2] = np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev))
-        elif use_exp:
-            weights[right_side2] = np.tanh((new_sampling[right_side2]-(param_fit_expExp[0][1]+param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
-        #plt.plot(np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
-        #plt.show()
+    if pure_gauss:
+        pdf_model = g(new_sampling)
+        pdf_model_exp = new_sampling*0
     else:
-        weights[right_side2] = -1.
+        pdf_model_gaussian = interp1d(center_bins,np.array(im_histo,dtype="double"),kind = "cubic",bounds_error = False, fill_value=0.0)(new_sampling)
 
-    if param_fit_leftExp is not None:
-        pdf_model_exp[left_side2] = model_exp(new_sampling[left_side2],*param_fit_leftExp[0])
+
+    if not pure_gauss:
         if use_gauss:
-            weights[left_side2] = np.tanh(-(new_sampling[left_side2]-(g.mean-2*g.stddev))/(0.1*g.stddev))
+            right_side2 = np.where((new_sampling >= g.mean))
+            left_side2 = np.where((new_sampling < g.mean))
         elif use_exp:
-            weights[left_side2] = np.tanh(-(new_sampling[right_side2]-(param_fit_expExp[0][1]-param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
-    else:
-        weights[left_side2] = -1.
+            right_side2 = np.where((new_sampling >= param_fit_expExp[0][1]))
+            left_side2 = np.where((new_sampling < param_fit_expExp[0][1]))
 
-    '''
-        right_side2 = np.where((new_sampling > (g.mean+2*g.stddev)))
-        left_side2 = np.where((new_sampling < (g.mean-2*g.stddev)))
+        #print(g.mean+0.0,g.stddev+0.0)
         pdf_model_exp = np.zeros(new_sampling.size)
         weights = np.zeros(new_sampling.size)
         if param_fit_rightExp is not None:
             pdf_model_exp[right_side2] = model_exp(new_sampling[right_side2],*param_fit_rightExp[0])
-            weights[right_side2] = 1.
+            if use_gauss:
+                weights[right_side2] = np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev))
+            elif use_exp:
+                weights[right_side2] = np.tanh((new_sampling[right_side2]-(param_fit_expExp[0][1]+param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
+            #plt.plot(np.tanh((new_sampling[right_side2]-(g.mean+2*g.stddev))/(0.1*g.stddev)))
+            #plt.show()
         else:
             weights[right_side2] = -1.
 
         if param_fit_leftExp is not None:
             pdf_model_exp[left_side2] = model_exp(new_sampling[left_side2],*param_fit_leftExp[0])
-            weights[right_side2] = 1.
+            if use_gauss:
+                weights[left_side2] = np.tanh(-(new_sampling[left_side2]-(g.mean-2*g.stddev))/(0.1*g.stddev))
+            elif use_exp:
+                weights[left_side2] = np.tanh(-(new_sampling[right_side2]-(param_fit_expExp[0][1]-param_fit_expExp[0][2]))/(0.1*param_fit_expExp[0][2]))
         else:
             weights[left_side2] = -1.
-    '''
 
-    weights = 0.5*(weights+1.0)
+        '''
+            right_side2 = np.where((new_sampling > (g.mean+2*g.stddev)))
+            left_side2 = np.where((new_sampling < (g.mean-2*g.stddev)))
+            pdf_model_exp = np.zeros(new_sampling.size)
+            weights = np.zeros(new_sampling.size)
+            if param_fit_rightExp is not None:
+                pdf_model_exp[right_side2] = model_exp(new_sampling[right_side2],*param_fit_rightExp[0])
+                weights[right_side2] = 1.
+            else:
+                weights[right_side2] = -1.
 
-    #weights[np.where(weights > 1-10^-3)] = 1
+            if param_fit_leftExp is not None:
+                pdf_model_exp[left_side2] = model_exp(new_sampling[left_side2],*param_fit_leftExp[0])
+                weights[right_side2] = 1.
+            else:
+                weights[left_side2] = -1.
+        '''
+
+        weights = 0.5*(weights+1.0)
+
+        #weights[np.where(weights > 1-10^-3)] = 1
 
 
-    pdf_model = weights*pdf_model_exp + (1-weights)*pdf_model_gaussian
-    #pdf_model[np.where(weights > 1-10^-5)] = pdf_model_exp[np.where(pdf_model > 1-10^-5)]
+        pdf_model = weights*pdf_model_exp + (1-weights)*pdf_model_gaussian
+        #pdf_model[np.where(weights > 1-10^-5)] = pdf_model_exp[np.where(pdf_model > 1-10^-5)]
 
     if 0:
         fig = 2
@@ -226,7 +231,7 @@ def get_pdf_model(data):
         #plt.xlim((1*np.min(data),2*np.max(data)))
         plt.show()
 
-    if 0:
+    if interupt_plot:
         rcParams.update({'font.size': 20})
         fig = 2
         plt.close(2)
@@ -248,13 +253,13 @@ def get_pdf_model(data):
         ax = plt.gca()
         ax.tick_params(axis='x')
         ax.tick_params(axis='y')
-        ax.legend(['PDF Model Fit','Central Gaussian Fit','Tails Exponential Fit','Histogram'], loc = 'upper right', fontsize=15)
+        ax.legend(['PDF Model Fit','Central Gaussian Fit','Tails Exponential Fit','Histogram'], loc = 'lower left', fontsize=15)
         ax.set_yscale('log')
         plt.ylim((10**-1,10000))
 
     pdf_model /= np.sum(pdf_model)
 
-    if 0:
+    if interupt_plot:
         host = host_subplot(122, axes_class=AA.Axes)
         par1 = host.twinx()
         p1, = host.plot(new_sampling,pdf_model/(new_sampling[1]-new_sampling[0]),'r-',linewidth=5)
@@ -278,8 +283,8 @@ def get_pdf_model(data):
 
     return pdf_model,new_sampling,np.array(im_histo,dtype="double"), center_bins
 
-def get_cdf_model(data):
-    pdf_model,sampling,im_histo,center_bins = get_pdf_model(data)
+def get_cdf_model(data,interupt_plot = False,pure_gauss=False):
+    pdf_model,sampling,im_histo,center_bins = get_pdf_model(data,interupt_plot=interupt_plot,pure_gauss=pure_gauss)
     return np.cumsum(pdf_model),pdf_model,sampling,im_histo,center_bins
 
 
@@ -397,8 +402,25 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
 
     return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
+def get_cube_stddev(cube,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
+    # Not tested
+    nl,ny,nx = cube.shape
 
-def get_image_stddev(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
+    stddev_table = []
+    annulus_radii_table = []
+    for k in range(nl):
+        stddev_list, annulus_radii_list = get_image_stddev(cube[k,:,:],IOWA,N = N,centroid = centroid, r_step = r_step,Dr=Dr)
+        stddev_table.append(stddev_list)
+        annulus_radii_table.append(annulus_radii_list)
+
+    return stddev_table,annulus_radii_table
+
+def get_image_stddev(image,
+                     IOWA,
+                     N = 2000,
+                     centroid = None,
+                     r_step = None,
+                     Dr=None):
     IWA,OWA = IOWA
     ny,nx = image.shape
 
@@ -432,7 +454,8 @@ def get_image_stddev(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None)
         annuli_radii.append((r0,np.max([ny,nx])))
     else:
         annuli_radii = []
-        for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+        for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
+        #for r in np.arange(IWA+Dr,OWA-Dr,Dr):
             annuli_radii.append((r-Dr,r+Dr))
     #N_annuli = len(annuli_radii)
 
@@ -452,11 +475,35 @@ def get_image_stddev(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None)
     return stddev_list, annulus_radii_list
 
 
-def get_image_stat_map(image,image_without_planet,mask_radius = 7, use_mask_per_pixel = False, IOWA = None,N = 3000,centroid = None, r_step = 5, mute = True,N_threads =None,Dr= None, proba = True):
-    if use_mask_per_pixel:
-        return get_image_stat_map_perPixMasking(image,image_without_planet,mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads,Dr= Dr, proba = proba)
-    else:
-        return get_image_stat_map_noPlanet(image,image_without_planet = image_without_planet,IOWA = IOWA,N = N,centroid = centroid, r_step = r_step, mute = mute,Dr= Dr, proba = proba)
+def get_image_stat_map(image,
+                       image_without_planet,
+                       mask_radius = 7,
+                       use_mask_per_pixel = False,
+                       IOWA = None,
+                       N = 3000,
+                       centroid = None,
+                       r_step = 5,
+                       mute = True,
+                       N_threads =None,
+                       Dr= None,
+                       Dth = None,
+                       type = "SNR"):
+
+    if np.size(image.shape) == 3:
+        # NOT TESTED
+        nl,ny,nx = image.shape
+        stat_cube_map = np.zeros(image.shape)
+        for k in range(nl):
+            if use_mask_per_pixel:
+                stat_cube_map[k,:,:] = get_image_stat_map_perPixMasking(image[k,:,:],image_without_planet[k,:,:],mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads,Dr= Dr, Dth = Dth, type = type)
+            else:
+                stat_cube_map[k,:,:] = get_image_stat_map_noPlanet(image[k,:,:],image_without_planet = image_without_planet[k,:,:],IOWA = IOWA,N = N,centroid = centroid, r_step = r_step, mute = mute,Dr= Dr, type = type)
+        return stat_cube_map
+    elif np.size(image.shape) == 2:
+        if use_mask_per_pixel:
+            return get_image_stat_map_perPixMasking(image,image_without_planet,mask_radius = mask_radius, IOWA = IOWA,N = N,centroid = centroid, mute = mute,N_threads = N_threads,Dr= Dr, Dth = Dth, type = type)
+        else:
+            return get_image_stat_map_noPlanet(image,image_without_planet = image_without_planet,IOWA = IOWA,N = N,centroid = centroid, r_step = r_step, mute = mute,Dr= Dr, type = type)
 
 def get_image_stat_map_perPixMasking_threadTask_star(params):
     """
@@ -476,7 +523,8 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                                                firstZone_radii,
                                                lastZone_radii,
                                                Dr = None,
-                                               proba = True):
+                                               Dth = None,
+                                               type = "SNR"):
     ny,nx = image.shape
 
     #print(row_indices)
@@ -490,57 +538,69 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
     # Calculate the radial distance of each pixel
     r_grid = abs(x_grid +y_grid*1j)
     th_grid = np.arctan2(x_grid,y_grid)
+    if Dth != None:
+        Dth_rad = Dth/180.*np.pi
 
     N_it = row_indices.size
-    proba_or_SNR_map = np.zeros((N_it)) + np.nan
+    stat_map = np.zeros((N_it)) + np.nan
     #stdout.write("\r%d" % 0)
     for id,k,l in zip(range(N_it),row_indices,col_indices):
-        #stdout.write("\r{0}/{1}".format(id,N_it))
-        #stdout.flush()
+        if 1:#k == 109 and l == 135:
+            #stdout.write("\r{0}/{1}".format(id,N_it))
+            #stdout.flush()
 
-        x = x_grid[(k,l)]
-        y = y_grid[(k,l)]
-        #print(x,y)
-        r = r_grid[(k,l)]
+            x = x_grid[(k,l)]
+            y = y_grid[(k,l)]
+            #print(x,y)
+            r = r_grid[(k,l)]
+            th = th_grid[(k,l)]
 
-        if Dr is None:
-            if r < r_limit_firstZone:
-                #Calculate stat for pixels close to IWA
-                r_min,r_max = r_min_firstZone,r_max_firstZone
-            elif r > r_limit_lastZone:
-                r_min,r_max = r_min_lastZone,r_max_lastZone
+            if Dr is None:
+                if r < r_limit_firstZone:
+                    #Calculate stat for pixels close to IWA
+                    r_min,r_max = r_min_firstZone,r_max_firstZone
+                elif r > r_limit_lastZone:
+                    r_min,r_max = r_min_lastZone,r_max_lastZone
+                else:
+                    dr = N/(4*np.pi*r)
+                    r_min,r_max = (r-dr, r+dr)
+
             else:
-                dr = N/(4*np.pi*r)
-                r_min,r_max = (r-dr, r+dr)
-        else:
-            r_min,r_max = (r-Dr, r+Dr)
+                r_min,r_max = (r-Dr, r+Dr)
+
+            if Dth == None:
+                where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
+            else:
+                delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
+                where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask * \
+                                    (abs(delta_th_grid)<(+Dth_rad*50./r)))
+
+            where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
+            #print(np.shape(where_ring_masked[0]))
+
+            data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
+
+            if 0:
+                print(image[k,l])
+                im_cpy = copy(image)
+                im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
+                plt.figure(1)
+                plt.imshow(im_cpy)
+                plt.show()
+
+            if type == "proba":
+                cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
+
+                cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
+                stat_map[id] = 1-cdf_fit(image[k,l])
+            elif type == "SNR":
+                stat_map[id] = image[k,l]/np.nanstd(data)
+            elif type == "stddev":
+                stat_map[id] = np.nanstd(data)
+            #print(probability_map[proba_map_k,l])
 
 
-        where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
-        where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
-        #print(np.shape(where_ring_masked[0]))
-
-        data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
-
-        if 0:
-            print(image[k,l])
-            im_cpy = copy(image)
-            im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
-            plt.figure(1)
-            plt.imshow(im_cpy)
-            plt.show()
-
-        if proba:
-            cdf_model, pdf_model, sampling, im_histo, center_bins  = get_cdf_model(data)
-
-            cdf_fit = interp1d(sampling,cdf_model,kind = "linear",bounds_error = False, fill_value=1.0)
-            proba_or_SNR_map[id] = 1-cdf_fit(image[k,l])
-        else:
-            proba_or_SNR_map[id] = image[k,l]/np.nanstd(data)
-        #print(probability_map[proba_map_k,l])
-
-
-    return proba_or_SNR_map
+    return stat_map
 
 def get_image_stat_map_perPixMasking(image,
                                      image_without_planet,
@@ -551,7 +611,8 @@ def get_image_stat_map_perPixMasking(image,
                                      mute = True,
                                      N_threads = None,
                                      Dr = None,
-                                     proba = True):
+                                     Dth = None,
+                                     type = "SNR"):
     """
 
     :param image:
@@ -634,7 +695,8 @@ def get_image_stat_map_perPixMasking(image,
                        itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
                        itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone)),
                        itertools.repeat(Dr),
-                       itertools.repeat(proba)))
+                       itertools.repeat(Dth),
+                       itertools.repeat(type)))
 
         for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
             stat_map[(row_indices,col_indices)] = out
@@ -652,8 +714,9 @@ def get_image_stat_map_perPixMasking(image,
                                                                (r_limit_firstZone,r_min_firstZone,r_max_firstZone),
                                                                (r_limit_lastZone,r_min_lastZone,r_max_lastZone),
                                                                Dr = Dr,
-                                                               proba = proba)
-    if proba:
+                                                               Dth = Dth,
+                                                               type = type)
+    if type == "proba":
         return -np.log10(stat_map)
     else:
         return stat_map
@@ -668,13 +731,13 @@ def get_image_stat_map_noPlanet(image,
                                 r_step = 5,
                                 mute = True,
                                 Dr = None,
-                                proba = True):
+                                type = "SNR"):
     if IOWA is None:
         IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
     else:
         IWA,OWA = IOWA
 
-    if proba:
+    if type == "proba":
         pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr)
 
         pdf_radii = np.array(annulus_radii_list)[:,0]
@@ -742,6 +805,10 @@ def get_image_stat_map_noPlanet(image,
 
         stddev_func = interp1d(radii,stddev_list,kind = "linear",bounds_error = False, fill_value=np.nan)
 
+        #plt.figure()
+        #plt.plot(np.linspace(0,140,200),stddev_func(np.linspace(0,140,200)))
+        #plt.show()
+
         stat_map = np.zeros(image.shape) + np.nan
         ny,nx = image.shape
 
@@ -757,7 +824,10 @@ def get_image_stat_map_noPlanet(image,
             #stdout.flush()
             #stdout.write("\r%d" % k)
             r = r_grid[k,l]
-            stat_map[k,l] = image[k,l]/stddev_func(r)
+            if type == "SNR":
+                stat_map[k,l] = image[k,l]/stddev_func(r)
+            elif type == "stddev":
+                stat_map[k,l] = stddev_func(r)
 
         return stat_map
 

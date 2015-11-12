@@ -3,7 +3,7 @@ __author__ = 'JB'
 from scipy.signal import convolve2d
 
 import pyklip.spectra_management as spec
-from pyklip.kpp_pdf import *
+from pyklip.kpp.kpp_pdf import *
 from pyklip.kpp.kpp_std import *
 
 
