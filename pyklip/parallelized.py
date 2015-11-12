@@ -1715,18 +1715,19 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
 
         # parallelized rotate images
-        print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs, new_center=aligned_center)
-
-        # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
-        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
-
-        dataset.output = rot_imgs
+        # skip if there is no WCS information
+        if dataset.wcs is not None:
+            print("Derotating Images...")
+            rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                                   hdrs=dataset.wcs, new_center=aligned_center)
+            # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+            rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
+            dataset.output = rot_imgs
+        
         dataset.centers[:,0] = aligned_center[0]
         dataset.centers[:,1] = aligned_center[1]
 
-        # valid output path and write iamges
+        # valid output path and write images
         outputdirpath = os.path.realpath(outputdir)
         print("Writing Images to directory {0}".format(outputdirpath))
 
@@ -1745,7 +1746,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
         if num_wvs > 1:
-            oldshape = dataset.output.shape
+            #oldshape = dataset.output.shape # oldshape has already been set and used to reshape output, so this causes a bug
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
