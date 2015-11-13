@@ -387,6 +387,7 @@ class P1640Data(Data):
             exthdr.remove('CD2_2')
             exthdr['CDELT1'] = 1
             exthdr['CDELT2'] = 1
+        '''
 
         #use the dataset center if none was passed in
         if center is None:
@@ -395,7 +396,6 @@ class P1640Data(Data):
             hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
-        '''
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
@@ -692,7 +692,6 @@ def _p1640_process_file(filepath, skipslices=None):
     print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
-
         #grab the data and headers
         cube = hdulist[0].data
         exthdr = hdulist[0].header
@@ -722,8 +721,6 @@ def _p1640_process_file(filepath, skipslices=None):
         
         channels = exthdr['NAXIS3']
         wvs = P1640spots.P1640params.wlsol #get wavelength solution
-        center = []
-        spot_fluxes = []
         #calculate centers from satellite spots
         #print "Calculating spot positions for {0}".format(os.path.basename(filepath))
         spot_locations, spot_fluxes = P1640spots.get_single_cube_spot_positions_and_photometry(cube)
@@ -743,7 +740,9 @@ def _p1640_process_file(filepath, skipslices=None):
         wvs = np.delete(wvs, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
         spot_fluxes = np.delete(spot_fluxes, skipslices)
-
+    
+    # pyklip centers need to be [x,y] instead of (row, col)
+    center = np.fliplr(center[0]) # [0] because of the way P1640spots works
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):

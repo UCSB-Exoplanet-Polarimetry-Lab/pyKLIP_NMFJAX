@@ -1712,7 +1712,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # align center to center of image if not specified
         if aligned_center is None:
-            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+            aligned_center = [np.mean(dataset.centers[:,0]), np.mean(dataset.centers[:,1])]
+            #aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
 
         # parallelized rotate images
         # skip if there is no WCS information
