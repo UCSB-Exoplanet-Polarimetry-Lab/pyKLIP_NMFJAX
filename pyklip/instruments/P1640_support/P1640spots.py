@@ -398,7 +398,7 @@ def animate(nframe, images, centers, spot_locs):
 
 
 ##################################################
-# FITS operations
+# Write spots to memory or disk
 ##################################################
 
 def write_spots_to_header(spots, fitsfile):
@@ -420,6 +420,29 @@ def write_spots_to_header(spots, fitsfile):
     header['Spot3x'] = spots[3,:,1]
     header['Spot3y'] = spots[3,:,0]
     return hdu
+
+def write_spots_to_file(data_filepath, spot_positions, output_dir):
+    """
+    Write one file for each spot to the directory defined at the top of
+    this file. Output file name is data_filename -fits +spoti.csv.
+    Format is (row, col). Will overwrite existing files.
+    Input:
+        data_filename: the base name of the file with the spots
+        spot_positions: Nspot x Nchan x 2 array of spot positions
+        output_dir: directory to write the output files
+    Returns:
+        None
+    """
+    try:
+        for i, spot in enumerate(spot_positions):
+            data_filename = os.path.basename(data_filepath)
+            output_filename = os.path.splitext(data_filename)[0]+'-spot{0}.csv'.format(i)
+            output_filepath = os.path.join(output_dir, output_filename)
+            np.savetxt(output_filepath, spot, delimiter=",",
+                       header='row,column')
+    except:
+        # implement error handling later?
+        pass
 
 
 ##################################################

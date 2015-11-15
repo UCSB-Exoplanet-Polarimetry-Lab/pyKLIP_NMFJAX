@@ -667,6 +667,34 @@ class P1640Data(Data):
 ######################
 ## Static Functions ##
 ######################
+def get_p1640_spot_filepaths(config, data_filepath):
+    """
+    Look to see if the spot positions have already been written to file.
+    If the files exist, return their paths; otherwise return None.
+    Input:
+        config: a ConfigParser object with the file path information
+        data_filepath: the name of the P1640 data file whose spots you want to locate
+    Returns:
+        filepath: a path to the files (None if they don't exist)
+    """
+    try:
+        spot_filedir = config.get("spots","spot_file_path")
+        spot_filepostfix = config.get("spots","spot_file_postfix")
+        spot_fileext = config.get("spots", "spot_file_ext")
+    except ConfigParser.Error as e:
+        print("Spot file path not found in P1640 config file: {0}".format(e.message))
+        raise e
+
+    spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
+    spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
+    spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
+
+    file_check = np.all([os.path.isfile(f) for f in spot_filepaths])
+    if file_check == True:
+        return spot_filepaths
+    else:
+        return None
+
 
 def _p1640_process_file(filepath, skipslices=None):
     """
@@ -722,8 +750,17 @@ def _p1640_process_file(filepath, skipslices=None):
         channels = exthdr['NAXIS3']
         wvs = P1640spots.P1640params.wlsol #get wavelength solution
         #calculate centers from satellite spots
-        #print "Calculating spot positions for {0}".format(os.path.basename(filepath))
-        spot_locations, spot_fluxes = P1640spots.get_single_cube_spot_positions_and_photometry(cube)
+        # first, check if spot positions and fluxes have been written to file
+        # build the path
+        try:
+            spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
+            assert(spot_filepaths is not None)
+            print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+            spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
+                                       for f in spot_filepaths])
+        except AssertionError:
+            spot_locations = P1640spots.get_single_cube_spot_positions(cube)
+        spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
         scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations)
         #parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
         parang = np.repeat(0, channels) #populate PA for each wavelength slice (the same)
@@ -744,6 +781,7 @@ def _p1640_process_file(filepath, skipslices=None):
     # pyklip centers need to be [x,y] instead of (row, col)
     center = np.fliplr(center[0]) # [0] because of the way P1640spots works
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
@@ -996,3 +1034,4 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
     centers = centers.reshape([centers.shape[0]/4, 4, 2])
     centers = centers[:,0,:]
     return centers
+
