@@ -214,7 +214,7 @@ def gauss2d(x0, y0, peak, sigma):
     sigma *= 1.0
     return lambda y,x: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
 
-def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, refinefit=True):
+def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, refinefit=True):
     """
     Fits a 2d gaussian to the data at point (xguess, yguess)
 
@@ -228,6 +228,9 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, ref
 
     Returns:
         peakflux: the peakflux of the gaussian
+        fwhm: fwhm of the PFS in pixels
+        xfit: x position (only chagned if refinefit is True)
+        yfit: y position (only chagned if refinefit is True)
     """
     x0 = np.round(xguess)
     y0 = np.round(yguess)
@@ -283,7 +286,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=7, guesspeak=1, ref
     gmask[outofaper] = 0 
     corrflux = np.nansum(fitbox*gmask)/np.sum(gmask*gmask)
 
-    print("Fitparams", xfit, yfit, corrflux, fwhm)
+    #print("Fitparams", xfit, yfit, corrflux, fwhm)
 
     return corrflux, fwhm, xfit, yfit
 

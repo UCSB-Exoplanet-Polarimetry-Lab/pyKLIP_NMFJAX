@@ -25,7 +25,8 @@ else:
     from pyklip.instruments.utils.nair import nMathar
 
 from scipy.interpolate import interp1d
-
+from pyklip.parallelized import high_pass_filter_imgs
+from pyklip.fakes import gaussfit2d
 
 class GPIData(Data):
     """
@@ -90,13 +91,16 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None):
+    def __init__(self, filepaths=None, skipslices=None, highpass=False):
         """
         Initialization code for GPIData
 
         Inputs:
             filepaths: list of filepaths to files
             skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                      can also be a number specifying FWHM of box in pixel units
+
         """
         super(GPIData, self).__init__()
         self._output = None
@@ -114,7 +118,7 @@ class GPIData(Data):
             self.prihdrs = None
             self.exthdrs = None
         else:
-            self.readdata(filepaths, skipslices=skipslices)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass)
 
     ################################
     ### Instance Required Fields ###
@@ -185,13 +189,15 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None):
+    def readdata(self, filepaths, skipslices=None, highpass=False):
         """
         Method to open and read a list of GPI data
 
         Args:
             filespaths: a list of filepaths
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
+            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                      can also be a number specifying FWHM of box in pixel units
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -214,7 +220,8 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _gpi_process_file(filepath, skipslices=skipslices)
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass)
 
             data.append(cube)
             centers.append(center)
@@ -650,13 +657,15 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None):
+def _gpi_process_file(filepath, skipslices=None, highpass=False):
     """
     Method to open and parse a GPI file
 
     Args:
         filepath: the file to open
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
 
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -704,6 +713,8 @@ def _gpi_process_file(filepath, skipslices=None):
             wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
             center = []
             spot_fluxes = []
+            spots_xloc = []
+            spots_yloc = []
             #calculate centers from satellite spots
             for i in range(channels):
                 #grab satellite spot positions
@@ -714,6 +725,8 @@ def _gpi_process_file(filepath, skipslices=None):
                 centx = np.nanmean([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
                 centy = np.nanmean([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
                 center.append([centx, centy])
+                spots_xloc.append([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
+                spots_yloc.append([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
 
                 #grab sat spot fluxes if they're there
                 try:
@@ -752,8 +765,51 @@ def _gpi_process_file(filepath, skipslices=None):
         wvs = np.delete(wvs, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
         spot_fluxes = np.delete(spot_fluxes, skipslices)
+        spots_xloc = np.delete(spots_xloc, skipslices)
+        spots_yloc = np.delete(spots_yloc, skipslices)
 
+    #high pass and remeasure the satellite spot fluxes if necessary
+    highpassed = False
+    if isinstance(highpass, bool):
+        if highpass:
+            cube = high_pass_filter_imgs(cube)
+            highpassed = True
+    else:
+        # should be a number
+        if isinstance(highpass, (float, int)):
+            fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            highpassed = True
+    if highpassed:
+        #remeasure satellite spot fluxes
+        spot_fluxes = []
+        for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
+            new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
+            spot_fluxes.append(np.nanmean(new_spotfluxes))
+
+            
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+
+
+def measure_sat_spot_fluxes(img, spots_x, spots_y):
+    """
+    Measure satellite spot peak fluxes using a Gaussian matched filter
+
+    Args:
+        img: 2D frame with 4 sat spots
+        spots_x: list of 4 satellite spot x coordinates
+        spots_y: list of 4 satellite spot y coordinates
+    Return:
+        spots_f: list of 4 satellite spot fluxes
+    """
+    spots_f = []
+    for spotx, spoty in zip(spots_x, spots_y):
+        flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        spots_f.append(flux)
+
+    return spots_f
+
+
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
