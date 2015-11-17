@@ -407,8 +407,10 @@ def calculate_metrics(filename,
     # grab the data and headers
     try:
         cube = hdulist[1].data
-        exthdr = hdulist[1].header
-        prihdr = hdulist[0].header
+        if exthdr is None:
+            exthdr = hdulist[1].header
+        if prihdr is None:
+            prihdr = hdulist[0].header
     except:
         # This except was used for datacube not following GPI headers convention.
         # /!\ This is however not supported at the moment

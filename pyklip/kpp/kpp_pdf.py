@@ -37,6 +37,7 @@ def LSQ_model_gauss1D(x,y,a,m,sigma):
 
 def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
     im_std = np.std(data)
+    #print(im_std)
     bins = np.arange(np.min(data),np.max(data),im_std/5.)
     im_histo = np.histogram(data, bins=bins)[0]
 
