@@ -10,6 +10,7 @@ import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
+#import matplotlib.pyplot as plt
 parallel = True
 
 
@@ -529,7 +530,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     fmout_shape = fmout_imgs_shape
 
 
-def _align_and_scale_subset(thread_index, aligned_center):
+def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
     """
     Aligns and scales a subset of images
 
@@ -551,11 +552,14 @@ def _align_and_scale_subset(thread_index, aligned_center):
     # this ordering should hopefully have better cache optimization?
     combos = [combo for combo in itertools.product(np.arange(original_imgs.shape[0]), np.arange(np.size(unique_wvs)))]
 
+    if numthreads is None:
+        numthreads = mp.cpu_count()
+
     # figure out which ones this thread should do
-    numframes_todo = int(np.round(len(combos)/mp.cpu_count()))
-    leftovers = len(combos) % mp.cpu_count()
+    numframes_todo = int(np.round(len(combos)/numthreads))
+    leftovers = len(combos) % numthreads
     # the last thread needs to finish all of them
-    if thread_index == mp.cpu_count() - 1:
+    if thread_index == numthreads - 1:
         combos_todo = combos[leftovers + thread_index*numframes_todo:]
         print(len(combos), len(combos_todo), leftovers + thread_index*numframes_todo)
     else:
@@ -572,6 +576,7 @@ def _align_and_scale_subset(thread_index, aligned_center):
     #print(len(combos), len(combos_todo), leftovers, thread_index)
 
     for img_index, ref_wv_index in combos_todo:
+        #aligned_imgs[ref_wv_index,img_index,:,:] = np.ones(original_imgs.shape[1:])
         aligned_imgs[ref_wv_index,img_index,:,:] = klip.align_and_scale(original_imgs[img_index], aligned_center,
                                                 centers_imgs[img_index], unique_wvs[ref_wv_index]/wvs_imgs[img_index])
     return
@@ -615,6 +620,13 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     # 2 pi wrap case
     else:
         section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
+
+    #print (radstart,radend)
+    #print (phistart,phiend)
+    #r[section_ind] = np.nan
+    #r.shape = (input_shape[0],input_shape[1])
+    #plt.imshow(r)
+    #plt.show()
 
     return section_ind
 
@@ -907,11 +919,12 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     aligned_outputs = []
     for threadnum in range(numthreads):
         #multitask this
-        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center))]
+        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads))]
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
             aligned_output.wait()
+
 
     print("Align and scale finished")
 
@@ -1052,6 +1065,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                             padding, parang)
     section_ind_nopadding = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
                                             0, parang)
+
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
@@ -1060,6 +1074,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #load aligned images for this wavelength
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
+
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
