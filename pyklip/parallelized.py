@@ -1627,17 +1627,46 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                  spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                                  filetype="PSF Subtracted Spectral Cube")
     elif mode == 'ADI':
-        klip_output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
-                                    dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
-                                    movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                    aligned_center=aligned_center,
-                                    save_aligned = save_aligned, restored_aligned = restored_aligned)
+        unique_wvs = np.unique(dataset.wvs)
+        totwvs = np.size(unique_wvs)
+        dataset.output = []
+        dataset.aligned_and_scaled = []
+        for wvindex,unique_wv in enumerate(unique_wvs):
+            if totwvs > 1:
+                print("Running KLIP ADI on slice {0}/{1}: {2:.3f} um".format(wvindex+1, totwvs, unique_wv))
+            thiswv = np.where(dataset.wvs == unique_wv)
 
-        if save_aligned:
-            dataset.output, dataset.aligned_and_scaled = klip_output
-        else:
-            dataset.output = klip_output
+            if restored_aligned is not None:
+                klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
+                                        dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                        movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                        aligned_center=aligned_center,
+                                        save_aligned = save_aligned, restored_aligned = restored_aligned[np.where(unique_wv == unique_wvs)])
+            else:
+                klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
+                                        dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                        movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                        aligned_center=aligned_center,
+                                        save_aligned = save_aligned)
 
+
+
+            if save_aligned:
+                dataset.output.append(klip_output[0])
+                dataset.aligned_and_scaled.append(klip_output[1][0])
+            else:
+                dataset.output.append(klip_output)
+
+        dataset.output = np.array(dataset.output)
+        dataset.aligned_and_scaled = np.array(dataset.aligned_and_scaled)
+
+
+        # reformat the output to be consistent with the other modes.
+        # Currently shape is (wv,b,N,y,x). Switch to (b,N,wv,y,x), then flatten in wavelength dimension
+        dataset.output = np.swapaxes(dataset.output, 0, 1) # shape of (b, wv, N, y, x)
+        dataset.output = np.swapaxes(dataset.output, 1, 2) # shape of (b, N, wv, y, x)
+        # then collapse N/wv together
+        dataset.output = np.reshape(dataset.output, (dataset.output.shape[0], dataset.output.shape[1]*dataset.output.shape[2], dataset.output.shape[3], dataset.output.shape[4]) )
 
         if calibrate_flux == True:
             dataset.calibrate_output()
