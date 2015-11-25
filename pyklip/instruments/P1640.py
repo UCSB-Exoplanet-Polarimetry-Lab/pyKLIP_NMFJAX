@@ -219,7 +219,7 @@ class P1640Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, skipslices=skipslices)
+            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr, scaling_factors = _p1640_process_file(filepath, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
@@ -284,8 +284,9 @@ class P1640Data(Data):
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
                  fakePlparams = None,):
         """
-        Save data in a GPI-like fashion. Aka, data and header are in the extension HDU.
-        For now, the Primary HDU is the same as the extension HDU.
+        Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
+        For now, the Primary HDU contains the KLIP parameters, scaling, and centering. This may later change 
+        storing the data in the Primary HDU, all the headers from the input files in the extension.
         Inputs:
             filepath: path to file to output
             data: 2D or 3D data to save
@@ -348,9 +349,9 @@ class P1640Data(Data):
             hdulist[0].header['FILETYPE'] = (filetype, "P1640 File type")
 
         #write flux units/conversion
-        hdulist[1].header['FUNIT'] = (self.flux_units, "Flux units of data")
+        hdulist[0].header['FUNIT'] = (self.flux_units, "Flux units of data")
         if self.flux_units.upper() == 'CONTRAST':
-            hdulist[1].header['DN2CON'] = (self.contrast_scaling, "Contrast/DN")
+            hdulist[0].header['DN2CON'] = (self.contrast_scaling, "Contrast/DN")
             hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(self.contrast_scaling))
 
         # write z axis units if necessary
@@ -393,9 +394,12 @@ class P1640Data(Data):
         if center is None:
             center = self.centers[0]
         if center is not None:
-            hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
-            hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
+            hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+            hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+        if scaling is None:
+            scaling = self.scaling
+            
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
@@ -790,7 +794,6 @@ def _p1640_process_file(filepath, skipslices=None):
             spot_locations = P1640spots.get_single_cube_spot_positions(cube)
             # write them to disk so they don't have to be recalculated
             write_p1640_spots_to_file(P1640Data.config, filepath, spot_locations)
-
         spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
         scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations)
         #parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
@@ -798,6 +801,9 @@ def _p1640_process_file(filepath, skipslices=None):
         astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
     finally:
         hdulist.close()
+    # since in this case we are only working with a single cube:
+    center = center[0]
+    scale_factors = scale_factors[0].mean(axis=0) # average over the 4 spots
     spot_fluxes = np.mean(spot_fluxes, axis=0)
     
     #remove undesirable slices of the datacube if necessary
@@ -811,7 +817,7 @@ def _p1640_process_file(filepath, skipslices=None):
     
     # pyklip centers need to be [x,y] instead of (row, col)
     center = np.fliplr(center[0]) # [0] because of the way P1640spots works
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+    return cube, center, scaling_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
