@@ -695,6 +695,33 @@ def get_p1640_spot_filepaths(config, data_filepath):
     else:
         return None
 
+def write_p1640_spots_to_file(config, data_filepath, spot_positions):
+    """
+    Write the spot (row, col) positions to 4 files (1 per spot) in the directory specified
+    in the config file.
+    Input:
+        config: a ConfigParser object with the file path information
+        spot_positions: a Nspot x Nchan x 2 array of (row, col) spot positions
+    Output:
+        None
+    """
+    # build filepath
+    try:
+        spot_filedir = config.get("spots","spot_file_path")
+        spot_filepostfix = config.get("spots","spot_file_postfix")
+        spot_fileext = config.get("spots", "spot_file_ext")
+    except ConfigParser.Error as e:
+        print("Spot file path not found in P1640 config file: {0}".format(e.message))
+        raise e
+
+    spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
+    spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
+    spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
+    
+    for i, spot in enumerate(spot_positions):
+        np.savetxt(spot_filepaths[i], spot, delimiter=",", header="row, column")
+    
+
 
 def _p1640_process_file(filepath, skipslices=None):
     """
@@ -749,8 +776,8 @@ def _p1640_process_file(filepath, skipslices=None):
         
         channels = exthdr['NAXIS3']
         wvs = P1640spots.P1640params.wlsol #get wavelength solution
-        #calculate centers from satellite spots
-        # first, check if spot positions and fluxes have been written to file
+        # calculate centers from satellite spots
+        # first, check if spot positions have been stored on disk
         # build the path
         try:
             spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
@@ -759,7 +786,11 @@ def _p1640_process_file(filepath, skipslices=None):
             spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                        for f in spot_filepaths])
         except AssertionError:
+            # if they haven't already been written to file, calculate them
             spot_locations = P1640spots.get_single_cube_spot_positions(cube)
+            # write them to disk so they don't have to be recalculated
+            write_p1640_spots_to_file(P1640Data.config, filepath, spot_locations)
+
         spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
         scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations)
         #parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)

@@ -718,6 +718,10 @@ def get_spot_positions(fitsfiles):
     Output:
         spot_array: Nfile x 4 x Nchan x 2 array of spot positions
     """
+    # support providing a single file
+    if isinstance(fitsfiles, str):
+        fitsfiles = [fitsfiles]
+
     spot_array  = np.array([get_single_cube_spot_positions(fits.getdata(f))
                            for f in fitsfiles])
     return spot_array
