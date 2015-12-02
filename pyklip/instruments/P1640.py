@@ -692,12 +692,7 @@ def get_p1640_spot_filepaths(config, data_filepath):
     spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
     spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
     spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
-
-    file_check = np.all([os.path.isfile(f) for f in spot_filepaths])
-    if file_check == True:
-        return spot_filepaths
-    else:
-        return None
+     return spot_filepaths
 
 def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=True):
     """
@@ -711,29 +706,15 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
     Output:
         None
     """
-    # build filepath
-    try:
-        spot_filedir = config.get("spots","spot_file_path")
-        spot_filepostfix = config.get("spots","spot_file_postfix")
-        spot_fileext = config.get("spots", "spot_file_ext")
-    except ConfigParser.Error as e:
-        print("Spot file path not found in P1640 config file: {0}".format(e.message))
-        raise e
-
-    spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
-    spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
-    spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
-    # check if files exist
+    spot_filepaths = get_p1640_spot_filepaths(config, data_filepath)
     exists = [os.path.isfile(i) for i in spot_filepaths]
-
     for i, spot in enumerate(spot_positions):
         if (exists[i] and  not overwrite):
             print("{0} exists and overwrite flag is {1}".format(spot_filepaths[i], overwrite))
-        else:
-            np.savetxt(spot_filepaths[i], spot,
-                       delimiter=",",
-                       header="row, column")    
-
+            continue
+        np.savetxt(spot_filepaths[i], spot,
+                   delimiter=",",
+                   header="row, column")    
 
 def _p1640_process_file(filepath, skipslices=None):
     """
@@ -793,7 +774,9 @@ def _p1640_process_file(filepath, skipslices=None):
         # build the path
         try:
             spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
-            assert(spot_filepaths is not None)
+            # check if all the spot files exist, if so, read them in
+            exist = np.all([os.path.isfile(f) for f in spot_filepaths])
+            assert(exist is not False)
             print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
             spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                        for f in spot_filepaths])
