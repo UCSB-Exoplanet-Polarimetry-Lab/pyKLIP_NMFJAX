@@ -219,7 +219,7 @@ class P1640Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr, scaling_factors = _p1640_process_file(filepath, skipslices=skipslices)
+            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
@@ -816,8 +816,8 @@ def _p1640_process_file(filepath, skipslices=None):
         spot_fluxes = np.delete(spot_fluxes, skipslices)
     
     # pyklip centers need to be [x,y] instead of (row, col)
-    center = np.fliplr(center[0]) # [0] because of the way P1640spots works
-    return cube, center, scaling_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+    center = np.fliplr(center) # [0] because of the way P1640spots works
+    return cube, center, scale_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
