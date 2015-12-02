@@ -397,8 +397,8 @@ class P1640Data(Data):
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
-        if scaling is None:
-            scaling = self.scaling
+        #if scaling is None:
+        #    scaling = self.scaling
             
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
@@ -699,13 +699,15 @@ def get_p1640_spot_filepaths(config, data_filepath):
     else:
         return None
 
-def write_p1640_spots_to_file(config, data_filepath, spot_positions):
+def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=True):
     """
     Write the spot (row, col) positions to 4 files (1 per spot) in the directory specified
     in the config file.
     Input:
         config: a ConfigParser object with the file path information
+        data_filepath: source file, spot files will have same prefix
         spot_positions: a Nspot x Nchan x 2 array of (row, col) spot positions
+        overwrite: True -> overwrite (default), False -> don't overwrite existing files
     Output:
         None
     """
@@ -721,10 +723,16 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions):
     spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
     spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
     spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
-    
+    # check if files exist
+    exists = [os.path.isfile(i) for i in spot_filepaths]
+
     for i, spot in enumerate(spot_positions):
-        np.savetxt(spot_filepaths[i], spot, delimiter=",", header="row, column")
-    
+        if (exists[i] and  not overwrite):
+            print("{0} exists and overwrite flag is {1}".format(spot_filepaths[i], overwrite))
+        else:
+            np.savetxt(spot_filepaths[i], spot,
+                       delimiter=",",
+                       header="row, column")    
 
 
 def _p1640_process_file(filepath, skipslices=None):
