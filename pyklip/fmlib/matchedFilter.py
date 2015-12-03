@@ -160,6 +160,8 @@ class MatchedFilter(NoFM):
             phistart: azimuthal start of segment [radians]
             phiend: azimuthal end of segment [radians]
             padding: amount of padding on each side of sector
+            IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                It defines the separation interva in which klip will be run.
             ref_center: center of image
             numbasis: array of KL basis cutoffs
             parang: parallactic angle of input image [DEGREES]

@@ -599,6 +599,8 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
         phiend: maximum azimuthal coordinate of sector [radians]
         padding: number of pixels to pad to the sector [pixels]
         parang: how much to rotate phi due to field rotation [IN DEGREES]
+        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                It defines the separation interva in which klip will be run.
 
     Returns:
         sector_ind: the pixel coordinates that corespond to this sector
@@ -666,6 +668,8 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
         phistart: azimuthal start of sector
         phiend: azimuthal end of sector
         padding: amount of padding around each sector
+        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                It defines the separation interva in which klip will be run.
         img_center: center of image in input image coordinate
 
         flipx: if true, flip the x coordinate to switch coordinate handiness
@@ -1107,6 +1111,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         wv_index: array index of the wavelength of the science image
         avg_rad: average radius of this annulus
         padding: number of pixels to pad the sector by
+        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                It defines the separation interva in which klip will be run.
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
