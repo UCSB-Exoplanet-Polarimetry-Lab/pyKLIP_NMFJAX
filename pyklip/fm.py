@@ -5,12 +5,15 @@ import scipy.linalg as la
 from scipy.stats import norm
 import scipy.ndimage as ndimage
 
+from time import time
 import ctypes
 import itertools
 import multiprocessing as mp
 from pyklip.parallelized import _arraytonumpy
 
-#import matplotlib.pyplot as plt
+from sys import stdout
+
+import matplotlib.pyplot as plt
 parallel = True
 
 
@@ -147,7 +150,8 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
     evalse_inv_sqrt = 1./evals_sqrt
     evals_ratio = (evalse_inv_sqrt[:,None]).dot(evals_sqrt[None,:])
     beta_tmp = 1./(evals_tiled.transpose()- evals_tiled)
-    beta_tmp[np.diag_indices(N_ref)] = -0.5/evals
+    #print(evals)
+    beta_tmp[np.diag_indices(np.size(evals))] = -0.5/evals
     beta = evals_ratio*beta_tmp
 
     C =  models_mean_sub.dot(refs_mean_sub.transpose())+refs_mean_sub.dot(models_mean_sub.transpose())
@@ -361,7 +365,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
 
     return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
 
-def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None, minrot=0): #Zack
+def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,aligned_center=None, minrot=0): #Zack
     """
     KLIP PSF Subtraction using angular differential imaging, with expansion of covariance matrix
 
@@ -561,7 +565,7 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
     # the last thread needs to finish all of them
     if thread_index == numthreads - 1:
         combos_todo = combos[leftovers + thread_index*numframes_todo:]
-        print(len(combos), len(combos_todo), leftovers + thread_index*numframes_todo)
+        #print(len(combos), len(combos_todo), leftovers + thread_index*numframes_todo)
     else:
         if thread_index < leftovers:
             leftovers_completed = thread_index
@@ -571,7 +575,7 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
             plusone = 0
 
         combos_todo = combos[leftovers_completed + thread_index*numframes_todo:(thread_index+1)*numframes_todo + leftovers_completed + plusone]
-        print(len(combos), len(combos_todo), leftovers_completed + thread_index*numframes_todo, (thread_index+1)*numframes_todo + leftovers_completed + plusone)
+        #print(len(combos), len(combos_todo), leftovers_completed + thread_index*numframes_todo, (thread_index+1)*numframes_todo + leftovers_completed + plusone)
 
     #print(len(combos), len(combos_todo), leftovers, thread_index)
 
@@ -582,7 +586,7 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
     return
 
 
-def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend, padding, parang):
+def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend, padding, parang,IOWA):
     """
     Gets the pixels (via numpy.where) that correspond to this section
 
@@ -599,6 +603,8 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     Returns:
         sector_ind: the pixel coordinates that corespond to this sector
     """
+    IWA,OWA = IOWA
+
     # create a coordinate system.
     x, y = np.meshgrid(np.arange(input_shape[1] * 1.0), np.arange(input_shape[0] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) # Flatten
@@ -607,8 +613,13 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     phi = np.arctan2(y - img_center[1], x - img_center[0])
 
     # incorporate padding
-    radstart -= padding
-    radend += padding
+    #JB debug
+    #print(padding,IWA,OWA)
+    radstart = np.max([radstart-padding,IWA])
+    if OWA is not None:
+        radend = np.min([radend+padding,OWA])
+    else:
+        radend = radend+padding
     phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
     phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
 
@@ -621,18 +632,21 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     else:
         section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
 
+    ## JB debug
     #print (radstart,radend)
-    #print (phistart,phiend)
-    #r[section_ind] = np.nan
-    #r.shape = (input_shape[0],input_shape[1])
-    #plt.imshow(r)
-    #plt.show()
+    #print (phistart/np.pi*180,phiend/np.pi*180)
+    #phi_rotate[section_ind] = np.nan
+    #phi_rotate.shape = (input_shape[0],input_shape[1])
+    #plt.subplot(121)
+    #plt.imshow(phi_rotate/np.pi*180)
+    #plt.colorbar()
+
 
     return section_ind
 
 
 
-def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding, img_center, flipx=True,
+def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
                          new_center=None):
     """
     Rotate and save sector in output image at desired ranges
@@ -665,8 +679,12 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     phiend %= 2 * np.pi
 
     #incorporate padding
-    radstart_padded = radstart - padding
-    radend_padded = radend + padding
+    IWA,OWA = IOWA
+    radstart_padded = np.max([radstart-padding,IWA])
+    if OWA is not None:
+        radend_padded = np.min([radend+padding,OWA])
+    else:
+        radend_padded = radend+padding
     phistart_padded = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
     phiend_padded = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
 
@@ -753,10 +771,9 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
-                      movement=3, numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
+                      movement=3, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=3, save_klipped=True,
-                      include_spec_in_model = False,
-                      spec_from_model = False):
+                      N_pix_sector = None):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -774,9 +791,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                 the pixel bondaries (a <= r < b) for each annulus
         subsections: Sections to break each annuli into. Can be a number [integer], or a list of 2-element tuples (a, b)
                      specifying the positon angle boundaries (a <= PA < b) for each section [radians]
+        N_pix_sector: Rough number of pixels in a sector. Overwriting subsections and making it sepration dependent.
+                  The number of subsections is defined such that the number of pixel is just higher than N_pix_sector.
+                  I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
@@ -803,8 +824,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     ################## Interpret input arguments ####################
 
     # defaullt numbasis if none
+    totalimgs = imgs.shape[0]
     if numbasis is None:
-        totalimgs = imgs.shape[0]
         maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
         numbasis = np.arange(1, maxbasis + 5, 5)
         print("KL basis not specified. Using default.", numbasis)
@@ -813,6 +834,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    if maxnumbasis is None:
+        maxnumbasis = np.max(numbasis)
 
     if numthreads is None:
         numthreads = mp.cpu_count()
@@ -836,7 +860,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         if OWA is None:
             OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
         dr = float(OWA - IWA) / (annuli)
-
         # calculate the annuli
         rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
         # last annulus should mostly emcompass everything
@@ -844,20 +867,35 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     else:
         rad_bounds = annuli
 
-    if isinstance(subsections, int):
-        # divide annuli into subsections
-        dphi = 2 * np.pi / subsections
-        phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
-        phi_bounds[-1][1] = 2 * np.pi
+    if N_pix_sector is None:
+        if isinstance(subsections, int):
+            # divide annuli into subsections
+            dphi = 2 * np.pi / subsections
+            phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
+            phi_bounds[-1][1] = 2 * np.pi
+        else:
+            phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
+
+        iterator_sectors = itertools.product(rad_bounds, phi_bounds)
+        tot_sectors = len(rad_bounds)*len(phi_bounds)
     else:
-        phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
+        iterator_sectors=[]
+        for [r_min,r_max] in rad_bounds:
+            curr_sep_subsections = int(np.pi*(r_max**2-r_min**2)/N_pix_sector) # equivalent to using floor but casting as well
+            # divide annuli into subsections
+            dphi = 2 * np.pi / curr_sep_subsections
+            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_subsections)]
+            phi_bounds_list[-1][1] = 2 * np.pi
 
-    print(phi_bounds)
-    # calculate how many iterations we need to do
+            iterator_sectors.extend([((r_min,r_max),phi_bound) for phi_bound in phi_bounds_list ])
+        tot_sectors = len(iterator_sectors)
+
     global tot_iter
-    tot_iter = np.size(np.unique(wvs)) * len(phi_bounds) * len(rad_bounds)
-    tot_sectors = len(phi_bounds) * len(rad_bounds)
-
+    tot_iter = np.size(np.unique(wvs)) * tot_sectors
+    ##JB debug
+    #print(phi_bounds[0][0]/np.pi*180,phi_bounds[0][1]/np.pi*180)
+    #print(rad_bounds)
+    #return None
 
     ########################### Create Shared Memory ###################################
 
@@ -900,7 +938,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     # Create Custom Shared Memory array fmout to save output of forward modelling
     fmout_data, fmout_shape = fm_class.alloc_fmout(output_imgs_shape)
-
+    # JB debug
+    #print(np.size(_arraytonumpy(fmout_data,fmout_shape)),fmout_shape)
+    #return None
 
     # align and scale the images for each image. Use map to do this asynchronously]
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
@@ -933,11 +973,24 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     sector_job_queued = np.zeros(tot_sectors) # count for jobs in the tpool queue for each sector
 
     # as each is finishing, queue up the aligned data to be processed with KLIP
-    for sector_index, ((radstart, radend),(phistart,phiend)) in enumerate(itertools.product(rad_bounds, phi_bounds)):
-        print("Starting KLIP for sector {0}".format(sector_index))
+    N_it = 0
+    N_tot_it = totalimgs*tot_sectors
+    time_spent_per_sector_list = []
+    time_spent_last_sector=0
+    for sector_index, ((radstart, radend),(phistart,phiend)) in enumerate(iterator_sectors):
+        t_start_sector = time()
+        print("Starting KLIP for sector {0}/{1}".format(sector_index+1,tot_sectors))
+        if len(time_spent_per_sector_list)==0:
+            print("Time spent on last sector: {0:.0f}s".format(0))
+            print("Time spent since beginning: {0:.0f}s".format(0))
+            print("First sector: Can't predict remaining time")
+        else:
+            print("Time spent on last sector: {0:.0f}s".format(time_spent_last_sector))
+            print("Time spent since beginning: {0:.0f}s".format(np.sum(time_spent_per_sector_list)))
+            print("Estimated remaining time: {0:.0f}s".format((tot_sectors-sector_index)*np.mean(time_spent_per_sector_list)))
         # calculate sector size
         section_ind = _get_section_indicies(original_imgs_shape[1:], aligned_center, radstart, radend, phistart, phiend,
-                                            padding, 0)
+                                            padding, 0,[IWA,OWA])
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
         interm_data, interm_shape = fm_class.alloc_interm(sector_size, original_imgs_shape[0])
@@ -952,40 +1005,51 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             if parallel:
                 tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
                                                     args=(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                          parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-                                                          numbasis,
+                                                          parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
+                                                          numbasis,maxnumbasis,
                                                           movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                          fm_class,
-                                                          include_spec_in_model,
-                                                          spec_from_model))
+                                                          fm_class))
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
             if not parallel:
                 tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
-                                                                  parang, wv_value, wv_index, (radstart + radend) / 2., padding,
-                                                                  numbasis,
+                                                                  parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
+                                                                  numbasis,maxnumbasis,
                                                                   movement, aligned_center, minrot, maxrot, mode, spectrum,
-                                                                  fm_class,
-                                                                  include_spec_in_model,
-                                                                  spec_from_model)
+                                                                  fm_class)
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
+        N_it_perSector = 0
         if parallel:
             while len(tpool_outputs) > 0:
                 tpool_outputs.pop(0).wait()
+                N_it = N_it+1
+                N_it_perSector = N_it_perSector+1
+                stdout.write("\r {0:.2f}% of sector, {1:.2f}% of total completed".format(100*float(N_it_perSector)/float(totalimgs),100*float(N_it)/float(N_tot_it)))
+                stdout.flush()
+                #JB debug
+                #print("outputs klip_section_multifile_perfile",tpool_outputs)
 
             # if this is the last job finished for this sector,
             # do something here?
+
+        # newline for next sector
+        stdout.write("\n")
+
 
         # run custom function to handle end of sector post-processing analysis
         interm_data_np = _arraytonumpy(interm_data, interm_shape)
         fmout_np = _arraytonumpy(fmout_data, fmout_shape)
         fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
                                section_indicies=section_ind)
+
+        # Add time spent on last sector to the list
+        time_spent_last_sector = time() - t_start_sector
+        time_spent_per_sector_list.append(time_spent_last_sector)
 
 
 
@@ -1025,11 +1089,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
 def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phistart, phiend, parang, wavelength,
-                                    wv_index, avg_rad, padding,
-                                    numbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
-                                    fm_class,
-                                    include_spec_in_model = False,
-                                    spec_from_model = False):
+                                    wv_index, avg_rad, padding,IOWA,
+                                    numbasis,maxnumbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
+                                    fm_class):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -1046,6 +1108,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         avg_rad: average radius of this annulus
         padding: number of pixels to pad the sector by
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         maxmove:minimum movement (opposite of minmove) - CURRENTLY NOT USED
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
@@ -1061,10 +1124,12 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     """
 
     # get the indicies in the aligned data that correspond to the section and the section without padding
+    #print(img_num)
+    IWA,OWA = IOWA
     section_ind = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
-                                            padding, parang)
+                                            padding, parang,IOWA)
     section_ind_nopadding = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
-                                            0, parang)
+                                            0, parang,IOWA)
 
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
@@ -1130,7 +1195,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
 
     # pick only the most correlated reference PSFs if there's more than enough PSFs
-    maxbasis_requested = np.max(numbasis)
+    maxbasis_requested = maxnumbasis
     maxbasis_possible = np.size(file_ind)
     if maxbasis_possible > maxbasis_requested:
         xcorr = corr_psfs[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
@@ -1177,11 +1242,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                 # only increment the numstack counter for the first KL mode
                 _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
                                  output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
-                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
             else:
                 _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
                                  output_imgs[img_num,:,thisnumbasisindex], None, parang,
-                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
 
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable
@@ -1191,7 +1256,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                           input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
                           ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs,
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
-                          radend=radend, phistart=phistart, phiend=phiend, padding=padding, ref_center=ref_center,
-                          parang=parang, ref_wv=wavelength, numbasis=numbasis, fmout=fmout_np)
+                          radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
+                          parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
+                           fmout=fmout_np,klipped=klipped)
 
     return sector_index

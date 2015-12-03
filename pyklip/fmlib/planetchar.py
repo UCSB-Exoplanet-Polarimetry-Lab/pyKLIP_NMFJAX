@@ -250,7 +250,7 @@ class PlanetChar(NoFM):
 
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
-                     wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None, ref_center=None,
+                     wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
                      parang=None, ref_wv=None, numbasis=None, fmout=None, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
@@ -314,7 +314,7 @@ class PlanetChar(NoFM):
         for thisnumbasisindex in range(np.size(numbasis)):
                 fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                  fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                 radstart, radend, phistart, phiend, padding, ref_center, flipx=True)
+                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
 
 
