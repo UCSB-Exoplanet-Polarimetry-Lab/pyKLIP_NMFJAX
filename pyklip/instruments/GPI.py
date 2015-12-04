@@ -391,10 +391,13 @@ class GPIData(Data):
                 exthdr['PC1_2'] = 0.0
                 exthdr['PC2_1'] = 0.0
             #remove CD values as those are confusing
-            exthdr.remove('CD1_1')
-            exthdr.remove('CD1_2')
-            exthdr.remove('CD2_1')
-            exthdr.remove('CD2_2')
+            try:
+                exthdr.remove('CD1_1')
+                exthdr.remove('CD1_2')
+                exthdr.remove('CD2_1')
+                exthdr.remove('CD2_2')
+            except:
+                pass # nothing to do if they were removed already
             exthdr['CDELT1'] = 1
             exthdr['CDELT2'] = 1
 
