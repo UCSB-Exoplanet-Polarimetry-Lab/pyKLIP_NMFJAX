@@ -1292,11 +1292,12 @@ def generate_spdc_with_fakes(dataset,
         fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
 
         # Save fake planet position in headers
-        exthdr["FKPA{0:02d}".format(fake_id)] = pa
-        exthdr["FKSEP{0:02d}".format(fake_id)] = radius
-        exthdr["FKCONT{0:02d}".format(fake_id)] = contrast
-        exthdr["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
-        exthdr["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
+        for exthdr_it in dataset.exthdrs:
+            exthdr_it["FKPA{0:02d}".format(fake_id)] = pa
+            exthdr_it["FKSEP{0:02d}".format(fake_id)] = radius
+            exthdr_it["FKCONT{0:02d}".format(fake_id)] = contrast
+            exthdr_it["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
+            exthdr_it["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
 
     #Save each cube with the fakes
     for cube_id in range(N_cubes):
@@ -1305,4 +1306,4 @@ def generate_spdc_with_fakes(dataset,
         dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
                          dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
                          astr_hdr=dataset.wcs[0], filetype="fake spec cube",
-                         user_prihdr=prihdr, user_exthdr=exthdr)
+                         user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
