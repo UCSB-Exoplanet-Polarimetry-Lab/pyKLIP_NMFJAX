@@ -1103,7 +1103,8 @@ def generate_spdc_with_fakes(dataset,
 
     Todo: stddev mode for fake flux or contrast curve input
 
-    :param dataset: An object of type GPIData. dataset will stay unchanged but for dataset.psfs.
+    :param dataset: An object of type GPIData.
+            The fakes are injected directly into dataset so you should make a copy prior to running this function.
     :param outputdir:
             Output directory in which the spectral data cube with fakes will be saved.
     :param fake_position_dict:
