@@ -487,7 +487,8 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 output_imgs_numstacked,
-                pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape):
+                pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape,
+                perturbmag_imgs, perturbmag_imgs_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array) - output_imgs does not need to be mp.Array and can be anything
@@ -509,9 +510,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         interm_imgs_shape: shape of interm_imgs. The first dimention should be N.
         fmout_imgs: array for output of forward modelling. What's stored in here depends on the class
         fmout_imgs_shape: shape of fmout
+        perturbmag_imgs: array for output of size of linear perturbation to assess validity
+        perturbmag_imgs_shape: shape of perturbmag_imgs
     """
     global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, \
-        img_wv, img_center, interm, interm_shape, fmout, fmout_shape
+        img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -527,11 +530,13 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_wv = wvs_imgs
     img_center = centers_imgs
 
-    #intermediate and auxilliary data to store
+    #intermediate and FM arrays
     interm = interm_imgs
     interm_shape = interm_imgs_shape
     fmout = fmout_imgs
     fmout_shape = fmout_imgs_shape
+    perturbmag = perturbmag_imgs
+    perturbmag_shape = perturbmag_imgs_shape
 
 
 def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
@@ -823,6 +828,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     specified by numbasis. Shape of (b,N,y,x).
                   Note: this will be None if save_klipped is False
         fmout_np: output of forward modelling.
+        perturbmag: output indicating the magnitude of the linear perturbation to assess validity of KLIP FM
     """
 
     ################## Interpret input arguments ####################
@@ -942,21 +948,20 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     # Create Custom Shared Memory array fmout to save output of forward modelling
     fmout_data, fmout_shape = fm_class.alloc_fmout(output_imgs_shape)
-    # JB debug
-    #print(np.size(_arraytonumpy(fmout_data,fmout_shape)),fmout_shape)
-    #return None
+    # Create shared memory to keep track of validity of perturbation
+    perturbmag, perturbmag_shape = fm_class.alloc_perturbmag(output_imgs_shape, numbasis)
 
     # align and scale the images for each image. Use map to do this asynchronously]
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                             fmout_data, fmout_shape), maxtasksperchild=50)
+                             fmout_data, fmout_shape, perturbmag, perturbmag_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if not parallel:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                                  output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                                 fmout_data, fmout_shape)
+                                 fmout_data, fmout_shape, perturbmag, perturbmag_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -1083,12 +1088,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     fmout_np = _arraytonumpy(fmout_data, fmout_shape)
     fmout_np = fm_class.cleanup_fmout(fmout_np)
 
+    # convert pertrubmag to numpy
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape)
+
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
 
     # Output for the sole PSFs
-    return sub_imgs, fmout_np
+    return sub_imgs, fmout_np, perturbmag_np
 
 
 
@@ -1234,6 +1242,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # convert to numpy array if fmout is defined
     fmout_np = _arraytonumpy(fmout, fmout_shape)
+    # convert to numpy array if pertrubmag is defined
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape)
 
     # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
@@ -1264,6 +1274,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
-                           fmout=fmout_np,klipped=klipped)
+                           fmout=fmout_np, perturbmag=perturbmag_np, klipped=klipped)
 
     return sector_index

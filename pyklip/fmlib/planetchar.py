@@ -126,8 +126,8 @@ class PlanetChar(NoFM):
             output_img_shape: shape of output image (usually N,y,x,b)
 
         Returns:
-            fmout: mp.array to store auxilliary data in
-            fmout_shape: shape of auxilliary array
+            fmout: mp.array to store FM data in
+            fmout_shape: shape of FM data array
 
         """
         fmout_size = np.prod(output_img_shape)
@@ -136,6 +136,26 @@ class PlanetChar(NoFM):
         print(fmout_shape)
 
         return fmout, fmout_shape
+
+
+    def alloc_perturbmag(self, output_img_shape, numbasis):
+        """
+        Allocates shared memory to store the fractional magnitude of the linear KLIP perturbation
+        Stores a number for each frame = max(oversub + selfsub)/std(PCA(image))
+
+        Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
+            numbasis: array/list of number of KL basis cutoffs requested
+
+        Returns:
+            perturbmag: mp.array to store linaer perturbation magnitude
+            perturbmag_shape: shape of linear perturbation magnitude
+
+        """
+        perturbmag_shape = (output_img_shape[0], np.size(numbasis))
+        perturbmag = mp.Array(ctypes.c_double, np.prod(perturbmag_shape))
+
+        return perturbmag, perturbmag_shape
 
 
     def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
@@ -251,7 +271,7 @@ class PlanetChar(NoFM):
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -280,6 +300,8 @@ class PlanetChar(NoFM):
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
+            perturbmag: numpy output for size of linear perturbation. Shape is (N, b)
+            klipped: PSF subtracted image. Shape of ( size(section), b)
             kwargs: any other variables that we don't use but are part of the input
         """
         sci = aligned_imgs[input_img_num, section_ind[0]]
@@ -308,6 +330,10 @@ class PlanetChar(NoFM):
         # calculate postklip_psf using delta_KL
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
 
+        # calculate validity of linear perturbation on KLIP modes
+        pca_img = (sci - np.nanmean(sci))[:, None] - klipped # shape of ( size(section), b)
+        perturb_frac = np.nanmax(np.abs(oversubtraction + selfsubtraction), axis=1)/np.nanstd(pca_img, axis=0) # array of b
+        perturbmag[input_img_num] = perturb_frac
 
         fmout_shape = fmout.shape
 
