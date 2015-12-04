@@ -4,7 +4,6 @@ import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
-#import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 from scipy.optimize import leastsq
 from scipy.optimize import minimize

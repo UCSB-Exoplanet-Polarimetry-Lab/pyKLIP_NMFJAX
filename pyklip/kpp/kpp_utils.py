@@ -5,7 +5,6 @@ import astropy.io.fits as pyfits
 from copy import copy
 from scipy.stats import nanmedian
 import scipy.ndimage as ndimage
-import matplotlib.pyplot as plt
 import glob, os
 import multiprocessing as mp
 import multiprocessing.pool as mpPool
@@ -521,10 +520,6 @@ def extract_PSFs(filename, stamp_width = 10, mute = False):
                                                             (y_plnt-np.floor(stamp_width/2.)):(y_plnt+np.ceil(stamp_width/2.)),
                                                             (x_plnt-np.floor(stamp_width/2.)):(x_plnt+np.ceil(stamp_width/2.))]
 
-        #print(l_id,r_id,r_it,th_id, th_it,x_plnt,y_plnt)
-        #plt.imshow(out_stamp_PSFs[:,:,l_id,th_id,r_id],interpolation = 'nearest')
-        #plt.show()
-
     return out_stamp_PSFs
 
 def extract_merge_PSFs(filename, radii, thetas, stamp_width = 10):
@@ -572,9 +567,6 @@ def extract_merge_PSFs(filename, radii, thetas, stamp_width = 10):
                 stamp_y += y_planets[r_id,th_id]+center[1]-y_plnt
                 stamp = ndimage.map_coordinates(stamp, [stamp_y, stamp_x])
 
-                #plt.imshow(stamp,interpolation = 'nearest')
-                #plt.show()
-                #return
 
                 if k == 0 and l == 0:
                     PSFs_stamps = [stamp]
@@ -614,12 +606,6 @@ def subtract_radialMed(image,w,l,center):
             arc_id = np.where(((r-w/2.0) < r_grid) * (r_grid < (r+w/2.0)) * ((th-l/r) < th_grid) * (th_grid < (th+l/r)))
             image[(q*w):((q+1)*w),(p*w):((p+1)*w)] -= nanmedian(image[arc_id])
 
-            if 0 and p == 50 and q == 50:
-                image[arc_id] = 100
-                print(image[arc_id].size)
-                plt.figure(2)
-                plt.imshow(image, interpolation="nearest")
-                plt.show()
 
 
     return image
