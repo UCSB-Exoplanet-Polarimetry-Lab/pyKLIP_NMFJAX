@@ -1308,5 +1308,5 @@ def generate_spdc_with_fakes(dataset,
         print("Saving file: "+outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits")
         dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
                          dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
-                         astr_hdr=dataset.wcs[0], filetype="fake spec cube",
+                         astr_hdr=dataset.wcs[(cube_id*numwaves)], filetype="fake spec cube",
                          user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
