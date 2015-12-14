@@ -338,7 +338,8 @@ class GPIData(Data):
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")
-        hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
+        if user_prihdr is None:
+            hdulist[0].header.add_history("Reduced with pyKLIP using commit {0}".format(pyklipver))
         if self.creator is None:
             hdulist[0].header['CREATOR'] = "pyKLIP-{0}".format(pyklipver)
         else:
@@ -374,40 +375,41 @@ class GPIData(Data):
                 for i, klmode in enumerate(zaxis):
                     hdulist[1].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
 
-        #use the dataset astr hdr if none was passed in
-        if astr_hdr is None:
-            astr_hdr = self.wcs[0]
-        if astr_hdr is not None:
-            #update astro header
-            #I don't have a better way doing this so we'll just inject all the values by hand
-            astroheader = astr_hdr.to_header()
-            exthdr = hdulist[1].header
-            exthdr['PC1_1'] = astroheader['PC1_1']
-            exthdr['PC2_2'] = astroheader['PC2_2']
-            try:
-                exthdr['PC1_2'] = astroheader['PC1_2']
-                exthdr['PC2_1'] = astroheader['PC2_1']
-            except KeyError:
-                exthdr['PC1_2'] = 0.0
-                exthdr['PC2_1'] = 0.0
-            #remove CD values as those are confusing
-            try:
-                exthdr.remove('CD1_1')
-                exthdr.remove('CD1_2')
-                exthdr.remove('CD2_1')
-                exthdr.remove('CD2_2')
-            except:
-                pass # nothing to do if they were removed already
-            exthdr['CDELT1'] = 1
-            exthdr['CDELT2'] = 1
+        if user_exthdr is None:
+            #use the dataset astr hdr if none was passed in
+            if astr_hdr is None:
+                astr_hdr = self.wcs[0]
+            if astr_hdr is not None:
+                #update astro header
+                #I don't have a better way doing this so we'll just inject all the values by hand
+                astroheader = astr_hdr.to_header()
+                exthdr = hdulist[1].header
+                exthdr['PC1_1'] = astroheader['PC1_1']
+                exthdr['PC2_2'] = astroheader['PC2_2']
+                try:
+                    exthdr['PC1_2'] = astroheader['PC1_2']
+                    exthdr['PC2_1'] = astroheader['PC2_1']
+                except KeyError:
+                    exthdr['PC1_2'] = 0.0
+                    exthdr['PC2_1'] = 0.0
+                #remove CD values as those are confusing
+                try:
+                    exthdr.remove('CD1_1')
+                    exthdr.remove('CD1_2')
+                    exthdr.remove('CD2_1')
+                    exthdr.remove('CD2_2')
+                except:
+                    pass # nothing to do if they were removed already
+                exthdr['CDELT1'] = 1
+                exthdr['CDELT2'] = 1
 
-        #use the dataset center if none was passed in
-        if center is None:
-            center = self.centers[0]
-        if center is not None:
-            hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
-            hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
-            hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+            #use the dataset center if none was passed in
+            if center is None:
+                center = self.centers[0]
+            if center is not None:
+                hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
+                hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
+                hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
@@ -1106,8 +1108,7 @@ def generate_spdc_with_fakes(dataset,
 
     Todo: stddev mode for fake flux or contrast curve input
 
-    :param dataset: An object of type GPIData.
-            The fakes are injected directly into dataset so you should make a copy prior to running this function.
+    :param dataset: An object of type GPIData. dataset will stay unchanged but for dataset.psfs.
     :param outputdir:
             Output directory in which the spectral data cube with fakes will be saved.
     :param fake_position_dict:
@@ -1295,12 +1296,11 @@ def generate_spdc_with_fakes(dataset,
         fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
 
         # Save fake planet position in headers
-        for exthdr_it in dataset.exthdrs:
-            exthdr_it["FKPA{0:02d}".format(fake_id)] = pa
-            exthdr_it["FKSEP{0:02d}".format(fake_id)] = radius
-            exthdr_it["FKCONT{0:02d}".format(fake_id)] = contrast
-            exthdr_it["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
-            exthdr_it["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
+        exthdr["FKPA{0:02d}".format(fake_id)] = pa
+        exthdr["FKSEP{0:02d}".format(fake_id)] = radius
+        exthdr["FKCONT{0:02d}".format(fake_id)] = contrast
+        exthdr["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
+        exthdr["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
 
     #Save each cube with the fakes
     for cube_id in range(N_cubes):
@@ -1308,5 +1308,5 @@ def generate_spdc_with_fakes(dataset,
         print("Saving file: "+outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits")
         dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
                          dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
-                         astr_hdr=dataset.wcs[(cube_id*numwaves)], filetype="fake spec cube",
-                         user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
+                         astr_hdr=dataset.wcs[0], filetype="fake spec cube",
+                         user_prihdr=prihdr, user_exthdr=exthdr)
