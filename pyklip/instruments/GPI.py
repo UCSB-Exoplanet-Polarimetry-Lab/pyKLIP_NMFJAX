@@ -1108,7 +1108,9 @@ def generate_spdc_with_fakes(dataset,
 
     Todo: stddev mode for fake flux or contrast curve input
 
-    :param dataset: An object of type GPIData. dataset will stay unchanged but for dataset.psfs.
+    :param dataset: An object of type GPIData.
+            The fakes are injected directly into dataset so you should make a copy of dataset prior to running this
+            function.
     :param outputdir:
             Output directory in which the spectral data cube with fakes will be saved.
     :param fake_position_dict:
@@ -1191,7 +1193,7 @@ def generate_spdc_with_fakes(dataset,
 
     # Save the original PSF calculated from combining the sat spots
     dataset.savedata(outputdir + os.path.sep + "S"+compact_date+"-"+filter+"-original_PSF_cube.fits", dataset.psfs,
-                              astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr)
+                              astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
 
     n_frames,ny,nx = dataset.input.shape
 
@@ -1295,18 +1297,20 @@ def generate_spdc_with_fakes(dataset,
         # inject fake planet at given radius,pa into dataset.input
         fakes.inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
 
-        # Save fake planet position in headers
-        exthdr["FKPA{0:02d}".format(fake_id)] = pa
-        exthdr["FKSEP{0:02d}".format(fake_id)] = radius
-        exthdr["FKCONT{0:02d}".format(fake_id)] = contrast
-        exthdr["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
-        exthdr["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
+        for exthdr_it in dataset.exthdrs:
+            # Save fake planet position in headers
+            exthdr_it["FKPA{0:02d}".format(fake_id)] = pa
+            exthdr_it["FKSEP{0:02d}".format(fake_id)] = radius
+            exthdr_it["FKCONT{0:02d}".format(fake_id)] = contrast
+            exthdr_it["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
+            exthdr_it["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
 
     #Save each cube with the fakes
+    print(len(dataset.prihdrs))
     for cube_id in range(N_cubes):
         spdc_filename = dataset.filenames[(cube_id*numwaves)].split(os.path.sep)[-1].split(".")[0]
         print("Saving file: "+outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits")
         dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
                          dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
-                         astr_hdr=dataset.wcs[0], filetype="fake spec cube",
-                         user_prihdr=prihdr, user_exthdr=exthdr)
+                         astr_hdr=dataset.wcs[(cube_id*numwaves)], filetype="fake spec cube",
+                         user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
