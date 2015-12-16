@@ -13,7 +13,6 @@ from pyklip.parallelized import _arraytonumpy
 
 from sys import stdout
 
-import matplotlib.pyplot as plt
 parallel = True
 
 
@@ -882,7 +881,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             # divide annuli into subsections
             dphi = 2 * np.pi / subsections
             phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
-            phi_bounds[-1][1] = 2 * np.pi
+            phi_bounds[-1][1] = 2 * np.pi - 0.0001
         else:
             phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
 
