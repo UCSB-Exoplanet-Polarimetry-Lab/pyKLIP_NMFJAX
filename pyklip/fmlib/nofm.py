@@ -41,7 +41,7 @@ class NoFM(object):
 
         outputs_size = np.prod(np.array(self.inputs_shape)) * np.size(self.numbasis)
 
-        outputs = mp.Array(ctypes.c_double, outputs_size)
+        outputs = mp.Array(self.mp_data_type, outputs_size)
         outputs_shape = self.outputs_shape
 
         return outputs, outputs_shape

@@ -958,13 +958,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                             fmout_data, fmout_shape), maxtasksperchild=50)
+                             fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if not parallel:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                                  output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                                 fmout_data, fmout_shape)
+                                 fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
 
     print("Begin align and scale images for each wavelength")
@@ -1277,6 +1277,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
-                           fmout=fmout_np,klipped=klipped)
+                           fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped)
 
     return sector_index
