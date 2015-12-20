@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 
 
+import multiprocessing as mp
 
 
 #different imports depending on if python2.7 or python3
@@ -27,6 +28,7 @@ else:
 from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
+from pyklip.fakes import gaussfit2dLSQ
 
 class GPIData(Data):
     """
@@ -781,13 +783,29 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False):
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
     if highpassed:
+
         #remeasure satellite spot fluxes
         spot_fluxes = []
-        for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
-            new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
-            spot_fluxes.append(np.nanmean(new_spotfluxes))
+        # JB: On going test..
+        if 1:
+            for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
+                new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
+                if np.sum(np.isfinite(new_spotfluxes)) == 0:
+                    print((slice, spots_xs, spots_ys))
+                spot_fluxes.append(np.nanmean(new_spotfluxes))
+        else:
+            numthreads = 10
+            tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+            tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
+                                                            args=(slice, spots_xs, spots_ys))
+                                            for id,(slice, spots_xs, spots_ys) in enumerate(zip(cube, spots_xloc, spots_yloc))]
 
-            
+            for out in tpool_outputs:
+                out.wait()
+                new_spotfluxes = out.get()
+                spot_fluxes.append(np.nanmean(new_spotfluxes))
+
+        #print(spot_fluxes)
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 
@@ -804,7 +822,10 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
     """
     spots_f = []
     for spotx, spoty in zip(spots_x, spots_y):
+        # JB: On going test..
         flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        #flux = gaussfit2dLSQ(img, spotx, spoty)
+        #print((flux,fwhm, xfit, yfit))
         spots_f.append(flux)
 
     return spots_f

@@ -1,3 +1,4 @@
+        #wv_index_list = [self.input_psfs_wvs.index(wv) for wv in wvs]
 __author__ = 'jruffio'
 import multiprocessing as mp
 import ctypes
@@ -15,6 +16,7 @@ from copy import copy
 
 import astropy.io.fits as pyfits
 
+from time import time
 import matplotlib.pyplot as plt
 debug = False
 
@@ -23,14 +25,22 @@ class MatchedFilter(NoFM):
     """
     Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
     """
-    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs, flux_conversion,
+    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,# flux_conversion,
                  spectrallib = None,
                  mute = False,
                  star_type = None,
                  filter = None,
-                 save_per_sector = None):
+                 save_per_sector = None,
+                 datatype="double"):
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, numbasis)
+
+        if datatype=="double":
+            self.mp_data_type = ctypes.c_double
+            self.np_data_type = float
+        elif datatype=="float":
+            self.mp_data_type = ctypes.c_float
+            self.np_data_type = np.float32
 
         if save_per_sector is not None:
             self.fmout_dir = save_per_sector
@@ -57,32 +67,80 @@ class MatchedFilter(NoFM):
 
         self.N_spectra = len(self.spectrallib)
 
-        # TODO: calibrate to contrast units
-        # calibrate spectra to DN
-        self.spectrallib = [spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
-        self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
 
-        self.input_psfs_wvs = input_psfs_wvs
+        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
         self.nl = np.size(input_psfs_wvs)
-        self.flux_conversion = flux_conversion
+        #self.flux_conversion = flux_conversion
         self.input_psfs = input_psfs
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
         for l_id in range(self.input_psfs.shape[0]):
             self.input_psfs[l_id,:,:] /= self.sat_spot_spec[l_id]
 
+        self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
+
+        # create bounds for PSF stamp size
+        self.row_m = np.floor(self.ny_psf/2.0)    # row_minus
+        self.row_p = np.ceil(self.ny_psf/2.0)     # row_plus
+        self.col_m = np.floor(self.nx_psf/2.0)    # col_minus
+        self.col_p = np.ceil(self.nx_psf/2.0)     # col_plus
+
+        # TODO: calibrate to contrast units
+        # calibrate spectra to DN
+        self.spectrallib = [self.sat_spot_spec*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
+        self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
+        self.fake_contrast = 10**-5 # ratio of flux of the planet/flux of the star (broad band flux)
 
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
         self.curr_pa_fk = {}
         self.curr_sep_fk = {}
 
+        self.nearestNeigh_PSF_interp = 0
+        # nearestNeigh_PSF_interp == 2 is actually not really accurate since it doesn't include the proper scaling of the PSF with wavelength.
+        self.sub_sampling_coef = 10
+
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
         x_psf_grid, y_psf_grid = np.meshgrid(np.arange(ny_psf* 1.)-ny_psf/2, np.arange(nx_psf * 1.)-nx_psf/2)
+        if  self.nearestNeigh_PSF_interp==1:
+            x_psf_HD_vec = np.linspace(0,nx_psf-1.,nx_psf*self.sub_sampling_coef)-nx_psf/2
+            y_psf_HD_vec = np.linspace(0,ny_psf-1.,ny_psf*self.sub_sampling_coef)-ny_psf/2
+            x_psf_HD_grid, y_psf_HD_grid = np.meshgrid(x_psf_HD_vec, y_psf_HD_vec)
+        elif self.nearestNeigh_PSF_interp ==2:
+            row_ind_vec = np.arange(self.sub_sampling_coef,(self.ny_psf+1)*self.sub_sampling_coef,self.sub_sampling_coef)
+            col_ind_vec = np.arange(self.sub_sampling_coef,(self.nx_psf+1)*self.sub_sampling_coef,self.sub_sampling_coef)
+            self.row_ind_grid ,self.col_ind_grid = np.meshgrid(row_ind_vec,col_ind_vec)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :]
-            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+            #psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+            psf_func = interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5)
+            if  self.nearestNeigh_PSF_interp == 1:
+                eval_psf_func = psf_func(x_psf_HD_vec,y_psf_HD_vec)
+                psf_func_near = interpolate.RegularGridInterpolator((x_psf_HD_vec,y_psf_HD_vec),eval_psf_func,
+                                                                          method="nearest",bounds_error=False,fill_value=0.0)
+                psfs_func_list.append(psf_func_near)
+            elif self.nearestNeigh_PSF_interp == 2:
+                x_psf_HD_vec = np.linspace(-1,nx_psf+1.-1./self.sub_sampling_coef,(nx_psf+2)*self.sub_sampling_coef)-nx_psf/2
+                y_psf_HD_vec = np.linspace(-1,ny_psf+1.-1./self.sub_sampling_coef,(ny_psf+2)*self.sub_sampling_coef)-ny_psf/2
+
+                eval_psf_func = psf_func(x_psf_HD_vec,y_psf_HD_vec)
+                psfs_func_list.append(eval_psf_func)
+                #plt.figure(1)
+                #plt.imshow(eval_psf_func,interpolation="nearest")
+                #plt.show()
+            else:
+                psfs_func_list.append(psf_func)
+
+            # plt.figure(1)
+            # print(zip(x_psf_HD_grid.ravel(), y_psf_HD_grid.ravel())[0])
+            # plt.subplot(1,3,1)
+            # plt.imshow(np.squeeze(self.input_psfs[10, :, :]),interpolation="nearest")
+            # plt.subplot(1,3,2)
+            # plt.imshow(eval_psf_func,interpolation="nearest")
+            # plt.subplot(1,3,3)
+            # plt.imshow(psf_func_near(zip(x_psf_HD_grid.ravel(), y_psf_HD_grid.ravel())).reshape((ny_psf*10,nx_psf*10)),interpolation = "nearest")
+            # plt.show()
 
         self.psfs_func_list = psfs_func_list
 
@@ -132,7 +190,7 @@ class MatchedFilter(NoFM):
         # 1: square of the norm of the model
         # 2: square of the norm of the image
         fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-        fmout = mp.Array(ctypes.c_double, fmout_size)
+        fmout = mp.Array(self.mp_data_type, fmout_size)
         fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
 
         return fmout, fmout_shape
@@ -171,12 +229,16 @@ class MatchedFilter(NoFM):
                      cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
             kwargs: any other variables that we don't use but are part of the input
         """
+        ref_wv = ref_wv.astype(self.np_data_type)
+
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
 
         # Calculate the PA,sep 2D map
         x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.0)- ref_center[0], np.arange(self.ny * 1.0)- ref_center[1])
+        x_grid=x_grid.astype(self.np_data_type)
+        y_grid=y_grid.astype(self.np_data_type)
         r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
         pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
         #pa_grid = np.arctan2( -y_grid,x_grid) % (2.0 * np.pi)
@@ -220,23 +282,37 @@ class MatchedFilter(NoFM):
         N_tot_it = self.N_spectra*self.N_numbasis*np.size(r_list)
         #N_it = 0
         for spec_id,N_KL_id in itertools.product(range(self.N_spectra),range(self.N_numbasis)):
+            # t1 = time()
             for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),where_section[0],where_section[1]):
                 #print(sep_fk,pa_fk,r_grid[row_id,col_id],pa_grid[row_id,col_id]/np.pi*180)
                 #N_it = N_it + 1
                 #print(N_it,N_tot_it,float(N_it)/float(N_tot_it))
                 #   Generate model sci
-                model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
-                model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*1e-5
+                if self.nearestNeigh_PSF_interp != 0:
+                    model_sci,mask = self.generate_model_sci_nearestNeigh(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
+                else:
+                    model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
+                #print(model_sci)
+                #model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*1e-5
+                #model_sci *= self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*self.fake_contrast
+                #print(np.where(np.array(self.input_psfs_wvs) == ref_wv))
+                #print(self.input_psfs_wvs.index(ref_wv))
+                model_sci *= self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
                 where_fk = np.where(mask>=1)[0]
                 where_background = np.where(mask==2)[0]
                 #print(model_sci[where_fk])
                 #   Generate models ref
-                models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+                if self.nearestNeigh_PSF_interp != 0:
+                    models_ref = self.generate_models_nearestNeigh(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+                else:
+                    #print("coucou")
+                    models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+
                 #print(models_ref[0][where_fk])
                 # Calculate the spectra to determine the flux of each model reference PSF
-                total_imgs = np.size(self.flux_conversion)
                 input_spectrum =  self.spectrallib[spec_id]
-                input_spectrum = self.flux_conversion * np.ravel(np.tile(input_spectrum,(1, total_imgs/self.nl)))*1e-5
+                #input_spectrum = self.flux_conversion * np.ravel(np.tile(input_spectrum,(1, total_imgs/self.nl)))*1e-5
+                input_spectrum =np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
                 input_spectrum = input_spectrum[ref_psfs_indicies]
                 models_ref = models_ref * input_spectrum[:, None]
 
@@ -287,12 +363,19 @@ class MatchedFilter(NoFM):
                 #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
                 sky = np.mean(klipped[where_background,N_KL_id])
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
+                # print(np.sum(klipped[where_fk,N_KL_id]*postklip_psf[N_KL_id,where_fk]))
+                # print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
+                # print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
                 fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
                 fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
 
-        #plt.imshow(np.squeeze(fmout[0,spec_id,N_KL_id,input_img_num,:,:]))
-        #plt.show()
+            # print(input_img_num)
+            # if input_img_num == 50:
+            # t2 = time()
+            # print(t2-t1)
+            # plt.imshow(np.squeeze(fmout[0,spec_id,N_KL_id,input_img_num,:,:]))
+            # plt.show()
 
 
 
@@ -367,7 +450,10 @@ class MatchedFilter(NoFM):
         #print(self.pa,self.sep)
         #print(pa,wv)
         # grab PSF given wavelength
-        wv_index = np.where(wv == self.input_psfs_wvs)[0]
+        #print(self.input_psfs_wvs,wv)
+        wv_index = [self.input_psfs_wvs.index(wv)]#np.where(wv == self.input_psfs_wvs)[0]
+        #print(self.input_psfs_wvs.index(wv))
+        #print(np.where(wv == np.array(self.input_psfs_wvs))[0])
         #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
         # find center of psf
@@ -402,7 +488,7 @@ class MatchedFilter(NoFM):
 
         # use intepolation spline to generate a model PSF and write to temp img
         whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
+                self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -431,6 +517,122 @@ class MatchedFilter(NoFM):
 
         return segment_with_model,mask
 
+    def generate_model_sci_nearestNeigh(self, input_img_shape, section_ind, pa, wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk):
+        """
+        Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
+
+        Args:
+            pas: array of N parallactic angles corresponding to N images [degrees]
+            wvs: array of N wavelengths of those images
+            radstart: radius of start of segment
+            radend: radius of end of segment
+            phistart: azimuthal start of segment [radians]
+            phiend: azimuthal end of segment [radians]
+            padding: amount of padding on each side of sector
+            ref_center: center of image
+            parang: parallactic angle of input image [DEGREES]
+            ref_wv: wavelength of science image
+
+        Return:
+            models: array of size (N, p) where p is the number of pixels in the segment
+        """
+        # create some parameters for a blank canvas to draw psfs on
+        nx = input_img_shape[1]
+        ny = input_img_shape[0]
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
+
+        numwv, ny_psf, nx_psf =  self.input_psfs.shape
+
+        # create bounds for PSF stamp size
+        row_m = np.floor(ny_psf/2.0)    # row_minus
+        row_p = np.ceil(ny_psf/2.0)     # row_plus
+        col_m = np.floor(nx_psf/2.0)    # col_minus
+        col_p = np.ceil(nx_psf/2.0)     # col_plus
+
+        # a blank img array of write model PSFs into
+        whiteboard = np.zeros((ny,nx))
+        #print(self.input_psfs.shape)
+        #print(self.pa,self.sep)
+        #print(pa,wv)
+        #print(self.input_psfs_wvs.index(wv))
+        #print(np.where(wv == np.array(self.input_psfs_wvs))[0])
+        #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+
+        # find center of psf
+        # to reduce calculation of sin and cos, see if it has already been calculated before
+
+        recalculate_trig = False
+        if pa not in self.psf_centx_notscaled:
+            recalculate_trig = True
+        else:
+            if pa_fk != self.curr_pa_fk[pa] or sep_fk != self.curr_sep_fk[pa]:
+                recalculate_trig = True
+        if recalculate_trig: # we could actually store the values for the different pas too...
+            self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - pa_fk - pa))
+            self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - pa_fk - pa))
+            self.curr_pa_fk[pa] = pa_fk
+            self.curr_sep_fk[pa] = sep_fk
+
+        psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
+        psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
+
+        # create a coordinate system for the image that is with respect to the model PSF
+        # round to nearest pixel and add offset for center
+        l = round(psf_centx + ref_center[0])
+        k = round(psf_centy + ref_center[1])
+        # recenter coordinate system about the location of the planet
+        x_stamp_centered = x_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centx
+        y_stamp_centered = y_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centy
+        # rescale to account for the align and scaling of the refernce PSFs
+        # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
+        x_stamp_centered /= (ref_wv/wv)
+        y_stamp_centered /= (ref_wv/wv)
+
+        if self.nearestNeigh_PSF_interp == 1:
+            # use intepolation spline to generate a model PSF and write to temp img
+            tmp = self.psfs_func_list[self.input_psfs_wvs.index(wv)](zip(x_stamp_centered.ravel(),y_stamp_centered.ravel()))
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = tmp.reshape((ny_psf, nx_psf))
+        elif self.nearestNeigh_PSF_interp == 2:
+            high_res_psf = self.psfs_func_list[self.input_psfs_wvs.index(wv)]
+            deltax = int(round(-(psf_centx + ref_center[0]-l)*self.sub_sampling_coef)) #/(ref_wv/wv)
+            deltay = int(round(-(psf_centy + ref_center[1]-k)*self.sub_sampling_coef)) #/(ref_wv/wv)
+            row_ind_vec = np.arange(self.sub_sampling_coef+deltay,(self.ny_psf+1)*self.sub_sampling_coef+deltay,self.sub_sampling_coef)
+            col_ind_vec = np.arange(self.sub_sampling_coef+deltax,(self.nx_psf+1)*self.sub_sampling_coef+deltax,self.sub_sampling_coef)
+            row_ind_grid ,col_ind_grid = np.meshgrid(row_ind_vec,col_ind_vec)
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = high_res_psf[row_ind_grid.ravel(),col_ind_grid.ravel()].reshape((self.ny_psf,self.nx_psf))
+            # print(row_ind_grid)
+            # print(col_ind_vec.shape)
+            # plt.figure(1)
+            # plt.imshow(high_res_psf[row_ind_grid.ravel(),col_ind_grid.ravel()].reshape((self.ny_psf,self.nx_psf)),interpolation = "nearest")
+            # plt.show()
+
+
+        # write model img to output (segment is collapsed in x/y so need to reshape)
+        whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
+        segment_with_model = copy(whiteboard[section_ind])
+        whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
+
+        # create a canvas to place the new PSF in the sector on
+        if 0:
+            blackboard = np.zeros((ny,nx))
+            blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
+            blackboard[section_ind] = segment_with_model
+            blackboard.shape = [input_img_shape[0],input_img_shape[1]]
+            plt.figure(1)
+            plt.subplot(1,2,1)
+            im = plt.imshow(whiteboard)
+            plt.colorbar(im)
+            plt.subplot(1,2,2)
+            im = plt.imshow(blackboard)
+            plt.colorbar(im)
+            plt.show()
+
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 1
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isfinite(self.stamp_PSF_mask))]=2
+        whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
+        mask = whiteboard[section_ind]
+
+        return segment_with_model,mask
 
     def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk):
         """
@@ -472,7 +674,10 @@ class MatchedFilter(NoFM):
             #print(self.pa,self.sep)
             #print(pa,wv)
             # grab PSF given wavelength
-            wv_index = np.where(wv == self.input_psfs_wvs)[0]
+            #print(self.input_psfs_wvs)
+            #print(wv)
+            wv_index = [self.input_psfs_wvs.index(wv)]#np.where(wv == self.input_psfs_wvs)[0]
+            #print(wv_index)
             #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
@@ -507,7 +712,7 @@ class MatchedFilter(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -530,8 +735,142 @@ class MatchedFilter(NoFM):
                 im = plt.imshow(blackboard)
                 plt.colorbar(im)
                 plt.show()
+
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
 
         return np.array(models)
 
 
+    def generate_models_nearestNeigh(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk):
+        """
+        Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
+
+        Args:
+            pas: array of N parallactic angles corresponding to N images [degrees]
+            wvs: array of N wavelengths of those images
+            radstart: radius of start of segment
+            radend: radius of end of segment
+            phistart: azimuthal start of segment [radians]
+            phiend: azimuthal end of segment [radians]
+            padding: amount of padding on each side of sector
+            ref_center: center of image
+            parang: parallactic angle of input image [DEGREES]
+            ref_wv: wavelength of science image
+
+        Return:
+            models: array of size (N, p) where p is the number of pixels in the segment
+        """
+        # create some parameters for a blank canvas to draw psfs on
+        nx = input_img_shape[1]
+        ny = input_img_shape[0]
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
+
+        numwv, ny_psf, nx_psf =  self.input_psfs.shape
+
+        # create bounds for PSF stamp size
+        row_m = np.floor(ny_psf/2.0)    # row_minus
+        row_p = np.ceil(ny_psf/2.0)     # row_plus
+        col_m = np.floor(nx_psf/2.0)    # col_minus
+        col_p = np.ceil(nx_psf/2.0)     # col_plus
+
+
+        # grab PSF given wavelength
+        # todo store in the object
+        #input_psfs_wvs_index_dict = {wv : wv_ind for wv_ind,wv in enumerate(self.input_psfs_wvs)}
+
+        # todo store in the object
+        #pas_unique = np.unique(pas)
+
+        #psf_centx_dict = {pa : sep_fk*np.cos(np.radians(90. - pa_fk - pa)) for pa in pas_unique}
+        #psf_centy_dict = {pa : sep_fk*np.sin(np.radians(90. - pa_fk - pa)) for pa in pas_unique}
+        #wv_ratio_dict = {(ref_wv,wv) : ref_wv/wv for ref_wv,wv in itertools.product(self.input_psfs_wvs,self.input_psfs_wvs)}
+
+        if 1:
+            # a blank img array of write model PSFs into
+            whiteboard = np.zeros((ny,nx))
+            models = []
+            #print(self.input_psfs.shape)
+            for pa, wv in zip(pas, wvs):
+                #psf_centx = wv_ratio_dict[ref_wv,wv] * psf_centx_dict[pa]
+                #psf_centy = wv_ratio_dict[ref_wv,wv] * psf_centy_dict[pa]
+                # find center of psf
+
+                # to reduce calculation of sin and cos, see if it has already been calculated before
+                recalculate_trig = False
+                if pa not in self.psf_centx_notscaled:
+                    recalculate_trig = True
+                else:
+                    #print(self.psf_centx_notscaled[pa],pa)
+                    if pa_fk != self.curr_pa_fk[pa] or sep_fk != self.curr_sep_fk[pa]:
+                        recalculate_trig = True
+                if recalculate_trig: # we could actually store the values for the different pas too...
+                    self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - pa_fk - pa))
+                    self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - pa_fk - pa))
+                    self.curr_pa_fk[pa] = pa_fk
+                    self.curr_sep_fk[pa] = sep_fk
+
+                psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
+                psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
+
+                # create a coordinate system for the image that is with respect to the model PSF
+                # round to nearest pixel and add offset for center
+                l = round(psf_centx + ref_center[0])
+                k = round(psf_centy + ref_center[1])
+                # recenter coordinate system about the location of the planet
+                x_stamp_centered = x_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centx
+                y_stamp_centered = y_grid[(k-row_m):(k+row_p), (l-col_m):(l+col_p)]-psf_centy
+                # rescale to account for the align and scaling of the refernce PSFs
+                # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
+                #x_stamp_centered /= wv_ratio_dict[ref_wv,wv]
+                #y_stamp_centered /= wv_ratio_dict[ref_wv,wv]
+                x_stamp_centered /= (ref_wv/wv)
+                y_stamp_centered /= (ref_wv/wv)
+
+                # use intepolation spline to generate a model PSF and write to temp img
+                #tmp = self.psfs_func_list[input_psfs_wvs_index_dict[wv]](zip(x_stamp_centered.ravel(),y_stamp_centered.ravel()))
+                #tmp = self.psfs_func_list[self.input_psfs_wvs.index(wv)](zip(x_stamp_centered.ravel(),y_stamp_centered.ravel()))
+                # tmp = self.psfs_func_list[self.input_psfs_wvs.index(wv)](zip(x_stamp_centered.ravel(),y_stamp_centered.ravel()))
+                # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = tmp.reshape((ny_psf, nx_psf))
+
+                if self.nearestNeigh_PSF_interp == 1:
+                    tmp = self.psfs_func_list[self.input_psfs_wvs.index(wv)](zip(x_stamp_centered.ravel(),y_stamp_centered.ravel()))
+                    whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = tmp.reshape((ny_psf, nx_psf))
+                elif self.nearestNeigh_PSF_interp == 2:
+                    high_res_psf = self.psfs_func_list[self.input_psfs_wvs.index(wv)]
+                    deltax = int(round(-(psf_centx + ref_center[0]-l)*self.sub_sampling_coef)) #/(ref_wv/wv)
+                    deltay = int(round(-(psf_centy + ref_center[1]-k)*self.sub_sampling_coef)) #/(ref_wv/wv)
+                    whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = high_res_psf[(self.row_ind_grid+deltay).ravel(),(self.col_ind_grid+deltax).ravel()].reshape((self.ny_psf,self.nx_psf))
+                    # print(row_ind_grid)
+                    # print(col_ind_vec.shape)
+                    # plt.figure(1)
+                    # plt.imshow(high_res_psf[row_ind_grid.ravel(),col_ind_grid.ravel()].reshape((self.ny_psf,self.nx_psf)),interpolation = "nearest")
+                    # plt.show()
+
+                # write model img to output (segment is collapsed in x/y so need to reshape)
+                whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                segment_with_model = copy(whiteboard[section_ind])
+                whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
+
+                models.append(segment_with_model)
+
+                # create a canvas to place the new PSF in the sector on
+                if 0:
+                    blackboard = np.zeros((ny,nx))
+                    blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                    blackboard[section_ind] = segment_with_model
+                    blackboard.shape = [input_img_shape[0],input_img_shape[1]]
+                    plt.figure(1)
+                    plt.subplot(1,2,1)
+                    im = plt.imshow(whiteboard)
+                    plt.colorbar(im)
+                    plt.subplot(1,2,2)
+                    im = plt.imshow(blackboard)
+                    plt.colorbar(im)
+                    plt.show()
+
+                whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
+
+        return np.array(models)
+        #plt.figure(1)
+        #plt.show()
+        #return 0

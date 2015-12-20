@@ -23,7 +23,8 @@ class NoFM(object):
         self.numbasis = numbasis
         self.outputs_shape = inputs_shape + numbasis.shape
         self.need_aux = False
-
+        self.mp_data_type = ctypes.c_double
+        self.np_data_type = float
 
     def alloc_output(self):
         """

@@ -137,10 +137,12 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
     N_pix = original_KL.shape[1]
 
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
-    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+    # JB: check if commenting that is fine
+    #refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
-    models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+    # JB: check if commenting that is fine
+    #models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
     #print(evals.shape,evecs.shape,original_KL.shape,refs.shape,models_ref.shape)
 
@@ -154,14 +156,15 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
     beta_tmp[np.diag_indices(np.size(evals))] = -0.5/evals
     beta = evals_ratio*beta_tmp
 
-    C =  models_mean_sub.dot(refs_mean_sub.transpose())+refs_mean_sub.dot(models_mean_sub.transpose())
+    C_partial = models_mean_sub.dot(refs_mean_sub.transpose())
+    C = C_partial+C_partial.transpose()
+    #C =  models_mean_sub.dot(refs_mean_sub.transpose())+refs_mean_sub.dot(models_mean_sub.transpose())
     alpha = (evecs.transpose()).dot(C).dot(evecs)
 
     delta_KL = (beta*alpha).dot(original_KL)+(evalse_inv_sqrt[:,None]*evecs.transpose()).dot(models_mean_sub)
 
 
     return delta_KL
-
 
 def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
     """
@@ -534,7 +537,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     fmout_shape = fmout_imgs_shape
 
 
-def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
+def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype=float):
     """
     Aligns and scales a subset of images
 
@@ -545,10 +548,10 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None):
     Returns:
         None
     """
-    original_imgs = _arraytonumpy(original, original_shape)
-    wvs_imgs = _arraytonumpy(img_wv)
-    centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2))
-    aligned_imgs = _arraytonumpy(aligned, aligned_shape)
+    original_imgs = _arraytonumpy(original, original_shape,dtype=dtype)
+    wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
+    centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2),dtype=dtype)
+    aligned_imgs = _arraytonumpy(aligned, aligned_shape,dtype=dtype)
 
     unique_wvs = np.unique(wvs_imgs)
 
@@ -906,30 +909,30 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # implement the thread pool
     # make a bunch of shared memory arrays to transfer data between threads
     # make the array for the original images and initalize it
-    original_imgs = mp.Array(ctypes.c_double, np.size(imgs))
+    original_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs))
     original_imgs_shape = imgs.shape
-    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape)
+    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape,dtype=fm_class.np_data_type)
     original_imgs_np[:] = imgs
     # make array for recentered/rescaled image for each wavelength
     unique_wvs = np.unique(wvs)
-    recentered_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(unique_wvs))
+    recentered_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs)*np.size(unique_wvs))
     recentered_imgs_shape = (np.size(unique_wvs),) + imgs.shape
 
     # remake the PA, wv, and center arrays as shared arrays
-    pa_imgs = mp.Array(ctypes.c_double, np.size(parangs))
-    pa_imgs_np = _arraytonumpy(pa_imgs)
+    pa_imgs = mp.Array(fm_class.mp_data_type, np.size(parangs))
+    pa_imgs_np = _arraytonumpy(pa_imgs,dtype=fm_class.np_data_type)
     pa_imgs_np[:] = parangs
-    wvs_imgs = mp.Array(ctypes.c_double, np.size(wvs))
-    wvs_imgs_np = _arraytonumpy(wvs_imgs)
+    wvs_imgs = mp.Array(fm_class.mp_data_type, np.size(wvs))
+    wvs_imgs_np = _arraytonumpy(wvs_imgs,dtype=fm_class.np_data_type)
     wvs_imgs_np[:] = wvs
-    centers_imgs = mp.Array(ctypes.c_double, np.size(centers))
-    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape)
+    centers_imgs = mp.Array(fm_class.mp_data_type, np.size(centers))
+    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=fm_class.np_data_type)
     centers_imgs_np[:] = centers
 
     # make output array which also has an extra dimension for the number of KL modes to use
     if save_klipped:
-        output_imgs = mp.Array(ctypes.c_double, np.size(imgs)*np.size(numbasis))
-        output_imgs_np = _arraytonumpy(output_imgs)
+        output_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs)*np.size(numbasis))
+        output_imgs_np = _arraytonumpy(output_imgs,dtype=fm_class.np_data_type)
         output_imgs_np[:] = np.nan
         output_imgs_numstacked = mp.Array(ctypes.c_int, np.size(imgs))
     else:
@@ -943,7 +946,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # Create Custom Shared Memory array fmout to save output of forward modelling
     fmout_data, fmout_shape = fm_class.alloc_fmout(output_imgs_shape)
     # JB debug
-    #print(np.size(_arraytonumpy(fmout_data,fmout_shape)),fmout_shape)
+    #print(np.size(_arraytonumpy(fmout_data,fmout_shape)),fmout_shape,dtype=fm_class.np_data_type)
     #return None
 
     # align and scale the images for each image. Use map to do this asynchronously]
@@ -963,7 +966,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     aligned_outputs = []
     for threadnum in range(numthreads):
         #multitask this
-        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads))]
+        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.np_data_type))]
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
@@ -1046,8 +1049,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
         # run custom function to handle end of sector post-processing analysis
-        interm_data_np = _arraytonumpy(interm_data, interm_shape)
-        fmout_np = _arraytonumpy(fmout_data, fmout_shape)
+        interm_data_np = _arraytonumpy(interm_data, interm_shape,dtype=fm_class.np_data_type)
+        fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
         fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
                                section_indicies=section_ind)
 
@@ -1066,7 +1069,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # Mean the output images if save_klipped is True
     if save_klipped:
         # Let's take the mean based on number of images stacked at a location
-        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
+        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.np_data_type)
         sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
         sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
@@ -1080,7 +1083,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         sub_imgs = None
 
     # put any finishing touches on the FM Output
-    fmout_np = _arraytonumpy(fmout_data, fmout_shape)
+    fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
     fmout_np = fm_class.cleanup_fmout(fmout_np)
 
     #all of the image centers are now at aligned_center
@@ -1143,7 +1146,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
     #load aligned images for this wavelength
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
 
@@ -1164,8 +1167,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths and PAs
-    wvs_imgs = _arraytonumpy(img_wv)
-    pa_imgs = _arraytonumpy(img_pa)
+    wvs_imgs = _arraytonumpy(img_wv,dtype=fm_class.np_data_type)
+    pa_imgs = _arraytonumpy(img_pa,dtype=fm_class.np_data_type)
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -1226,14 +1229,14 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numref = np.shape(ref_psfs_indicies)[0]
 
 
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
 
     # convert to numpy array if we are saving outputs
-    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
+    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]),dtype=fm_class.np_data_type)
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     # convert to numpy array if fmout is defined
-    fmout_np = _arraytonumpy(fmout, fmout_shape)
+    fmout_np = _arraytonumpy(fmout, fmout_shape,dtype=fm_class.np_data_type)
 
     # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
