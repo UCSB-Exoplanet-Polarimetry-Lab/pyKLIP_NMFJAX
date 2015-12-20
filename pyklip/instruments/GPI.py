@@ -441,7 +441,7 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-    def generate_psf_cube(self, boxw=14, threshold=0.05):
+    def generate_psf_cube(self, boxw=14, threshold=0.05, tapersize=0, zero_neg=False):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -455,6 +455,8 @@ class GPIData(Data):
             boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
             threashold: fractional pixel value of max pixel value below which everything gets set to 0's
+            tapersize: if > 0, apply a hann window on the edges with size equal to this argument
+            zero_neg: if True, set all negative values to zero instead
 
         Returns:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
@@ -545,6 +547,16 @@ class GPIData(Data):
 
                     stamp = ndimage.map_coordinates(stamp, [stamp_y+dx, stamp_x+dy])
                     #print(stamp)
+                    if tapersize > 0:
+                        tapery, taperx = np.indices(stamp.shape)
+                        taperr = np.sqrt((taperx-boxw/2)**2 + (tapery-boxw/2)**2)
+                        stamp[np.where(taperr > boxw/2)] = 0
+                        hann_window = 0.5  - 0.5 * np.cos(np.pi * (boxw/2 - taperr) / tapersize)
+                        taper_region = np.where(taperr > boxw/2 - tapersize)
+                        stamp[taper_region] *= hann_window[taper_region]
+                    if zero_neg:
+                        stamp[np.where(stamp < 0)] = 0
+
                     psfs[lambda_ref_id,:,:,i,loc_id] = stamp
 
 

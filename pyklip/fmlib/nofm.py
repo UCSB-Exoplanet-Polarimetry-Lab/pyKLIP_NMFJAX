@@ -73,8 +73,25 @@ class NoFM(object):
             output_img_shape: shape of output image (usually N,y,x,b)
 
         Returns:
-            fmout: mp.array to store auxilliary data in
-            fmout_shape: shape of auxilliary array
+            fmout: mp.array to store FM data in
+            fmout_shape: shape of FM data array
+
+        """
+
+        return None, None
+
+
+    def alloc_perturbmag(self, output_img_shape, numbasis):
+        """
+        Allocates shared memory to store the fractional magnitude of the linear KLIP perturbation
+
+        Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
+            numbasis: array/list of number of KL basis cutoffs requested
+
+        Returns:
+            perturbmag: mp.array to store linaer perturbation magnitude
+            perturbmag_shape: shape of linear perturbation magnitude
 
         """
 

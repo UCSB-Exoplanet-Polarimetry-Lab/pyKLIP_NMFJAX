@@ -13,7 +13,6 @@ from pyklip.parallelized import _arraytonumpy
 
 from sys import stdout
 
-import matplotlib.pyplot as plt
 parallel = True
 
 
@@ -165,6 +164,7 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
 
 
     return delta_KL
+
 
 def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
     """
@@ -490,7 +490,8 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 output_imgs_numstacked,
-                pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape):
+                pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape,
+                perturbmag_imgs, perturbmag_imgs_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array) - output_imgs does not need to be mp.Array and can be anything
@@ -512,9 +513,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         interm_imgs_shape: shape of interm_imgs. The first dimention should be N.
         fmout_imgs: array for output of forward modelling. What's stored in here depends on the class
         fmout_imgs_shape: shape of fmout
+        perturbmag_imgs: array for output of size of linear perturbation to assess validity
+        perturbmag_imgs_shape: shape of perturbmag_imgs
     """
     global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, \
-        img_wv, img_center, interm, interm_shape, fmout, fmout_shape
+        img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -530,11 +533,13 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_wv = wvs_imgs
     img_center = centers_imgs
 
-    #intermediate and auxilliary data to store
+    #intermediate and FM arrays
     interm = interm_imgs
     interm_shape = interm_imgs_shape
     fmout = fmout_imgs
     fmout_shape = fmout_imgs_shape
+    perturbmag = perturbmag_imgs
+    perturbmag_shape = perturbmag_imgs_shape
 
 
 def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype=float):
@@ -826,6 +831,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     specified by numbasis. Shape of (b,N,y,x).
                   Note: this will be None if save_klipped is False
         fmout_np: output of forward modelling.
+        perturbmag: output indicating the magnitude of the linear perturbation to assess validity of KLIP FM
     """
 
     ################## Interpret input arguments ####################
@@ -879,7 +885,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             # divide annuli into subsections
             dphi = 2 * np.pi / subsections
             phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
-            phi_bounds[-1][1] = 2 * np.pi
+            phi_bounds[-1][1] = 2 * np.pi - 0.0001
         else:
             phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
 
@@ -945,9 +951,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     # Create Custom Shared Memory array fmout to save output of forward modelling
     fmout_data, fmout_shape = fm_class.alloc_fmout(output_imgs_shape)
-    # JB debug
-    #print(np.size(_arraytonumpy(fmout_data,fmout_shape)),fmout_shape,dtype=fm_class.np_data_type)
-    #return None
+    # Create shared memory to keep track of validity of perturbation
+    perturbmag, perturbmag_shape = fm_class.alloc_perturbmag(output_imgs_shape, numbasis)
 
     # align and scale the images for each image. Use map to do this asynchronously]
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
@@ -966,7 +971,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     aligned_outputs = []
     for threadnum in range(numthreads):
         #multitask this
-        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.np_data_type))]
+        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads))]
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
@@ -1049,8 +1054,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
         # run custom function to handle end of sector post-processing analysis
-        interm_data_np = _arraytonumpy(interm_data, interm_shape,dtype=fm_class.np_data_type)
-        fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
+        interm_data_np = _arraytonumpy(interm_data, interm_shape)
+        fmout_np = _arraytonumpy(fmout_data, fmout_shape)
         fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
                                section_indicies=section_ind)
 
@@ -1069,7 +1074,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # Mean the output images if save_klipped is True
     if save_klipped:
         # Let's take the mean based on number of images stacked at a location
-        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.np_data_type)
+        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
         sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
         sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
@@ -1086,12 +1091,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
     fmout_np = fm_class.cleanup_fmout(fmout_np)
 
+    # convert pertrubmag to numpy
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.np_data_type)
+
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
 
     # Output for the sole PSFs
-    return sub_imgs, fmout_np
+    return sub_imgs, fmout_np, perturbmag_np
 
 
 
@@ -1146,7 +1154,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
     #load aligned images for this wavelength
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
 
@@ -1167,8 +1175,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths and PAs
-    wvs_imgs = _arraytonumpy(img_wv,dtype=fm_class.np_data_type)
-    pa_imgs = _arraytonumpy(img_pa,dtype=fm_class.np_data_type)
+    wvs_imgs = _arraytonumpy(img_wv)
+    pa_imgs = _arraytonumpy(img_pa)
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -1229,14 +1237,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numref = np.shape(ref_psfs_indicies)[0]
 
 
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
 
     # convert to numpy array if we are saving outputs
-    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]),dtype=fm_class.np_data_type)
+    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     # convert to numpy array if fmout is defined
     fmout_np = _arraytonumpy(fmout, fmout_shape,dtype=fm_class.np_data_type)
+    # convert to numpy array if pertrubmag is defined
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.np_data_type)
 
     # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
