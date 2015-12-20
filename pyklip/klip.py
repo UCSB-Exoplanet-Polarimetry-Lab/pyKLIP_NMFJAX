@@ -235,7 +235,7 @@ def calc_scaling(sats, refwv=18):
     scaling_factors = separations/separations[refwv]
     return scaling_factors
 
-def align_and_scale(img, new_center, old_center=None, scale_factor=1):
+def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float):
     """
     Helper function that realigns and/or scales the image
 
@@ -258,7 +258,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
-    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+    x, y = np.meshgrid(np.arange(dims[1], dtype=dtype), np.arange(dims[0], dtype=dtype))
     mod_flag = 0 #check how many modifications we are making
 
     #if old_center is specified, realign the images
