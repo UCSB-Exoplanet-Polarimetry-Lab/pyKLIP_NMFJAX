@@ -834,8 +834,8 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
     """
     spots_f = []
     for spotx, spoty in zip(spots_x, spots_y):
-        # JB: On going test..
         flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        # JB: On going test.. It might be a better flux estimation of the sat spot
         #flux = gaussfit2dLSQ(img, spotx, spoty)
         #print((flux,fwhm, xfit, yfit))
         spots_f.append(flux)

@@ -31,7 +31,7 @@ class MatchedFilter(NoFM):
                  star_type = None,
                  filter = None,
                  save_per_sector = None,
-                 datatype="double"):
+                 datatype="float"):
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, numbasis)
 
@@ -271,6 +271,7 @@ class MatchedFilter(NoFM):
             plt.colorbar()
             plt.show()
 
+        #print("coucou")
         # Get a list of the PAs and sep of the PA,sep map falling in the current section
         #where_section = where_section[0][::2]
         r_list = r_grid[where_section]
@@ -292,6 +293,7 @@ class MatchedFilter(NoFM):
                     model_sci,mask = self.generate_model_sci_nearestNeigh(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
                 else:
                     model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
+                #print("bye")
                 #print(model_sci)
                 #model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*1e-5
                 #model_sci *= self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*self.fake_contrast
@@ -307,7 +309,7 @@ class MatchedFilter(NoFM):
                 else:
                     #print("coucou")
                     models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
-
+                #print("bonjour")
                 #print(models_ref[0][where_fk])
                 # Calculate the spectra to determine the flux of each model reference PSF
                 input_spectrum =  self.spectrallib[spec_id]
@@ -326,8 +328,11 @@ class MatchedFilter(NoFM):
 
                 #print(klipped[:,N_KL_id].shape,postklip_psf[N_KL_id,:].shape)
 
+                if 0 and np.size(klipped[where_background,N_KL_id])==0:
+                    print("3")
+                    print(where_background)
 
-                if 0:
+                    #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
                     blackboard2 = np.zeros((self.ny,self.nx))
                     blackboard3 = np.zeros((self.ny,self.nx))
@@ -366,6 +371,7 @@ class MatchedFilter(NoFM):
                 # print(np.sum(klipped[where_fk,N_KL_id]*postklip_psf[N_KL_id,where_fk]))
                 # print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
                 # print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
+                #print(postklip_psf.shape)
                 fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
                 fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
@@ -495,11 +501,20 @@ class MatchedFilter(NoFM):
         segment_with_model = copy(whiteboard[section_ind])
         whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
+
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 1
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isfinite(self.stamp_PSF_mask))]=2
+        whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
+        mask = whiteboard[section_ind]
+
         # create a canvas to place the new PSF in the sector on
-        if 0:
+        if 0:#np.size(np.where(mask==2)[0])==0:
+            whiteboard.shape = (input_img_shape[0], input_img_shape[1])
+            print(whiteboard.shape)
+            print(section_ind)
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
-            blackboard[section_ind] = segment_with_model
+            blackboard[section_ind] = 1#segment_with_model
             blackboard.shape = [input_img_shape[0],input_img_shape[1]]
             plt.figure(1)
             plt.subplot(1,2,1)
@@ -509,11 +524,6 @@ class MatchedFilter(NoFM):
             im = plt.imshow(blackboard)
             plt.colorbar(im)
             plt.show()
-
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 1
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isfinite(self.stamp_PSF_mask))]=2
-        whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
-        mask = whiteboard[section_ind]
 
         return segment_with_model,mask
 

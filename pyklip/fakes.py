@@ -393,7 +393,7 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         print(x,y)
         #calculate the flux
         flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
-        
+        #flux= gaussfit2dLSQ(frame, x, y, searchrad=searchrad)
         peakfluxes.append(flux)
 
     return np.array(peakfluxes)

@@ -16,6 +16,16 @@ from sys import stdout
 parallel = True
 
 
+def find_id_nearest(array,value):
+    """
+    Find index of the closest value in input array to input value
+    :param array: 1D array
+    :param value: scalar value
+    :return: Index of the nearest value in array
+    """
+    id = (np.abs(array-value)).argmin()
+    return id
+
 def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, spec_included=False, spec_from_model=False):
     """
     linear algebra of KLIP with linear perturbation
@@ -26,6 +36,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
+                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
         covar_psfs: covariance matrix of reference images (for large N, useful). Normalized following numpy normalization in np.cov documentation
         # The following arguments must all be passed in, or none of them for klip_math to work
         models_ref: N x p array of the N models corresponding to reference images. Each model should be normalized to unity (no flux information)
@@ -65,13 +76,27 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
     # calculate the total number of KL basis we need based on the number of reference PSFs and number requested
     tot_basis = covar_psfs.shape[0]
-    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
-    max_basis = np.max(numbasis) + 1
 
-    # calculate eigenvectors/values of covariance matrix
-    evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-max_basis, tot_basis-1))
-    evals = np.copy(evals[::-1])
-    evecs = np.copy(evecs[:,::-1])
+    if numbasis[0] == 0:
+        evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-np.min([100,tot_basis-1]), tot_basis-1))
+        evals = np.copy(evals[::-1])
+        evecs = np.copy(evecs[:,::-1])
+        # import matplotlib.pyplot as plt
+        # plt.plot(np.log10(evals))
+        # plt.show()
+
+        max_basis = find_id_nearest(evals/evals[2],10**-1.25)+1
+        print(max_basis)
+        evals = evals[:max_basis]
+        evecs = evecs[:,:max_basis]
+    else:
+        numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
+        max_basis = np.max(numbasis) + 1
+
+        # calculate eigenvectors/values of covariance matrix
+        evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-max_basis, tot_basis-1))
+        evals = np.copy(evals[::-1])
+        evecs = np.copy(evecs[:,::-1])
 
     # project on reference PSFs to generate KL modes
     KL_basis = np.dot(refs_mean_sub.T,evecs)
@@ -91,9 +116,15 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     inner_products = np.dot(sci_mean_sub_rows, KL_basis.T)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
     inner_products = inner_products * lower_tri
-    klip = np.dot(inner_products[numbasis,:], KL_basis)
+
+    if numbasis[0] == 0:
+        klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+    else:
+        klip = np.dot(inner_products[numbasis,:], KL_basis)
+
     sub_img_rows_selected = sci_rows_selected - klip
     sub_img_rows_selected[sci_nanpix] = np.nan
+
 
     if models_ref is not None:
 
@@ -313,6 +344,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
                          Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
         orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
         numbasis: array of KL mode cutoffs
+                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
         sci: array of size p representing the science data
         model_sci: array of size p corresponding to the PSF of the science frame
         input_spectrum: array of size wv with the assumed spectrum of the model
@@ -325,14 +357,18 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
               (shape of b,p)
     """
     max_basis = original_KL.shape[0]
-    numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
+    if numbasis[0]==0:
+        numbasis_index = [max_basis-1]
+    else:
+        numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     # remove means and nans from science image
+    #print("c")
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
     sci_mean_sub[sci_nanpix] = 0
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
-    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
+    #sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
 
 
     # science PSF models, ready for FM
@@ -549,6 +585,8 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype
     Args:
         thread_index: index of thread, break-up algin and scale equally among threads
         algined_center: center to align things to
+        numthreads: Number of threads to be used. if none mp.cpu_count() is used.
+        dtype: data type of the arrays for numpy (Should match the type used for the shared multiprocessing arrays)
 
     Returns:
         None
@@ -806,9 +844,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         N_pix_sector: Rough number of pixels in a sector. Overwriting subsections and making it sepration dependent.
                   The number of subsections is defined such that the number of pixel is just higher than N_pix_sector.
                   I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
+                  Warning: There is a bug if N_pix_sector is too big for the first annulus. The annulus is defined from
+                            0 to 2pi which create a bug later on. It is probably in the way pa_start and pa_end are
+                            defined in fm_from_eigen(). (I am taking about matched filter by the way)
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
@@ -848,8 +890,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         else:
             numbasis = np.array([numbasis])
 
-    if maxnumbasis is None:
+    if numbasis[0]==0:
+        if np.size(numbasis)>1:
+            print("numbasis should have only one element if numbasis[0] = 0.")
+            return None
+
+    if maxnumbasis is None and numbasis[0]>0:
         maxnumbasis = np.max(numbasis)
+    elif maxnumbasis is None and numbasis[0]==0:
+        maxnumbasis = 100
 
     if numthreads is None:
         numthreads = mp.cpu_count()
@@ -899,7 +948,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             dphi = 2 * np.pi / curr_sep_subsections
             phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_subsections)]
             phi_bounds_list[-1][1] = 2 * np.pi
-
+            # for phi_bound in phi_bounds_list:
+            #     print(((r_min,r_max),phi_bound) )
             iterator_sectors.extend([((r_min,r_max),phi_bound) for phi_bound in phi_bounds_list ])
         tot_sectors = len(iterator_sectors)
 
@@ -908,6 +958,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     ##JB debug
     #print(phi_bounds[0][0]/np.pi*180,phi_bounds[0][1]/np.pi*180)
     #print(rad_bounds)
+    #print(phi_bounds_list)
     #return None
 
     ########################### Create Shared Memory ###################################
@@ -967,16 +1018,16 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                  fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
 
+
     print("Begin align and scale images for each wavelength")
     aligned_outputs = []
     for threadnum in range(numthreads):
         #multitask this
-        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads))]
+        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.np_data_type))]
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
             aligned_output.wait()
-
 
     print("Align and scale finished")
 
@@ -1003,6 +1054,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         # calculate sector size
         section_ind = _get_section_indicies(original_imgs_shape[1:], aligned_center, radstart, radend, phistart, phiend,
                                             padding, 0,[IWA,OWA])
+        #print(np.shape(section_ind))
+        #print(radstart, radend, phistart, phiend)
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
         interm_data, interm_shape = fm_class.alloc_interm(sector_size, original_imgs_shape[0])
@@ -1054,8 +1107,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
         # run custom function to handle end of sector post-processing analysis
-        interm_data_np = _arraytonumpy(interm_data, interm_shape)
-        fmout_np = _arraytonumpy(fmout_data, fmout_shape)
+        interm_data_np = _arraytonumpy(interm_data, interm_shape,dtype=fm_class.np_data_type)
+        fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
         fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
                                section_indicies=section_ind)
 
@@ -1074,7 +1127,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # Mean the output images if save_klipped is True
     if save_klipped:
         # Let's take the mean based on number of images stacked at a location
-        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape)
+        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.np_data_type)
         sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
         sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
@@ -1125,6 +1178,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
                 It defines the separation interva in which klip will be run.
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         maxmove:minimum movement (opposite of minmove) - CURRENTLY NOT USED
@@ -1154,7 +1208,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
     #load aligned images for this wavelength
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
 
@@ -1175,8 +1229,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths and PAs
-    wvs_imgs = _arraytonumpy(img_wv)
-    pa_imgs = _arraytonumpy(img_pa)
+    wvs_imgs = _arraytonumpy(img_wv,dtype=fm_class.np_data_type)
+    pa_imgs = _arraytonumpy(img_pa,dtype=fm_class.np_data_type)
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -1210,7 +1264,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
     covar_files = covar_psfs[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
 
-
     # pick only the most correlated reference PSFs if there's more than enough PSFs
     maxbasis_requested = maxnumbasis
     maxbasis_possible = np.size(file_ind)
@@ -1237,10 +1290,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numref = np.shape(ref_psfs_indicies)[0]
 
 
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]))[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
 
     # convert to numpy array if we are saving outputs
-    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]))
+    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]),dtype=fm_class.np_data_type)
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     # convert to numpy array if fmout is defined
