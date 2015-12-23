@@ -45,6 +45,8 @@ class MatchedFilter(NoFM):
         if save_per_sector is not None:
             self.fmout_dir = save_per_sector
             self.save_fmout = True
+        else:
+            self.save_fmout = False
 
         self.N_numbasis =  np.size(numbasis)
         self.ny = self.inputs_shape[1]

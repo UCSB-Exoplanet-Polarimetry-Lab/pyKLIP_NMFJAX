@@ -957,6 +957,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     tot_iter = np.size(np.unique(wvs)) * tot_sectors
     ##JB debug
     #print(phi_bounds[0][0]/np.pi*180,phi_bounds[0][1]/np.pi*180)
+    #print(iterator_sectors)
     #print(rad_bounds)
     #print(phi_bounds_list)
     #return None
