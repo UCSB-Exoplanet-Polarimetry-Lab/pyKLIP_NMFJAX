@@ -1239,8 +1239,12 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     if spectrum is None:
         goodmv = (moves >= minmove)
     else:
-        # optimize the selection based on the spectral template rather than just an exclusion principle
-        goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+        if minmove > 0:
+            # optimize the selection based on the spectral template rather than just an exclusion principle
+            goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+        else:
+            # handle edge case of minmove == 0
+            goodmv = (moves >= minmove) # should be all true
 
     # enough field rotation
     if minrot > 0:
