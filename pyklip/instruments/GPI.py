@@ -324,7 +324,7 @@ class GPIData(Data):
             thispath = thispath.replace("\\", '/')
             splited = thispath.split("/")
             fname = splited[-1]
-            matches = re.search('S20[0-9]{6}[SE][0-9]{4}', fname)
+            matches = re.search('S20[0-9]{6}[SE][0-9]{4}(_fixed)?', fname)
             filename = matches.group(0)
             hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
