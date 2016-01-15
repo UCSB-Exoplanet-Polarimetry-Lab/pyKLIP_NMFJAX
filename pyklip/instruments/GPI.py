@@ -278,7 +278,7 @@ class GPIData(Data):
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
@@ -838,6 +838,8 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
         # JB: On going test.. It might be a better flux estimation of the sat spot
         #flux = gaussfit2dLSQ(img, spotx, spoty)
         #print((flux,fwhm, xfit, yfit))
+        if flux == np.inf:
+            flux == np.nan
         spots_f.append(flux)
 
     return spots_f
