@@ -93,7 +93,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
                    should be centered at the center of each of the template images
         astr_hdrs: array of size N of the WCS headers
         radius: separation of the planet from the star
-        pa: parallactic angle (in degrees) of  planet (if that is a quantity that makes any sense)
+        pa: position angle (in degrees) of  planet
         fwhm: fwhm (in pixels) of gaussian
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
                 array of size N
@@ -104,6 +104,10 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
 
     if thetas is None:
         thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
+
+    if (np.size(inputflux) == 1):
+        #input is probably a number and we want an array
+        inputflux = np.ones(frames.shape[0]) * inputflux
 
     for frame, center, inputpsf, theta in zip(frames, centers, inputflux, thetas):
         #calculate the x,y location of the planet for each image
