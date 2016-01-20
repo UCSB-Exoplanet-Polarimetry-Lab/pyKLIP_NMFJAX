@@ -3,6 +3,8 @@ from scipy import optimize
 import scipy.ndimage as ndimage
 import scipy.interpolate as interp
 
+from scipy.optimize import minimize
+
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
     Given a parallactic angle (angle from N to Zenith rotating in the Eastward direction), calculate what
@@ -206,6 +208,16 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
             frame += _construct_gaussian_disk(center[0], center[1], frame.shape[1], frame.shape[0], inputpsf, theta, fwhm=fwhm)
 
 
+# def gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0, theta = 0, offset = 0):
+#     xo = float(xo)
+#     yo = float(yo)
+#     a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
+#     b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
+#     c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
+#     g = offset + amplitude*np.exp( - (a*((x-xo)**2) + 2*b*(x-xo)*(y-yo)
+#                             + c*((y-yo)**2)))
+#     return g
+
 def gauss2d(x0, y0, peak, sigma):
     '''
     2d symmetric guassian function for guassfit2d
@@ -294,6 +306,62 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
 
     return corrflux, fwhm, xfit, yfit
 
+
+
+def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):
+    """
+    Calculate the squared norm of the residuals of the model with the data.
+    Helper function for least square fit.
+    The model is a 2d symmetric gaussian.
+
+    :param planet_image: stamp image (y,x) of the satellite spot.
+    :param x_grid: x samples grid as given by meshgrid.
+    :param y_grid: y samples grid as given by meshgrid.
+    :param a: amplitude of the 2d gaussian
+    :param x_cen: x center of the gaussian
+    :param y_cen: y center of the gaussian
+    :param sig: standard deviation of the gaussian
+    :return: Squared norm of the residuals
+    """
+    #gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0, theta = 0, offset = 0)
+    model = gauss2d(x_cen,y_cen, a, sig)(x_grid, y_grid)
+    #model = gauss2d(x_grid, y_grid,a,x_cen,y_cen,sig,sig,0.0)
+    return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
+
+def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5):
+    """
+    Estimate satellite spot amplitude (peak value) by fitting a symmetric 2d gaussian.
+    Fit parameters: x,y position, amplitude, standard deviation (same in x and y direction)
+
+    :param frame: the data - Array of size (y,x)
+    :param xguess: x location to fit the 2d guassian to.
+    :param yguess: y location to fit the 2d guassian to.
+    :param searchrad: 1/2 the length of the box used for the fit
+    :return: scalar: Estimation of the peak flux of the satellite spot.
+            ie Amplitude of the fitted gaussian.
+    """
+    x0 = np.round(xguess)
+    y0 = np.round(yguess)
+    #construct our searchbox
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
+
+    xguess_box = xguess-x0 + searchrad
+    yguess_box = yguess-y0 + searchrad
+
+    xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xguess_box, np.arange(0, 2*searchrad+1, 1.0)-yguess_box)
+
+    param0 = [xguess,0.,0.,1.5]
+    LSQ_func = lambda para: LSQ_gauss2d(fitbox,xfitbox, yfitbox,para[0],para[1],para[2],para[3])
+    param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
+
+
+    if (param_fit[1]**2+param_fit[2]**2)>2.**2 or (param_fit[0]/param0[0] >10.) or param_fit[3] > 3. or param_fit[3] < 0.5:
+        returned_flux = np.nan
+    else:
+        returned_flux = param_fit[0]
+
+    return returned_flux
+
 def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False, thetas=None):
     """
     Retrives the peak flux of the planet from a series of frames given a separation and PA
@@ -329,7 +397,7 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         print(x,y)
         #calculate the flux
         flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
-        
+        #flux= gaussfit2dLSQ(frame, x, y, searchrad=searchrad)
         peakfluxes.append(flux)
 
     return np.array(peakfluxes)

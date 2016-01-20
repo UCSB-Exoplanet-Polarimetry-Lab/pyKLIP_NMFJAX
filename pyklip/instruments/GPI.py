@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 
 
+import multiprocessing as mp
 
 
 #different imports depending on if python2.7 or python3
@@ -27,6 +28,7 @@ else:
 from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
+from pyklip.fakes import gaussfit2dLSQ
 
 class GPIData(Data):
     """
@@ -276,7 +278,7 @@ class GPIData(Data):
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
@@ -439,7 +441,7 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-    def generate_psf_cube(self, boxw=14, threshold=0.05):
+    def generate_psf_cube(self, boxw=14, threshold=0.05, tapersize=0, zero_neg=False):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -453,6 +455,8 @@ class GPIData(Data):
             boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
             threashold: fractional pixel value of max pixel value below which everything gets set to 0's
+            tapersize: if > 0, apply a hann window on the edges with size equal to this argument
+            zero_neg: if True, set all negative values to zero instead
 
         Returns:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
@@ -543,6 +547,16 @@ class GPIData(Data):
 
                     stamp = ndimage.map_coordinates(stamp, [stamp_y+dx, stamp_x+dy])
                     #print(stamp)
+                    if tapersize > 0:
+                        tapery, taperx = np.indices(stamp.shape)
+                        taperr = np.sqrt((taperx-boxw/2)**2 + (tapery-boxw/2)**2)
+                        stamp[np.where(taperr > boxw/2)] = 0
+                        hann_window = 0.5  - 0.5 * np.cos(np.pi * (boxw/2 - taperr) / tapersize)
+                        taper_region = np.where(taperr > boxw/2 - tapersize)
+                        stamp[taper_region] *= hann_window[taper_region]
+                    if zero_neg:
+                        stamp[np.where(stamp < 0)] = 0
+
                     psfs[lambda_ref_id,:,:,i,loc_id] = stamp
 
 
@@ -791,13 +805,29 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False):
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
     if highpassed:
+
         #remeasure satellite spot fluxes
         spot_fluxes = []
-        for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
-            new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
-            spot_fluxes.append(np.nanmean(new_spotfluxes))
+        # JB: On going test..
+        if 1:
+            for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
+                new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
+                if np.sum(np.isfinite(new_spotfluxes)) == 0:
+                    print((slice, spots_xs, spots_ys))
+                spot_fluxes.append(np.nanmean(new_spotfluxes))
+        else:
+            numthreads = 10
+            tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+            tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
+                                                            args=(slice, spots_xs, spots_ys))
+                                            for id,(slice, spots_xs, spots_ys) in enumerate(zip(cube, spots_xloc, spots_yloc))]
 
-            
+            for out in tpool_outputs:
+                out.wait()
+                new_spotfluxes = out.get()
+                spot_fluxes.append(np.nanmean(new_spotfluxes))
+
+        #print(spot_fluxes)
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 
@@ -815,6 +845,11 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
     spots_f = []
     for spotx, spoty in zip(spots_x, spots_y):
         flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        # JB: On going test.. It might be a better flux estimation of the sat spot
+        #flux = gaussfit2dLSQ(img, spotx, spoty)
+        #print((flux,fwhm, xfit, yfit))
+        if flux == np.inf:
+            flux == np.nan
         spots_f.append(flux)
 
     return spots_f
