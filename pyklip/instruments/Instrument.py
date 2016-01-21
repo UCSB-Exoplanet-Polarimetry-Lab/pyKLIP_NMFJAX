@@ -160,11 +160,22 @@ class Data(object):
         return NotImplementedError("Subclass needs to implement this!")
 
     @abc.abstractmethod
-    def calibrate_output(self):
+    def calibrate_data(self, img, spectral=False):
         """
-        Calibrates the flux of the output klipped data.
+        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
+        on if the spectral flag is set.
 
-        Assumes self.output exists and has shape (b,N,y,x) for N is the number of images and b is
-        number of KL modes used.
+        Assumes the broadband flux calibration is just multiplication by a single scalar number whereas spectral
+        datacubes may have a separate calibration value for each wavelength
+
+        Args:
+            img: unclaibrated image.
+                 If spectral is not set, this can either be a 2-D or 3-D broadband image
+                 where the last two dimensions are [y,x]
+                 If specetral is True, this is a 3-D spectral cube with shape [wv,y,x]
+            spectral: if True, this is a spectral datacube. Otherwise, it is a broadband image.
+
+        Return:
+            calib_img: calibrated image of the same shape
         """
         return NotImplementedError("Subclass needs to implement this!")

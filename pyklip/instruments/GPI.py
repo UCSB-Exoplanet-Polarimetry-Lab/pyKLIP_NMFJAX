@@ -391,21 +391,36 @@ class GPIData(Data):
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
-    def calibrate_output(self, units="contrast"):
+    def calibrate_data(self, img, spectral=False, units="contrast"):
         """
-        Calibrates the flux of the output of PSF subtracted data.
+       Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
+        on if the spectral flag is set.
 
-        Assumes self.output exists and has shape (b,N,y,x) for N is the number of images and b is
-        number of KL modes used.
+        Assumes the broadband flux calibration is just multiplication by a single scalar number whereas spectral
+        datacubes may have a separate calibration value for each wavelength
 
         Args:
+            img: unclaibrated image.
+                 If spectral is not set, this can either be a 2-D or 3-D broadband image
+                 where the last two dimensions are [y,x]
+                 If specetral is True, this is a 3-D spectral cube with shape [wv,y,x]
+            spectral: if True, this is a spectral datacube. Otherwise, it is a broadband image.
             units: currently only support "contrast" w.r.t central star
-        Returns:
-            stores calibrated data in self.output
+
+        Return:
+            img: calibrated image of the same shape (this is the same object as the input!!!)
         """
         if units == "contrast":
-            self.output *= self.contrast_scaling
-        
+            if spectral:
+                # spectral cube, each slice needs it's own calibration
+                numwvs = img.shape[0]
+                img *= self.contrast_scaling[:numwvs, None, None]
+            else:
+                # broadband image
+                img *= np.nanmean(self.contrast_scaling)
+
+        return img
+
 
     def generate_psfs(self, boxrad=7):
         """
