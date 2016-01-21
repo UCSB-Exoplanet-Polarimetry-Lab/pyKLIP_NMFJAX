@@ -5,3 +5,8 @@
 !pyklip/pickles/*.fits
 !pyklip/filters/*.fits
 version.py
+pyklip.egg-info/
+gitstats/
+.idea/
+testing_scripts/
+
