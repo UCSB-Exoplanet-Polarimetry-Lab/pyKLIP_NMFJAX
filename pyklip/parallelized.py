@@ -57,7 +57,8 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     seg_basis = seg_basis_shared
     seg_shape = seg_shape_shared
 
-def _arraytonumpy(shared_array, shape=None,dtype=float):
+
+def _arraytonumpy(shared_array, shape=None, dtype=float):
     """
     Covert a shared array to a numpy array
     Args:
@@ -67,8 +68,13 @@ def _arraytonumpy(shared_array, shape=None,dtype=float):
 
     Return:
         numpy_array: numpy array for vectorized operation. still points to the same memory!
+                     returns None is shared_array is None
     """
-    numpy_array = np.frombuffer(shared_array.get_obj(),dtype=dtype)
+    # if you passed in nothing you get nothing
+    if shared_array is None:
+        return None
+
+    numpy_array = np.frombuffer(shared_array.get_obj(), dtype=dtype)
     if shape is not None:
         numpy_array.shape = shape
 
@@ -1545,8 +1551,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             fits.writeto("test_seg_index.fits", seg_index_array, clobber=True)
 
         dataset.output = klipped_imgs
-        if calibrate_flux:
-            dataset.calibrate_output()
 
         # TODO: handling of only a single numbasis
         # derotate all the images
@@ -1617,6 +1621,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
                 KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
                               / np.mean(spectra_template)
+
+            # broadband flux calibration for KL mode cube
+            if calibrate_flux:
+                KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all-PSFs.fits", KLmode_cube,
                                       klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                                       zaxis=numbasis, fakePlparams = fakePlparams, astr_hdr=dataset.wcs[0],
@@ -1625,6 +1633,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
+                # save data
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube-PSFs.fits".format(KLcutoff),
                                  spectral_cube, klipparams=klipparams.format(numbasis=str(numbasis)),
                                  filetype="PSF Subtracted Spectral Cube", fakePlparams = fakePlparams,
@@ -1638,6 +1650,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
                 KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
                               / np.mean(spectra_template)
+            # broadband flux calibration for KL mode cube
+            if calibrate_flux:
+                KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                              klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                              zaxis=numbasis)
@@ -1645,9 +1660,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # for each KL mode, collapse in time to examine spectra
             KLmode_spectral_cubes = np.nanmean(dataset.output, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
                                  spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                                  filetype="PSF Subtracted Spectral Cube")
+
     elif mode == 'ADI':
         unique_wvs = np.unique(dataset.wvs)
         totwvs = np.size(unique_wvs)
@@ -1691,8 +1710,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # then collapse N/wv together
         dataset.output = np.reshape(dataset.output, (dataset.output.shape[0], dataset.output.shape[1]*dataset.output.shape[2], dataset.output.shape[3], dataset.output.shape[4]) )
 
-        if calibrate_flux == True:
-            dataset.calibrate_output()
 
         # TODO: handling of only a single numbasis
         # derotate all the images
@@ -1725,6 +1742,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(dataset.output, axis=(1))
+        # calibrate broadband flux if needed
+        if calibrate_flux:
+            KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
 
@@ -1734,7 +1755,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             oldshape = dataset.output.shape
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
+
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
                                   klipparams=klipparams.format(numbasis=KLcutoff), filetype="PSF Subtracted Spectral Cube")
 
@@ -1749,11 +1774,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             dataset.output = klip_output
 
-
-        if calibrate_flux:
-            dataset.calibrate_output()
-
-        # TODO: handling of only a single numbasis
         # derotate all the images
         # first we need to flatten so it's just a 3D array
         oldshape = dataset.output.shape
@@ -1783,14 +1803,17 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Writing Images to directory {0}".format(outputdirpath))
 
         # collapse in time and wavelength to examine KL modes
-        # collapse in time and wavelength to examine KL modes
         if spectrum is None:
             KLmode_cube = np.nanmean(dataset.output, axis=(1,2))
         else:
-            #do the mean combine by weighting by the spectrum
+            # do the mean combine by weighting by the spectrum
             spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
             KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
                           / np.mean(spectra_template)
+
+        # broadband photometry calibration
+        if calibrate_flux:
+            KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
 
@@ -1801,6 +1824,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
+
                 dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff), spectral_cube,
                                  klipparams=klipparams.format(numbasis=KLcutoff), filetype="PSF Subtracted Spectral Cube")
 
