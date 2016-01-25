@@ -1,12 +1,14 @@
 # pyKLIP README #
 
-A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo.
+A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo (see contributors.txt for a detailed list).
 If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [http://ascl.net/1506.001](http://ascl.net/1506.001).
 
 ### Overview ###
 
 * Implementation of [KLIP](http://arxiv.org/abs/1207.4197) in Python
 * Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
+* Can forward model PSFs through KLIP analytically using the KLIP-FM (Pueyo in press) framework
+* Post-processing planet detection algorithms included
 * Parallelized with both a quick memory-intensive mdoe and a slower memory-lite mode
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
 [GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
@@ -19,7 +21,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 * scipy
 * astropy
 * python2.7 or python3.4
-* Recommended: a computer with lots of cores (16+) and lots of memory (40 GB for a standard GPI 1hr sequence without using lite mode)
+* Recommended: a computer with lots of cores (16+) and lots of memory (20 GB for a standard GPI 1hr sequence without using lite mode)
 
 ### Installation ###
 
@@ -74,4 +76,5 @@ To measure the contrast (ignoring algorithm throughput), the ``klip.meas_contras
         import pyklip.klip as klip
 
         avgframe = np.nanmean(dataset.output[1], axis=(0,1))
-        seps, contrast = klip.meas_contrast(avgframe, dataset.IWA, 1.1/GPI.GPIData.lenslet_scale, 3.5)
+        calib_frame = dataset.calibrate_output(avgframe)
+        seps, contrast = klip.meas_contrast(calib_frame, dataset.IWA, 1.1/GPI.GPIData.lenslet_scale, 3.5)
