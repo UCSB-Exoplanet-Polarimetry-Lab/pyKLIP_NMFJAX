@@ -160,7 +160,7 @@ class Data(object):
         return NotImplementedError("Subclass needs to implement this!")
 
     @abc.abstractmethod
-    def calibrate_data(self, img, spectral=False):
+    def calibrate_output(self, img, spectral=False):
         """
         Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.

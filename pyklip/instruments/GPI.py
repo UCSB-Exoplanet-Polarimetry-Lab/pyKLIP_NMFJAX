@@ -99,7 +99,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=False):
+    def __init__(self, filepaths=None, skipslices=None, highpass=True):
         """
         Initialization code for GPIData
 
@@ -366,8 +366,16 @@ class GPIData(Data):
         #write flux units/conversion
         hdulist[1].header['FUNIT'] = (self.flux_units, "Flux units of data")
         if self.flux_units.upper() == 'CONTRAST':
-            hdulist[1].header['DN2CON'] = (self.contrast_scaling, "Contrast/DN")
-            hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(self.contrast_scaling))
+            if "spectral" in filetype.lower():
+                # individual contrast scalings for spectral cube
+                for wv_i in range(data.shape[0]):
+                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.contrast_scaling[wv_i], "Contrast/DN for slice {0}".format(wv_i))
+                hdulist[0].header.add_history("Converted to contrast units using CON2DN scaling for each wv slice")
+            else:
+                # broadband cube so only have one scaling
+                broadband_contrast_scaling = np.nanmean(self.contrast_scaling)
+                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
+                hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
 
         # write z axis units if necessary
         if zaxis is not None:
@@ -417,7 +425,7 @@ class GPIData(Data):
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
-    def calibrate_data(self, img, spectral=False, units="contrast"):
+    def calibrate_output(self, img, spectral=False, units="contrast"):
         """
        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.
@@ -847,31 +855,34 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False):
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
+
+    # remeasure satellite spot fluxes
     if highpassed:
 
-        # remeasure satellite spot fluxes
-        spot_fluxes = []
+        # only do for spec mode, because I don't have the pol mode photometry tool implemented here
+        if exthdr['CTYPE3'].strip() == 'WAVE':
+            spot_fluxes = []
 
-        if 1:
-            # default sat spot measuring code
-            for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
-                new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
-                if np.sum(np.isfinite(new_spotfluxes)) == 0:
-                    print("Infite satellite spot fluxes", (slice, spots_xs, spots_ys))
-                spot_fluxes.append(np.nanmean(new_spotfluxes))
+            if 1:
+                # default sat spot measuring code
+                for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
+                    new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
+                    if np.sum(np.isfinite(new_spotfluxes)) == 0:
+                        print("Infite satellite spot fluxes", (slice, spots_xs, spots_ys))
+                    spot_fluxes.append(np.nanmean(new_spotfluxes))
 
-        else:
-            # JB: On going test..
-            numthreads = 10
-            tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
-            tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
-                                                            args=(slice, spots_xs, spots_ys))
-                                            for id,(slice, spots_xs, spots_ys) in enumerate(zip(cube, spots_xloc, spots_yloc))]
+            else:
+                # JB: On going test..
+                numthreads = 10
+                tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+                tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
+                                                                args=(slice, spots_xs, spots_ys))
+                                                for id,(slice, spots_xs, spots_ys) in enumerate(zip(cube, spots_xloc, spots_yloc))]
 
-            for out in tpool_outputs:
-                out.wait()
-                new_spotfluxes = out.get()
-                spot_fluxes.append(np.nanmean(new_spotfluxes))
+                for out in tpool_outputs:
+                    out.wait()
+                    new_spotfluxes = out.get()
+                    spot_fluxes.append(np.nanmean(new_spotfluxes))
 
         #print(spot_fluxes)
 
