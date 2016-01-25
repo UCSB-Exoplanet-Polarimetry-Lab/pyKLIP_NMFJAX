@@ -302,6 +302,10 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     gmask[outofaper] = 0 
     corrflux = np.nansum(fitbox*gmask)/np.sum(gmask*gmask)
 
+    if not np.isfinite(corrflux):
+        # if it's infinite, it is bad
+        corrflux = np.nan
+
     #print("Fitparams", xfit, yfit, corrflux, fwhm)
 
     return corrflux, fwhm, xfit, yfit
