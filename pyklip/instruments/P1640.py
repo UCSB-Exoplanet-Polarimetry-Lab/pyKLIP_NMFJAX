@@ -25,6 +25,7 @@ from pyklip.instruments.utils.nair import nMathar
 
 from pyklip.instruments.P1640_support import P1640spots
 from pyklip.instruments.P1640_support import P1640utils
+#from pyklip.instruments.P1640_support import cube_verifier
 
 from scipy.interpolate import interp1d
 
@@ -692,7 +693,7 @@ def get_p1640_spot_filepaths(config, data_filepath):
     spot_filebasename = os.path.splitext(os.path.basename(data_filepath))[0] + spot_filepostfix
     spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
     spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
-     return spot_filepaths
+    return spot_filepaths
 
 def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=True):
     """
