@@ -5,6 +5,7 @@ from copy import deepcopy
 
 import astropy.io.fits as fits
 from astropy import wcs
+import astropy.stats as astrostats
 import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
@@ -198,7 +199,7 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None, highpass=False):
+    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False):
         """
         Method to open and read a list of GPI data
 
@@ -207,6 +208,7 @@ class GPIData(Data):
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units
+            meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -230,7 +232,7 @@ class GPIData(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass)
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux)
 
             data.append(cube)
             centers.append(center)
@@ -275,6 +277,13 @@ class GPIData(Data):
                     print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
                           "{0}".format(filenames[i*dims[1]]))
 
+        # contrast_scaling = np.zeros(dims[1])
+        # spot_fluxes_wvs = np.reshape(spot_fluxes, (dims[0], dims[1]))
+        # for wv_i in range(dims[1]):
+        #     spot_fluxes_wv = spot_fluxes_wvs[:,wv_i]
+        #     spot_fluxes_wv_filt = astrostats.sigma_clip(spot_fluxes_wv, sig=5, iters=2)
+        #     contrast_scaling[i] = GPIData.spot_ratio[ppm_band]/np.nanmean(spot_fluxes_wv_filt)
+
         #set these as the fields for the GPIData object
         self._input = data
         self._centers = centers
@@ -287,6 +296,7 @@ class GPIData(Data):
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
         self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
@@ -722,7 +732,7 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False):
+def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False):
     """
     Method to open and parse a GPI file
 
@@ -731,6 +741,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False):
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        meas_satspot_flux: if True, measure sat spot fluxes. Will be down after high pass filter
 
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -857,7 +868,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False):
             highpassed = True
 
     # remeasure satellite spot fluxes
-    if highpassed:
+    if meas_satspot_flux:
 
         # only do for spec mode, because I don't have the pol mode photometry tool implemented here
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -902,10 +913,16 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
     """
     spots_f = []
     for spotx, spoty in zip(spots_x, spots_y):
-        flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        # flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
+        flux = gaussfit2dLSQ(img, spotx, spoty)
+        fwhm = 3
 
         if flux == np.inf:
-            flux == np.nan
+            flux = np.nan
+
+        if (fwhm < 1) | (fwhm > 10):
+            # most definitely bogus measurements
+            flux = np.nan
 
         spots_f.append(flux)
 
