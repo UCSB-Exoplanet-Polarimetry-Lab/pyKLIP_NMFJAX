@@ -301,8 +301,10 @@ class P1640Data(Data):
 
         """
         hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(header=None))
-        hdulist.append(fits.ImageHDU(header=self.exthdrs[0], data=data, name="Sci"))
+        hdulist.append(fits.PrimaryHDU(header=None, data=data))
+        # store all headers from the source files
+        for i, ext in enumerate(self.exthdrs):
+            hdulist.append(fits.ImageHDU(header=ext, name="Sci_{0:02d}".format(i)))
 
         # save all the files we used in the reduction
         # we'll assume you used all the input files
