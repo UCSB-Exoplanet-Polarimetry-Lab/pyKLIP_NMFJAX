@@ -13,7 +13,7 @@ from pyklip.parallelized import _arraytonumpy
 
 from sys import stdout
 
-parallel = True
+parallel = False
 
 
 def find_id_nearest(array,value):
@@ -77,6 +77,9 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     # calculate the total number of KL basis we need based on the number of reference PSFs and number requested
     tot_basis = covar_psfs.shape[0]
 
+    import pdb
+    pdb.set_trace()
+
     if numbasis[0] == 0:
         evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-np.min([100,tot_basis-1]), tot_basis-1))
         evals = np.copy(evals[::-1])
@@ -117,10 +120,10 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
     inner_products = inner_products * lower_tri
 
-    if numbasis[0] == 0:
-        klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
-    else:
-        klip = np.dot(inner_products[numbasis,:], KL_basis)
+    # if numbasis[0] == 0: # JB, this code is broken here. It will always do this if the first numbasis is 1.
+    #     klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+    # else:
+    #     klip = np.dot(inner_products[numbasis,:], KL_basis)
 
     sub_img_rows_selected = sci_rows_selected - klip
     sub_img_rows_selected[sci_nanpix] = np.nan
@@ -962,6 +965,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     #print(phi_bounds_list)
     #return None
 
+    import pdb
+    pdb.set_trace()
+
     ########################### Create Shared Memory ###################################
 
     # implement the thread pool
@@ -1294,6 +1300,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numpix = np.shape(section_ind)[1]
     numref = np.shape(ref_psfs_indicies)[0]
 
+    import pdb
+    pdb.set_trace()
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
 
