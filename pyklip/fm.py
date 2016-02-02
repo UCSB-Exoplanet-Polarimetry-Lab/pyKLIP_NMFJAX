@@ -117,10 +117,13 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
     inner_products = inner_products * lower_tri
 
-    # if numbasis[0] == 0: # JB, this code is broken here. It will always do this if the first numbasis is 1.
-    #     klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
-    # else:
-    #     klip = np.dot(inner_products[numbasis,:], KL_basis)
+    # JB, this code is broken here. It will always do this if the first numbasis is 1.
+    # if numbasis[0] == 0:
+    if False:
+        klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+    else:
+        klip = np.dot(inner_products[numbasis,:], KL_basis)
+
 
     sub_img_rows_selected = sci_rows_selected - klip
     sub_img_rows_selected[sci_nanpix] = np.nan
