@@ -39,8 +39,8 @@ If you use multiple versions of python, you will need to run ``setup.py`` with e
 
 If you are noticing your load averages greatly exceeding the number of threads/CPUS, consider setting the following variable:
 
-:::bash
-$ export OPENBLAS_NUM_THREADS=1   
+    :::bash
+       $ export OPENBLAS_NUM_THREADS=1   
 
 ### Bugs/Feature Requests ###
 
