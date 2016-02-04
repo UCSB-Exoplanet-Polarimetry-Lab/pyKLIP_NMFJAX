@@ -35,7 +35,12 @@ Then ``cd`` into it and run ``setup.py`` with the ``develop`` option
     :::bash
         $ python setup.py develop
 
-If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).  
+If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).
+
+If you are noticing your load averages greatly exceeding the number of threads/CPUS, consider setting the following variable:
+
+:::bash
+$ export OPENBLAS_NUM_THREADS=1   
 
 ### Bugs/Feature Requests ###
 
