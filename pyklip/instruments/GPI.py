@@ -301,7 +301,7 @@ class GPIData(Data):
         self.exthdrs = exthdrs
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,user_prihdr = None, user_exthdr = None ):
+                 fakePlparams = None,user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -315,6 +315,10 @@ class GPIData(Data):
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
             fakePlparams: fake planet params
+            user_prihdr: User defined primary headers to be used instead
+            user_exthdr: User defined extension headers to be used instead
+            extra_exthdr_keywords: Fits keywords to be added to the extension header before saving the file
+            extra_prihdr_keywords: Fits keywords to be added to the primary header before saving the file
 
         """
         hdulist = fits.HDUList()
@@ -386,6 +390,12 @@ class GPIData(Data):
                 broadband_contrast_scaling = np.nanmean(self.contrast_scaling)
                 hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
                 hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
+
+
+        for name,value in extra_prihdr_keywords:
+             hdulist[0].header[name] = value
+        for name,value in extra_exthdr_keywords:
+             hdulist[1].header[name] = value
 
         # write z axis units if necessary
         if zaxis is not None:

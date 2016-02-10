@@ -23,7 +23,7 @@ debug = False
 
 class MatchedFilter(NoFM):
     """
-    Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
+    Matched filter with forward modelling.
     """
     def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,# flux_conversion,
                  spectrallib = None,
