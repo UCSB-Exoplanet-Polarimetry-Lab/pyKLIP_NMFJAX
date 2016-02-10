@@ -186,8 +186,8 @@ class FMMF(NoMetric):
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(spectrum_filename)[:160] #skip wavelegnths longer of 10 microns
+        self.spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
         spectrum_wvs = spectrum_dat[:,1]
         spectrum_fluxes = spectrum_dat[:,3]
         spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
@@ -197,7 +197,7 @@ class FMMF(NoMetric):
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [spectrum_filename]],
+                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
                                      mute = False,
                                      star_type = None,
                                      filter = self.filter,
@@ -343,18 +343,17 @@ class FMMF(NoMetric):
 
 
         if spectrum is None:
-            spec_name = "t600g32nc"
-            spec_path = "g32ncflx"+os.path.sep+spec_name+".flx"
+            self.spectrum_name = "t600g32nc"
+            spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
         else:
-            spec_name = spectrum.split(os.path.sep)[-1].split(".")[0]
-            print(spec_name)
+            self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+spec_name+"_{0:.2f}".format(self.mvt)
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(spectrum_filename)[:160] #skip wavelegnths longer of 10 microns
+        self.spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
         spectrum_wvs = spectrum_dat[:,1]
         spectrum_fluxes = spectrum_dat[:,3]
         spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
@@ -364,7 +363,7 @@ class FMMF(NoMetric):
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [spectrum_filename]],
+                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
                                      mute = False,
                                      star_type = self.star_type,
                                      filter = self.filter,

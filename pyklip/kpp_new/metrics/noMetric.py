@@ -185,7 +185,7 @@ class NoMetric(object):
             try:
                 self.filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename)[0])
             except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename+"doesn't exist.")
+                raise Exception("File "+self.inputDir+os.path.sep+self.filename+" doesn't exist.")
 
         # Open the fits file on which the metric will be applied
         hdulist = pyfits.open(self.filename_path)
