@@ -391,11 +391,12 @@ class GPIData(Data):
                 hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
                 hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
 
-
-        for name,value in extra_prihdr_keywords:
-             hdulist[0].header[name] = value
-        for name,value in extra_exthdr_keywords:
-             hdulist[1].header[name] = value
+        if extra_prihdr_keywords is not None:
+            for name,value in extra_prihdr_keywords:
+                 hdulist[0].header[name] = value
+        if extra_exthdr_keywords is not None:
+            for name,value in extra_exthdr_keywords:
+                 hdulist[1].header[name] = value
 
         # write z axis units if necessary
         if zaxis is not None:

@@ -180,7 +180,9 @@ class FMMF(NoMetric):
             spec_path = "g32ncflx"+os.path.sep+spec_name+".flx"
         else:
             spec_name = spectrum.split(os.path.sep)[-1].split(".")[0]
-            print(spec_name)
+            spec_path = spectrum
+
+        self.folderName = self.spectrum_name+os.path.sep
 
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+spec_name+"_{0:.2f}".format(self.mvt)
 
@@ -347,7 +349,10 @@ class FMMF(NoMetric):
             spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
         else:
             self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
+            spec_path = spectrum
 
+        self.folderName = self.spectrum_name+os.path.sep
+        
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
