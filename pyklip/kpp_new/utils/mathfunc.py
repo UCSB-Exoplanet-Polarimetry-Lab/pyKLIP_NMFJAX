@@ -16,3 +16,10 @@ def gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 
 def hat(x, y, radius):
     r2 = x**2+y**2
     return r2 <= radius*radius
+
+def model_exp(x,m,alpha):
+    return np.exp(-alpha*x-m)
+
+def LSQ_model_exp(x,y,m,alpha):
+    y_model = model_exp(x,m,alpha)
+    return (y-y_model)/np.sqrt(y_model)

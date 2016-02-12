@@ -20,12 +20,6 @@ def LSQ_model_expExp(x,y,a,m,alpha):
     y_model = model_expExp(x,a,m,alpha)
     return (y-y_model)/y_model
 
-def model_exp(x,m,alpha):
-    return np.exp(-alpha*x-m)
-
-def LSQ_model_exp(x,y,m,alpha):
-    y_model = model_exp(x,m,alpha)
-    return (y-y_model)/np.sqrt(y_model)
 
 
 def model_gauss1D(x,a,m,sigma):
@@ -489,6 +483,27 @@ def get_image_stat_map(image,
                        Dr= None,
                        Dth = None,
                        type = "SNR"):
+    """
+    Calculate SNR or probability (tail distribution values) maps.
+
+    :param image: The image or cubes for which one wants the statistic.
+    :param image_without_planet: Same as image but where real signal has been masked out. The code will actually use
+                                map to calculate the standard deviation or the density function.
+    :param mask_radius: Radius of the mask used around the current pixel when use_mask_per_pixel = True.
+    :param use_mask_per_pixel: Calculate a new standard deviation or density function for every single pixel by masking
+                                out the neighboring values (cf mask_radius)
+    :param IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
+                statistic is calculated.
+    :param N:
+    :param centroid:
+    :param r_step:
+    :param mute:
+    :param N_threads:
+    :param Dr:
+    :param Dth:
+    :param type:
+    :return:
+    """
 
     if np.size(image.shape) == 3:
         # NOT TESTED

@@ -1,20 +1,22 @@
 __author__ = 'JB'
 
 import os
-import astropy.io.fits as pyfits
-import numpy as np
 from copy import copy
 from glob import glob
 from sys import stdout
 import multiprocessing as mp
 import itertools
 
-from pyklip.kpp_new.metrics.noMetric import NoMetric
+import astropy.io.fits as pyfits
+import numpy as np
+
+from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
 from pyklip.instruments import GPI
 import pyklip.kpp_new.utils.mathfunc as kppmath
 import pyklip.spectra_management as spec
 
-class ShapeOrMF(NoMetric):
+
+class ShapeOrMF(KPPSuperClass):
     """
     Class calculating the shape or matched filter metric for a GPI 2D image or a 3D cube.
 
@@ -35,7 +37,7 @@ class ShapeOrMF(NoMetric):
 
     /!\ Caution: Most of the features need testing. Please contact jruffio@stanford.edu if there is a bug.
 
-    Inherit from the Super class NoMetric
+    Inherit from the Super class KPPSuperClass
     """
     def __init__(self,filename,metric_type,kernel_type,
                  inputDir = None,
@@ -43,7 +45,7 @@ class ShapeOrMF(NoMetric):
                  PSF_cube_filename = None,
                  mute=None,
                  N_threads=None,
-                 overwrite_metric=False,
+                 overwrite=False,
                  kernel_width = None,
                  sky_aper_radius = None,
                  label = None):
@@ -106,14 +108,13 @@ class ShapeOrMF(NoMetric):
                                      folderName = None,
                                      mute=mute,
                                      N_threads=N_threads,
-                                     label=label)
+                                     label=label,
+                                     overwrite=overwrite)
 
         if metric_type != "shape" and metric_type != "MF":
             raise Exception("Bad metric_type. Should be either 'shape' or 'PSF'.")
         else:
             self.metric_type = metric_type
-
-        self.overwrite_metric = overwrite_metric
 
         # Defalt value of kernel_type is "PSF"
         if kernel_type == None:
@@ -285,7 +286,7 @@ class ShapeOrMF(NoMetric):
         # caution.
 
         # The super class already read the fits file
-        super(ShapeOrMF, self).initialize(inputDir = inputDir,
+        init_out = super(ShapeOrMF, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label=label)
@@ -462,7 +463,10 @@ class ShapeOrMF(NoMetric):
             else:
                 self.PSF_flat = PSF
 
-        self.nl_PSF, self.ny_PSF, self.nx_PSF = self.PSF_cube.shape
+        if self.is3D:
+            self.nl_PSF, self.ny_PSF, self.nx_PSF = self.PSF_cube.shape
+        else:
+            self.ny_PSF, self.nx_PSF = self.PSF_flat.shape
 
         self.star_type = star_type
         self.star_temperature = star_temperature
@@ -542,20 +546,23 @@ class ShapeOrMF(NoMetric):
 
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
 
-        return None
+        return init_out
 
     def check_existence(self):
         """
         Check if this metric has already been calculated for this file.
 
-        If self.overwrite_metric is True then the output will always be False
+        If self.overwrite is True then the output will always be False
 
         :return: Boolean indicating the existence of the metric map.
         """
 
         file_exist = (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')) >= 1)
 
-        return file_exist and not self.overwrite_metric
+        if file_exist and not self.mute:
+            print("Output already exist.")
+
+        return file_exist and not self.overwrite
 
 
     def calculate(self):
@@ -597,9 +604,15 @@ class ShapeOrMF(NoMetric):
             print("Calculate the criterion map. It is done pixel per pixel so it might take a while...")
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,self.nx_PSF,1)-self.nx_PSF/2,
                                                          np.arange(0,self.ny_PSF,1)-self.ny_PSF/2)
-        stamp_PSF_mask = np.ones((self.nl,self.ny_PSF,self.nx_PSF))
         r_PSF_stamp = (stamp_PSF_x_grid)**2 +(stamp_PSF_y_grid)**2
-        stamp_PSF_mask[np.where(r_PSF_stamp < (self.sky_aper_radius**2))] = np.nan
+        where_mask = np.where(r_PSF_stamp < (self.sky_aper_radius**2))
+        if self.is3D:
+            stamp_PSF_mask = np.ones((self.nl,self.ny_PSF,self.nx_PSF))
+            stamp_PSF_mask[:,where_mask] = np.nan
+        else:
+            stamp_PSF_mask = np.ones((self.ny_PSF,self.nx_PSF))
+            stamp_PSF_mask[where_mask] = np.nan
+
 
         if self.N_threads > 0:
             pool = mp.Pool(processes=self.N_threads)
@@ -634,6 +647,21 @@ class ShapeOrMF(NoMetric):
                     func = calculate_shape2D_metric_star
                 else:
                     func = calculate_MF2D_metric_star
+
+                # tpool_outputs = []
+                # tpool_outputs += [pool.apply_async(calculate_shape2D_metric,
+                #                                     args=(a))
+                #                     for a in itertools.izip(chunks_row_indices,
+                #                                            chunks_col_indices,
+                #                                            itertools.repeat(self.image),
+                #                                            itertools.repeat(self.PSF_flat),
+                #                                            itertools.repeat(stamp_PSF_mask))]
+                # while len(tpool_outputs) > 0:
+                #     coucou = tpool_outputs.pop(0)
+                #     coucou.wait()
+                #     print(coucou.get())
+                # print("coucou")
+
                 outputs_list = pool.map(func, itertools.izip(chunks_row_indices,
                                                            chunks_col_indices,
                                                            itertools.repeat(self.image),
@@ -684,15 +712,17 @@ class ShapeOrMF(NoMetric):
         if hasattr(self,"prihdr") and hasattr(self,"exthdr"):
             # Save the parameters as fits keywords
             # MET##### stands for METric
-            self.exthdr["MET_TYPE"] = self.metricMap
+            self.exthdr["MET_TYPE"] = self.metric_type
 
             self.exthdr["METFILEN"] = self.filename_path
             self.exthdr["METKERTY"] = self.kernel_type
             self.exthdr["METSKYRA"] = self.sky_aper_radius
             self.exthdr["METINDIR"] = self.inputDir
             self.exthdr["METOUTDI"] = self.outputDir
-            self.exthdr["METFOLDI"] = self.folderName
+            self.exthdr["METFOLDN"] = self.folderName
             self.exthdr["METCDATE"] = self.compact_date
+            self.exthdr["METPREFI"] = self.prefix
+            self.exthdr["METSUFFI"] = self.suffix
 
             # This parameters are not always defined
             if hasattr(self,"spectrum_name"):
@@ -705,6 +735,8 @@ class ShapeOrMF(NoMetric):
                 self.exthdr["METSTTYP"] = self.star_type
             if hasattr(self,"star_temperature"):
                 self.exthdr["METSTTEM"] = self.star_temperature
+            if hasattr(self,"kernel_width"):
+                self.exthdr["METKERWI"] = self.kernel_width
 
             hdulist = pyfits.HDUList()
             hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
@@ -713,6 +745,34 @@ class ShapeOrMF(NoMetric):
         else:
             hdulist = pyfits.HDUList()
             hdulist.append(pyfits.ImageHDU(data=self.metricMap, name=self.suffix))
+            hdulist.append(pyfits.ImageHDU(name=self.suffix))
+
+            hdulist[1].header["MET_TYPE"] = self.metricMap
+
+            hdulist[1].header["METFILEN"] = self.filename_path
+            hdulist[1].header["METKERTY"] = self.kernel_type
+            hdulist[1].header["METSKYRA"] = self.sky_aper_radius
+            hdulist[1].header["METINDIR"] = self.inputDir
+            hdulist[1].header["METOUTDI"] = self.outputDir
+            hdulist[1].header["METFOLDN"] = self.folderName
+            hdulist[1].header["METCDATE"] = self.compact_date
+            hdulist[1].header["METPREFI"] = self.prefix
+            hdulist[1].header["METSUFFI"] = self.suffix
+
+            # This parameters are not always defined
+            if hasattr(self,"spectrum_name"):
+                hdulist[1].header["METSPECN"] = self.spectrum_name
+            if hasattr(self,"spectrum_filename"):
+                hdulist[1].header["METSPECF"] = self.spectrum_filename
+            if hasattr(self,"PSF_cube_path"):
+                hdulist[1].header["METPSFDI"] = self.PSF_cube_path
+            if hasattr(self,"star_type"):
+                hdulist[1].header["METSTTYP"] = self.star_type
+            if hasattr(self,"star_temperature"):
+                hdulist[1].header["METSTTEM"] = self.star_temperature
+            if hasattr(self,"kernel_width"):
+                hdulist[1].header["METKERWI"] = self.kernel_width
+
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
 
         return None
@@ -743,7 +803,7 @@ def calculate_shape2D_metric_star(params):
     Convert `f([1,2])` to `f(1,2)` call.
     It allows one to call calculate_shape3D_metric() with a tuple of parameters.
     """
-    return calculate_shape3D_metric(*params)
+    return calculate_shape2D_metric(*params)
 
 def calculate_shape2D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, mute = True):
     '''
@@ -774,14 +834,13 @@ def calculate_shape2D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
     '''
 
     # Shape of the PSF cube
-    nl,ny_PSF,nx_PSF = PSF_cube.shape
+    ny_PSF,nx_PSF = PSF_cube.shape
 
     # Number of rows and columns to add around a given pixel in order to extract a stamp.
     row_m = np.floor(ny_PSF/2.0)    # row_minus
     row_p = np.ceil(ny_PSF/2.0)     # row_plus
     col_m = np.floor(nx_PSF/2.0)    # col_minus
     col_p = np.ceil(nx_PSF/2.0)     # col_plus
-
     # Number of pixels on which the metric has to be computed
     N_it = row_indices.size
     # Define an shape vector full of nans
@@ -922,7 +981,7 @@ def calculate_MF2D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, 
     '''
 
     # Shape of the PSF cube
-    nl,ny_PSF,nx_PSF = PSF_cube.shape
+    ny_PSF,nx_PSF = PSF_cube.shape
 
     # Number of rows and columns to add around a given pixel in order to extract a stamp.
     row_m = np.floor(ny_PSF/2.0)    # row_minus
@@ -943,7 +1002,7 @@ def calculate_MF2D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mask, 
                 stdout.flush()
 
             # Extract stamp cube around the current pixel from the whoel cube
-            stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+            stamp_cube = copy(cube[(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
             # Remove average value of the surrounding pixels in each slice of the stamp cube
             for slice_id in range(nl):
                 stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)

@@ -1,25 +1,21 @@
 __author__ = 'JB'
 
-
 import os
+from glob import glob
+
 import astropy.io.fits as pyfits
 import numpy as np
-from copy import copy
-from glob import glob
-from sys import stdout
-import multiprocessing as mp
-import itertools
 import scipy.interpolate as interp
 
-from pyklip.kpp_new.metrics.noMetric import NoMetric
+from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
 from pyklip.instruments import GPI
-import pyklip.kpp_new.utils.mathfunc as kppmath
 import pyklip.spectra_management as spec
 import pyklip.fm as fm
 import pyklip.fmlib.matchedFilter as mf
 import pyklip.klip as klip
 
-class FMMF(NoMetric):
+
+class FMMF(KPPSuperClass):
     """
     Forward model matched filter for GPI.
 
@@ -27,7 +23,7 @@ class FMMF(NoMetric):
 
     /!\ Caution: Most of the features need testing. Please contact jruffio@stanford.edu if there is a bug.
 
-    Inherit from the Super class NoMetric
+    Inherit from the Super class KPPSuperClass
     """
     def __init__(self,
                  filename = None,
@@ -36,7 +32,7 @@ class FMMF(NoMetric):
                  PSF_cube_filename = None,
                  mute=None,
                  N_threads=None,
-                 overwrite_metric=False,
+                 overwrite=False,
                  numbasis = None,
                  maxnumbasis = None,
                  mvt = None,
@@ -92,7 +88,11 @@ class FMMF(NoMetric):
                                      folderName = None,
                                      mute=mute,
                                      N_threads=N_threads,
-                                     label=label)
+                                     label=label,
+                                     overwrite=overwrite)
+
+        # Prevent the class to iterate over all the files matching filename
+        self.process_all_files = False
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -100,7 +100,6 @@ class FMMF(NoMetric):
             self.filename = filename
 
 
-        self.overwrite_metric = overwrite_metric
         self.PSF_cube_filename = PSF_cube_filename
 
         self.save_per_sector = None
@@ -262,7 +261,7 @@ class FMMF(NoMetric):
         # caution.
 
         # The super class already read the fits file
-        super(FMMF, self).initialize(inputDir = inputDir,
+        init_out = super(FMMF, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label=label)
@@ -374,13 +373,13 @@ class FMMF(NoMetric):
                                      filter = self.filter,
                                      save_per_sector = self.save_per_sector)
 
-        return None
+        return init_out
 
     def check_existence(self):
         """
         Check if this metric has already been calculated for this file.
 
-        If self.overwrite_metric is True then the output will always be False
+        If self.overwrite is True then the output will always be False
 
         :return: Boolean indicating the existence of the metric map.
         """
@@ -392,8 +391,10 @@ class FMMF(NoMetric):
                and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix2+'.fits')) >= 1)\
                and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix3+'.fits')) >= 1)
 
+        if file_exist and not self.mute:
+            print("Output already exist.")
 
-        return file_exist and not self.overwrite_metric
+        return file_exist and not self.overwrite
 
 
     def calculate(self):
@@ -465,11 +466,13 @@ class FMMF(NoMetric):
                                  ("METFILEN",self.filename_path),
                                  ("METINDIR",self.inputDir),
                                  ("METOUTDI",self.outputDir),
-                                 ("METFOLDI",self.folderName),
+                                 ("METFOLDN",self.folderName),
                                  ("METCDATE",self.compact_date),
                                  ("METSPECN",self.spectrum_name),
                                  ("METSPECF",self.spectrum_filename),
-                                 ("METPSFDI",self.PSF_cube_path)]
+                                 ("METPSFDI",self.PSF_cube_path),
+                                 ("METPREFI",self.prefix),
+                                 ("METSUFFI",self.suffix)]
 
         if hasattr(self,"star_type"):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))

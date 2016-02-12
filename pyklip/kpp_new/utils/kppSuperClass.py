@@ -5,7 +5,7 @@ import astropy.io.fits as pyfits
 from glob import glob
 import multiprocessing as mp
 
-class NoMetric(object):
+class KPPSuperClass(object):
     """
     Super class for all metric calculation classes (ie matched filter, shape, weighted collapse...).
     Has fall-back functions for all metric dependent calls so that each metric class does not need to implement
@@ -20,7 +20,8 @@ class NoMetric(object):
                  folderName = None,
                  mute=None,
                  N_threads=None,
-                 label = None):
+                 label = None,
+                 overwrite = False):
         """
         Define the general parameters of the metric.
 
@@ -57,6 +58,8 @@ class NoMetric(object):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
 
+
+        self.overwrite = overwrite
 
         # Define a default folderName is the one given is None.
         if folderName is None:
@@ -148,6 +151,11 @@ class NoMetric(object):
         :return: None
         """
 
+        if not hasattr(self,"id_matching_file"):
+            self.id_matching_file = 0
+        if not hasattr(self,"process_all_files"):
+            self.process_all_files = True
+
         if label is None:
             if self.label is None:
                 self.label = "default"
@@ -167,28 +175,38 @@ class NoMetric(object):
             self.inputDir = os.path.abspath(inputDir)
 
         # If outputDir is None define it as the project directory.
+        if outputDir is None:
+            self.outputDir = self.outputDir
+        else:
+            self.outputDir = os.path.abspath(outputDir)
         if self.outputDir is None:
             if self.inputDir is None:
                 self.outputDir = os.path.abspath("."+os.path.sep+"planet_detec_"+self.label)
             else:
                 self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"planet_detec_"+self.label)
         else:
-            self.outputDir = os.path.abspath(outputDir)
+            self.outputDir = os.path.abspath(self.outputDir)
 
         # Check file existence and define filename_path
         if self.inputDir is None:
             try:
-                self.filename_path = os.path.abspath(glob(self.filename)[0])
+                self.filename_path = os.path.abspath(glob(self.filename)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.filename))
             except:
                 raise Exception("File "+self.filename+"doesn't exist.")
         else:
             try:
-                self.filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename)[0])
+                self.filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename))
             except:
                 raise Exception("File "+self.inputDir+os.path.sep+self.filename+" doesn't exist.")
 
+        self.id_matching_file = self.id_matching_file+1
+
         # Open the fits file on which the metric will be applied
         hdulist = pyfits.open(self.filename_path)
+        if not self.mute:
+            print("Opened: "+self.filename_path)
 
         # grab the data and headers
         try:
@@ -215,8 +233,10 @@ class NoMetric(object):
         else:
             raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
 
-
-        return None
+        if self.process_all_files:
+            return [self.id_matching_file, self.N_matching_files]
+        else:
+            return [0, 0]
 
     def check_existence(self):
         """
