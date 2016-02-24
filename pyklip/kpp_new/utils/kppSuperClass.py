@@ -58,7 +58,6 @@ class KPPSuperClass(object):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
 
-
         self.overwrite = overwrite
 
         # Define a default folderName is the one given is None.
@@ -121,7 +120,8 @@ class KPPSuperClass(object):
     def initialize(self,inputDir = None,
                          outputDir = None,
                          folderName = None,
-                         label = None):
+                         label = None,
+                         read = True):
         """
         Initialize the non general inputs that are needed for the metric calculation and load required files.
 
@@ -147,6 +147,7 @@ class KPPSuperClass(object):
                         The convention is to have one folder per spectral template.
                         Usually this folderName should be defined by the class itself and not by the user.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param read: If true (default) read the fits file according to inputDir and filename.
 
         :return: None
         """
@@ -187,54 +188,57 @@ class KPPSuperClass(object):
         else:
             self.outputDir = os.path.abspath(self.outputDir)
 
-        # Check file existence and define filename_path
-        if self.inputDir is None:
-            try:
-                self.filename_path = os.path.abspath(glob(self.filename)[self.id_matching_file])
-                self.N_matching_files = len(glob(self.filename))
-            except:
-                raise Exception("File "+self.filename+"doesn't exist.")
-        else:
-            try:
-                self.filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename)[self.id_matching_file])
-                self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename))
-            except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename+" doesn't exist.")
+        if read:
+            # Check file existence and define filename_path
+            if self.inputDir is None:
+                try:
+                    self.filename_path = os.path.abspath(glob(self.filename)[self.id_matching_file])
+                    self.N_matching_files = len(glob(self.filename))
+                except:
+                    raise Exception("File "+self.filename+"doesn't exist.")
+            else:
+                try:
+                    self.filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename)[self.id_matching_file])
+                    self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename))
+                except:
+                    raise Exception("File "+self.inputDir+os.path.sep+self.filename+" doesn't exist.")
 
-        self.id_matching_file = self.id_matching_file+1
+            self.id_matching_file = self.id_matching_file+1
 
-        # Open the fits file on which the metric will be applied
-        hdulist = pyfits.open(self.filename_path)
-        if not self.mute:
-            print("Opened: "+self.filename_path)
-
-        # grab the data and headers
-        try:
-            self.image = hdulist[1].data
-            self.exthdr = hdulist[1].header
-            self.prihdr = hdulist[0].header
-        except:
-            # This except was used for datacube not following GPI headers convention.
+            # Open the fits file on which the metric will be applied
+            hdulist = pyfits.open(self.filename_path)
             if not self.mute:
-                print("Couldn't read the fits file with GPI conventions. Try assuming data in primary and no headers.")
+                print("Opened: "+self.filename_path)
+
+            # grab the data and headers
             try:
-                self.image = hdulist[0].data
+                self.image = hdulist[1].data
+                self.exthdr = hdulist[1].header
+                self.prihdr = hdulist[0].header
             except:
-                raise Exception("Couldn't read "+self.filename_path+". Is it a fits?")
+                # This except was used for datacube not following GPI headers convention.
+                if not self.mute:
+                    print("Couldn't read the fits file with GPI conventions. Try assuming data in primary and no headers.")
+                try:
+                    self.image = hdulist[0].data
+                except:
+                    raise Exception("Couldn't read "+self.filename_path+". Is it a fits?")
 
-        # Get input cube dimensions
-        if len(self.image.shape) == 3:
-            self.nl,self.ny,self.nx = self.image.shape
-            # # Checking that the cube has the 37 spectral slices of a normal GPI cube.
-            # if self.nl != 37:
-            #     raise Exception("Returning None. Spectral dimension of "+self.filename_path+" is not correct...")
-        elif len(self.image.shape) == 2:
-            self.ny,self.nx = self.image.shape
-        else:
-            raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
+            # Get input cube dimensions
+            if len(self.image.shape) == 3:
+                self.nl,self.ny,self.nx = self.image.shape
+                # # Checking that the cube has the 37 spectral slices of a normal GPI cube.
+                # if self.nl != 37:
+                #     raise Exception("Returning None. Spectral dimension of "+self.filename_path+" is not correct...")
+            elif len(self.image.shape) == 2:
+                self.ny,self.nx = self.image.shape
+            else:
+                raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
 
-        if self.process_all_files:
-            return [self.id_matching_file, self.N_matching_files]
+            if self.process_all_files:
+                return [self.id_matching_file, self.N_matching_files]
+            else:
+                return [0, 0]
         else:
             return [0, 0]
 

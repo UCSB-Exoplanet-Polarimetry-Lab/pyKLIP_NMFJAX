@@ -296,7 +296,7 @@ class FMMF(KPPSuperClass):
         # Get the list of spdc files
         filelist = glob(self.inputDir+os.path.sep+self.filename)
         #TODO TO REMOVE
-        filelist = [filelist[0],filelist[-1]]
+        #filelist = [filelist[0],filelist[-1]]
 
         # read data using GPIData class
         self.dataset = GPI.GPIData(filelist,highpass=True)
