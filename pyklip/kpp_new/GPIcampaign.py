@@ -10,7 +10,12 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,gather_detec_o
     for obj in obj_list:
         init_out = [-1,0]
         while init_out[0]<init_out[1]:
-            init_out = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+            try:
+                init_out = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+            except Exception as myErr:
+                err_list.append(myErr)
+                init_out = [0,0]
+                print("//!\\\\ "+obj.filename+" could NOT initialize in "+inputDir+". raised an Error.")
 
             if obj.spectrum_iter_available() and spec_path_list is not None:
                 for spec_path in spec_path_list:
@@ -19,14 +24,14 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,gather_detec_o
                         run(obj)
                     except Exception as myErr:
                         err_list.append(myErr)
-                        print("//!\\\\ "+obj.filename_path+"with spectrum "+spec_path+" raised an Error.")
+                        print("//!\\\\ "+obj.filename+"with spectrum "+spec_path+" in "+inputDir+" raised an Error.")
             else:
-                run(obj)
-                # try:
-                #     run(obj)
-                # except Exception as myErr:
-                #     err_list.append(myErr)
-                #     print("//!\\\\ "+obj.filename_path+" raised an Error.")
+                # run(obj)
+                try:
+                    run(obj)
+                except Exception as myErr:
+                    err_list.append(myErr)
+                    print("//!\\\\ "+obj.filename+" in "+inputDir+" raised an Error.")
     return err_list
 
 

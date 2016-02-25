@@ -40,7 +40,7 @@ class CADIQuicklook(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
         # allocate super class
-        super(CADIQuicklook, self).__init__(None,
+        super(CADIQuicklook, self).__init__("No filename for CADI Quicklook",
                                      inputDir = inputDir,
                                      outputDir = outputDir,
                                      folderName = None,
@@ -51,6 +51,7 @@ class CADIQuicklook(KPPSuperClass):
 
         self.copy_save = copy_save
         self.GOI_list_folder = GOI_list_folder
+        self.suffix = "quicklook"
 
 
     def initialize(self,inputDir = None,
@@ -134,6 +135,9 @@ class CADIQuicklook(KPPSuperClass):
                 self.filename_sdiSNR_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_sdiSNR)[0])
             except:
                 raise Exception("File "+self.inputDir+os.path.sep+self.filename_sdiSNR+"doesn't exist.")
+
+        # Define this attribute in case something needs it.
+        self.filename_path = self.filename
 
         # Open the fits file on which the metric will be applied
         hdulist1 = pyfits.open(self.filename_nosdi_path)
@@ -223,17 +227,22 @@ class CADIQuicklook(KPPSuperClass):
 
         self.folderName = ""
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
-        self.suffix = "quicklook"
 
         return init_out
 
-    def check_existence_noInit(self):
+    def check_existence_noInit(self,outputDir = None,folderName = None):
         """
 
         :return: False
         """
+        if self.outputDir is not None and self.folderName is not None:
+            glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+"*"+'-'+self.suffix+"_*"+'.png')
+        else:
+            try:
+                glob_filename = glob(outputDir+os.path.sep+folderName+os.path.sep+"*"+'-'+self.suffix+"_*"+'.png')
+            except:
+                raise Exception("self.outputDir or self.folderName are not defined because initialized hasn't been called. You need to give outputDir and folderName as inputs.")
 
-        glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+"*"+'-'+self.suffix+"_*"+'.png')
         file_exist = (len(glob_filename) >= 1)
 
         if file_exist and not self.mute:
@@ -254,7 +263,6 @@ class CADIQuicklook(KPPSuperClass):
 
         :return: False
         """
-
         glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_*"+'.png')
         file_exist = (len(glob_filename) >= 1)
 
