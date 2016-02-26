@@ -110,11 +110,13 @@ class P1640Data(Data):
             self._centers = None
             self._filenums = None
             self._filenames = None
+            self._corefilenames = corefilepaths
             self._PAs = None
             self._wvs = None
             self._wcs = None
             self._IWA = None
             self.spot_flux = None # Currently not implemented, may be in future
+            self.spot_scaling = None # scaling factor between wavelengths
             self.contrast_scaling = None # Currently not implemented, may be in future
             self.prihdrs = None # Not used by P1640
             self.exthdrs = None # for P1640 this is the prihdrs; exthdrs used for compatibility with P1640 class
@@ -138,7 +140,7 @@ class P1640Data(Data):
     @centers.setter
     def centers(self, newval):
         self._centers = newval
-
+        
     @property
     def filenums(self):
         return self._filenums
@@ -188,10 +190,18 @@ class P1640Data(Data):
     def output(self, newval):
         self._output = newval
 
+    # do I need a decorator here?
+    @property
+    def corefilenames(self):
+        return self._corefilenames
+    @corefilenames.setter
+    def corefilenames(self, newval):
+        return self._corefilenames
+        
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None):
+    def readdata(self, filepaths, skipslices=None, corefilepaths=None):
         """
         Method to open and read a list of P1640 data
 
@@ -213,6 +223,7 @@ class P1640Data(Data):
         rot_angles = []
         wvs = []
         centers = []
+        spot_scalings = []
         wcs_hdrs = []
         spot_fluxes = []
         prihdrs = []
@@ -224,6 +235,7 @@ class P1640Data(Data):
 
             data.append(cube)
             centers.append(center)
+            spot_scalings.append(scaling_factors)
             spot_fluxes.append(spot_flux)
             rot_angles.append(pa)
             wvs.append(wv)
@@ -272,6 +284,7 @@ class P1640Data(Data):
         self._centers = centers
         self._filenums = filenums
         self._filenames = filenames
+        self._corefilenames = corefilepaths
         self._PAs = rot_angles
         self._wvs = wvs
         self._wcs = None # wcs_hdrs not used by P1640 
@@ -282,7 +295,7 @@ class P1640Data(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
+    def savedata(self, filepath, data, klipparams = None, filetype = 'PSF Subtracted Spectral Cube', zaxis = None, center=None, astr_hdr=None,
                  fakePlparams = None,):
         """
         Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
@@ -302,10 +315,6 @@ class P1640Data(Data):
         """
         hdulist = fits.HDUList()
         hdulist.append(fits.PrimaryHDU(header=None, data=data))
-        # store all headers from the source files
-        for i, ext in enumerate(self.exthdrs):
-            hdulist.append(fits.ImageHDU(header=ext, name="Sci_{0:02d}".format(i)))
-
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
@@ -356,17 +365,24 @@ class P1640Data(Data):
         if self.flux_units.upper() == 'CONTRAST':
             hdulist[0].header['DN2CON'] = (self.contrast_scaling, "Contrast/DN")
             hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(self.contrast_scaling))
+            core_header = fits.Header()
+            for i,cf in enumerate(self._corefilenames):
+                core_header['Core_{0:02d}'.format(i)] = cf
+            core_header['Method'] = 'median'
+            core_hdu = fits.ImageHDU(self._core_psf, name='Core')
+            core_hdu.header = core_header
+            hdulist.append(fits.ImageHDU(self._core_psf))
 
         # write z axis units if necessary
         if zaxis is not None:
             #Writing a KL mode Cube
             if "KL Mode" in filetype:
-                hdulist[1].header['CTYPE3'] = 'KLMODES'
+                hdulist[0].header['CTYPE3'] = 'KLMODES'
                 #write them individually
                 for i, klmode in enumerate(zaxis):
-                    hdulist[1].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
+                    hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
 
-        # Not upsed by P1640
+        # Not used by P1640
         '''
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:
@@ -402,7 +418,20 @@ class P1640Data(Data):
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
         #if scaling is None:
         #    scaling = self.scaling
-            
+
+        # store the wavelength solution in a TableHDU
+        wvs_hdu = fits.TableHDU.from_columns([fits.Column(name='wavelength',
+                                                          format='E',
+                                                          array=self.wvs)],
+                                             name='wavelengths')
+
+        hdulist.append(wvs_hdu)
+        # store all headers from the source files
+        for i, ext in enumerate(self.exthdrs):
+            hdulist.append(fits.ImageHDU(header=ext, name="Data_{0:02d}".format(i)))
+
+
+        
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
@@ -415,12 +444,33 @@ class P1640Data(Data):
 
         Args:
             units: currently only support "contrast" w.r.t central star
+
         Returns:
             stores calibrated data in self.output
         """
         if units == "contrast":
+            # assemble median core
+            try:
+                assert(self._corefilenames is not None)
+            except AssertionError:
+                "No core files = no calibration possible"
+                return
+            if len(self._corefilenames) == 1:
+                core_files = [self._corefilenames]
+            core_hdus = [fits.open(f) for f in self._corefilenames]
+            core_cubes = np.array([core_hdus.data for hdu in core_hdus])
+            star_psf = P1640cores.make_median_core(core_cubes)
+            for hdu in core_hdus:
+                hdu.close
+            
+            self.contrast_scaling = star_flux = np.nansum(axis=0)
+            
+            
             self.output *= self.contrast_scaling
             self.flux_units = "contrast"
+            self._corefilenames = core_files
+            self._core_psf = star_psf
+            
         
 
     def generate_psfs(self, boxrad=7):
@@ -795,8 +845,7 @@ def _p1640_process_file(filepath, skipslices=None):
         astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
     finally:
         hdulist.close()
-    # since in this case we are only working with a single cube:
-    center = center[0]
+
     scale_factors = scale_factors[0].mean(axis=0) # average over the 4 spots
     spot_fluxes = np.mean(spot_fluxes, axis=0)
     
@@ -810,6 +859,7 @@ def _p1640_process_file(filepath, skipslices=None):
         spot_fluxes = np.delete(spot_fluxes, skipslices)
     
     # pyklip centers need to be [x,y] instead of (row, col)
+    print center.shape
     center = np.fliplr(center) # [0] because of the way P1640spots works
     return cube, center, scale_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 

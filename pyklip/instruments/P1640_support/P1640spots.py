@@ -728,18 +728,48 @@ def get_spot_positions(fitsfiles):
 
 def get_star_positions(spot_array):
     """
-    Wrapper for get_single_cube_star_position to handle multiple cubes
+    Get the center of a set of 4 spots.
     Input:
-        spot_array: (Ncube x) Nspots x Nchan x 2 array of (row, col) spots
-    Output:
-        star_array: (Ncube x) Nchan x 2 array of (row, col) star positions
+        spot_locations: (Ncube x) Nspot x Nlambda x 2 array of [row, col] spot positions
+    Returns:
+        star_array: (Ncube x) Nlambda x 2 array of [row, col] star positions
     """
-    if spot_array.ndim == 3:
-        spot_array = np.expand_dims(spot_array, 0)
+    # Re-order the array so that you can iterate across each datacube slice
+    if spot_array.shape[-2] != 4:
+        axid = np.where(np.array(spot_array.shape) == 4)[0][0]
+        spot_array = np.rollaxis(spot_array, axid,-1)
 
-    star_array = np.array([get_single_cube_star_positions(i)
-                           for i in spot_array])
-    return star_array
+    orig_shape = spot_array.shape
+    orig_ndim = spot_array.ndim
+    if orig_ndim == 4:
+        # collapse channels since we'll be processing the slices independently
+        spot_array = spot_array.reshape((orig_shape[-4]*orig_shape[-3], 
+                                         orig_shape[-2], orig_shape[-1]))
+    
+    # each element of spot_array is a set of four co-wavelength spots to be centered
+    nslices = len(spot_array)
+    star_positions = np.zeros((len(spot_array), 2))
+    for i in range(nslices):
+        # find the intersection of two lines between the diagonals
+        line20 = fit_poly(np.array((spot_array[i,0,1], 
+                                    spot_array[i,2,1])),
+                          np.array((spot_array[i,0,0], 
+                                    spot_array[i,2,0])),
+                          order=1)
+        line31 = fit_poly(np.array((spot_array[i,1,1], 
+                                    spot_array[i,3,1])),
+                          np.array((spot_array[i,1,0], 
+                                    spot_array[i,3,0])),
+                          order=1)
+        x_star = (line20[0]-line31[0])/(line31[1]-line20[1])
+        y_star = (line20[1]*line31[0]-line31[1]*line20[0])/(line20[1]-line31[1])
+        star_positions[i] = (y_star, x_star)
+    # for the final shape, separate out the cubes again
+    new_shape = list(orig_shape)
+    new_shape.pop(-2) # remove the Nspots index
+    star_positions = star_positions.reshape(new_shape)
+    return star_positions
+
 
 def get_spot_positions_and_photometry(fitsfiles):
     """

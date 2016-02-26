@@ -4,7 +4,7 @@ Given a datacube, find the four corresponding spot files.
 Plot the calculated positions on top of the original cube.
 
 Run from an ipython terminal with:
-%run spot_checker.py full/path/to/cube.fits
+%run spot_checker.py full/path/to/cubes.fits
 """
 
 from __future__ import division
@@ -26,6 +26,9 @@ from astropy.io import fits
 
 #plt.ion()
 
+sys.path.append(".")
+import P1640spots
+
 spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
 # open a fits file and draw the cube
@@ -35,9 +38,12 @@ def draw_cube(cube, cube_name, spots):
     spots are a list of [row, col] positions for each spot
     """
     # mask center for better image scaling
-    cube[:,100:150,100:150] = np.nan
+    cube[:,100:150,100:150] = np.nan #cube[:,100:150,100:150]*1e-3
     chan=0
     nchan = cube.shape[0]
+    # get star positions
+    star_positions = P1640spots.get_single_cube_star_positions(np.array(spots))
+    
     #try:
     fig = plt.figure()
     while True:
@@ -50,13 +56,16 @@ def draw_cube(cube, cube_name, spots):
         patches2 = [CirclePolygon(xy=spot[chan][::-1], radius=1,
                                   fill=True, alpha=0.3, ec='k', lw=2)
                     for spot in spots] # dots in location of spot
+        starpatches = [CirclePolygon(xy=star_positions[chan][::-1], radius=3,
+                                     fill=True, alpha=0.3, ec='k', lw=2)
+                       for spot in spots] # star position
         patchcoll = PatchCollection(patches1+patches2, match_original=True)
-
+        
         imax = plt.imshow(cube[chan], norm=LogNorm())
         imax.axes.add_collection(patchcoll)
         plt.title("{0}\nChannel {1:02d}".format(cubefile_name, chan))
         
-        plt.pause(0.25)
+        plt.pause(0.2)
         chan += 1
     #except KeyboardInterrupt:
     #    pass
@@ -82,7 +91,7 @@ if __name__ == "__main__":
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         #fig = plt.figure()
-        for ff in fitsfiles:
+        for i, ff in enumerate(fitsfiles):
             # check file
             if not os.path.isfile(ff):
                 print("File not found: {0}".format(ff))
@@ -105,6 +114,7 @@ if __name__ == "__main__":
             p.start()
 
             # print cube information
+            print "\n{0}/{1} files".format(i+1, len(fitsfiles))
             print "\nCube: {0}".format(cube_name)
             print "\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME"))
             print "\tSeeing: {0}".format(fits.getval(ff, "SEEING"))
