@@ -8,13 +8,14 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,gather_detec_o
 
     err_list = []
     for obj in obj_list:
-        init_out = [-1,0]
-        while init_out[0]<init_out[1]:
+        iterating = True
+        while iterating:
+            # iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
             try:
-                init_out = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+                iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
             except Exception as myErr:
                 err_list.append(myErr)
-                init_out = [0,0]
+                iterating = False
                 print("//!\\\\ "+obj.filename+" could NOT initialize in "+inputDir+". raised an Error.")
 
             if obj.spectrum_iter_available() and spec_path_list is not None:

@@ -48,7 +48,8 @@ class ShapeOrMF(KPPSuperClass):
                  overwrite=False,
                  kernel_width = None,
                  sky_aper_radius = None,
-                 label = None):
+                 label = None,
+                 add2prefix = None):
         """
         Define the general parameters of the metric.
 
@@ -133,6 +134,11 @@ class ShapeOrMF(KPPSuperClass):
 
         if self.kernel_type == "PSF":
             self.PSF_cube_filename = PSF_cube_filename
+
+        if add2prefix is not None:
+            self.add2prefix = "_"+add2prefix
+        else:
+            self.add2prefix = ""
 
 
     def spectrum_iter_available(self):
@@ -544,7 +550,7 @@ class ShapeOrMF(KPPSuperClass):
             dim_suffix = "2D"
         self.suffix = self.metric_type+dim_suffix+self.kernel_type
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+self.add2prefix
 
         return init_out
 

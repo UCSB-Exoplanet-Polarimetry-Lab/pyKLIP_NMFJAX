@@ -236,11 +236,15 @@ class KPPSuperClass(object):
                 raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
 
             if self.process_all_files:
-                return [self.id_matching_file, self.N_matching_files]
+                if self.id_matching_file < self.N_matching_files:
+                    return True
+                else:
+                    self.id_matching_file = 0
+                    return False
             else:
-                return [0, 0]
+                return False
         else:
-            return [0, 0]
+            return False
 
     def check_existence(self):
         """
