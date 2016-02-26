@@ -1675,23 +1675,24 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if aligned_center is None:
             aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
 
-        # parallelized rotate images
-        print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
-                               hdrs=dataset.wcs, new_center=aligned_center)
+        # Check if ADI data is GPI or Keck. 
+        # Todo: Implement an instrument keyword in dataset object 
+        if "IFSFILT" in dataset.prihdrs[0]:
+            # parallelized rotate images
+            print("Derotating Images...")
+            rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+                                   hdrs=dataset.wcs, new_center=aligned_center)
 
-        # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
-        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
+            # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+            rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
 
-        dataset.output = rot_imgs
-        dataset.centers[:,0] = aligned_center[0]
-        dataset.centers[:,1] = aligned_center[1]
+            dataset.output = rot_imgs
+            dataset.centers[:,0] = aligned_center[0]
+            dataset.centers[:,1] = aligned_center[1]
 
-        # valid output path and write iamges
-        outputdirpath = os.path.realpath(outputdir)
-        print("Writing Images to directory {0}".format(outputdirpath))
-
-        if 'Ms' not in dataset.prihdrs[0]['FILTER']:
+            # valid output path and write iamges
+            outputdirpath = os.path.realpath(outputdir)
+            print("Writing Images to directory {0}".format(outputdirpath))
 
             # collapse in time and wavelength to examine KL modes
             KLmode_cube = np.nanmean(dataset.output, axis=(1))
@@ -1702,13 +1703,38 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
 
-        # if Ms filter then save full cube.
-        elif 'Ms' in dataset.prihdrs[0]['FILTER']:
-            # calibrate broadband flux if needed
-            if calibrate_flux: dataset.calibrate_data()
+        elif "FILTER" in dataset.prihdrs[0]:
+            # parallelized rotate images
+            print("Derotating Images...")
+            rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=False,
+                                   hdrs=dataset.wcs, new_center=aligned_center)
 
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", dataset.output,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+            # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
+            rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
+
+            dataset.output = rot_imgs
+            dataset.centers[:,0] = aligned_center[0]
+            dataset.centers[:,1] = aligned_center[1]
+
+            # valid output path and write iamges
+            outputdirpath = os.path.realpath(outputdir)
+            print("Writing Images to directory {0}".format(outputdirpath))
+
+            if not "Ms" in dataset.prihdrs[0]["FILTER"]:
+                # calibrate broadband flux if needed
+                if calibrate_flux:
+                    KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+                             klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+
+            # if Ms filter then save full cube.
+            if "Ms" in dataset.prihdrs[0]["FILTER"]:
+                # calibrate broadband flux if needed
+                if calibrate_flux: dataset.calibrate_data()
+
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", dataset.output,
+                             klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too

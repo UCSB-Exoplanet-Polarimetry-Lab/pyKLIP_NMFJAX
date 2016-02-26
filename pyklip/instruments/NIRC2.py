@@ -439,7 +439,6 @@ def _nirc2_process_file(filepath):
     print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
-
         #grab the data and headers
         cube = hdulist[0].data
         exthdr = None #hdulist[1].header
@@ -492,26 +491,20 @@ def calc_starflux(cube, center):
 
     return [[g.amplitude]]
 
-def measure_sat_spot_fluxes(img, spots_x, spots_y):
+def measure_star_flux(img, star_x, star_y):
     """
-    Measure satellite spot peak fluxes using a Gaussian matched filter
+    Measure star peak fluxes using a Gaussian matched filter
 
     Args:
-        img: 2D frame with 4 sat spots
-        spots_x: list of 4 satellite spot x coordinates
-        spots_y: list of 4 satellite spot y coordinates
+        img: 2D frame with unobscured, unsaturated PSF
+        star_x, star_y: coordinates of the star
     Return:
-        spots_f: list of 4 satellite spot fluxes
+        star_f: star flux
     """
-    spots_f = []
-    for spotx, spoty in zip(spots_x, spots_y):
-        flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
-        # JB: On going test.. It might be a better flux estimation of the sat spot
-        #flux = gaussfit2dLSQ(img, spotx, spoty)
-        #print((flux,fwhm, xfit, yfit))
-        if flux == np.inf:
-            flux == np.nan
-        spots_f.append(flux)
 
-    return spots_f
+    flux, fwhm, xfit, yfit = gaussfit2d(img, star_x, star_y, refinefit=False)
+    if flux == np.inf: flux == np.nan
+    print flux, fwhm, xfit, yfit
+
+    return flux
 
