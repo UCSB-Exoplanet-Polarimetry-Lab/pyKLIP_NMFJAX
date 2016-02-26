@@ -149,6 +149,12 @@ class FMMF(KPPSuperClass):
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
+        elif predefined_sectors == "cErib":
+            self.mvt = 0.5
+            self.OWA = 0.6/0.01413
+            self.N_pix_sector = 100
+            self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
+            self.annuli = [[23,41]]
 
 
     def spectrum_iter_available(self):
