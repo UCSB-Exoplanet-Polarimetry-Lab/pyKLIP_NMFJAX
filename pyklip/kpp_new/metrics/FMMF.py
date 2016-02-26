@@ -152,7 +152,6 @@ class FMMF(KPPSuperClass):
         elif predefined_sectors == "cErib":
             self.mvt = 0.5
             self.OWA = 0.6/0.01413
-            self.N_pix_sector = 100
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
 
