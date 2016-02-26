@@ -479,8 +479,7 @@ class FMMF(KPPSuperClass):
                                  ("METSPECN",self.spectrum_name),
                                  ("METSPECF",self.spectrum_filename),
                                  ("METPSFDI",self.PSF_cube_path),
-                                 ("METPREFI",self.prefix),
-                                 ("METSUFFI",self.suffix)]
+                                 ("METPREFI",self.prefix)]
 
         if hasattr(self,"star_type"):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))
@@ -489,18 +488,21 @@ class FMMF(KPPSuperClass):
 
         # Save the outputs (matched filter, shape map and klipped image) as fits files
         suffix = "FMMF"
+        extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_MF,
                          filetype="FMMF",
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         suffix = "FMSH"
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_shape,
                          filetype="FMSH",
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         suffix = "speccube-PSFs"
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          np.nansum(np.squeeze(self.sub_imgs),axis=0),
                          filetype="PSF Subtracted Spectral Cube",
