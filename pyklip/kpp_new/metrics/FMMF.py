@@ -41,7 +41,8 @@ class FMMF(KPPSuperClass):
                  subsections = None,
                  annuli = None,
                  predefined_sectors = None,
-                 label = None):
+                 label = None,
+                 quickTest = False):
         """
         Define the general parameters of the metric.
 
@@ -80,6 +81,7 @@ class FMMF(KPPSuperClass):
         :param kernel_width: Define the width of the Kernel depending on kernel_type. See kernel_width.
         :param sky_aper_radius: Radius of the mask applied on the stamps to calculated the background value.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param quickTest: Read only two files (the first and the last) instead of the all sequence
         """
         # allocate super class
         super(FMMF, self).__init__(filename,
@@ -93,6 +95,7 @@ class FMMF(KPPSuperClass):
 
         # Prevent the class to iterate over all the files matching filename
         self.process_all_files = False
+        self.quickTest = quickTest
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -295,8 +298,8 @@ class FMMF(KPPSuperClass):
 
         # Get the list of spdc files
         filelist = glob(self.inputDir+os.path.sep+self.filename)
-        #TODO TO REMOVE
-        #filelist = [filelist[0],filelist[-1]]
+        if self.quickTest:
+            filelist = [filelist[0],filelist[-1]]
 
         # read data using GPIData class
         self.dataset = GPI.GPIData(filelist,highpass=True)
@@ -306,7 +309,7 @@ class FMMF(KPPSuperClass):
             self.PSF_cube_filename = PSF_cube_filename
 
         if self.PSF_cube_filename == None:
-            self.PSF_cube_filename = "*-original_radial_PSF_cube.fits"
+            self.PSF_cube_filename = "*-original_PSF_cube.fits"
             if not self.mute:
                 print("Using default filename for PSF cube: "+self.PSF_cube_filename)
 
