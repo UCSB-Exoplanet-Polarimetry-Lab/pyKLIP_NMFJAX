@@ -41,16 +41,35 @@ Pseudocode:
 
 
 # open a fits file and draw the cube
-def draw_cube(cube, cube_name):
+def draw_cube(cube, cube_name, header):
     """
     Make a figure and draw cube slices on it
     """
     chan = 14
     nchan = cube.shape[0]
+    max_val = np.max(cube)
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.yaxis.tick_right()
+    fig.subplots_adjust(left=0.3)
+    datainfo = """Exp time: {exptime:.3f}
+Seeing: {seeing:>9.3f}
+Airmass: {airmass:>8.3f}
+Max val: {maxval:>8.1f}
+Min val: {minval:>8.1f}""".format(exptime=header["EXP_TIME"],
+                              seeing=header["SEEING"],
+                              airmass=header["INIT_AM"],
+                              maxval=np.nanmax(cube),
+                              minval=np.nanmin(cube))
+    fig.text(0.01,0.7, datainfo, size='large', family='monospace',
+             linespacing=2, 
+             verticalalignment='top')
+    plt.draw()
     while True:
         plt.cla()
         chan = chan % nchan
-        imax = plt.imshow(cube[chan], norm=LogNorm())
+        # you're gonna think you want a common scale for all the slices but you're wrong, leave LogNorm alone
+        imax = ax.imshow(cube[chan], norm=LogNorm())#vmax=max_val))
         plt.title("{name}\nChannel {ch:02d}".format(name=cube_name, ch=chan))
         plt.pause(0.25)
         chan += 1
@@ -85,25 +104,22 @@ if __name__ == "__main__":
                 hdulist = fits.open(ff)
                 cube = hdulist[0].data
                 cube_name = os.path.splitext(os.path.basename(ff))[0]
-
+                header = hdulist[0].header
                 # start drawing subprocess
-                p = Process(target=draw_cube, args=(cube, cube_name))
+                p = Process(target=draw_cube, args=(cube, cube_name, header))
                 p.start()
 
                 # print cube information
+
                 print "\n{0}/{1} files".format(i+1, len(fitsfiles))
                 print "Cube: {0}".format(cube_name)
-                print "\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME"))
-                print "\tSeeing: {0}".format(fits.getval(ff, "SEEING"))
-                print "\tAirmass: {0}".format(fits.getval(ff, "INIT_AM"))
-                print "\tMax val: {0}".format(np.nanmax(cube))
-                print "\tMin val: {0}".format(np.nanmin(cube))
+
                 # ask if cube is good or not
                 keep_cube = None
                 while keep_cube not in ['y', 'n']:
-                    keep_cube = raw_input('\t\tKeep? Y/n: ').lower()[0]
+                    keep_cube = raw_input('\tKeep? Y/n: ').lower()[0]
                 good_cubes[ff] = keep_cube
-
+                hdulist.close()
                 # close drawing subprocess
                 p.terminate()
                 p.join()
