@@ -381,7 +381,8 @@ class NIRC2Data(object):
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """        
         if units == "contrast":
-            self.output[0] *= self.contrast_scaling[:, None, None]
+            for i in range(self.output.shape[0]):
+                self.output[i] *= self.contrast_scaling[:, None, None]
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
         """
@@ -455,7 +456,7 @@ def _nirc2_process_file(filepath):
             center = [[128,128]]#[[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
             star_flux = calc_starflux(cube, center)
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
-            parang = prihdr['ROTNORTH']*np.ones(1)
+            parang = -(prihdr['ROTNORTH']*np.ones(1))
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
     finally:
