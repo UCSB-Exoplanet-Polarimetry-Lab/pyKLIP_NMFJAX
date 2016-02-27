@@ -151,9 +151,13 @@ class FMMF(KPPSuperClass):
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
         elif predefined_sectors == "cErib":
             self.mvt = 0.5
-            self.OWA = 0.6/0.01413
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
+        elif predefined_sectors == "HD_40781":
+            self.mvt = 0.3
+            self.subsections = [[220./180.*np.pi,260./180.*np.pi]]
+            self.annuli = [[60,80]]
+
 
 
     def spectrum_iter_available(self):
@@ -183,15 +187,15 @@ class FMMF(KPPSuperClass):
         """
 
         if spectrum is None:
-            spec_name = "t600g32nc"
-            spec_path = "g32ncflx"+os.path.sep+spec_name+".flx"
+            self.spectrum_name = "t600g32nc"
+            spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
         else:
-            spec_name = spectrum.split(os.path.sep)[-1].split(".")[0]
+            self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
             spec_path = spectrum
 
         self.folderName = self.spectrum_name+os.path.sep
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+spec_name+"_{0:.2f}".format(self.mvt)
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name+"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
