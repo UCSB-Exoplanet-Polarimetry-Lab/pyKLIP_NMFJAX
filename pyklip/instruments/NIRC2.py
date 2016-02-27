@@ -458,12 +458,15 @@ def _nirc2_process_file(filepath):
             # Flipping x-axis to enable use of GPI data rotation code without modification
             dims = cube.shape
             x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-            nx = center[0] - (x - center[0])
+            nx = center[0][0] - (x - center[0][0])
             minval = np.min([np.nanmin(cube), 0.0])
             flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
+            print flipped_cube.shape
 
             star_flux = calc_starflux(flipped_cube, center)
+            print star_flux, calc_starflux(cube, center)
             cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])  #maintain 3d-ness
+            print cube.shape
             parang = prihdr['ROTNORTH']*np.ones(1)
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
