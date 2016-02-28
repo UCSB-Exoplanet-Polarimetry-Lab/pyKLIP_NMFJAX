@@ -379,7 +379,7 @@ class NIRC2Data(object):
 
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
-        """        
+        """
         if units == "contrast":
             for i in range(self.output.shape[0]):
                 self.output[i] *= self.contrast_scaling[:, None, None]
@@ -454,9 +454,17 @@ def _nirc2_process_file(filepath):
         if prihdr['CURRINST'].strip() == 'NIRC2':
             wvs = [1.0]
             center = [[128,128]]#[[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
-            star_flux = calc_starflux(cube, center)
-            cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
-            parang = -(prihdr['ROTNORTH']*np.ones(1))
+
+            # Flipping x-axis to enable use of GPI data rotation code without modification
+            dims = cube.shape
+            x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+            nx = center[0][0] - (x - center[0][0])
+            minval = np.min([np.nanmin(cube), 0.0])
+            flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
+
+            star_flux = calc_starflux(flipped_cube, center)
+            cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])  #maintain 3d-ness
+            parang = prihdr['ROTNORTH']*np.ones(1)
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
     finally:
