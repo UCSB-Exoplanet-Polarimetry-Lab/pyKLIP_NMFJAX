@@ -12,35 +12,36 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,mute_error = T
         while iterating:
             if not mute_error:
                 iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+                if obj.spectrum_iter_available() and spec_path_list is not None:
+                    for spec_path in spec_path_list:
+                        obj.init_new_spectrum(spec_path)
+                        run(obj)
+                else:
+                    run(obj)
             else:
                 try:
                     iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+
+                    if obj.spectrum_iter_available() and spec_path_list is not None:
+                        for spec_path in spec_path_list:
+                            try:
+                                obj.init_new_spectrum(spec_path)
+                                run(obj)
+                            except Exception as myErr:
+                                err_list.append(myErr)
+                                print("//!\\\\ "+obj.filename+"with spectrum "+spec_path+" in "+inputDir+" raised an Error.")
+                    else:
+                        try:
+                            run(obj)
+                        except Exception as myErr:
+                            err_list.append(myErr)
+                            print("//!\\\\ "+obj.filename+" in "+inputDir+" raised an Error.")
                 except Exception as myErr:
                     err_list.append(myErr)
                     iterating = False
                     print("//!\\\\ "+obj.filename+" could NOT initialize in "+inputDir+". raised an Error.")
 
-            if obj.spectrum_iter_available() and spec_path_list is not None:
-                for spec_path in spec_path_list:
-                    if not mute_error:
-                        obj.init_new_spectrum(spec_path)
-                        run(obj)
-                    else:
-                        try:
-                            obj.init_new_spectrum(spec_path)
-                            run(obj)
-                        except Exception as myErr:
-                            err_list.append(myErr)
-                            print("//!\\\\ "+obj.filename+"with spectrum "+spec_path+" in "+inputDir+" raised an Error.")
-            else:
-                if not mute_error:
-                    run(obj)
-                else:
-                    try:
-                        run(obj)
-                    except Exception as myErr:
-                        err_list.append(myErr)
-                        print("//!\\\\ "+obj.filename+" in "+inputDir+" raised an Error.")
+
     return err_list
 
 

@@ -102,9 +102,10 @@ class CADIQuicklook(KPPSuperClass):
 
         self.filename_nosdi = "cadi_*_nosdi_hp4.fits"
         self.filename_sdi = "cadi_*_sdi_hp4.fits"
-        self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_noSDI-shape2Dhat-SNR_Dr2rs2.fits"
-        self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_SDI-shape2Dhat-SNR_Dr2rs2.fits"
-
+        self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_nosdi_hp4-SNR_Dr2rs2hat.fits"
+        self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_sdi_hp4-SNR_Dr2rs2hat.fits"
+        # self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_noSDI-shape2Dhat-SNR_Dr2rs2.fits"
+        # self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_SDI-shape2Dhat-SNR_Dr2rs2.fits"
 
         # Check file existence and define filename_path
         if self.inputDir is None:
@@ -266,7 +267,7 @@ class CADIQuicklook(KPPSuperClass):
 
         if file_exist and not self.mute:
             current_N_cubes = int(glob_filename[0].split("_")[-1].split(".")[0])
-            print("Quicklook output with {0} cubes already exist: ".format(current_N_cubes)+glob_filename[0])
+            print("{0}/{1} cubes quicklook output already exist: ".format(current_N_cubes,self.N_cubes)+glob_filename[0])
 
             if current_N_cubes < self.N_cubes:
                 print("More cubes available so overwriting: {0}".format(self.N_cubes))
@@ -287,25 +288,27 @@ class CADIQuicklook(KPPSuperClass):
 
         #x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
         fig = plt.figure(1,figsize=(8*2,16))
-        cmap_name = "gray"
+        cmap_name = "viridis"
         fig.suptitle(self.star_name+" "+self.compact_date+" Filter: "+self.filter+" Cubes: {0}".format(self.N_cubes), fontsize=25)
         plt.subplot(2,2,1)
         plt.title("NO SDI",y=1.0)
+        #np.log10(self.image_nosdi[::-1,:]-np.nanmin(self.image_nosdi[::-1,:]))
         plt.imshow(self.image_nosdi[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
         plt.clim(-0.01,0.01)
         plt.subplot(2,2,2)
         plt.title("SDI",y=1.0)
+        #np.log10(self.image_sdi[::-1,:]-np.nanmin(self.image_sdi[::-1,:]))
         plt.imshow(self.image_sdi[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
         plt.clim(-0.01,0.01)
         plt.subplot(2,2,3)
         plt.title("SNR NO SDI",y=1.0)
         plt.imshow(self.image_nosdiSNR[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-2.,7.0)
+        plt.clim(-5.,5.0)
         plt.subplot(2,2,4)
         plt.title("SNR SDI",y=1.0)
         plt.imshow(self.image_sdiSNR[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-2.,7.0)
-        # plt.show()
+        plt.clim(-5.,5.0)
+        #plt.show()
         #plt.title(self.star_name)
 
         return None
@@ -323,7 +326,6 @@ class CADIQuicklook(KPPSuperClass):
 
         if file_exist and not self.mute:
             current_N_cubes = int(glob_filename[0].split("_")[-1].split(".")[0])
-            print(current_N_cubes,self.N_cubes)
             if current_N_cubes < self.N_cubes:
                 print("Removing file: "+glob_filename[0])
                 os.remove(glob_filename[0])

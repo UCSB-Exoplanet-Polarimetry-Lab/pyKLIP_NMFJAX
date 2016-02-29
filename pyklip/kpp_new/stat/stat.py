@@ -9,6 +9,7 @@ from scipy.signal import convolve2d
 from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp_new.stat.stat_utils import *
 from pyklip.kpp_new.utils.GOI import *
+import pyklip.kpp_new.utils.mathfunc as kppmath
 
 class Stat(KPPSuperClass):
     """
@@ -29,7 +30,9 @@ class Stat(KPPSuperClass):
                  type = None,
                  rm_edge = None,
                  GOI_list_folder = None,
-                 overwrite = False):
+                 overwrite = False,
+                 kernel_type = None,
+                 kernel_width = None):
         """
 
 
@@ -82,6 +85,10 @@ class Stat(KPPSuperClass):
         self.rm_edge = rm_edge
         self.GOI_list_folder = GOI_list_folder
         self.filename_noSignal = filename_noSignal
+
+        self.kernel_type = kernel_type
+        # The default value is defined later
+        self.kernel_width = kernel_width
 
     def initialize(self,inputDir = None,
                          outputDir = None,
@@ -184,7 +191,50 @@ class Stat(KPPSuperClass):
             tmp_suffix = tmp_suffix+"N"+str(self.N)
         if self.r_step is not None:
             tmp_suffix = tmp_suffix+"rs"+str(self.r_step)
+        if self.kernel_type is not None:
+            tmp_suffix = tmp_suffix+self.kernel_type
+            # if self.kernel_width is not None:
+            #     tmp_suffix = tmp_suffix+str(self.kernel_width)
         self.suffix = self.suffix+tmp_suffix
+
+
+
+        if self.kernel_type is not None:
+            self.ny_PSF = 20 # should be even
+            self.nx_PSF = 20 # should be even
+            # Define the PSF as a gaussian
+            if self.kernel_type == "gaussian":
+                if self.kernel_width == None:
+                    self.kernel_width = 1.25
+                    if not self.mute:
+                        print("Default width sigma = {0} used for the gaussian".format(self.kernel_width))
+
+                if not self.mute:
+                    print("Generate gaussian PSF")
+                # Build the grid for PSF stamp.
+                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF/2,
+                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF/2)
+
+                self.PSF = kppmath.gauss2d(x_PSF_grid, y_PSF_grid,1.0,0.0,0.0,self.kernel_width,self.kernel_width)
+
+            # Define the PSF as an aperture or "hat" function
+            if self.kernel_type == "hat":
+                if self.kernel_width == None:
+                    self.kernel_width = 1.5
+                    if not self.mute:
+                        print("Default radius = {0} used for the hat function".format(self.kernel_width))
+
+                # Build the grid for PSF stamp.
+                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF/2,
+                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF/2)
+                # Use aperture for the cross correlation.
+                # Calculate the corresponding hat function
+                self.PSF = kppmath.hat(x_PSF_grid, y_PSF_grid, self.kernel_width)
+
+            self.PSF = self.PSF / np.sqrt(np.nansum(self.PSF**2))
+
+
+
 
         return init_out
 
@@ -226,6 +276,17 @@ class Stat(KPPSuperClass):
                 self.image_noSignal = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
             else:
                 self.image_noSignal = self.image
+
+        if self.kernel_type is not None:
+            # Check if the input file is 2D or 3D
+            if hasattr(self, 'nl'): # If the file is a 3D cube
+                for l_id in np.arange(self.nl):
+                    self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
+                    self.image_noSignal[l_id,:,:] = convolve2d(self.image_noSignal[l_id,:,:],self.PSF,mode="same")
+            else: # image is 2D
+                print(self.image_noSignal.shape)
+                self.image = convolve2d(self.image,self.PSF,mode="same")
+                self.image_noSignal = convolve2d(self.image_noSignal,self.PSF,mode="same")
 
         if np.size(self.image.shape) == 3:
             # Not tested
@@ -281,11 +342,15 @@ class Stat(KPPSuperClass):
             self.exthdr["STA_TYPE"] = self.type
             self.exthdr["STARMEDG"] = self.rm_edge
             self.exthdr["STAGOILF"] = self.GOI_list_folder
+            self.exthdr["STAKERTY"] = str(self.kernel_type)
+            self.exthdr["STAKERWI"] = str(self.kernel_width)
 
             # # This parameters are not always defined
             # if hasattr(self,"spectrum_name"):
-            #     self.exthdr["STASPECN"] = self.spectrum_name
+            #     self.exthdr["STAKERTY"] = self.kernel_type
 
+            if not self.mute:
+                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist = pyfits.HDUList()
             hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
             hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.stat_cube_map, name=self.suffix))
@@ -311,7 +376,11 @@ class Stat(KPPSuperClass):
             hdulist[1].header["STA_TYPE"] = self.type
             hdulist[1].header["STARMEDG"] = self.rm_edge
             hdulist[1].header["STAGOILF"] = self.GOI_list_folder
+            hdulist[1].header["STAKERTY"] = str(self.kernel_type)
+            hdulist[1].header["STAKERWI"] = str(self.kernel_width)
 
+            if not self.mute:
+                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
 
         return None

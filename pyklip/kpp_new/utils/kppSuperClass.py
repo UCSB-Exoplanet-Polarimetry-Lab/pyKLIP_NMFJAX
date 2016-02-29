@@ -73,10 +73,16 @@ class KPPSuperClass(object):
         else:
             self.inputDir = os.path.abspath(inputDir)
 
-        if outputDir is None: # If None outputDir will be defined in initalize()
-            self.outputDir = outputDir
+        if label is None:
+            if self.label is None:
+                self.label = "default"
         else:
-            self.outputDir = os.path.abspath(outputDir)
+            self.label = label
+
+        if outputDir is None: # If None outputDir will be defined in initalize()
+            self.outputDir = None
+        else:
+            self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
 
         # Number of threads to be used in case of parallelization.
         if N_threads is None:
@@ -85,7 +91,6 @@ class KPPSuperClass(object):
             self.N_threads = N_threads
 
         self.mute = mute
-        self.label = label
 
     def spectrum_iter_available(self):
         """
@@ -157,10 +162,7 @@ class KPPSuperClass(object):
         if not hasattr(self,"process_all_files"):
             self.process_all_files = True
 
-        if label is None:
-            if self.label is None:
-                self.label = "default"
-        else:
+        if label is not None:
             self.label = label
 
         # Define a default folderName is the one given is None.
@@ -176,17 +178,14 @@ class KPPSuperClass(object):
             self.inputDir = os.path.abspath(inputDir)
 
         # If outputDir is None define it as the project directory.
-        if outputDir is None:
-            self.outputDir = self.outputDir
-        else:
-            self.outputDir = os.path.abspath(outputDir)
+        if outputDir is not None:
+            self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+
         if self.outputDir is None:
             if self.inputDir is None:
                 self.outputDir = os.path.abspath("."+os.path.sep+"planet_detec_"+self.label)
             else:
                 self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"planet_detec_"+self.label)
-        else:
-            self.outputDir = os.path.abspath(self.outputDir)
 
         if read:
             # Check file existence and define filename_path
@@ -245,6 +244,8 @@ class KPPSuperClass(object):
                 return False
         else:
             return False
+
+
 
     def check_existence(self):
         """

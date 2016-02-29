@@ -157,6 +157,10 @@ class FMMF(KPPSuperClass):
             self.mvt = 0.3
             self.subsections = [[220./180.*np.pi,260./180.*np.pi]]
             self.annuli = [[60,80]]
+        elif predefined_sectors == "HR_4597":
+            self.mvt = 0.3
+            self.subsections = [[75./180.*np.pi,105./180.*np.pi]]
+            self.annuli = [[16,36]]
 
 
 
@@ -483,7 +487,8 @@ class FMMF(KPPSuperClass):
                                  ("METSPECN",self.spectrum_name),
                                  ("METSPECF",self.spectrum_filename),
                                  ("METPSFDI",self.PSF_cube_path),
-                                 ("METPREFI",self.prefix)]
+                                 ("METPREFI",self.prefix),
+                                 ("METQUICT",self.quickTest)]
 
         if hasattr(self,"star_type"):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))

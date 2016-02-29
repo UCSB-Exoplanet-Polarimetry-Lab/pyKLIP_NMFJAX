@@ -230,9 +230,9 @@ class ShapeOrMF(KPPSuperClass):
         for k in range(self.nl):
             self.PSF_cube[k,:,:] *= self.spectrum_vec[k]
         # normalize spectrum with norm 2.
-        self.spectrum_vec /= np.sqrt(np.nansum(self.spectrum_vec**2))
+        self.spectrum_vec = self.spectrum_vec / np.sqrt(np.nansum(self.spectrum_vec**2))
         # normalize PSF with norm 2.
-        self.PSF_cube /= np.sqrt(np.sum(self.PSF_cube**2))
+        self.PSF_cube = self.PSF_cube/np.sqrt(np.sum(self.PSF_cube**2))
 
         return None
 
@@ -417,7 +417,7 @@ class ShapeOrMF(KPPSuperClass):
             self.sat_spot_spec = np.nanmax(self.PSF_cube,axis=(1,2))
             # Remove the spectral shape from the psf cube because it is dealt with independently
             for l_id in range(self.PSF_cube.shape[0]):
-                self.PSF_cube[l_id,:,:] /= self.sat_spot_spec[l_id]
+                self.PSF_cube[l_id,:,:] = self.PSF_cube[l_id,:,:]/self.sat_spot_spec[l_id]
 
 
         if self.kernel_type == "PSF" and not self.is3D:
@@ -536,12 +536,12 @@ class ShapeOrMF(KPPSuperClass):
             for k in range(self.nl):
                 self.PSF_cube[k,:,:] *= self.spectrum_vec[k]
             # normalize spectrum with norm 2.
-            self.spectrum_vec /= np.sqrt(np.nansum(self.spectrum_vec**2))
+            self.spectrum_vec = self.spectrum_vec / np.sqrt(np.nansum(self.spectrum_vec**2))
             # normalize PSF with norm 2.
-            self.PSF_cube /= np.sqrt(np.sum(self.PSF_cube**2))
+            self.PSF_cube = self.PSF_cube / np.sqrt(np.sum(self.PSF_cube**2))
         else: # if 2D data we still want to normalize the PSF
             # normalize PSF with norm 2.
-            self.PSF_flat /= np.sqrt(np.sum(self.PSF_flat**2))
+            self.PSF_flat = self.PSF_flat / np.sqrt(np.sum(self.PSF_flat**2))
 
         # Define the suffix used when saving files
         if self.is3D:
@@ -744,6 +744,8 @@ class ShapeOrMF(KPPSuperClass):
             if hasattr(self,"kernel_width"):
                 self.exthdr["METKERWI"] = self.kernel_width
 
+            if not self.mute:
+                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist = pyfits.HDUList()
             hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
             hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.metricMap, name=self.suffix))
@@ -779,6 +781,8 @@ class ShapeOrMF(KPPSuperClass):
             if hasattr(self,"kernel_width"):
                 hdulist[1].header["METKERWI"] = self.kernel_width
 
+            if not self.mute:
+                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
 
         return None
