@@ -42,7 +42,8 @@ class FMMF(KPPSuperClass):
                  annuli = None,
                  predefined_sectors = None,
                  label = None,
-                 quickTest = False):
+                 quickTest = False,
+                 mute_progression = False):
         """
         Define the general parameters of the metric.
 
@@ -96,6 +97,7 @@ class FMMF(KPPSuperClass):
         # Prevent the class to iterate over all the files matching filename
         self.process_all_files = False
         self.quickTest = quickTest
+        self.mute_progression = mute_progression
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -432,7 +434,8 @@ class FMMF(KPPSuperClass):
                                    padding = self.padding,
                                    N_pix_sector=self.N_pix_sector,
                                    save_klipped = self.save_klipped,
-                                   OWA = self.OWA)
+                                   OWA = self.OWA,
+                                   mute_progression = self.mute_progression)
 
         # Build the matched filter and shape maps from fmout
         matched_filter_maps = np.nansum(fmout[0,:,:,:,:,:],axis=2)

@@ -11,7 +11,7 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,mute_error = T
         iterating = True
         while iterating:
             if not mute_error:
-                iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+                iterating = obj.initialize(inputDir=inputDir,outputDir=inputDir,compact_date=compact_date)
                 if obj.spectrum_iter_available() and spec_path_list is not None:
                     for spec_path in spec_path_list:
                         obj.init_new_spectrum(spec_path)
@@ -20,7 +20,7 @@ def planet_detec_GPIepoch(inputDir,obj_list,spec_path_list = None,mute_error = T
                     run(obj)
             else:
                 try:
-                    iterating = obj.initialize(inputDir=inputDir,compact_date=compact_date)
+                    iterating = obj.initialize(inputDir=inputDir,outputDir=inputDir,compact_date=compact_date)
 
                     if obj.spectrum_iter_available() and spec_path_list is not None:
                         for spec_path in spec_path_list:

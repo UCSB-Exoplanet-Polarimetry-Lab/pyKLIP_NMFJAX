@@ -826,7 +826,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=3, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=3, save_klipped=True,
-                      N_pix_sector = None):
+                      N_pix_sector = None,mute_progression = False):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -869,6 +869,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         padding: for each sector, how many extra pixels of padding should we have around the sides.
         save_klipped: if True, will save the regular klipped image. If false, it wil not and sub_imgs will return None
+        mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
+                        doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
+                        idea.
 
 
     Returns:
@@ -1099,8 +1102,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                 tpool_outputs.pop(0).wait()
                 N_it = N_it+1
                 N_it_perSector = N_it_perSector+1
-                stdout.write("\r {0:.2f}% of sector, {1:.2f}% of total completed".format(100*float(N_it_perSector)/float(totalimgs),100*float(N_it)/float(N_tot_it)))
-                stdout.flush()
+                if not mute_progression:
+                    stdout.write("\r {0:.2f}% of sector, {1:.2f}% of total completed".format(100*float(N_it_perSector)/float(totalimgs),100*float(N_it)/float(N_tot_it)))
+                    stdout.flush()
                 #JB debug
                 #print("outputs klip_section_multifile_perfile",tpool_outputs)
 
