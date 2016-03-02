@@ -566,7 +566,13 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
     tasks = [tpool.apply_async(klip.high_pass_filter, args=(img, filtersize)) for img in imgs]
 
     #reform back into a giant array
-    filtered = np.array([task.get() for task in tasks])
+    filtered = []
+    for task in tasks:
+        task.wait()
+        filtered.append(task.get())
+
+    filtered = np.array(filtered)
+
 
     tpool.close()
 
