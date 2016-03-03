@@ -542,3 +542,17 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
         plt.show()
 
     return pdf_model,new_sampling,np.array(im_histo,dtype="double"), center_bins
+
+
+def get_cube_stddev(cube,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
+    # Not tested
+    nl,ny,nx = cube.shape
+
+    stddev_table = []
+    annulus_radii_table = []
+    for k in range(nl):
+        stddev_list, annulus_radii_list = get_image_stddev(cube[k,:,:],IOWA,N = N,centroid = centroid, r_step = r_step,Dr=Dr)
+        stddev_table.append(stddev_list)
+        annulus_radii_table.append(annulus_radii_list)
+
+    return stddev_table,annulus_radii_table
