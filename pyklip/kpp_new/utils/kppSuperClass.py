@@ -74,8 +74,7 @@ class KPPSuperClass(object):
             self.inputDir = os.path.abspath(inputDir)
 
         if label is None:
-            if self.label is None:
-                self.label = "default"
+            self.label = "default"
         else:
             self.label = label
 

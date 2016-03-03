@@ -116,7 +116,7 @@ class StatPerPix(KPPSuperClass):
         :return: None
         """
         if not self.mute:
-            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ INITializing "+self.__class__.__name__+" ~~")
         # The super class already read the fits file
         init_out = super(StatPerPix, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,

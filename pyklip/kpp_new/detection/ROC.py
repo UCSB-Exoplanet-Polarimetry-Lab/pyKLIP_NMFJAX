@@ -1,4 +1,4 @@
-__author__ = 'JB'
+__author__ = 'jruffio'
 import os
 import astropy.io.fits as pyfits
 from glob import glob
@@ -11,19 +11,20 @@ from pyklip.kpp_new.stat.stat_utils import *
 from pyklip.kpp_new.utils.GOI import *
 import pyklip.kpp_new.utils.mathfunc as kppmath
 
-class Detection(KPPSuperClass):
+class ROC(KPPSuperClass):
     """
     Class for SNR calculation.
     """
-    def __init__(self,filename,
+    def __init__(self,filename,filename_detec,
                  inputDir = None,
                  outputDir = None,
                  mute=None,
                  N_threads=None,
                  label = None,
-                 mask_radius = None,
-                 threshold = None,
-                 maskout_edge = None,
+                 detec_distance = None,
+                 ignore_distance = None,
+                 GOI_list_folder = None,
+                 threshold_sampling = None,
                  overwrite = False):
         """
 
@@ -42,7 +43,7 @@ class Detection(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
         # allocate super class
-        super(Detection, self).__init__(filename,
+        super(ROC, self).__init__(filename,
                                      inputDir = inputDir,
                                      outputDir = outputDir,
                                      folderName = None,
@@ -51,23 +52,23 @@ class Detection(KPPSuperClass):
                                      label=label,
                                      overwrite = overwrite)
 
-        if mask_radius is None:
-            self.mask_radius = 4
+        if detec_distance is None:
+            self.detec_distance = 2
         else:
-            self.mask_radius = mask_radius
+            self.detec_distance = detec_distance
 
-        if threshold is None:
-            self.threshold = 3
+        if ignore_distance is None:
+            self.ignore_distance = 10
         else:
-            self.threshold = threshold
+            self.ignore_distance = ignore_distance
 
-        # If true mask out a band of 10pix at the edge of the image following the nan boundary.
-        if maskout_edge is None:
-            self.maskout_edge = False
+        if threshold_sampling is None:
+            self.threshold_sampling = np.linspace(0.0,20,200)
         else:
-            self.maskout_edge = maskout_edge
+            self.threshold_sampling = threshold_sampling
 
-        self.platescale = 0.01417
+        self.filename_detec = filename_detec
+        self.GOI_list_folder = GOI_list_folder
 
 
     def initialize(self,inputDir = None,
@@ -108,7 +109,7 @@ class Detection(KPPSuperClass):
             print("~~ INITializing "+self.__class__.__name__+" ~~")
 
         # The super class already read the fits file
-        init_out = super(Detection, self).initialize(inputDir = inputDir,
+        init_out = super(ROC, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label=label)
@@ -131,7 +132,37 @@ class Detection(KPPSuperClass):
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
-        self.suffix = "DetecTh{0}Mr{1}".format(self.threshold,self.mask_radius)
+        self.suffix = "ROC"
+
+
+        # Check file existence and define filename_path
+        if self.inputDir is None:
+            try:
+                self.filename_detec = os.path.abspath(glob(self.filename_detec)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.filename_detec))
+            except:
+                raise Exception("File "+self.filename_detec+"doesn't exist.")
+        else:
+            try:
+                self.filename_detec_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_detec)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename_detec))
+            except:
+                raise Exception("File "+self.inputDir+os.path.sep+self.filename_detec+" doesn't exist.")
+
+        # Open the fits file on which the metric will be applied
+        with open(self.filename_detec_path, 'rb') as csvfile:
+            reader = csv.reader(csvfile, delimiter=';')
+            csv_as_list = list(reader)
+            self.detec_table_labels = csv_as_list[0]
+            self.detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+        if not self.mute:
+            print("Opened: "+self.filename_detec_path)
+
+
+        self.N_detec = self.detec_table.shape[0]
+        self.val_id = self.detec_table_labels.index("value")
+        self.x_id = self.detec_table_labels.index("x")
+        self.y_id = self.detec_table_labels.index("y")
 
         return init_out
 
@@ -161,76 +192,53 @@ class Detection(KPPSuperClass):
         if not self.mute:
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
+        if self.GOI_list_folder is not None:
+            x_real_object_list,y_real_object_list = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,xy = True)
 
-        # Make a copy of the criterion map because it will be modified in the following.
-        # Local maxima are indeed masked out when checked
-        image_cpy = copy(self.image)
+        self.false_detec_proba_vec = []
+        self.true_detec_proba_vec = []
+        print(x_real_object_list,y_real_object_list)
+        # Loop over all the local maxima stored in the detec csv file
+        for k in range(self.N_detec):
+            val_criter = self.detec_table[k,self.val_id]
+            x_pos = self.detec_table[k,self.x_id]
+            y_pos = self.detec_table[k,self.y_id]
 
-        # Build as grids of x,y coordinates.
-        # The center is in the middle of the array and the unit is the pixel.
-        # If the size of the array is even 2n x 2n the center coordinate in the array is [n,n].
-        x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
+            #remove the detection if it is a real object
+            if self.GOI_list_folder is not None:
+                too_close = False
+                for x_real_object,y_real_object  in zip(x_real_object_list,y_real_object_list):
+                    if (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.detec_distance**2:
+                        too_close = True
+                        self.true_detec_proba_vec.append(val_criter)
+                        if not self.mute:
+                            print("Real object detected.")
+                        break
+                    elif (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.ignore_distance**2:
+                        too_close = True
+                        if not self.mute:
+                            print("Local maxima ignored. Too close to known object")
+                        break
+                if too_close:
+                    continue
 
+            self.false_detec_proba_vec.append(val_criter)
 
-        # Definition of the different masks used in the following.
-        stamp_size = self.mask_radius * 2 + 2
-        # Mask to remove the spots already checked in criterion_map.
-        stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,stamp_size,1)-6,np.arange(0,stamp_size,1)-6)
-        stamp_mask = np.ones((stamp_size,stamp_size))
-        r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
-        stamp_mask[np.where(r_stamp < self.mask_radius)] = np.nan
+        print(self.false_detec_proba_vec)
+        print(self.true_detec_proba_vec)
 
-        # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
-        if self.maskout_edge:
-            IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center)
-            conv_kernel = np.ones((10,10))
-            flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
-            image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
+        self.N_false_pos = np.zeros(self.threshold_sampling.shape)
+        self.N_true_detec = np.zeros(self.threshold_sampling.shape)
+        for id,threshold_it in enumerate(self.threshold_sampling):
+            self.N_false_pos[id] = np.sum(self.false_detec_proba_vec >= threshold_it)
+            self.N_true_detec[id] = np.sum(self.true_detec_proba_vec >= threshold_it)
 
+        # import matplotlib.pyplot as plt
+        # plt.figure(1)
+        # plt.plot(self.N_false_pos,self.N_true_detec)
+        # plt.show()
 
-        # Number of rows and columns to add around a given pixel in order to extract a stamp.
-        row_m = np.floor(stamp_size/2.0)    # row_minus
-        row_p = np.ceil(stamp_size/2.0)     # row_plus
-        col_m = np.floor(stamp_size/2.0)    # col_minus
-        col_p = np.ceil(stamp_size/2.0)     # col_plus
-
-        # Table containing the list of the local maxima with their info
-        # Description by column:
-        # 1/ index of the candidate
-        # 2/ Value of the maximum
-        # 3/ Position angle in degree from North in [0,360]
-        # 4/ Separation in pixel
-        # 5/ Separation in arcsec
-        # 6/ x position in pixel
-        # 7/ y position in pixel
-        # 8/ row index
-        # 9/ column index
-        self.candidate_table = []
-        self.table_labels = ["index","value","PA","Sep (pix)","Sep (as)","x","y","row","col"]
-        ## START WHILE LOOP.
-        # Each iteration looks at one local maximum in the criterion map.
-        k = 0
-        max_val_criter = np.nanmax(image_cpy)
-        while max_val_criter >= self.threshold:# and k <= max_attempts:
-            k += 1
-            # Find the maximum value in the current criterion map. At each iteration the previous maximum is masked out.
-            max_val_criter = np.nanmax(image_cpy)
-            # Locate the maximum by retrieving its coordinates
-            max_ind = np.where( image_cpy == max_val_criter )
-            row_id,col_id = max_ind[0][0],max_ind[1][0]
-            x_max_pos, y_max_pos = x_grid[row_id,col_id],y_grid[row_id,col_id]
-            sep_pix = np.sqrt(x_max_pos**2+y_max_pos**2)
-            sep_arcsec = sep_pix*self.platescale
-            pa = np.mod(np.rad2deg(np.arctan2(-x_max_pos,y_max_pos)),360)
-
-            # Mask the spot around the maximum we just found.
-            image_cpy[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
-
-            # Store the current local maximum information in the table
-            self.candidate_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id,col_id])
-        ## END WHILE LOOP.
-
-        return self.candidate_table
+        return [self.threshold_sampling]+[self.N_false_pos]+[self.N_true_detec]
 
 
     def save(self):
@@ -246,8 +254,8 @@ class Detection(KPPSuperClass):
             print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv')
         with open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv', 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=';')
-            csvwriter.writerows([self.table_labels])
-            csvwriter.writerows(self.candidate_table)
+            csvwriter.writerows([["value","N false pos","N true pos"]])
+            csvwriter.writerows([self.threshold_sampling]+[self.N_false_pos]+[self.N_true_detec])
         return None
 
     def load(self):

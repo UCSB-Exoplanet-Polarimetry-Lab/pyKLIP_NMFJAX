@@ -88,6 +88,8 @@ class CADIQuicklook(KPPSuperClass):
 
         :return: None
         """
+        if not self.mute:
+            print("~~ INITializing "+self.__class__.__name__+" ~~")
         # The super class already read the fits file
         init_out = super(CADIQuicklook, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,

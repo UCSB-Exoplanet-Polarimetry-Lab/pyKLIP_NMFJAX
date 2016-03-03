@@ -279,7 +279,7 @@ class FMMF(KPPSuperClass):
         :return:
         """
         if not self.mute:
-            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ INITializing "+self.__class__.__name__+" ~~")
 
         # The super class already read the fits file
         init_out = super(FMMF, self).initialize(inputDir = inputDir,

@@ -82,3 +82,62 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7):
                 cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
     return np.squeeze(cube_cpy)
+
+
+def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False):
+
+
+    try:
+        # OBJECT: keyword in the primary header with the name of the star.
+        object_name = prihdr['OBJECT'].strip().replace (" ", "_")
+    except:
+        object_name = "UNKNOWN_OBJECT"
+
+    # Get center of the image (star position)
+    # Retrieve the center of the image from the fits headers.
+    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+
+    #Julian Day OBServation
+    MJDOBS_fits = prihdr['MJD-OBS']
+
+
+    object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
+
+    x_vec = []
+    y_vec = []
+    col_vec = []
+    row_vec = []
+    if len(glob(object_GOI_filename)) != 0:
+        with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+            GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+            GOI_csv_as_list = list(GOI_list_reader)
+            attrib_name = GOI_csv_as_list[0]
+            GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
+
+            pa_id = attrib_name.index("PA")
+            sep_id = attrib_name.index("SEP")
+            MJDOBS_id = attrib_name.index("MJDOBS")
+
+            MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
+            MJDOBS_unique = np.unique(MJDOBS_arr)
+            MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
+            MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
+            #Check that the closest MJDOBS is closer than 2 hours
+            if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
+                # Skip if we couldn't find a matching date.
+                return [],[]
+
+            for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
+                pa = float(GOI_list[obj_id,pa_id])
+                radius = float(GOI_list[obj_id,sep_id])/0.01414
+                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                x_vec.append(x_max_pos)
+                y_vec.append(y_max_pos)
+                row_vec.append(y_max_pos+center[1])
+                col_vec.append(x_max_pos+center[0])
+
+    if xy:
+        return x_vec,y_vec
+    else:
+        return row_vec,col_vec

@@ -290,7 +290,7 @@ class ShapeOrMF(KPPSuperClass):
         :return:
         """
         if not self.mute:
-            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ INITializing "+self.__class__.__name__+" ~~")
 
         # The super class already read the fits file
         init_out = super(ShapeOrMF, self).initialize(inputDir = inputDir,
