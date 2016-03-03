@@ -289,7 +289,8 @@ class ShapeOrMF(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :return:
         """
-        # caution.
+        if not self.mute:
+            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         # The super class already read the fits file
         init_out = super(ShapeOrMF, self).initialize(inputDir = inputDir,
@@ -578,8 +579,11 @@ class ShapeOrMF(KPPSuperClass):
         :return: shape or matched filter map.
         """
 
+        if not self.mute:
+            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+
         if self.is3D:
-            flat_cube = np.mean(self.image,axis=0)
+            flat_cube = np.nanmean(self.image,axis=0)
         else:
             flat_cube = self.image
 

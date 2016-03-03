@@ -1,17 +1,22 @@
 __author__ = 'JB'
 import os
 
-def kppPerDir(inputDir,obj_list,spec_path_list = None,mute_error = True):
+def kppPerDir(inputDir,obj_list,spec_path_list = None,outputDir = None, mute_error = True):
 
     inputDir = os.path.abspath(inputDir)
     compact_date=inputDir.split(os.path.sep)[-1].split("_")[0]
+
+    if outputDir is None:
+        outputDir = inputDir
+    else:
+        outputDir = os.path.abspath(outputDir)
 
     err_list = []
     for obj in obj_list:
         iterating = True
         while iterating:
             if not mute_error:
-                iterating = obj.initialize(inputDir=inputDir,outputDir=inputDir,compact_date=compact_date)
+                iterating = obj.initialize(inputDir=inputDir,outputDir=outputDir,compact_date=compact_date)
                 if obj.spectrum_iter_available() and spec_path_list is not None:
                     for spec_path in spec_path_list:
                         obj.init_new_spectrum(spec_path)
@@ -20,7 +25,7 @@ def kppPerDir(inputDir,obj_list,spec_path_list = None,mute_error = True):
                     run(obj)
             else:
                 try:
-                    iterating = obj.initialize(inputDir=inputDir,outputDir=inputDir,compact_date=compact_date)
+                    iterating = obj.initialize(inputDir=inputDir,outputDir=outputDir,compact_date=compact_date)
 
                     if obj.spectrum_iter_available() and spec_path_list is not None:
                         for spec_path in spec_path_list:

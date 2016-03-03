@@ -84,6 +84,8 @@ class FMMF(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :param quickTest: Read only two files (the first and the last) instead of the all sequence
         """
+        if not self.mute:
+            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
         # allocate super class
         super(FMMF, self).__init__(filename,
                                      inputDir = inputDir,
@@ -276,7 +278,8 @@ class FMMF(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :return:
         """
-        # caution.
+        if not self.mute:
+            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         # The super class already read the fits file
         init_out = super(FMMF, self).initialize(inputDir = inputDir,

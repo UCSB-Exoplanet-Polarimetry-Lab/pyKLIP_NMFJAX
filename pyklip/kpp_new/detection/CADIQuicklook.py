@@ -285,6 +285,8 @@ class CADIQuicklook(KPPSuperClass):
         :param N: Defines the width of the ring by the number of pixels it has to contain
         :return: self.image the imput fits file.
         """
+        if not self.mute:
+            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         #x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
         fig = plt.figure(1,figsize=(8*2,16))

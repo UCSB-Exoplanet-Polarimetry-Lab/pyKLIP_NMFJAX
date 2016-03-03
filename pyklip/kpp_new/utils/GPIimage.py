@@ -18,14 +18,22 @@ def get_occ(image, centroid = None):
     else:
         x_cen, y_cen = centroid
 
-    IWA = 0
-    while np.isnan(image[x_cen,y_cen+IWA]):
-        IWA += 1
-
+    
+    # IWA = 0
+    # while np.isnan(image[x_cen,y_cen+IWA]):
+    #     IWA += 1
+        
     # Build the x and y coordinates grids
     x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
     # Calculate the radial distance of each pixel
     r = abs(x +y*1j)
+
+    IWA = -1
+    N_nans, N_nans_new = -1, 0
+    while N_nans_new != N_nans:
+        IWA = IWA+1
+        N_nans = N_nans_new
+        N_nans_new = np.size(np.where(np.isnan(image)*(r<IWA+1))[0])
 
     mask = np.ones((ny,nx))
     mask[np.where(np.isnan(image))] = np.nan

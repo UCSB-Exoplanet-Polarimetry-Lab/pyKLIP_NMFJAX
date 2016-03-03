@@ -115,6 +115,8 @@ class StatPerPix(KPPSuperClass):
 
         :return: None
         """
+        if not self.mute:
+            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
         # The super class already read the fits file
         init_out = super(StatPerPix, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
@@ -136,7 +138,9 @@ class StatPerPix(KPPSuperClass):
         except:
             pass
 
-        self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
+        file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
+        self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
+        #self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
         self.suffix = self.type+"PerPix"
         tmp_suffix = ""
         if self.Dr is not None:
@@ -211,6 +215,8 @@ class StatPerPix(KPPSuperClass):
         :param N: Defines the width of the ring by the number of pixels it has to contain
         :return: self.image the imput fits file.
         """
+        if not self.mute:
+            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         if self.rm_edge is not None:
             # Mask out a band of 10 pixels around the edges of the finite pixels of the image.

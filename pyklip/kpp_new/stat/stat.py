@@ -32,7 +32,8 @@ class Stat(KPPSuperClass):
                  GOI_list_folder = None,
                  overwrite = False,
                  kernel_type = None,
-                 kernel_width = None):
+                 kernel_width = None,
+                 image_wide = None):
         """
 
 
@@ -85,6 +86,7 @@ class Stat(KPPSuperClass):
         self.rm_edge = rm_edge
         self.GOI_list_folder = GOI_list_folder
         self.filename_noSignal = filename_noSignal
+        self.image_wide = image_wide
 
         self.kernel_type = kernel_type
         # The default value is defined later
@@ -124,6 +126,8 @@ class Stat(KPPSuperClass):
 
         :return: None
         """
+        if not self.mute:
+            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
         # The super class already read the fits file
         init_out = super(Stat, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
@@ -182,19 +186,24 @@ class Stat(KPPSuperClass):
         except:
             pass
 
-        self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
-        self.suffix = self.type+"_"
-        tmp_suffix = ""
-        if self.Dr is not None:
-            tmp_suffix = tmp_suffix+"Dr"+str(self.Dr)
-        elif self.N is not None:
-            tmp_suffix = tmp_suffix+"N"+str(self.N)
-        if self.r_step is not None:
-            tmp_suffix = tmp_suffix+"rs"+str(self.r_step)
-        if self.kernel_type is not None:
-            tmp_suffix = tmp_suffix+self.kernel_type
-            # if self.kernel_width is not None:
-            #     tmp_suffix = tmp_suffix+str(self.kernel_width)
+        file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
+        self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
+        #self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
+        self.suffix = self.type
+        if self.image_wide is None:
+            tmp_suffix = ""
+            if self.Dr is not None:
+                tmp_suffix = tmp_suffix+"Dr"+str(self.Dr)
+            elif self.N is not None:
+                tmp_suffix = tmp_suffix+"N"+str(self.N)
+            if self.r_step is not None:
+                tmp_suffix = tmp_suffix+"rs"+str(self.r_step)
+            if self.kernel_type is not None:
+                tmp_suffix = tmp_suffix+self.kernel_type
+                # if self.kernel_width is not None:
+                #     tmp_suffix = tmp_suffix+str(self.kernel_width)
+        else:
+            tmp_suffix = "IW"
         self.suffix = self.suffix+tmp_suffix
 
 
@@ -261,6 +270,8 @@ class Stat(KPPSuperClass):
         :param N: Defines the width of the ring by the number of pixels it has to contain
         :return: self.image the imput fits file.
         """
+        if not self.mute:
+            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         if self.rm_edge is not None:
             # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
@@ -284,7 +295,6 @@ class Stat(KPPSuperClass):
                     self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
                     self.image_noSignal[l_id,:,:] = convolve2d(self.image_noSignal[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
-                print(self.image_noSignal.shape)
                 self.image = convolve2d(self.image,self.PSF,mode="same")
                 self.image_noSignal = convolve2d(self.image_noSignal,self.PSF,mode="same")
 
@@ -293,14 +303,15 @@ class Stat(KPPSuperClass):
             self.stat_cube_map = np.zeros(self.image.shape)
             for k in range(self.nl):
                 self.stat_cube_map[k,:,:] = get_image_stat_map(self.image[k,:,:],
-                                                                self.image_noSignal[k,:,:],
-                                                                IOWA = self.IOWA,
-                                                                N = self.N,
-                                                                centroid = self.center,
-                                                                r_step = self.r_step,
-                                                                mute = self.mute,
-                                                                Dr= self.Dr,
-                                                                type = self.type)
+                                                               self.image_noSignal[k,:,:],
+                                                               IOWA = self.IOWA,
+                                                               N = self.N,
+                                                               centroid = self.center,
+                                                               r_step = self.r_step,
+                                                               mute = self.mute,
+                                                               Dr= self.Dr,
+                                                               type = self.type,
+                                                               image_wide=self.image_wide)
         elif np.size(self.image.shape) == 2:
             self.stat_cube_map = get_image_stat_map(self.image,
                                                     self.image_noSignal,
@@ -310,7 +321,8 @@ class Stat(KPPSuperClass):
                                                     r_step = self.r_step,
                                                     mute = self.mute,
                                                     Dr= self.Dr,
-                                                    type = self.type)
+                                                    type = self.type,
+                                                    image_wide=self.image_wide)
         return self.stat_cube_map
 
 
@@ -344,6 +356,7 @@ class Stat(KPPSuperClass):
             self.exthdr["STAGOILF"] = self.GOI_list_folder
             self.exthdr["STAKERTY"] = str(self.kernel_type)
             self.exthdr["STAKERWI"] = str(self.kernel_width)
+            self.exthdr["STAIMWID"] = str(self.image_wide)
 
             # # This parameters are not always defined
             # if hasattr(self,"spectrum_name"):
@@ -378,6 +391,7 @@ class Stat(KPPSuperClass):
             hdulist[1].header["STAGOILF"] = self.GOI_list_folder
             hdulist[1].header["STAKERTY"] = str(self.kernel_type)
             hdulist[1].header["STAKERWI"] = str(self.kernel_width)
+            hdulist[1].header["STAIMWID"] = str(self.image_wide)
 
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')

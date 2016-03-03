@@ -3,7 +3,7 @@ __author__ = 'JB'
 
 import numpy as np
 from copy import copy
-from glob import glob
+from  glob import glob
 import csv
 import os
 
@@ -49,7 +49,7 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7):
 
     object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
 
-    if len(glob.glob(object_GOI_filename)) != 0:
+    if len(glob(object_GOI_filename)) != 0:
         with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
             GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
             GOI_csv_as_list = list(GOI_list_reader)

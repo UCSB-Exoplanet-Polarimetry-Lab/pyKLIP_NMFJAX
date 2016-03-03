@@ -27,14 +27,19 @@ def get_image_stat_map(image,
                         r_step = 5,
                         mute = True,
                         Dr = None,
-                        type = "SNR"):
+                        type = "SNR",
+                        image_wide = None):
+
+    if image_wide is None:
+        image_wide = False
+
     if IOWA is None:
         IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
     else:
         IWA,OWA = IOWA
 
     if type == "proba":
-        pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr)
+        pdf_list, cdf_list, sampling_list, annulus_radii_list = get_image_PDF(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr,image_wide = image_wide)
 
         pdf_radii = np.array(annulus_radii_list)[:,0]
 
@@ -66,18 +71,17 @@ def get_image_stat_map(image,
             if r < OWA:
                 r_closest_id, r_closest = min(enumerate(pdf_radii), key=lambda x: abs(x[1]-r))
 
-
                 if (r-r_closest) < 0:
                     r_closest_id2 = r_closest_id - 1
                 else:
                     r_closest_id2 = r_closest_id + 1
-                r_closest2 = pdf_radii[r_closest_id2]
 
                 if (r_closest_id2 < 0) or (r_closest_id2 > (pdf_radii.size-1)):
                     stat_map[k,l] = 1-cdf_interp_list[r_closest_id](image[k,l])
                     #plt.plot(np.arange(-10,10,0.1),cdf(np.arange(-10,10,0.1)))
                     #plt.show()
                 else:
+                    r_closest2 = pdf_radii[r_closest_id2]
                     stat_map[k,l] = 1-(cdf_interp_list[r_closest_id](image[k,l])*abs(r-r_closest2)+cdf_interp_list[r_closest_id2](image[k,l])*abs(r-r_closest))/abs(r_closest-r_closest2)
             else:
                     stat_map[k,l] = 1-cdf_interp_list[pdf_radii.size-1](image[k,l])
@@ -96,11 +100,16 @@ def get_image_stat_map(image,
 
         return -np.log10(stat_map)
     else:
-        stddev_list, annulus_radii_list = get_image_stddev(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr)
+        stddev_list, annulus_radii_list = get_image_stddev(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr,
+                                                           image_wide=image_wide)
 
         radii = np.array(annulus_radii_list)[:,0]
+        #print(radii,stddev_list)
 
-        stddev_func = interp1d(radii,stddev_list,kind = "linear",bounds_error = False, fill_value=np.nan)
+        if not image_wide:
+            stddev_func = interp1d(radii,stddev_list,kind = "linear",bounds_error = False, fill_value=np.nan)
+        else:
+            stddev_func = lambda x: stddev_list[0]
 
         #plt.figure()
         #plt.plot(np.linspace(0,140,200),stddev_func(np.linspace(0,140,200)))
@@ -129,7 +138,9 @@ def get_image_stat_map(image,
         return stat_map
 
 
-def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
+def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
+    if image_wide is None:
+        image_wide = False
     IWA,OWA = IOWA
     ny,nx = image.shape
 
@@ -168,26 +179,30 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
     x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
     # Calculate the radial distance of each pixel
     r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
+    #th_grid = np.arctan2(x,y)
 
-    # Define the radii intervals for each annulus
-    if Dr is None:
-        r0 = IWA
-        annuli_radii = []
-        if r_step is None:
-            while np.sqrt(N/np.pi+r0**2) < OWA:
-                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-                r0 = np.sqrt(N/np.pi+r0**2)
+    if not image_wide:
+        # Define the radii intervals for each annulus
+        if Dr is None:
+            r0 = IWA
+            annuli_radii = []
+            if r_step is None:
+                while np.sqrt(N/np.pi+r0**2) < OWA:
+                    annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                    r0 = np.sqrt(N/np.pi+r0**2)
+            else:
+                while np.sqrt(N/np.pi+r0**2) < OWA:
+                    annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                    r0 += r_step
+
+            annuli_radii.append((r0,np.max([ny,nx])))
         else:
-            while np.sqrt(N/np.pi+r0**2) < OWA:
-                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-                r0 += r_step
-
-        annuli_radii.append((r0,np.max([ny,nx])))
+            annuli_radii = []
+            for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+                annuli_radii.append((r-Dr,r+Dr))
     else:
-        annuli_radii = []
-        for r in np.arange(IWA+Dr,OWA-Dr,Dr):
-            annuli_radii.append((r-Dr,r+Dr))
+        annuli_radii = [(IWA,OWA)]
+
     N_annuli = len(annuli_radii)
 
 
@@ -246,26 +261,15 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
     return pdf_list, cdf_list, sampling_list, annulus_radii_list
 
 
-def get_cube_stddev(cube,IOWA,N = 2000,centroid = None, r_step = None,Dr=None):
-    # Not tested
-    nl,ny,nx = cube.shape
-
-    stddev_table = []
-    annulus_radii_table = []
-    for k in range(nl):
-        stddev_list, annulus_radii_list = get_image_stddev(cube[k,:,:],IOWA,N = N,centroid = centroid, r_step = r_step,Dr=Dr)
-        stddev_table.append(stddev_list)
-        annulus_radii_table.append(annulus_radii_list)
-
-    return stddev_table,annulus_radii_table
-
-
 def get_image_stddev(image,
                      IOWA,
                      N = 2000,
                      centroid = None,
                      r_step = None,
-                     Dr=None):
+                     Dr=None,
+                     image_wide = None):
+    if image_wide is None:
+        image_wide = False
     IWA,OWA = IOWA
     ny,nx = image.shape
 
@@ -281,27 +285,30 @@ def get_image_stddev(image,
     x, y = np.meshgrid(np.arange(nx)-x_cen, np.arange(ny)-y_cen)
     # Calculate the radial distance of each pixel
     r_grid = abs(x +y*1j)
-    th_grid = np.arctan2(x,y)
+    #th_grid = np.arctan2(x,y)
 
-    # Define the radii intervals for each annulus
-    if Dr is None:
-        r0 = IWA
-        annuli_radii = []
-        if r_step is None:
-            while np.sqrt(N/np.pi+r0**2) < OWA:
-                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-                r0 = np.sqrt(N/np.pi+r0**2)
+    if not image_wide:
+        # Define the radii intervals for each annulus
+        if Dr is None:
+            r0 = IWA
+            annuli_radii = []
+            if r_step is None:
+                while np.sqrt(N/np.pi+r0**2) < OWA:
+                    annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                    r0 = np.sqrt(N/np.pi+r0**2)
+            else:
+                while np.sqrt(N/np.pi+r0**2) < OWA:
+                    annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
+                    r0 += r_step
+
+            annuli_radii.append((r0,np.max([ny,nx])))
         else:
-            while np.sqrt(N/np.pi+r0**2) < OWA:
-                annuli_radii.append((r0,np.sqrt(N/np.pi+r0**2)))
-                r0 += r_step
-
-        annuli_radii.append((r0,np.max([ny,nx])))
+            annuli_radii = []
+            for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
+            #for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+                annuli_radii.append((r-Dr,r+Dr))
     else:
-        annuli_radii = []
-        for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
-        #for r in np.arange(IWA+Dr,OWA-Dr,Dr):
-            annuli_radii.append((r-Dr,r+Dr))
+        annuli_radii = [(IWA,OWA)]
     #N_annuli = len(annuli_radii)
 
 
