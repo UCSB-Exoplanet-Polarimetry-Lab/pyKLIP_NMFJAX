@@ -84,7 +84,7 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7):
     return np.squeeze(cube_cpy)
 
 
-def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False):
+def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False,pa_sep = False):
 
 
     try:
@@ -107,6 +107,8 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False):
     y_vec = []
     col_vec = []
     row_vec = []
+    pa_vec = []
+    sep_vec = []
     if len(glob(object_GOI_filename)) != 0:
         with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
             GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
@@ -129,15 +131,18 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False):
 
             for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
                 pa = float(GOI_list[obj_id,pa_id])
-                radius = float(GOI_list[obj_id,sep_id])/0.01414
-                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                radius = float(GOI_list[obj_id,sep_id])
+                pa_vec.append(pa)
+                sep_vec.append(radius)
+                x_max_pos = float(radius/0.01414)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius/0.01414)*np.sin(np.radians(90+pa))
                 x_vec.append(x_max_pos)
                 y_vec.append(y_max_pos)
                 row_vec.append(y_max_pos+center[1])
                 col_vec.append(x_max_pos+center[0])
-
-    if xy:
+    if pa_sep:
+        return sep_vec,pa_vec
+    elif xy:
         return x_vec,y_vec
     else:
         return row_vec,col_vec

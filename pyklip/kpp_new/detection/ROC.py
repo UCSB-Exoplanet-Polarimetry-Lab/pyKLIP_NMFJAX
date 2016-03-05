@@ -149,7 +149,6 @@ class ROC(KPPSuperClass):
             except:
                 raise Exception("File "+self.inputDir+os.path.sep+self.filename_detec+" doesn't exist.")
 
-        # Open the fits file on which the metric will be applied
         with open(self.filename_detec_path, 'rb') as csvfile:
             reader = csv.reader(csvfile, delimiter=';')
             csv_as_list = list(reader)
@@ -265,3 +264,30 @@ class ROC(KPPSuperClass):
         """
 
         return None
+
+def gather_ROC(filename_filter,mute = False):
+    file_list = glob(filename_filter)
+
+    with open(file_list[0], 'rb') as csvfile:
+        reader = csv.reader(csvfile, delimiter=';')
+        csv_as_list = list(reader)
+        detec_table_labels = csv_as_list[0]
+        detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+
+    threshold_sampling = detec_table[:,0]
+    master_N_false_pos = detec_table[:,1]
+    master_N_true_detec = detec_table[:,2]
+
+    for filename in file_list[1::]:
+        with open(filename, 'rb') as csvfile:
+            reader = csv.reader(csvfile, delimiter=';')
+            csv_as_list = list(reader)
+            detec_table_labels = csv_as_list[0]
+            detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+        if not mute:
+            print("Opened: "+filename)
+
+        master_N_false_pos = master_N_false_pos+detec_table[:,1]
+        master_N_true_detec = master_N_true_detec+detec_table[:,2]
+
+    return threshold_sampling,master_N_false_pos,master_N_true_detec

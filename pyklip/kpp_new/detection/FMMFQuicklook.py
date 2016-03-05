@@ -11,7 +11,7 @@ import shutil
 from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp_new.utils.GOI import *
 
-class CADIQuicklook(KPPSuperClass):
+class FMMFQuicklook(KPPSuperClass):
     """
     Class for CADI quicklook.
     """
@@ -40,7 +40,7 @@ class CADIQuicklook(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
         # allocate super class
-        super(CADIQuicklook, self).__init__("No filename for CADI Quicklook",
+        super(FMMFQuicklook, self).__init__("No filename for CADI Quicklook",
                                      inputDir = inputDir,
                                      outputDir = outputDir,
                                      folderName = None,
@@ -51,7 +51,7 @@ class CADIQuicklook(KPPSuperClass):
 
         self.copy_save = copy_save
         self.GOI_list_folder = GOI_list_folder
-        self.suffix = "quicklook"
+        self.suffix = "FMMFQuicklook"
 
 
     def initialize(self,inputDir = None,
@@ -91,7 +91,7 @@ class CADIQuicklook(KPPSuperClass):
         if not self.mute:
             print("~~ INITializing "+self.__class__.__name__+" ~~")
         # The super class already read the fits file
-        init_out = super(CADIQuicklook, self).initialize(inputDir = inputDir,
+        init_out = super(FMMFQuicklook, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label = label,
@@ -102,91 +102,45 @@ class CADIQuicklook(KPPSuperClass):
         # self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"cadi_*_nosdi_hp4-SNR_Dr2rs2.fits"
         # self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"cadi_*_sdi_hp4-SNR_Dr2rs2.fits"
 
-        self.filename_nosdi = "cadi_*_nosdi_hp4.fits"
-        self.filename_sdi = "cadi_*_sdi_hp4.fits"
-        self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_nosdi_hp4-SNR_Dr2rs2hat.fits"
-        self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_sdi_hp4-SNR_Dr2rs2hat.fits"
-        # self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_noSDI-shape2Dhat-SNR_Dr2rs2.fits"
-        # self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_SDI-shape2Dhat-SNR_Dr2rs2.fits"
+        self.filename_FMMF_proba = "planet_detec_FMMF_smallSep"+os.path.sep+"t600g32nc"+os.path.sep+"*-SNRPerPixDr2-probaIW.fits"
+        self.filename_detec = "planet_detec_FMMF_smallSep"+os.path.sep+"t600g32nc"+os.path.sep+"*-SNRPerPixDr2-probaIW-DetecTh2Mr4.csv"
 
         # Check file existence and define filename_path
         if self.inputDir is None:
             try:
-                self.filename_nosdi_path = os.path.abspath(glob(self.filename_nosdi)[0])
+                self.filename_FMMF_proba_path = os.path.abspath(glob(self.filename_FMMF_proba)[0])
             except:
-                raise Exception("File "+self.filename_nosdi+"doesn't exist.")
-            try:
-                self.filename_sdi_path = os.path.abspath(glob(self.filename_sdi)[0])
-            except:
-                raise Exception("File "+self.filename_sdi+"doesn't exist.")
-            try:
-                self.filename_nosdiSNR_path = os.path.abspath(glob(self.filename_nosdiSNR)[0])
-            except:
-                raise Exception("File "+self.filename_nosdiSNR+"doesn't exist.")
-            try:
-                self.filename_sdiSNR_path = os.path.abspath(glob(self.filename_sdiSNR)[0])
-            except:
-                raise Exception("File "+self.filename_sdiSNR+"doesn't exist.")
+                raise Exception("File "+self.filename_FMMF_proba+"doesn't exist.")
         else:
             try:
-                self.filename_nosdi_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_nosdi)[0])
+                self.filename_FMMF_proba_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_FMMF_proba)[0])
             except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename_nosdi+"doesn't exist.")
-            try:
-                self.filename_sdi_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_sdi)[0])
-            except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename_sdi+"doesn't exist.")
-            try:
-                self.filename_nosdiSNR_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_nosdiSNR)[0])
-            except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename_nosdiSNR+"doesn't exist.")
-            try:
-                self.filename_sdiSNR_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_sdiSNR)[0])
-            except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename_sdiSNR+"doesn't exist.")
+                raise Exception("File "+self.inputDir+os.path.sep+self.filename_FMMF_proba+"doesn't exist.")
 
         # Define this attribute in case something needs it.
         self.filename_path = self.filename
 
         # Open the fits file on which the metric will be applied
-        hdulist1 = pyfits.open(self.filename_nosdi_path)
+        hdulist1 = pyfits.open(self.filename_FMMF_proba_path)
         if not self.mute:
-            print("Opened: "+self.filename_nosdi_path)
-        hdulist2 = pyfits.open(self.filename_sdi_path)
-        if not self.mute:
-            print("Opened: "+self.filename_sdi_path)
-        hdulist3 = pyfits.open(self.filename_nosdiSNR_path)
-        if not self.mute:
-            print("Opened: "+self.filename_nosdiSNR_path)
-        hdulist4 = pyfits.open(self.filename_sdiSNR_path)
-        if not self.mute:
-            print("Opened: "+self.filename_sdiSNR_path)
+            print("Opened: "+self.filename_FMMF_proba_path)
 
         # grab the data and headers
         try:
-            self.image_nosdi = hdulist1[1].data
+            self.image = hdulist1[1].data
             self.exthdr = hdulist1[1].header
             self.prihdr = hdulist1[0].header
-            self.ny,self.nx = self.image_nosdi.shape
-            self.image_sdi = hdulist2[1].data
-            self.image_nosdiSNR = hdulist3[1].data
-            self.image_sdiSNR = hdulist4[1].data
+            self.ny,self.nx = self.image.shape
         except:
             # This except was used for datacube not following GPI headers convention.
             if not self.mute:
                 print("Couldn't read the fits file with GPI conventions. Try assuming data in primary.")
             try:
-                self.image_nosdi = hdulist1[0].data
-                self.image_sdi = hdulist2[0].data
-                self.image_nosdiSNR = hdulist3[0].data
-                self.image_sdiSNR = hdulist4[0].data
+                self.image = hdulist1[0].data
             except:
                 raise Exception("Couldn't read one of the files.")
 
         hdulist1.close()
-        hdulist2.close()
-        hdulist3.close()
-        hdulist4.close()
 
         # Get center of the image (star position)
         try:
@@ -237,6 +191,40 @@ class CADIQuicklook(KPPSuperClass):
         self.folderName = ""
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
 
+
+        # Check file existence and define filename_path
+        if self.inputDir is None:
+            try:
+                self.filename_detec = os.path.abspath(glob(self.filename_detec)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.filename_detec))
+            except:
+                raise Exception("File "+self.filename_detec+"doesn't exist.")
+        else:
+            try:
+                self.filename_detec_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_detec)[self.id_matching_file])
+                self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename_detec))
+            except:
+                raise Exception("File "+self.inputDir+os.path.sep+self.filename_detec+" doesn't exist.")
+
+        # Open the fits file on which the metric will be applied
+        with open(self.filename_detec_path, 'rb') as csvfile:
+            reader = csv.reader(csvfile, delimiter=';')
+            csv_as_list = list(reader)
+            self.detec_table_labels = csv_as_list[0]
+            self.detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+        if not self.mute:
+            print("Opened: "+self.filename_detec_path)
+
+        self.N_detec = self.detec_table.shape[0]
+        self.val_id = self.detec_table_labels.index("value")
+        self.x_id = self.detec_table_labels.index("x")
+        self.y_id = self.detec_table_labels.index("y")
+        self.row_id = self.detec_table_labels.index("row")
+        self.col_id = self.detec_table_labels.index("col")
+        self.pa_id = self.detec_table_labels.index("PA")
+        self.sep_pix_id = self.detec_table_labels.index("Sep (pix)")
+        self.sep_as_id = self.detec_table_labels.index("Sep (as)")
+
         return init_out
 
     def check_existence_noInit(self,outputDir = None,folderName = None):
@@ -267,14 +255,9 @@ class CADIQuicklook(KPPSuperClass):
         glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_*"+'.png')
         file_exist = (len(glob_filename) >= 1)
 
-        if file_exist:
-            current_N_cubes = int(glob_filename[0].split("_")[-1].split(".")[0])
-            if not self.mute:
-                print("{0}/{1} cubes quicklook output already exist: ".format(current_N_cubes,self.N_cubes)+glob_filename[0])
+        if file_exist and not self.mute:
+            print("FMMF quicklook output already exist: "+glob_filename[0])
 
-            if current_N_cubes < self.N_cubes:
-                print("More cubes available so overwriting: {0}".format(self.N_cubes))
-                file_exist = False
 
         if self.overwrite and not self.mute:
             print("Overwriting is turned ON!")
@@ -291,28 +274,91 @@ class CADIQuicklook(KPPSuperClass):
         if not self.mute:
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
-        #x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
-        fig = plt.figure(1,figsize=(8*2,16))
+        x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
+
+        fig = plt.figure(1,figsize=(16,8))
+        fig.patch.set_facecolor('black')
         cmap_name = "viridis"
-        fig.suptitle(self.star_name+" "+self.compact_date+" Filter: "+self.filter+" Cubes: {0}".format(self.N_cubes), fontsize=25)
-        plt.subplot(2,2,1)
-        plt.title("NO SDI",y=1.0)
+        title_obj = fig.suptitle(self.star_name+" "+self.compact_date+" Filter: "+self.filter+" Cubes: {0}".format(self.N_cubes), fontsize=25)
+        plt.setp(title_obj, color='white')
+        ax0 = plt.subplot2grid((2,4),(0,1),colspan=2,rowspan=2)
+        #plt.title("NO SDI",y=1.0)
         #np.log10(self.image_nosdi[::-1,:]-np.nanmin(self.image_nosdi[::-1,:]))
-        plt.imshow(self.image_nosdi[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-0.01,0.01)
-        plt.subplot(2,2,2)
-        plt.title("SDI",y=1.0)
-        #np.log10(self.image_sdi[::-1,:]-np.nanmin(self.image_sdi[::-1,:]))
-        plt.imshow(self.image_sdi[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-0.01,0.01)
-        plt.subplot(2,2,3)
-        plt.title("SNR NO SDI",y=1.0)
-        plt.imshow(self.image_nosdiSNR[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-5.,5.0)
-        plt.subplot(2,2,4)
-        plt.title("SNR SDI",y=1.0)
-        plt.imshow(self.image_sdiSNR[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
-        plt.clim(-5.,5.0)
+        plt.imshow(self.image[::-1,:], interpolation="nearest",cmap=cmap_name,extent=[x_grid[0,0],x_grid[0,self.nx-1],y_grid[0,0],y_grid[self.ny-1,0]])
+        plt.clim(0,5)
+        # Remove box and axes ticks
+        ax0.set_axis_off()
+
+        if self.GOI_list_folder is not None:
+            sep_GOI_vec,pa_GOI_vec = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,pa_sep = True)
+            x_GOI_vec,y_GOI_vec = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,xy = True)
+            row_centroid_vec,col_centroid_vec = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,xy = False)
+            for x_GOI,y_GOI,sep_GOI,pa_GOI in zip(x_GOI_vec,y_GOI_vec,sep_GOI_vec,pa_GOI_vec):
+                circle=plt.Circle((x_GOI,y_GOI),radius=10.,color='r',fill=False)
+                ax0.add_artist(circle)
+                #print(x_GOI,y_GOI,sep_GOI,pa_GOI)
+                ax0.annotate("{0:.2f}ac,{1:.1f}deg".format(sep_GOI,pa_GOI), fontsize=10, color = "red",xy=(float(x_GOI), float(y_GOI)),
+                            xycoords='data', xytext=(float(x_GOI)+10, float(y_GOI)-10)
+                            )
+                # ax0.annotate("{0:.1f}ac,{1:.1f}deg".format(sep_GOI,pa_GOI), fontsize=30, color = "red",xy=(float(x_GOI), float(y_GOI)),
+                #             xycoords='data', xytext=(float(x_GOI)+10, float(y_GOI)-10),
+                #             arrowprops=dict(arrowstyle="->",
+                #                             linewidth = 2.,
+                #                             color = 'red')
+                #             )
+
+        n_stamp = 31
+        row_m = np.floor(n_stamp/2.0)    # row_minus
+        row_p = np.ceil(n_stamp/2.0)     # row_plus
+        col_m = np.floor(n_stamp/2.0)    # col_minus
+        col_p = np.ceil(n_stamp/2.0)     # col_plus
+
+        for k in range(2):
+            proba = self.detec_table[k,self.val_id]
+            col_pos = self.detec_table[k,self.col_id]
+            row_pos = self.detec_table[k,self.row_id]
+            curr_x_pos = self.detec_table[k,self.x_id]
+            curr_y_pos = self.detec_table[k,self.y_id]
+            curr_pa = self.detec_table[k,self.pa_id]
+            curr_sep_pix = self.detec_table[k,self.sep_pix_id]
+            curr_sep_ac = self.detec_table[k,self.sep_as_id]
+
+            if proba < 4:
+                cand_color = "white"
+            elif 4 <= proba < 6:
+                cand_color = "yellow"
+            elif 6 <= proba:
+                cand_color = "orange"
+
+            circle=plt.Circle((curr_x_pos,curr_y_pos),radius=7.,color=cand_color,fill=False)
+            ax0.add_artist(circle)
+            #print(x_GOI,y_GOI,sep_GOI,pa_GOI)
+            ax0.annotate("{0}: {1:.2f}ac,{2:.1f}deg".format(k,curr_sep_ac,curr_pa), fontsize=10, color = cand_color,xy=(float(curr_x_pos)+3, float(curr_y_pos)+3),
+                        xycoords='data', xytext=(float(curr_x_pos)+10, float(curr_y_pos)+15),
+                        arrowprops=dict(arrowstyle="->",
+                                        linewidth = 2.,
+                                        color = cand_color))
+
+            stamp = self.image[(row_pos-row_m):(row_pos+row_p), (col_pos-col_m):(col_pos+col_p)]
+
+            #print((np.mod(k,2),-int(np.floor(k/2.))))
+            if k == 0:
+                ax = plt.subplot2grid((2,4),(0,0),colspan=1,rowspan=1)
+            elif k == 1:
+                ax = plt.subplot2grid((2,4),(0,3),colspan=1,rowspan=1)
+            title_obj = plt.title("Candidate {0}".format(k))
+            plt.setp(title_obj, color='white')
+            ax.text(0.,1.3*n_stamp,"False Pos. rate: 10^-{0:.1f}\nSep: {1:.1f}pix, {2:.2f}ac\nPA: {3:.1f}deg".format(proba,curr_sep_pix,curr_sep_ac,curr_pa) ,color=cand_color, fontsize=15)
+            plt.imshow(stamp[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
+            # Remove box and axes ticks
+            ax.set_axis_off()
+
+
+
+
+
+
+
         #plt.show()
         #plt.title(self.star_name)
 
@@ -338,20 +384,21 @@ class CADIQuicklook(KPPSuperClass):
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
-        plt.figure(1)
+        fig = plt.figure(1)
         if not self.mute:
             print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png')
-        plt.savefig(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png',
-                    bbox_inches='tight')
+        plt.savefig(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'2.png',
+                    bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
         if self.copy_save is not None:
             if not self.mute:
-                print(self.copy_save+os.path.sep+'CADI_quicklook_current.png')
+                print(self.copy_save+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png')
             src = self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png'
-            dst = self.copy_save+os.path.sep+'CADI_quicklook_current.png'
+            dst = self.copy_save+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png'
             shutil.copyfile(src, dst)
 
 
         plt.close(1)
+
 
         return None
 
