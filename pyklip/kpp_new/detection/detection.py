@@ -24,7 +24,9 @@ class Detection(KPPSuperClass):
                  mask_radius = None,
                  threshold = None,
                  maskout_edge = None,
-                 overwrite = False):
+                 overwrite = False,
+                 IWA = None,
+                 OWA = None):
         """
 
 
@@ -68,6 +70,8 @@ class Detection(KPPSuperClass):
             self.maskout_edge = maskout_edge
 
         self.platescale = 0.01417
+        self.IWA = IWA
+        self.OWA = OWA
 
 
     def initialize(self,inputDir = None,
@@ -123,6 +127,9 @@ class Detection(KPPSuperClass):
             if not self.mute:
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
+
+        if self.label == "CADI":
+            self.center = [140,140]
 
         try:
             self.folderName = self.exthdr["METFOLDN"]
@@ -223,8 +230,16 @@ class Detection(KPPSuperClass):
             sep_arcsec = sep_pix*self.platescale
             pa = np.mod(np.rad2deg(np.arctan2(-x_max_pos,y_max_pos)),360)
 
+
             # Mask the spot around the maximum we just found.
             image_cpy[(row_id-row_m):(row_id+row_p), (col_id-col_m):(col_id+col_p)] *= stamp_mask
+
+            if self.IWA is not None:
+                if sep_pix < self.IWA:
+                    continue
+            if self.OWA is not None:
+                if sep_pix > self.OWA:
+                    continue
 
             # Store the current local maximum information in the table
             self.candidate_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id,col_id])

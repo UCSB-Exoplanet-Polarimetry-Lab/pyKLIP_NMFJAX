@@ -71,15 +71,20 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder, mask_radius = 7):
                 return np.squeeze(cube_cpy)
 
             for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-                pa = float(GOI_list[obj_id,pa_id])
-                radius = float(GOI_list[obj_id,sep_id])/0.01414
-                x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-                y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-                col_centroid = x_max_pos+center[0]
-                row_centroid = y_max_pos+center[1]
-                k = round(row_centroid)
-                l = round(col_centroid)
-                cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+                try:
+                    pa = float(GOI_list[obj_id,pa_id])
+                    radius = float(GOI_list[obj_id,sep_id])/0.01414
+                    x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                    y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                    col_centroid = x_max_pos+center[0]
+                    row_centroid = y_max_pos+center[1]
+                    k = round(row_centroid)
+                    l = round(col_centroid)
+
+                    cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+
+                except:
+                    print("Missing data in GOI database for {0}".format(object_name))
 
     return np.squeeze(cube_cpy)
 
@@ -130,16 +135,20 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False,pa_sep = Fals
                 return [],[]
 
             for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-                pa = float(GOI_list[obj_id,pa_id])
-                radius = float(GOI_list[obj_id,sep_id])
-                pa_vec.append(pa)
-                sep_vec.append(radius)
-                x_max_pos = float(radius/0.01414)*np.cos(np.radians(90+pa))
-                y_max_pos = float(radius/0.01414)*np.sin(np.radians(90+pa))
-                x_vec.append(x_max_pos)
-                y_vec.append(y_max_pos)
-                row_vec.append(y_max_pos+center[1])
-                col_vec.append(x_max_pos+center[0])
+                try:
+                    pa = float(GOI_list[obj_id,pa_id])
+                    radius = float(GOI_list[obj_id,sep_id])
+
+                    pa_vec.append(pa)
+                    sep_vec.append(radius)
+                    x_max_pos = float(radius/0.01414)*np.cos(np.radians(90+pa))
+                    y_max_pos = float(radius/0.01414)*np.sin(np.radians(90+pa))
+                    x_vec.append(x_max_pos)
+                    y_vec.append(y_max_pos)
+                    row_vec.append(y_max_pos+center[1])
+                    col_vec.append(x_max_pos+center[0])
+                except:
+                    print("Missing data in GOI database for {0}".format(object_name))
     if pa_sep:
         return sep_vec,pa_vec
     elif xy:

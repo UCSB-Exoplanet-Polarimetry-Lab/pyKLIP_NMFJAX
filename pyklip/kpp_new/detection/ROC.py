@@ -125,14 +125,14 @@ class ROC(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
+        if self.label == "CADI":
+            self.center = [140,140]
+
         try:
             self.folderName = self.exthdr["METFOLDN"]
         except:
             pass
 
-        file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
-        self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
-        self.suffix = "ROC"
 
 
         # Check file existence and define filename_path
@@ -163,6 +163,9 @@ class ROC(KPPSuperClass):
         self.x_id = self.detec_table_labels.index("x")
         self.y_id = self.detec_table_labels.index("y")
 
+        file_ext_ind = os.path.basename(self.filename_detec_path)[::-1].find(".")
+        self.prefix = os.path.basename(self.filename_detec_path)[:-(file_ext_ind+1)]
+        self.suffix = "ROC"
         return init_out
 
     def check_existence(self):
@@ -196,7 +199,7 @@ class ROC(KPPSuperClass):
 
         self.false_detec_proba_vec = []
         self.true_detec_proba_vec = []
-        print(x_real_object_list,y_real_object_list)
+        # print(x_real_object_list,y_real_object_list)
         # Loop over all the local maxima stored in the detec csv file
         for k in range(self.N_detec):
             val_criter = self.detec_table[k,self.val_id]
@@ -207,6 +210,7 @@ class ROC(KPPSuperClass):
             if self.GOI_list_folder is not None:
                 too_close = False
                 for x_real_object,y_real_object  in zip(x_real_object_list,y_real_object_list):
+                    #print(np.sqrt((x_pos-x_real_object)**2+(y_pos-y_real_object)**2 ),self.detec_distance**2,self.ignore_distance**2)
                     if (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.detec_distance**2:
                         too_close = True
                         self.true_detec_proba_vec.append(val_criter)
@@ -223,8 +227,8 @@ class ROC(KPPSuperClass):
 
             self.false_detec_proba_vec.append(val_criter)
 
-        print(self.false_detec_proba_vec)
-        print(self.true_detec_proba_vec)
+        # print(self.false_detec_proba_vec)
+        # print(self.true_detec_proba_vec)
 
         self.N_false_pos = np.zeros(self.threshold_sampling.shape)
         self.N_true_detec = np.zeros(self.threshold_sampling.shape)
@@ -237,7 +241,7 @@ class ROC(KPPSuperClass):
         # plt.plot(self.N_false_pos,self.N_true_detec)
         # plt.show()
 
-        return [self.threshold_sampling]+[self.N_false_pos]+[self.N_true_detec]
+        return zip(self.threshold_sampling,self.N_false_pos,self.N_true_detec)
 
 
     def save(self):
@@ -254,7 +258,7 @@ class ROC(KPPSuperClass):
         with open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv', 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=';')
             csvwriter.writerows([["value","N false pos","N true pos"]])
-            csvwriter.writerows([self.threshold_sampling]+[self.N_false_pos]+[self.N_true_detec])
+            csvwriter.writerows(zip(self.threshold_sampling,self.N_false_pos,self.N_true_detec))
         return None
 
     def load(self):
@@ -266,6 +270,20 @@ class ROC(KPPSuperClass):
         return None
 
 def gather_ROC(filename_filter,mute = False):
+    """
+    Build the combined ROC curve from individual frame ROC curve.
+    It looks for all the file matching filename_filter using glob.glob and then add each individual ROC to build the
+    master ROC.
+
+    Plot master_N_false_pos vs master_N_true_detec to get a ROC curve.
+
+    :param filename_filter: Filename filter with wild characters indicating which files to pick
+    :param mute: If True, mute prints. Default is False.
+    :return: threshold_sampling,master_N_false_pos,master_N_true_detec:
+        threshold_sampling: The metric sampling. It is the curve parametrization.
+        master_N_false_pos: Number of false positives as a function of threshold_sampling
+        master_N_true_detec: Number of true positives as a function of threshold_sampling
+    """
     file_list = glob(filename_filter)
 
     with open(file_list[0], 'rb') as csvfile:
@@ -291,3 +309,73 @@ def gather_ROC(filename_filter,mute = False):
         master_N_true_detec = master_N_true_detec+detec_table[:,2]
 
     return threshold_sampling,master_N_false_pos,master_N_true_detec
+
+
+def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False):
+    """
+    Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
+    If the folders are organized following the convention below then it will make sure there is a ROC file for each
+    filename_filter in each epoch. Otherwise it skips the epoch.
+
+    The folders need to be organized as:
+     base_dir/TARGET/autoreduced/EPOCH_Spec/filename_filter
+
+    In the function TARGET and EPOCH are wild characters.
+
+    It looks for all the file matching filename_filter using glob.glob and then add each individual ROC to build the
+    master ROC.
+
+    Plot master_N_false_pos vs master_N_true_detec to get a ROC curve.
+
+    :param base_dir: Base directory from which the file search go.
+    :param filename_filter: Filename filter with wild characters indicating which files to pick.
+    :param mute: If True, mute prints. Default is False.
+    :return: threshold_sampling,master_N_false_pos,master_N_true_detec:
+        threshold_sampling: The metric sampling. It is the curve parametrization.
+        master_N_false_pos: Number of false positives as a function of threshold_sampling
+        master_N_true_detec: Number of true positives as a function of threshold_sampling
+    """
+
+    N_ROC = len(filename_filter_list)
+    threshold_sampling_list = [[]]*N_ROC
+    master_N_false_pos_list = [[]]*N_ROC
+    master_N_true_detec_list = [[]]*N_ROC
+
+    dirs_to_reduce = os.listdir(base_dir)
+    N=0
+    for object in dirs_to_reduce:
+        if not object.startswith('.'):
+            #print(object)
+
+            epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced"+os.path.sep+"*_Spec"+os.path.sep)
+
+            for epochDir in epochDir_glob:
+                inputDir = os.path.abspath(epochDir)
+
+                file_list = []
+                for filename_filter in filename_filter_list:
+                    try:
+                        file_list.append(glob(inputDir+os.path.sep+filename_filter)[0])
+                    except:
+                        if not mute:
+                            print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
+
+                if len(file_list) == N_ROC:
+                    for index,filename in enumerate(file_list):
+                        with open(filename, 'rb') as csvfile:
+                            reader = csv.reader(csvfile, delimiter=';')
+                            csv_as_list = list(reader)
+                            detec_table_labels = csv_as_list[0]
+                            detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+
+                        try:
+                            master_N_false_pos_list[index] = master_N_false_pos_list[index]+detec_table[:,1]
+                            master_N_true_detec_list[index] = master_N_true_detec_list[index]+detec_table[:,2]
+                        except:
+                            threshold_sampling_list[index] = detec_table[:,0]
+                            master_N_false_pos_list[index] = detec_table[:,1]
+                            master_N_true_detec_list[index] = detec_table[:,2]
+
+
+
+    return threshold_sampling_list,master_N_false_pos_list,master_N_true_detec_list

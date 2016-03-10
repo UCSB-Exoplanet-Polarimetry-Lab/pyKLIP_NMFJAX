@@ -323,6 +323,9 @@ class ShapeOrMF(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
+        if self.label == "CADI":
+            self.center = [140,140]
+
         # Get the filter of the image
         try:
             # Retrieve the filter used from the fits headers.

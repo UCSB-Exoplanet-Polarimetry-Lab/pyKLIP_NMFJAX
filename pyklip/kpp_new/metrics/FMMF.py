@@ -84,8 +84,6 @@ class FMMF(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :param quickTest: Read only two files (the first and the last) instead of the all sequence
         """
-        if not self.mute:
-            print("~~ INITializing "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
         # allocate super class
         super(FMMF, self).__init__(filename,
                                      inputDir = inputDir,
@@ -147,22 +145,30 @@ class FMMF(KPPSuperClass):
             self.annuli = annuli
 
         if predefined_sectors == "smallSep":
-            self.mvt = 0.5
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 100
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
+        if predefined_sectors == "smallSepBigSec":
+            self.OWA = 0.6/0.01413
+            self.N_pix_sector = 300
+            self.subsections = None
+            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
+            self.annuli = [(8.698727015558699, 19.953433013911035), (19.953433013911035, 42.46284501061571)]
+        if predefined_sectors == "avgSep":
+            self.OWA = 0.8/0.01413
+            self.N_pix_sector = 200
+            self.subsections = None
+            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
+            self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 41),(41, 56.5)]
         elif predefined_sectors == "cErib":
-            self.mvt = 0.5
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
         elif predefined_sectors == "HD_40781":
-            self.mvt = 0.3
             self.subsections = [[220./180.*np.pi,260./180.*np.pi]]
             self.annuli = [[60,80]]
         elif predefined_sectors == "HR_4597":
-            self.mvt = 0.3
             self.subsections = [[75./180.*np.pi,105./180.*np.pi]]
             self.annuli = [[16,36]]
 

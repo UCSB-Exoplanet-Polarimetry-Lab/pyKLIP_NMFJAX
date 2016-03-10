@@ -371,23 +371,13 @@ class FMMFQuicklook(KPPSuperClass):
         :return: None
         """
 
-        # Removing the old quicklook if there is already one available with less input cubes.
-        glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_*"+'.png')
-        file_exist = (len(glob_filename) >= 1)
-
-        if file_exist and not self.mute:
-            current_N_cubes = int(glob_filename[0].split("_")[-1].split(".")[0])
-            if current_N_cubes < self.N_cubes:
-                print("Removing file: "+glob_filename[0])
-                os.remove(glob_filename[0])
-
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
         fig = plt.figure(1)
         if not self.mute:
             print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png')
-        plt.savefig(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'2.png',
+        plt.savefig(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_"+str(self.N_cubes)+'.png',
                     bbox_inches='tight', facecolor=fig.get_facecolor(), edgecolor='none')
         if self.copy_save is not None:
             if not self.mute:
