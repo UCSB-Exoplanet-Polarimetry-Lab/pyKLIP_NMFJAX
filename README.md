@@ -48,6 +48,8 @@ If you are noticing your load averages greatly exceeding the number of threads/C
       import mkl
       mkl.set_num_threads(1)
 
+This command will now be executed in ``parallelized.py`` by default, if ``mkl-service`` is installed. The original maximum number of threads is saved, and restored to its original value after pyKLIP has finished.
+
 ### Bugs/Feature Requests ###
 
 Please use the Bitbucket Issue Tracker to submit bugs and new feature requests
