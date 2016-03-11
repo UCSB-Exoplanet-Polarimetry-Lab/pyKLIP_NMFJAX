@@ -37,7 +37,11 @@ Then ``cd`` into it and run ``setup.py`` with the ``develop`` option
 
 If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).
 
-If you are noticing your load averages greatly exceeding the number of threads/CPUs, consider setting the following variable:
+### Note on parallelized performance ###
+
+Due to the fact that numpy compiled with BLAS and MKL also parallelizes linear algebra routines across multiple cores, performance can actually sharply decrease when multiprocessing and BLAS/MKL both try to parallelize the KLIP math. If you are noticing your load averages greatly exceeding the number of threads/CPUs, try disabling the BLAS/MKL optimization when running pyKLIP.
+
+To disable OpenBLAS, just set the following environment variable before running pyKLIP:
 
     :::bash
        $ export OPENBLAS_NUM_THREADS=1
