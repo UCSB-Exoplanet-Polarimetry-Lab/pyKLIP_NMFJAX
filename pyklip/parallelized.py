@@ -12,6 +12,13 @@ import astropy.io.fits as fits
 import scipy.interpolate as interp
 from scipy.stats import norm
 
+#Logic to test mkl exists
+try:
+    import mkl
+    mkl_exists = True
+except ImportError:
+    mkl_exists = False
+
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 pa_imgs, wvs_imgs, centers_imgs, ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared,
                 seg_index_shared, seg_basis_shared, seg_shape_shared):
@@ -1369,6 +1376,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass)
     dataset.klipparams = klipparams
 
+    #Set MLK parameters
+    if mkl_exists:
+        old_mkl = mkl.get_max_threads()
+        mkl.set_num_threads(1)
+
     # run KLIP
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
@@ -1838,6 +1850,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     else:
         print("Invalid mode. Either ADI, SDI, or ADI+SDI")
         return
+
+    #Restore old setting
+    if mkl_exists:
+        mkl.set_num_threads(old_mkl)
 
 
 
