@@ -40,7 +40,17 @@ If you use multiple versions of python, you will need to run ``setup.py`` with e
 If you are noticing your load averages greatly exceeding the number of threads/CPUs, consider setting the following variable:
 
     :::bash
-       $ export OPENBLAS_NUM_THREADS=1   
+       $ export OPENBLAS_NUM_THREADS=1
+
+[A recent update to anaconda](https://www.continuum.io/blog/developer-blog/anaconda-25-release-now-mkl-optimizations) included some MKL optimizations which may cause load averages to greatly exceed the number of threads specified in pyKLIP. As with the OpenBLAS optimizations, this can be avoided by setting the maximum number of threads the MKL-enabled processes can use. As these optimizations may be useful for other python tasks, the variable should be set when pyKLIP is called, rather than on a system-wide level.
+
+    :::python
+      import mkl
+      mkl.get_max_threads()
+      2
+      mkl.set_num_threads(1)
+      mkl.get_max_threads()
+      1   
 
 ### Bugs/Feature Requests ###
 
