@@ -126,10 +126,6 @@ class FMMF(KPPSuperClass):
         else:
             self.mvt = mvt
 
-        if mvt is None:
-            self.mvt = 0.5
-        else:
-            self.mvt = mvt
 
         self.OWA = OWA
         self.N_pix_sector = N_pix_sector
@@ -466,6 +462,16 @@ class FMMF(KPPSuperClass):
         self.metric_shape = metric_shape
         self.sub_imgs = sub_imgs
         self.metricMap = [self.metric_MF,self.metric_shape,self.sub_imgs]
+
+
+        self.N_cubes = sub_imgs.shape[1]/self.nl
+        print(sub_imgs.shape)
+        cubes_list = []
+        for k in range(self.N_cubes):
+            cubes_list.append(sub_imgs[:,k*self.nl:(k+1)*self.nl,:,:])
+        self.final_cube_modes = np.nansum(cubes_list,axis = 0)
+        print(self.final_cube_modes.shape)
+
         return self.metricMap
 
 
@@ -522,13 +528,14 @@ class FMMF(KPPSuperClass):
                          filetype="FMSH",
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = "speccube-PSFs"
-        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
-        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-                         np.nansum(np.squeeze(self.sub_imgs),axis=0),
-                         filetype="PSF Subtracted Spectral Cube",
-                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
-                         extra_exthdr_keywords = extra_exthdr_keywords)
+        for k in range(self.final_cube_modes.shape[0]):
+            suffix = "speccube-KL{0}".format(self.numbasis[k])
+            extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
+            self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                             self.final_cube_modes[k],
+                             filetype="PSF Subtracted Spectral Cube",
+                             astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                             extra_exthdr_keywords = extra_exthdr_keywords)
 
         return None
 
@@ -541,19 +548,19 @@ class FMMF(KPPSuperClass):
 
         :return: self.metricMap
         """
-        suffix = "FMMF"
-        hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
-        self.metric_MF = hdulist[1].data
-        hdulist.close()
-        suffix = "FMSH"
-        hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
-        self.metric_shape = hdulist[1].data
-        hdulist.close()
-        suffix = "speccube-PSFs"
-        hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
-        self.sub_imgs = hdulist[1].data
-        hdulist.close()
-        self.metricMap = [self.metric_MF,self.metric_shape,self.sub_imgs]
+        # suffix = "FMMF"
+        # hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
+        # self.metric_MF = hdulist[1].data
+        # hdulist.close()
+        # suffix = "FMSH"
+        # hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
+        # self.metric_shape = hdulist[1].data
+        # hdulist.close()
+        # suffix = "speccube-PSFs"
+        # hdulist = pyfits.open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits')
+        # self.sub_imgs = hdulist[1].data
+        # hdulist.close()
+        # self.metricMap = [self.metric_MF,self.metric_shape,self.sub_imgs]
 
 
-        return self.metricMap
+        return None

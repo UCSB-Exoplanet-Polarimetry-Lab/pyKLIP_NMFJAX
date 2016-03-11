@@ -33,7 +33,7 @@ class MatchedFilter(NoFM):
                  save_per_sector = None,
                  datatype="float"):
         # allocate super class
-        super(MatchedFilter, self).__init__(inputs_shape, numbasis)
+        super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
 
         if datatype=="double":
             self.mp_data_type = ctypes.c_double
