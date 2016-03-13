@@ -1,3 +1,4 @@
+__author__ = 'jruffio'
 import multiprocessing as mp
 import ctypes
 
@@ -15,11 +16,21 @@ from copy import copy
 debug = False
 
 
-class PlanetChar(NoFM):
+class ExtractSpec(NoFM):
     """
     Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_psfs_wvs, flux_conversion, wavelengths='H', spectrallib=None, star_spt=None, refine_fit=False):
+    def __init__(self, inputs_shape,
+                 numbasis,
+                 sep, pa, dflux,
+                 input_psfs,
+                 input_psfs_wvs,
+                 flux_conversion,
+                 wavelengths='H',
+                 spectrallib=None,
+                 star_spt=None,
+                 datatype="float",
+                 stamp_size = None):
         """
         Defining the planet to characterizae
 
@@ -38,28 +49,42 @@ class PlanetChar(NoFM):
             refine_fit: refine the separation and pa supplied
         """
         # allocate super class
-        super(PlanetChar, self).__init__(inputs_shape, numbasis)
+        super(ExtractSpec, self).__init__(inputs_shape, np.array(numbasis))
+
+        if stamp_size is None:
+            self.stamp_size = 10
+        else:
+            self.stamp_size = stamp_size
+
+        if datatype=="double":
+            self.mp_data_type = ctypes.c_double
+            self.np_data_type = float
+        elif datatype=="float":
+            self.mp_data_type = ctypes.c_float
+            self.np_data_type = np.float32
+
+        self.N_numbasis =  np.size(numbasis)
+        self.ny = self.inputs_shape[1]
+        self.nx = self.inputs_shape[2]
+        self.N_frames = self.inputs_shape[0]
 
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.sep = sep
         self.pa = pa
-        self.dflux = dflux
-        if spectrallib is not None:
-            self.spectrallib = spectrallib
-        else:
-            spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
-            spectra_files = [spectra_folder + "t650g18nc.flx", spectra_folder + "t800g100nc.flx"]
-            self.spectrallib = [specmanage.get_planet_spectrum(filename, wavelengths)[1] for filename in spectra_files]
 
-        # TODO: calibrate to contrast units
-        # calibrate spectra to DN
-        self.spectrallib = [spectrum/(specmanage.get_star_spectrum(wavelengths, star_type=star_spt)[1]) for spectrum in self.spectrallib]
-        self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
 
         self.input_psfs = input_psfs
-        self.input_psfs_wvs = input_psfs_wvs
-        self.flux_conversion = flux_conversion
+        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
+        self.nl = np.size(input_psfs_wvs)
+        #self.flux_conversion = flux_conversion
+        self.input_psfs = input_psfs
+        # Make sure the peak value is unity for all wavelengths
+        self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
+        for l_id in range(self.input_psfs.shape[0]):
+            self.input_psfs[l_id,:,:] /= self.sat_spot_spec[l_id]
+
+        self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
@@ -69,29 +94,7 @@ class PlanetChar(NoFM):
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
-            #psfs_interp_model_list.append(interpolate.bisplrep(x_psf_grid,y_psf_grid,model_psf))
-            #psfs_interp_model_list.append(interpolate.SmoothBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel()))
             psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
-            #psfs_interp_model_list.append(interpolate.interp2d(x_psf_grid,y_psf_grid,model_psf,kind="cubic",bounds_error=False,fill_value=0.0))
-            #psfs_interp_model_list.append(interpolate.Rbf(x_psf_grid,y_psf_grid,model_psf,function="gaussian"))
-
-            if 0:
-                import matplotlib.pylab as plt
-                #print(x_psf_grid.shape)
-                #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
-                plt.figure(1)
-                plt.subplot(1,3,1)
-                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0])
-                plt.imshow(a,interpolation="nearest")
-                plt.colorbar()
-                ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
-                plt.subplot(1,3,2)
-                plt.imshow(self.input_psfs[wv_index, :, :],interpolation="nearest")
-                plt.colorbar()
-                plt.subplot(1,3,3)
-                plt.imshow(abs(self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
-                plt.colorbar()
-                plt.show()
 
         self.psfs_func_list = psfs_func_list
 
@@ -130,34 +133,36 @@ class PlanetChar(NoFM):
             fmout_shape: shape of FM data array
 
         """
-        fmout_size = np.prod(output_img_shape)
-        fmout = mp.Array(ctypes.c_double, fmout_size)
-        fmout_shape = output_img_shape
+        # The 3rd dimension (self.N_frames corresponds to the spectrum)
+        # The +1 in (self.N_frames+1) is for the klipped image
+        fmout_size = self.N_numbasis*self.N_frames*(self.N_frames+1)*self.stamp_size*self.stamp_size
+        fmout = mp.Array(self.mp_data_type, fmout_size)
+        fmout_shape = (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size )
 
         return fmout, fmout_shape
 
 
-    def alloc_perturbmag(self, output_img_shape, numbasis):
-        """
-        Allocates shared memory to store the fractional magnitude of the linear KLIP perturbation
-        Stores a number for each frame = max(oversub + selfsub)/std(PCA(image))
+    # def alloc_perturbmag(self, output_img_shape, numbasis):
+    #     """
+    #     Allocates shared memory to store the fractional magnitude of the linear KLIP perturbation
+    #     Stores a number for each frame = max(oversub + selfsub)/std(PCA(image))
+    #
+    #     Args:
+    #         output_img_shape: shape of output image (usually N,y,x,b)
+    #         numbasis: array/list of number of KL basis cutoffs requested
+    #
+    #     Returns:
+    #         perturbmag: mp.array to store linaer perturbation magnitude
+    #         perturbmag_shape: shape of linear perturbation magnitude
+    #
+    #     """
+    #     perturbmag_shape = (output_img_shape[0], np.size(numbasis))
+    #     perturbmag = mp.Array(ctypes.c_double, np.prod(perturbmag_shape))
+    #
+    #     return perturbmag, perturbmag_shape
 
-        Args:
-            output_img_shape: shape of output image (usually N,y,x,b)
-            numbasis: array/list of number of KL basis cutoffs requested
 
-        Returns:
-            perturbmag: mp.array to store linaer perturbation magnitude
-            perturbmag_shape: shape of linear perturbation magnitude
-
-        """
-        perturbmag_shape = (output_img_shape[0], np.size(numbasis))
-        perturbmag = mp.Array(ctypes.c_double, np.prod(perturbmag_shape))
-
-        return perturbmag, perturbmag_shape
-
-
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size = None):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -172,6 +177,7 @@ class PlanetChar(NoFM):
             ref_center: center of image
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
+            stamp_size: size of the stamp for spectral extraction
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -181,6 +187,7 @@ class PlanetChar(NoFM):
         ny = input_img_shape[0]
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
+
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
@@ -188,6 +195,15 @@ class PlanetChar(NoFM):
         row_p = np.ceil(ny_psf/2.0)     # row_plus
         col_m = np.floor(nx_psf/2.0)    # col_minus
         col_p = np.ceil(nx_psf/2.0)     # col_plus
+
+        if stamp_size is not None:
+            stamp_mask = np.zeros((ny,nx))
+            # create bounds for spectral extraction stamp size
+            row_m_stamp = np.floor(stamp_size/2.0)    # row_minus
+            row_p_stamp = np.ceil(stamp_size/2.0)     # row_plus
+            col_m_stamp = np.floor(stamp_size/2.0)    # col_minus
+            col_p_stamp = np.ceil(stamp_size/2.0)     # col_plus
+            stamp_indices=[]
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -213,7 +229,7 @@ class PlanetChar(NoFM):
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
             l = round(psf_centx + ref_center[0])
-            k = round(psf_centy + ref_center[1]) 
+            k = round(psf_centy + ref_center[1])
             # recenter coordinate system about the location of the planet
             x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
             y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
@@ -233,37 +249,18 @@ class PlanetChar(NoFM):
 
             models.append(segment_with_model)
 
-            # create a canvas to place the new PSF in the sector on
-            if debug:
-                print(x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0])
-                canvas = np.zeros(input_img_shape)
-                canvas.shape = [input_img_shape[0] * input_img_shape[1]]
-                canvas[section_ind] = segment_with_model
-                canvas.shape = [input_img_shape[0], input_img_shape[1]]
-                canvases.append(canvas)
-                import matplotlib.pyplot as plt
-                plt.figure(1)
-                plt.subplot(2,2,1)
-                im = plt.imshow(canvas)
-                plt.colorbar(im)
-                plt.subplot(2,2,2)
-                im = plt.imshow(whiteboard)
-                plt.colorbar(im)
-                plt.subplot(2,2,3)
-                plt.imshow(psfs_interp_model_list[wv_index[0]](np.arange(-20,20,1.),np.arange(-20,20,1.)),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
-                plt.subplot(2,2,4)
-                plt.imshow(psfs_interp_model_list[wv_index[0]](x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0]),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
-                plt.show()
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
+            if stamp_size is not None:
+                # These are actually indices of indices. they indicate which indices correspond to the stamp in section_ind
+                stamp_mask[(k-row_m_stamp):(k+row_p_stamp), (l-col_m_stamp):(l+col_p_stamp)] = 1
+                stamp_mask.shape = [nx*ny]
+                stamp_indices.append(np.where(stamp_mask[section_ind] == 1)[0])
+                stamp_mask.shape = [ny,nx]
+                stamp_mask[(k-row_m_stamp):(k+row_p_stamp), (l-col_m_stamp):(l+col_p_stamp)] = 0
 
-        if debug:
-            #import matplotlib.pylab as plt
-            for canvas in canvases:
-                im = plt.imshow(canvas)
-                plt.colorbar(im)
-                plt.show()
-
-        return np.array(models)
+        if stamp_size is not None:
+            return np.array(models),stamp_indices
+        else:
+            return np.array(models)
 
 
 
@@ -309,39 +306,41 @@ class PlanetChar(NoFM):
 
 
         # generate models for the PSF of the science image
-        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)[0]
-        model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
+        model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size=self.stamp_size)
+        model_sci = model_sci[0]
+        stamp_indices = stamp_indices[0]
+        #model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
         models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
 
-        # Calculate the spectra to determine the flux of each model reference PSF
-        total_imgs = np.size(self.flux_conversion)
-        num_wvs = self.spectrallib[0].shape[0]
-        input_spectrum = self.flux_conversion[:self.spectrallib[0].shape[0]] * self.spectrallib[0] * self.dflux
-        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs/num_wvs)))
-        input_spectrum = input_spectrum[ref_psfs_indicies]
-        models_ref = models_ref * input_spectrum[:, None]
-
         # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
-        delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+        #delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+        delta_KL_nospec = fm.pertrurb_nospec(evals, evecs, klmodes, refs, models_ref)
 
         # calculate postklip_psf using delta_KL
-        postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
+        oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL_nospec, klmodes, numbasis, sci, model_sci, inputflux=None)
+        # klipped_oversub.shape = (size(numbasis),Npix)
+        # klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+        # klipped_oversub = Sum(<S|KL>KL)
+        # klipped_selfsub = Sum(<N|DKL>KL) + Sum(<N|KL>DKL)
 
-        # calculate validity of linear perturbation on KLIP modes
-        pca_img = (sci - np.nanmean(sci))[:, None] - klipped # shape of ( size(section), b)
-        perturb_frac = np.nanmax(np.abs(oversubtraction + selfsubtraction), axis=1)/np.nanstd(pca_img, axis=0) # array of b
-        perturbmag[input_img_num] = perturb_frac
+        # # write forward modelled PSF to fmout (as output)
+        # # need to derotate the image in this step
+        # for thisnumbasisindex in range(np.size(numbasis)):
+        #         fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
+        #                          fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
+        #                          radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
-        fmout_shape = fmout.shape
 
-        # write forward modelled PSF to fmout (as output)
-        # need to derotate the image in this step
-        for thisnumbasisindex in range(np.size(numbasis)):
-                fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
-                                 fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+        #input_img_num=None, ref_psfs_indicies=None, section_ind[stamp_indices]=None
+        # fmout.shape (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
+        for k in range(self.N_numbasis):
+            fmout[k,input_img_num, input_img_num,:] = model_sci[stamp_indices]
+        fmout[:,input_img_num, input_img_num,:] = -oversubtraction[:,stamp_indices]
+        fmout[:,input_img_num, ref_psfs_indicies,:] = -selfsubtraction[:,:,stamp_indices]
+        fmout[:,input_img_num, -1,:] = klipped.T[:,stamp_indices]
+
 
 
 
@@ -355,11 +354,34 @@ class PlanetChar(NoFM):
         Return:
             fmout: same but cleaned up if necessary
         """
+        # Here we actually extract the spectrum
 
-        # Let's reshape the output images
-        # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
-        dims = fmout.shape
-        fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
+        spec_identity = np.identity(37)
+        selec = np.tile(spec_identity,(self.N_frames/self.nl,1))
+
+        FM_noSpec = fmout[0,:, 0:self.N_frames,:]
+
+        FM_noSpec = np.rollaxis(FM_noSpec,2,1)
+        klipped = fmout[0,:, -1,:]
+
+        FM_noSpec_mat = np.reshape(FM_noSpec,(self.N_frames*self.stamp_size*self.stamp_size,self.N_frames))
+        klipped_vec = np.reshape(klipped,(self.N_frames*self.stamp_size*self.stamp_size,))
+
+        print("coucou")
+        print(FM_noSpec_mat.shape)
+        print(klipped.shape)
+
+        FM_noSpec_mat = np.dot(FM_noSpec_mat,selec)
+        print("FM_noSpec_mat after selec",FM_noSpec_mat.shape)
+
+        pinv_fm = np.linalg.pinv(FM_noSpec_mat)
+        estim_spec = np.dot(pinv_fm,klipped_vec)
+        print("pinv_fm",pinv_fm.shape)
+
+        import matplotlib.pyplot as plt
+        plt.plot(estim_spec)
+        plt.show()
+
         return fmout
 
 
