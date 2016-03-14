@@ -147,7 +147,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
-def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
+def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
@@ -196,8 +196,10 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref):
 
     delta_KL = (beta*alpha).dot(original_KL)+(evalse_inv_sqrt[:,None]*evecs.transpose()).dot(models_mean_sub)
 
-
-    return delta_KL
+    if return_perturb_covar:
+        return delta_KL, C
+    else:
+        return delta_KL
 
 
 def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
@@ -406,6 +408,82 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
                       np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
 
     return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+
+
+def calculate_validity(covar_perturb, models_ref, numbasis):
+    """
+    Calculate the validity of the perturbation based on the eigenvalues or the 2nd order term compared
+     to the 0th order term of the covariance matrix expansion
+
+    Args:
+        evals_perturb: linear expansion of the perturbed covariance matrix (C_AS). Shape of N x N
+        models_ref: N x p array of the N models corresponding to reference images.
+                    Each model should contain spectral information
+        numbasis: array of KL mode cutoffs
+
+    Returns:
+        delta_KL_nospec: perturbed KL modes. Shape is (numKL, wv, pix)
+    """
+
+    # calculate the C_AA matrix, covariance of the model psf with itself in the sequence
+    covars_model = np.dot(models_ref, models_ref.T)
+    tot_basis = covars_model.shape[0]
+
+    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
+    max_basis = np.max(numbasis) + 1
+
+    # calculate eigenvectors/values of 1st order term in covariance matrix expansion
+    evals_perturb, evecs_perturb = la.eigh(covar_perturb, eigvals = (tot_basis-max_basis, tot_basis-1))
+    evals_perturb = np.copy(evals_perturb[::-1])
+    # calculate eigenvectors/values of 2nd order term in covariance matrix expansion
+    evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
+    evals_model = np.copy(evals_model[::-1])
+    # evecs_model = np.copy(evecs_model[:,::-1])
+
+    # calculate relative magnitude of the second order term compared to the first order term
+    perturb_mag = np.abs(evals_model / evals_perturb) # 2nd order / 1st order << 1
+
+    validity = np.zeros(np.size(numbasis))
+    for i, basis_cutoff in enumerate(numbasis):
+        validity[i] = np.max(perturb_mag[:basis_cutoff+1])
+
+    return validity
+
+def calculate_validity2(evals_orig, models_ref, numbasis):
+    """
+    Calculate the validity of the perturbation based on the eigenvalues or the 2nd order term compared
+     to the 0th order term of the covariance matrix expansion
+
+    Args:
+        evals_perturb: linear expansion of the perturbed covariance matrix (C_AS). Shape of N x N
+        models_ref: N x p array of the N models corresponding to reference images.
+                    Each model should contain spectral information
+        numbasis: array of KL mode cutoffs
+
+    Returns:
+        delta_KL_nospec: perturbed KL modes. Shape is (numKL, wv, pix)
+    """
+
+    # calculate the C_AA matrix, covariance of the model psf with itself in the sequence
+    covars_model = np.dot(models_ref, models_ref.T)
+    tot_basis = covars_model.shape[0]
+
+    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
+    max_basis = np.max(numbasis) + 1
+
+    # calculate eigenvectors/values of 2nd order term in covariance matrix expansion
+    evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
+    evals_model = np.copy(evals_model[::-1])
+    # evecs_model = np.copy(evecs_model[:,::-1])
+
+    # calculate relative magnitude of the second order term compared to the first order term
+    perturb_mag = np.abs(evals_model / evals_orig) # 2nd order / 1st order << 1
+
+    validity = np.zeros(np.size(numbasis))
+    for i, basis_cutoff in enumerate(numbasis):
+        validity[i] = np.max(perturb_mag[:basis_cutoff+1])
+
+    return validity
 
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,aligned_center=None, minrot=0): #Zack
     """

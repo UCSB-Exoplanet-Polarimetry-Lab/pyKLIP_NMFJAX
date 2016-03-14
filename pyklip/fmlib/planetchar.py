@@ -325,7 +325,8 @@ class PlanetChar(NoFM):
         models_ref = models_ref * input_spectrum[:, None]
 
         # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
-        delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+        # also grab the pertrubed (C_AS) covariance matrix to compute its eigenvalues
+        delta_KL, covar_perturb = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref, return_perturb_covar=True)
 
         # calculate postklip_psf using delta_KL
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
@@ -333,7 +334,9 @@ class PlanetChar(NoFM):
         # calculate validity of linear perturbation on KLIP modes
         pca_img = (sci - np.nanmean(sci))[:, None] - klipped # shape of ( size(section), b)
         perturb_frac = np.nanmax(np.abs(oversubtraction + selfsubtraction), axis=1)/np.nanstd(pca_img, axis=0) # array of b
-        perturbmag[input_img_num] = perturb_frac
+        this_validity = fm.calculate_validity(covar_perturb, models_ref, numbasis) # array of b
+        #this_validity = fm.calculate_validity2(evals, models_ref, numbasis) # array of b
+        perturbmag[input_img_num] = this_validity
 
         fmout_shape = fmout.shape
 
