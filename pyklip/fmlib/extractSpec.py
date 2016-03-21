@@ -52,7 +52,7 @@ class ExtractSpec(NoFM):
         super(ExtractSpec, self).__init__(inputs_shape, np.array(numbasis))
 
         if stamp_size is None:
-            self.stamp_size = 10
+            self.stamp_size = 5
         else:
             self.stamp_size = stamp_size
 
@@ -364,8 +364,18 @@ class ExtractSpec(NoFM):
         FM_noSpec = np.rollaxis(FM_noSpec,2,1)
         klipped = fmout[0,:, -1,:]
 
+        import pyklip.spectra_management as spec
+        import pyklip.klip as klip
+        import matplotlib.pyplot as plt
+
+        pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
+        spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+"t650g32nc.flx")
+        myspec = spec.get_planet_spectrum(spectrum_filename, "H")[1]
+
         FM_noSpec_mat = np.reshape(FM_noSpec,(self.N_frames*self.stamp_size*self.stamp_size,self.N_frames))
         klipped_vec = np.reshape(klipped,(self.N_frames*self.stamp_size*self.stamp_size,))
+
+
 
         print("coucou")
         print(FM_noSpec_mat.shape)
@@ -374,12 +384,65 @@ class ExtractSpec(NoFM):
         FM_noSpec_mat = np.dot(FM_noSpec_mat,selec)
         print("FM_noSpec_mat after selec",FM_noSpec_mat.shape)
 
+        esti_klipped = np.dot(FM_noSpec_mat,myspec)
+        plt.figure(2)
+        klipped_sum = np.nansum(klipped,axis=1)
+        esti_klipped_sum = np.nansum(np.reshape(esti_klipped,(self.N_frames,self.stamp_size*self.stamp_size)),axis=1)
+        klipped_37 = np.zeros((37,))
+        esti_klipped_37  = np.zeros((37,))
+        for k in range(self.N_frames/37):
+            klipped_37 = klipped_37 + klipped_sum[k*self.nl:(k+1)*self.nl]
+            esti_klipped_37 = esti_klipped_37 + esti_klipped_sum[k*self.nl:(k+1)*self.nl]
+        plt.plot(klipped_37,"r")
+        plt.plot(esti_klipped_37,"b")
+
         pinv_fm = np.linalg.pinv(FM_noSpec_mat)
         estim_spec = np.dot(pinv_fm,klipped_vec)
         print("pinv_fm",pinv_fm.shape)
 
-        import matplotlib.pyplot as plt
+        plt.figure(1)
         plt.plot(estim_spec)
+
+        U, s, V = np.linalg.svd(FM_noSpec_mat, full_matrices=False)
+        print(U.shape, V.shape, s.shape)
+        S = np.diag(s)
+        np.allclose(FM_noSpec_mat, np.dot(U, np.dot(S, V)))
+
+        invS = np.diag((1/s[0:20]).tolist()+[0]*(37-20))
+        svdinv = np.dot(V.T, np.dot(invS, U.T))
+        estim_spec2 = np.dot(svdinv,klipped_vec)
+        plt.figure(3)
+        plt.plot(estim_spec2)
+
+
+
+
+        FM_noSpec_tmp = np.reshape(FM_noSpec,(self.N_frames,self.stamp_size*self.stamp_size,self.N_frames))
+        klipped_tmp = np.reshape(klipped,(self.N_frames,self.stamp_size*self.stamp_size))
+
+        FM_noSpec_tmp_37 = np.zeros((37,self.stamp_size*self.stamp_size,self.N_frames))
+        klipped_tmp_37  = np.zeros((37,self.stamp_size*self.stamp_size))
+        for k in range(self.N_frames/37):
+            FM_noSpec_tmp_37 = FM_noSpec_tmp_37 + FM_noSpec_tmp[k*self.nl:(k+1)*self.nl,:,:]
+            klipped_tmp_37 = klipped_tmp_37 + klipped_tmp[k*self.nl:(k+1)*self.nl,:]
+        FM_noSpec_tmp_3737 = np.zeros((37,self.stamp_size*self.stamp_size,37))
+        for k in range(self.N_frames/37):
+            FM_noSpec_tmp_3737 = FM_noSpec_tmp_3737 + FM_noSpec_tmp_37[:,:,k*self.nl:(k+1)*self.nl]
+
+        FM_noSpec_tmp_3737=np.nansum(FM_noSpec_tmp_3737,axis=1)
+        klipped_tmp_37=np.nansum(klipped_tmp_37,axis=1)
+
+        #FM_noSpec_tmp_3737 = np.reshape(FM_noSpec_tmp_3737,(37*self.stamp_size*self.stamp_size,37))
+        #klipped_tmp_37 = np.reshape(klipped_tmp_37,(37*self.stamp_size*self.stamp_size,))
+
+        pinv_fm = np.linalg.pinv(FM_noSpec_tmp_3737)
+        estim_spec = np.dot(pinv_fm,klipped_tmp_37)
+        print("pinv_fm",pinv_fm.shape)
+
+        plt.figure(4)
+        plt.plot(estim_spec)
+
+
         plt.show()
 
         return fmout

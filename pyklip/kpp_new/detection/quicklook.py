@@ -11,11 +11,11 @@ import shutil
 from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp_new.utils.GOI import *
 
-class FMMFQuicklook(KPPSuperClass):
+class Quicklook(KPPSuperClass):
     """
     Class for CADI quicklook.
     """
-    def __init__(self,
+    def __init__(self,filename_proba,filename_detec,
                  inputDir = None,
                  outputDir = None,
                  mute=None,
@@ -40,7 +40,7 @@ class FMMFQuicklook(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         """
         # allocate super class
-        super(FMMFQuicklook, self).__init__("No filename for CADI Quicklook",
+        super(Quicklook, self).__init__("No filename for Quicklook",
                                      inputDir = inputDir,
                                      outputDir = outputDir,
                                      folderName = None,
@@ -49,9 +49,12 @@ class FMMFQuicklook(KPPSuperClass):
                                      label=label,
                                      overwrite = overwrite)
 
+        self.filename_proba = filename_proba
+        self.filename_detec = filename_detec
+
         self.copy_save = copy_save
         self.GOI_list_folder = GOI_list_folder
-        self.suffix = "FMMFQuicklook"
+        self.suffix = label+"quicklook"
 
 
     def initialize(self,inputDir = None,
@@ -91,7 +94,7 @@ class FMMFQuicklook(KPPSuperClass):
         if not self.mute:
             print("~~ INITializing "+self.__class__.__name__+" ~~")
         # The super class already read the fits file
-        init_out = super(FMMFQuicklook, self).initialize(inputDir = inputDir,
+        init_out = super(Quicklook, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label = label,
@@ -102,28 +105,26 @@ class FMMFQuicklook(KPPSuperClass):
         # self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"cadi_*_nosdi_hp4-SNR_Dr2rs2.fits"
         # self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"cadi_*_sdi_hp4-SNR_Dr2rs2.fits"
 
-        self.filename_FMMF_proba = "planet_detec_FMMF_smallSep"+os.path.sep+"t600g32nc"+os.path.sep+"*-SNRPerPixDr2-probaIW.fits"
-        self.filename_detec = "planet_detec_FMMF_smallSep"+os.path.sep+"t600g32nc"+os.path.sep+"*-SNRPerPixDr2-probaIW-DetecTh2Mr4.csv"
 
         # Check file existence and define filename_path
         if self.inputDir is None:
             try:
-                self.filename_FMMF_proba_path = os.path.abspath(glob(self.filename_FMMF_proba)[0])
+                self.filename_proba_path = os.path.abspath(glob(self.filename_proba)[0])
             except:
-                raise Exception("File "+self.filename_FMMF_proba+"doesn't exist.")
+                raise Exception("File "+self.filename_proba+"doesn't exist.")
         else:
             try:
-                self.filename_FMMF_proba_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_FMMF_proba)[0])
+                self.filename_proba_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_proba)[0])
             except:
-                raise Exception("File "+self.inputDir+os.path.sep+self.filename_FMMF_proba+"doesn't exist.")
+                raise Exception("File "+self.inputDir+os.path.sep+self.filename_proba+"doesn't exist.")
 
         # Define this attribute in case something needs it.
         self.filename_path = self.filename
 
         # Open the fits file on which the metric will be applied
-        hdulist1 = pyfits.open(self.filename_FMMF_proba_path)
+        hdulist1 = pyfits.open(self.filename_proba_path)
         if not self.mute:
-            print("Opened: "+self.filename_FMMF_proba_path)
+            print("Opened: "+self.filename_proba_path)
 
         # grab the data and headers
         try:
@@ -256,7 +257,7 @@ class FMMFQuicklook(KPPSuperClass):
         file_exist = (len(glob_filename) >= 1)
 
         if file_exist and not self.mute:
-            print("FMMF quicklook output already exist: "+glob_filename[0])
+            print("Quicklook output already exist: "+glob_filename[0])
 
 
         if self.overwrite and not self.mute:

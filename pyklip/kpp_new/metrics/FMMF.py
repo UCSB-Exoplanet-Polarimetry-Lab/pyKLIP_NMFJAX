@@ -140,12 +140,22 @@ class FMMF(KPPSuperClass):
         else:
             self.annuli = annuli
 
+        if predefined_sectors == "maskEdge":
+            self.N_pix_sector = 100
+            self.subsections = None
+            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
+            self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202)]
         if predefined_sectors == "smallSep":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 100
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
+        if predefined_sectors == "OneAc":
+            self.N_pix_sector = 100
+            self.subsections = None
+            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
+            self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 300
@@ -167,6 +177,9 @@ class FMMF(KPPSuperClass):
         elif predefined_sectors == "HR_4597":
             self.subsections = [[75./180.*np.pi,105./180.*np.pi]]
             self.annuli = [[16,36]]
+        elif predefined_sectors == "HR_5121":
+            self.subsections = [[90./180.*np.pi,110./180.*np.pi]]
+            self.annuli = [[30,40]]
 
 
 
@@ -442,6 +455,19 @@ class FMMF(KPPSuperClass):
                                    OWA = self.OWA,
                                    mute_progression = self.mute_progression)
 
+        #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        self.N_cubes = fmout.shape[3]/37
+        print(self.N_cubes)
+        methane_indices = []
+        other_indices = []
+        for k in range(self.N_cubes):
+            methane_indices.extend(range(k*self.nl,(k+1)*self.nl-19))
+            other_indices.extend(range((k+1)*self.nl-19,(k+1)*self.nl))
+        self.matched_filter_maps_methane = np.squeeze(np.nansum(fmout[0,:,:,methane_indices,:,:],axis=0))
+        self.matched_filter_maps_other = np.squeeze(np.nansum(fmout[0,:,:,other_indices,:,:],axis=0))
+        self.matched_filter_maps_methane[np.where(self.matched_filter_maps_methane==0)]=np.nan
+        self.matched_filter_maps_other[np.where(self.matched_filter_maps_other ==0)]=np.nan
+
         # Build the matched filter and shape maps from fmout
         matched_filter_maps = np.nansum(fmout[0,:,:,:,:,:],axis=2)
         model_square_norm_maps = np.nansum(fmout[1,:,:,:,:,:],axis=2)
@@ -450,27 +476,30 @@ class FMMF(KPPSuperClass):
         matched_filter_maps[np.where(matched_filter_maps==0)]=np.nan
         model_square_norm_maps[np.where(model_square_norm_maps==0)]=np.nan
         image_square_norm_maps[np.where(image_square_norm_maps==0)]=np.nan
-        metric_MF = matched_filter_maps/np.sqrt(model_square_norm_maps*image_square_norm_maps)
-        metric_shape = matched_filter_maps/np.sqrt(model_square_norm_maps)
+        metric_MF = matched_filter_maps/np.sqrt(model_square_norm_maps)
+        metric_pFlux = matched_filter_maps/model_square_norm_maps/fmout.shape[3]
+        metric_shape = matched_filter_maps/np.sqrt(model_square_norm_maps*image_square_norm_maps)
         metric_MF = np.squeeze(metric_MF)
+        metric_pFlux = np.squeeze(metric_pFlux)
         metric_shape = np.squeeze(metric_shape)
 
         # Update the wcs headers to indicate North up
         [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.dataset.PAs, self.dataset.wcs)]
 
         self.metric_MF = metric_MF
+        self.metric_pFlux = metric_pFlux
         self.metric_shape = metric_shape
         self.sub_imgs = sub_imgs
         self.metricMap = [self.metric_MF,self.metric_shape,self.sub_imgs]
 
 
         self.N_cubes = sub_imgs.shape[1]/self.nl
-        print(sub_imgs.shape)
+        #print(sub_imgs.shape)
         cubes_list = []
         for k in range(self.N_cubes):
             cubes_list.append(sub_imgs[:,k*self.nl:(k+1)*self.nl,:,:])
         self.final_cube_modes = np.nansum(cubes_list,axis = 0)
-        print(self.final_cube_modes.shape)
+        #print(self.final_cube_modes.shape)
 
         return self.metricMap
 
@@ -492,7 +521,7 @@ class FMMF(KPPSuperClass):
         extra_exthdr_keywords = [("METNUMBA",str(self.numbasis)),
                                  ("METMAXNB",self.maxnumbasis),
                                  ("MET_MVT",self.mvt),
-                                 ("MET_OWA",self.OWA),
+                                 ("MET_OWA",str(self.OWA)),
                                  ("METNPIXS",self.N_pix_sector),
                                  ("METSUBSE",str(self.subsections)),
                                  ("METANNUL",str(self.annuli)),
@@ -513,15 +542,44 @@ class FMMF(KPPSuperClass):
         if hasattr(self,"star_temperature"):
             extra_exthdr_keywords.append(("METSTTEM",self.star_temperature))
 
+
+        if self.quickTest:
+            susuffix = "QT"
+        else:
+            susuffix = ""
+
+        # suffix = "FMMFmeth"
+        # extra_exthdr_keywords.append(("METSUFFI",suffix))
+        # self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+        #                  self.matched_filter_maps_methane,
+        #                  filetype="FMMFmeth",
+        #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+        #                  extra_exthdr_keywords = extra_exthdr_keywords)
+        # suffix = "FMMFother"
+        # extra_exthdr_keywords.append(("METSUFFI",suffix))
+        # self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+        #                  self.matched_filter_maps_other,
+        #                  filetype="FMMFother",
+        #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+        #                  extra_exthdr_keywords = extra_exthdr_keywords)
+
+
         # Save the outputs (matched filter, shape map and klipped image) as fits files
-        suffix = "FMMF"
+        suffix = "FMMF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_MF,
                          filetype="FMMF",
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = "FMSH"
+        suffix = "FMpF"+susuffix
+        extra_exthdr_keywords.append(("METSUFFI",suffix))
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_pFlux,
+                         filetype="FMpF",
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
+        suffix = "FMSH"+susuffix
         extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_shape,
@@ -529,7 +587,7 @@ class FMMF(KPPSuperClass):
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         for k in range(self.final_cube_modes.shape[0]):
-            suffix = "speccube-KL{0}".format(self.numbasis[k])
+            suffix = "speccube-KL{0}".format(self.numbasis[k])+susuffix
             extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
             self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.final_cube_modes[k],

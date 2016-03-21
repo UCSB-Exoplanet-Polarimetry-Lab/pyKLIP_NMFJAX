@@ -28,15 +28,27 @@ def get_occ(image, centroid = None):
     # Calculate the radial distance of each pixel
     r = abs(x +y*1j)
 
-    IWA = -1
-    N_nans, N_nans_new = -1, 0
-    while N_nans_new != N_nans:
-        IWA = IWA+1
-        N_nans = N_nans_new
-        N_nans_new = np.size(np.where(np.isnan(image)*(r<IWA+1))[0])
-
     mask = np.ones((ny,nx))
-    mask[np.where(np.isnan(image))] = np.nan
+    if np.sum(np.isnan(image)) == 0:
+        IWA = -1
+        N_nans, N_nans_new = -1, 0
+        while N_nans_new != N_nans:
+            IWA = IWA+1
+            N_nans = N_nans_new
+            N_nans_new = np.size(np.where((image==0)*(r<IWA+1))[0])
+
+        mask[np.where(image==0)] = np.nan
+    else:
+        IWA = -1
+        N_nans, N_nans_new = -1, 0
+        while N_nans_new != N_nans:
+            IWA = IWA+1
+            N_nans = N_nans_new
+            N_nans_new = np.size(np.where(np.isnan(image)*(r<IWA+1))[0])
+
+        mask[np.where(np.isnan(image))] = np.nan
+
+
 
     inner_mask = copy(mask)
     inner_mask[np.where(r > IWA+3.)] = 1

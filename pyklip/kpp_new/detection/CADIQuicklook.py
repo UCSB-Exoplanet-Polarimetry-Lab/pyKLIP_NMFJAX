@@ -104,8 +104,8 @@ class CADIQuicklook(KPPSuperClass):
 
         self.filename_nosdi = "cadi_*_nosdi_hp4.fits"
         self.filename_sdi = "cadi_*_sdi_hp4.fits"
-        self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_nosdi_hp4-SNR_Dr2rs2hat.fits"
-        self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_sdi_hp4-SNR_Dr2rs2hat.fits"
+        self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_nosdi_hp4-SNRDr2rs2hat.fits"
+        self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_sdi_hp4-SNRDr2rs2hat.fits"
         # self.filename_nosdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_noSDI-shape2Dhat-SNR_Dr2rs2.fits"
         # self.filename_sdiSNR = "planet_detec_CADI"+os.path.sep+"default_out"+os.path.sep+"*_SDI-shape2Dhat-SNR_Dr2rs2.fits"
 

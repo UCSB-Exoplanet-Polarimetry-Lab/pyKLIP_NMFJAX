@@ -1,10 +1,14 @@
 __author__ = 'JB'
 import os
 
-def kppPerDir(inputDir,obj_list,spec_path_list = None,outputDir = None, mute_error = True):
+def kppPerDir(inputDir,obj_list,spec_path_list = None,outputDir = None, mute_error = True,compact_date_convention = None):
+
+    if compact_date_convention is None:
+        compact_date_convention = "GPIDATA"
 
     inputDir = os.path.abspath(inputDir)
-    compact_date=inputDir.split(os.path.sep)[-1].split("_")[0]
+    if compact_date_convention == "GPIDATA":
+        compact_date=inputDir.split(os.path.sep)[-1].split("_")[0]
 
     if outputDir is None:
         outputDir = inputDir

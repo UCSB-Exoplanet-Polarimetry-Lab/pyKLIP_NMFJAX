@@ -60,7 +60,6 @@ def get_image_stat_map_perPixMasking(image,
     else:
         IWA,OWA = IOWA
 
-
     if centroid is None :
         x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
     else:
