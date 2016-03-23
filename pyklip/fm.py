@@ -403,6 +403,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
     oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, original_KL.T)
     if np.size(delta_KL.shape) == 2:
         selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, delta_KL.T)
+        # selfsubtraction_1_inner_products.shape = (max_basis,N_pix,max_basis)
     else:
         Nlambda = delta_KL.shape[1]
         #Before delta_KL.shape = (max_basis,N_lambda or N_ref,N_pix)
@@ -1361,7 +1362,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
                                  covar_psfs=covar_files,)
     klipped, original_KL, evals, evecs = klip_math_return
-
 
     # write standard klipped image to output if we are saving outputs
     if output_imgs is not None:

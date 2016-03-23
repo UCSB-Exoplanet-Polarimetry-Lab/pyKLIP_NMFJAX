@@ -22,13 +22,9 @@ class ExtractSpec(NoFM):
     """
     def __init__(self, inputs_shape,
                  numbasis,
-                 sep, pa, dflux,
+                 sep, pa,
                  input_psfs,
                  input_psfs_wvs,
-                 flux_conversion,
-                 wavelengths='H',
-                 spectrallib=None,
-                 star_spt=None,
                  datatype="float",
                  stamp_size = None):
         """
@@ -39,7 +35,6 @@ class ExtractSpec(NoFM):
             numbasis: 1d numpy array consisting of the number of basis vectors to use
             sep: separation of the planet
             pa: position angle of the planet
-            dflux: guess for delta flux of planet averaged across band w.r.t star
             input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
             input_psfs_wvs: the wavelegnths that correspond to the input psfs
             flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast
@@ -52,7 +47,7 @@ class ExtractSpec(NoFM):
         super(ExtractSpec, self).__init__(inputs_shape, np.array(numbasis))
 
         if stamp_size is None:
-            self.stamp_size = 5
+            self.stamp_size = 10
         else:
             self.stamp_size = stamp_size
 
@@ -81,8 +76,10 @@ class ExtractSpec(NoFM):
         self.input_psfs = input_psfs
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
+        self.aper_over_peak_ratio = np.zeros(37)
         for l_id in range(self.input_psfs.shape[0]):
-            self.input_psfs[l_id,:,:] /= self.sat_spot_spec[l_id]
+            self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
+            self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
 
         self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
@@ -122,8 +119,8 @@ class ExtractSpec(NoFM):
 
 
     def alloc_fmout(self, output_img_shape):
-        """Allocates shared memory for the output of the shared memory
-
+        """
+        Allocates shared memory for the output of the shared memory
 
         Args:
             output_img_shape: shape of output image (usually N,y,x,b)
@@ -133,10 +130,23 @@ class ExtractSpec(NoFM):
             fmout_shape: shape of FM data array
 
         """
+
         # The 3rd dimension (self.N_frames corresponds to the spectrum)
         # The +1 in (self.N_frames+1) is for the klipped image
         fmout_size = self.N_numbasis*self.N_frames*(self.N_frames+1)*self.stamp_size*self.stamp_size
         fmout = mp.Array(self.mp_data_type, fmout_size)
+        # fmout shape is defined as:
+        #   (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
+        # 1st dim: The size of the numbasis input. numasis gives the list of the number of KL modes we want to try out
+        #           e.g. numbasis = [10,20,50].
+        # 2nd dim: It is the Forward model dimension. It contains the forard model for each frame in the dataset.
+        #           N_frames = N_cubes*(Number of spectral channel=37)
+        # 3nd dim: It contains both the "spectral dimension" and the klipped image.
+        #           The regular klipped data is fmout[:,:, -1,:]
+        #           The regular forward model is fmout[:,:, 0:self.N_frames,:]
+        #           Multiply a vector of fluxes to this dimension of fmout[:,:, 0:self.N_frames,:] and you should get
+        #           forward model for that given spectrum.
+        # 4th dim: pixels value. It has the size of the number of pixels in the stamp self.stamp_size*self.stamp_size.
         fmout_shape = (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size )
 
         return fmout, fmout_shape
@@ -309,7 +319,6 @@ class ExtractSpec(NoFM):
         model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size=self.stamp_size)
         model_sci = model_sci[0]
         stamp_indices = stamp_indices[0]
-        #model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
         models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
@@ -325,6 +334,8 @@ class ExtractSpec(NoFM):
         # klipped_oversub = Sum(<S|KL>KL)
         # klipped_selfsub = Sum(<N|DKL>KL) + Sum(<N|KL>DKL)
 
+
+        # Note: The following could be used if we want to derotate the image but JB doesn't think we have to.
         # # write forward modelled PSF to fmout (as output)
         # # need to derotate the image in this step
         # for thisnumbasisindex in range(np.size(numbasis)):
@@ -333,12 +344,22 @@ class ExtractSpec(NoFM):
         #                          radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
 
-        #input_img_num=None, ref_psfs_indicies=None, section_ind[stamp_indices]=None
-        # fmout.shape (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
+        # fmout shape is defined as:
+        #   (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
+        # 1st dim: The size of the numbasis input. numasis gives the list of the number of KL modes we want to try out
+        #           e.g. numbasis = [10,20,50].
+        # 2nd dim: It is the Forward model dimension. It contains the forard model for each frame in the dataset.
+        #           N_frames = N_cubes*(Number of spectral channel=37)
+        # 3nd dim: It contains both the "spectral dimension" and the klipped image.
+        #           The regular klipped data is fmout[:,:, -1,:]
+        #           The regular forward model is fmout[:,:, 0:self.N_frames,:]
+        #           Multiply a vector of fluxes to this dimension of fmout[:,:, 0:self.N_frames,:] and you should get
+        #           forward model for that given spectrum.
+        # 4th dim: pixels value. It has the size of the number of pixels in the stamp self.stamp_size*self.stamp_size.
         for k in range(self.N_numbasis):
-            fmout[k,input_img_num, input_img_num,:] = model_sci[stamp_indices]
-        fmout[:,input_img_num, input_img_num,:] = -oversubtraction[:,stamp_indices]
-        fmout[:,input_img_num, ref_psfs_indicies,:] = -selfsubtraction[:,:,stamp_indices]
+            fmout[k,input_img_num, input_img_num,:] = fmout[k,input_img_num, input_img_num,:]+model_sci[stamp_indices]
+        fmout[:,input_img_num, input_img_num,:] = fmout[:,input_img_num, input_img_num,:]-oversubtraction[:,stamp_indices]
+        fmout[:,input_img_num, ref_psfs_indicies,:] = fmout[:,input_img_num, ref_psfs_indicies,:]-selfsubtraction[:,:,stamp_indices]
         fmout[:,input_img_num, -1,:] = klipped.T[:,stamp_indices]
 
 
@@ -356,94 +377,6 @@ class ExtractSpec(NoFM):
         """
         # Here we actually extract the spectrum
 
-        spec_identity = np.identity(37)
-        selec = np.tile(spec_identity,(self.N_frames/self.nl,1))
-
-        FM_noSpec = fmout[0,:, 0:self.N_frames,:]
-
-        FM_noSpec = np.rollaxis(FM_noSpec,2,1)
-        klipped = fmout[0,:, -1,:]
-
-        import pyklip.spectra_management as spec
-        import pyklip.klip as klip
-        import matplotlib.pyplot as plt
-
-        pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+"t650g32nc.flx")
-        myspec = spec.get_planet_spectrum(spectrum_filename, "H")[1]
-
-        FM_noSpec_mat = np.reshape(FM_noSpec,(self.N_frames*self.stamp_size*self.stamp_size,self.N_frames))
-        klipped_vec = np.reshape(klipped,(self.N_frames*self.stamp_size*self.stamp_size,))
-
-
-
-        print("coucou")
-        print(FM_noSpec_mat.shape)
-        print(klipped.shape)
-
-        FM_noSpec_mat = np.dot(FM_noSpec_mat,selec)
-        print("FM_noSpec_mat after selec",FM_noSpec_mat.shape)
-
-        esti_klipped = np.dot(FM_noSpec_mat,myspec)
-        plt.figure(2)
-        klipped_sum = np.nansum(klipped,axis=1)
-        esti_klipped_sum = np.nansum(np.reshape(esti_klipped,(self.N_frames,self.stamp_size*self.stamp_size)),axis=1)
-        klipped_37 = np.zeros((37,))
-        esti_klipped_37  = np.zeros((37,))
-        for k in range(self.N_frames/37):
-            klipped_37 = klipped_37 + klipped_sum[k*self.nl:(k+1)*self.nl]
-            esti_klipped_37 = esti_klipped_37 + esti_klipped_sum[k*self.nl:(k+1)*self.nl]
-        plt.plot(klipped_37,"r")
-        plt.plot(esti_klipped_37,"b")
-
-        pinv_fm = np.linalg.pinv(FM_noSpec_mat)
-        estim_spec = np.dot(pinv_fm,klipped_vec)
-        print("pinv_fm",pinv_fm.shape)
-
-        plt.figure(1)
-        plt.plot(estim_spec)
-
-        U, s, V = np.linalg.svd(FM_noSpec_mat, full_matrices=False)
-        print(U.shape, V.shape, s.shape)
-        S = np.diag(s)
-        np.allclose(FM_noSpec_mat, np.dot(U, np.dot(S, V)))
-
-        invS = np.diag((1/s[0:20]).tolist()+[0]*(37-20))
-        svdinv = np.dot(V.T, np.dot(invS, U.T))
-        estim_spec2 = np.dot(svdinv,klipped_vec)
-        plt.figure(3)
-        plt.plot(estim_spec2)
-
-
-
-
-        FM_noSpec_tmp = np.reshape(FM_noSpec,(self.N_frames,self.stamp_size*self.stamp_size,self.N_frames))
-        klipped_tmp = np.reshape(klipped,(self.N_frames,self.stamp_size*self.stamp_size))
-
-        FM_noSpec_tmp_37 = np.zeros((37,self.stamp_size*self.stamp_size,self.N_frames))
-        klipped_tmp_37  = np.zeros((37,self.stamp_size*self.stamp_size))
-        for k in range(self.N_frames/37):
-            FM_noSpec_tmp_37 = FM_noSpec_tmp_37 + FM_noSpec_tmp[k*self.nl:(k+1)*self.nl,:,:]
-            klipped_tmp_37 = klipped_tmp_37 + klipped_tmp[k*self.nl:(k+1)*self.nl,:]
-        FM_noSpec_tmp_3737 = np.zeros((37,self.stamp_size*self.stamp_size,37))
-        for k in range(self.N_frames/37):
-            FM_noSpec_tmp_3737 = FM_noSpec_tmp_3737 + FM_noSpec_tmp_37[:,:,k*self.nl:(k+1)*self.nl]
-
-        FM_noSpec_tmp_3737=np.nansum(FM_noSpec_tmp_3737,axis=1)
-        klipped_tmp_37=np.nansum(klipped_tmp_37,axis=1)
-
-        #FM_noSpec_tmp_3737 = np.reshape(FM_noSpec_tmp_3737,(37*self.stamp_size*self.stamp_size,37))
-        #klipped_tmp_37 = np.reshape(klipped_tmp_37,(37*self.stamp_size*self.stamp_size,))
-
-        pinv_fm = np.linalg.pinv(FM_noSpec_tmp_3737)
-        estim_spec = np.dot(pinv_fm,klipped_tmp_37)
-        print("pinv_fm",pinv_fm.shape)
-
-        plt.figure(4)
-        plt.plot(estim_spec)
-
-
-        plt.show()
 
         return fmout
 

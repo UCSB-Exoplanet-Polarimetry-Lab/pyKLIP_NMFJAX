@@ -168,7 +168,7 @@ class FMMF(KPPSuperClass):
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 41),(41, 56.5)]
-        elif predefined_sectors == "cErib":
+        elif predefined_sectors == "c_Eri":
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
         elif predefined_sectors == "HD_40781":
@@ -392,7 +392,7 @@ class FMMF(KPPSuperClass):
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        self.spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
         spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
         spectrum_wvs = spectrum_dat[:,1]
         spectrum_fluxes = spectrum_dat[:,3]
@@ -457,16 +457,34 @@ class FMMF(KPPSuperClass):
 
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         self.N_cubes = fmout.shape[3]/37
-        print(self.N_cubes)
-        methane_indices = []
-        other_indices = []
+        # methane_indices = []
+        # other_indices = []
+        # for k in range(self.N_cubes):
+        #     methane_indices.extend(range(k*self.nl,(k+1)*self.nl-19))
+        #     other_indices.extend(range((k+1)*self.nl-19,(k+1)*self.nl))
+        # self.matched_filter_maps_methane = np.squeeze(np.nansum(fmout[0,:,:,methane_indices,:,:],axis=0))
+        # self.matched_filter_maps_other = np.squeeze(np.nansum(fmout[0,:,:,other_indices,:,:],axis=0))
+        # self.matched_filter_maps_methane[np.where(self.matched_filter_maps_methane==0)]=np.nan
+        # self.matched_filter_maps_other[np.where(self.matched_filter_maps_other ==0)]=np.nan
+
+        metric_MF_uncollapsed = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.nl,self.ny,self.nx))
         for k in range(self.N_cubes):
-            methane_indices.extend(range(k*self.nl,(k+1)*self.nl-19))
-            other_indices.extend(range((k+1)*self.nl-19,(k+1)*self.nl))
-        self.matched_filter_maps_methane = np.squeeze(np.nansum(fmout[0,:,:,methane_indices,:,:],axis=0))
-        self.matched_filter_maps_other = np.squeeze(np.nansum(fmout[0,:,:,other_indices,:,:],axis=0))
-        self.matched_filter_maps_methane[np.where(self.matched_filter_maps_methane==0)]=np.nan
-        self.matched_filter_maps_other[np.where(self.matched_filter_maps_other ==0)]=np.nan
+            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
+        self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
+
+        ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+        sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
+        metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        for k in range(self.N_cubes):
+            sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+            metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / sat_spot_flux_for_calib * sat_spot_ratio
+        metric_pFlux = metric_pFlux/self.N_cubes
+        metric_pFlux[np.where(metric_pFlux==0)]=np.nan
+        metric_pFlux = np.squeeze(metric_pFlux)
+
+        #self.dataset.psfs
 
         # Build the matched filter and shape maps from fmout
         matched_filter_maps = np.nansum(fmout[0,:,:,:,:,:],axis=2)
@@ -477,10 +495,8 @@ class FMMF(KPPSuperClass):
         model_square_norm_maps[np.where(model_square_norm_maps==0)]=np.nan
         image_square_norm_maps[np.where(image_square_norm_maps==0)]=np.nan
         metric_MF = matched_filter_maps/np.sqrt(model_square_norm_maps)
-        metric_pFlux = matched_filter_maps/model_square_norm_maps/fmout.shape[3]
         metric_shape = matched_filter_maps/np.sqrt(model_square_norm_maps*image_square_norm_maps)
         metric_MF = np.squeeze(metric_MF)
-        metric_pFlux = np.squeeze(metric_pFlux)
         metric_shape = np.squeeze(metric_shape)
 
         # Update the wcs headers to indicate North up
@@ -563,27 +579,34 @@ class FMMF(KPPSuperClass):
         #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
         #                  extra_exthdr_keywords = extra_exthdr_keywords)
 
+        suffix = "FMMFcube"+susuffix
+        extra_exthdr_keywords.append(("METSUFFI",suffix))
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_MF_uncollapsed,
+                         filetype=suffix,
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
 
         # Save the outputs (matched filter, shape map and klipped image) as fits files
         suffix = "FMMF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_MF,
-                         filetype="FMMF",
+                         filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         suffix = "FMpF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_pFlux,
-                         filetype="FMpF",
+                         filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         suffix = "FMSH"+susuffix
         extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_shape,
-                         filetype="FMSH",
+                         filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
         for k in range(self.final_cube_modes.shape[0]):
@@ -591,7 +614,7 @@ class FMMF(KPPSuperClass):
             extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
             self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.final_cube_modes[k],
-                             filetype="PSF Subtracted Spectral Cube",
+                             filetype=suffix,
                              astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                              extra_exthdr_keywords = extra_exthdr_keywords)
 

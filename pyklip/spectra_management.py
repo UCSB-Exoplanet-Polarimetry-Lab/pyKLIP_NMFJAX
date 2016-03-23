@@ -255,6 +255,7 @@ def get_planet_spectrum(filename,filter_name):
     #     plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
     #     plt.show()
 
+    # todo: check that it matches the actual sampling
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
     sampling_pip = np.arange(w_start,w_end,dw)
