@@ -10,7 +10,7 @@ import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
 
-import pyklip.kpp.kpp_utils as kppu
+import pyklip.kpp.utils.GOI as goi
 import pyklip.spectra_management as spec
 import pyklip.fakes as fakes
 
@@ -1269,7 +1269,7 @@ def generate_spdc_with_fakes(dataset,
     compact_date = dataset.filenames[0].split(os.path.sep)[-1].split("S")[1]
 
     if GOI_list_folder is not None:
-        x_real_object_list,y_real_object_list = kppu.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = True)
+        x_real_object_list,y_real_object_list = goi.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = True)
 
     # Retrieve the filter used from the fits headers.
     filter = prihdr['IFSFILT'].split('_')[1]
