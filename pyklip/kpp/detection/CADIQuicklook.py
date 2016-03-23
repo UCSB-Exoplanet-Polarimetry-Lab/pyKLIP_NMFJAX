@@ -8,8 +8,8 @@ from scipy.signal import convolve2d
 import matplotlib.pyplot as plt
 import shutil
 
-from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
-from pyklip.kpp_new.utils.GOI import *
+from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
+from pyklip.kpp.utils.GOI import *
 
 class CADIQuicklook(KPPSuperClass):
     """

@@ -7,7 +7,7 @@ import astropy.io.fits as pyfits
 import numpy as np
 import scipy.interpolate as interp
 
-from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
+from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.instruments import GPI
 import pyklip.spectra_management as spec
 import pyklip.fm as fm

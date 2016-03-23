@@ -10,9 +10,9 @@ import itertools
 import astropy.io.fits as pyfits
 import numpy as np
 
-from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
+from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.instruments import GPI
-import pyklip.kpp_new.utils.mathfunc as kppmath
+import pyklip.kpp.utils.mathfunc as kppmath
 import pyklip.spectra_management as spec
 
 

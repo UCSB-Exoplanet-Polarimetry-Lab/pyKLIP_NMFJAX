@@ -6,10 +6,10 @@ import multiprocessing as mp
 import numpy as np
 from scipy.signal import convolve2d
 
-from pyklip.kpp_new.utils.kppSuperClass import KPPSuperClass
-from pyklip.kpp_new.stat.statPerPix_utils import *
-from pyklip.kpp_new.utils.GOI import *
-import pyklip.kpp_new.utils.mathfunc as kppmath
+from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
+from pyklip.kpp.stat.statPerPix_utils import *
+from pyklip.kpp.utils.GOI import *
+import pyklip.kpp.utils.mathfunc as kppmath
 
 class StatPerPix(KPPSuperClass):
     """

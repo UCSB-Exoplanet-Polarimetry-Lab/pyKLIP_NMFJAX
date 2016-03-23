@@ -13,10 +13,10 @@ import mpl_toolkits.axisartist as AA
 import numpy as np
 from copy import copy
 
-from pyklip.kpp_new.utils.mathfunc import *
-from pyklip.kpp_new.utils.multiproc import *
-from pyklip.kpp_new.utils.GPIimage import *
-from pyklip.kpp_new.stat.stat_utils import *
+from pyklip.kpp.utils.mathfunc import *
+from pyklip.kpp.utils.multiproc import *
+from pyklip.kpp.utils.GPIimage import *
+from pyklip.kpp.stat.stat_utils import *
 
 
 def get_image_stat_map_perPixMasking(image,
