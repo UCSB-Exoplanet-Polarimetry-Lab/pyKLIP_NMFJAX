@@ -37,10 +37,22 @@ Then ``cd`` into it and run ``setup.py`` with the ``develop`` option
 
 If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).
 
-If you are noticing your load averages greatly exceeding the number of threads/CPUs, consider setting the following variable:
+### Note on parallelized performance ###
+
+Due to the fact that numpy compiled with BLAS and MKL also parallelizes linear algebra routines across multiple cores, performance can actually sharply decrease when multiprocessing and BLAS/MKL both try to parallelize the KLIP math. If you are noticing your load averages greatly exceeding the number of threads/CPUs, try disabling the BLAS/MKL optimization when running pyKLIP.
+
+To disable OpenBLAS, just set the following environment variable before running pyKLIP:
 
     :::bash
-       $ export OPENBLAS_NUM_THREADS=1   
+       $ export OPENBLAS_NUM_THREADS=1
+
+[A recent update to anaconda](https://www.continuum.io/blog/developer-blog/anaconda-25-release-now-mkl-optimizations) included some MKL optimizations which may cause load averages to greatly exceed the number of threads specified in pyKLIP. As with the OpenBLAS optimizations, this can be avoided by setting the maximum number of threads the MKL-enabled processes can use. As these optimizations may be useful for other python tasks, the variable should be set when pyKLIP is called, rather than on a system-wide level. Note that to modify the number of threads MKL uses on a per-code basis, you need to install ``mkl-service`` to run the following piece of code.
+
+    :::python
+      import mkl
+      mkl.set_num_threads(1)
+
+This command will now be executed in ``parallelized.py`` by default, if ``mkl-service`` is installed. The original maximum number of threads is saved, and restored to its original value after pyKLIP has finished.
 
 ### Bugs/Feature Requests ###
 

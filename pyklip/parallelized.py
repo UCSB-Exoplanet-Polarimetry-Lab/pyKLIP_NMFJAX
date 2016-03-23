@@ -12,6 +12,13 @@ import astropy.io.fits as fits
 import scipy.interpolate as interp
 from scipy.stats import norm
 
+#Logic to test mkl exists
+try:
+    import mkl
+    mkl_exists = True
+except ImportError:
+    mkl_exists = False
+
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 pa_imgs, wvs_imgs, centers_imgs, ori_PSFs_shared, rec_PSFs_shared, out_PSFs_shared,
                 seg_index_shared, seg_basis_shared, seg_shape_shared):
@@ -645,7 +652,9 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
-    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    if np.size(nanpix) == 0: OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+    if np.size(nanpix) != 0: OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+#    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
     dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
@@ -954,7 +963,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
-    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    if np.size(nanpix) == 0: OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+    if np.size(nanpix) != 0: OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    #OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
     dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
@@ -1364,6 +1375,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                               numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass)
     dataset.klipparams = klipparams
+
+    #Set MLK parameters
+    if mkl_exists:
+        old_mkl = mkl.get_max_threads()
+        mkl.set_num_threads(1)
 
     # run KLIP
     if mode == 'ADI+SDI':
@@ -1834,6 +1850,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     else:
         print("Invalid mode. Either ADI, SDI, or ADI+SDI")
         return
+
+    #Restore old setting
+    if mkl_exists:
+        mkl.set_num_threads(old_mkl)
 
 
 
