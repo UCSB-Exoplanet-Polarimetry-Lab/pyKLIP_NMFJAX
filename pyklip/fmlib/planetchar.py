@@ -270,7 +270,7 @@ class PlanetChar(NoFM):
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -333,7 +333,7 @@ class PlanetChar(NoFM):
         # calculate validity of linear perturbation on KLIP modes
         pca_img = (sci - np.nanmean(sci))[:, None] - klipped # shape of ( size(section), b)
         perturb_frac = np.nanmax(np.abs(oversubtraction + selfsubtraction), axis=1)/np.nanstd(pca_img, axis=0) # array of b
-        this_validity = fm.calculate_validity(covar_perturb, models_ref, numbasis) # array of b
+        this_validity = fm.calculate_validity(covar_perturb, models_ref, numbasis, evals, covar_files, evecs) # array of b
         #this_validity = fm.calculate_validity2(evals, models_ref, numbasis) # array of b
         perturbmag[input_img_num] = this_validity
 
