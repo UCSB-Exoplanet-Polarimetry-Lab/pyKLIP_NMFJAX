@@ -35,6 +35,7 @@ from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
+import pyklip.spectra_management as spec
 
 
 class GPIData(Data):
@@ -1203,10 +1204,11 @@ def generate_spdc_with_fakes(dataset,
                              fake_flux_dict,
                              planet_spectrum = None,
                              PSF_cube = None,
-                               star_type = "G4",
-                               GOI_list_folder = None,
-                               mute = False,
-                               suffix = None):
+                             star_type = None,
+                             GOI_list_folder = None,
+                             mute = False,
+                             suffix = None,
+                             SpT_file_csv = None):
     '''
     Generate spectral datacubes with fake planets.
     It will do a copy of the cubes read in GPIData after having injected fake planets in them.
@@ -1251,11 +1253,25 @@ def generate_spdc_with_fakes(dataset,
     :return:
     '''
 
+
     if suffix is None:
         suffix = "fakes"
 
     prihdr = copy(dataset.prihdrs[0])
     exthdr = copy(dataset.exthdrs[0])
+
+    # Get current star name
+    try:
+        # OBJECT: keyword in the primary header with the name of the star.
+        object_name = prihdr['OBJECT'].strip().replace (" ", "_")
+    except:
+        # If the object name could nto be found cal lit unknown_object
+        object_name = "UNKNOWN_OBJECT"
+
+    if star_type is None:
+        if SpT_file_csv is not None:
+            star_type = spec.get_specType(object_name,SpT_file_csv)
+            print(star_type)
 
     #date = prihdr['DATE']
     #compact_date = date.replace("-","")
@@ -1355,6 +1371,10 @@ def generate_spdc_with_fakes(dataset,
         142.,  147.,  150.,  154.,  161.,  161.,  159.,  159.,  161.,\
         159.,  163.,  166.,  161.,  156.,  154.,  149.,  150.,  152.,  150.]
 
+        # import matplotlib.pyplot as plt
+        # plt.plot(wv,star_sp/np.mean(star_sp),'r')
+        # plt.plot(wv,sat_spot_spec/np.mean(sat_spot_spec),'b')
+        # plt.show()
         #addNoise2Spectrum(spectrum)
 
 
@@ -1364,16 +1384,12 @@ def generate_spdc_with_fakes(dataset,
         for fake_id, (radius,pa) in enumerate(sep_pa_iter_list):
             if rd.random() >= 0.5: # methane spec
                 planets_contrasts.append(1.*10**-3)
-                #planet_sp = addNoise2Spectrum(planet_sp_meth)
-                planet_sp = planet_sp_meth
+                planet_sp = addNoise2Spectrum(planet_sp_meth)
+                #planet_sp = planet_sp_meth
             else: # flat spec
                 planets_contrasts.append(5.*10**-3)
-                #planet_sp = addNoise2Spectrum(planet_sp_flat)
-                planet_sp = planet_sp_flat
-            # import matplotlib.pyplot as plt
-            # plt.plot(wv,planet_sp/np.mean(planet_sp),'r')
-            # plt.plot(wv,planet_sp_meth/np.mean(planet_sp_meth),'b')
-            # plt.show()
+                planet_sp = addNoise2Spectrum(planet_sp_flat)
+                #planet_sp = planet_sp_flat
             planet_spectra.append(planet_sp)
             inputflux.append(spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio))
 
@@ -1517,7 +1533,7 @@ def spec2inputflux(spectrum,star_sp,spot_flux,aper_over_peak_ratio,spot_ratio=No
     We make sure inputflux[k*nl:(k+1)*nl] has the same flux in the band as the star (contrast = 1) and is in unit of DN.
 
     :param spectrum: 37 element array with the planet spectrum
-    :param star_sp: The host star spectrum
+    :param star_sp: The host star spectrum. If None, no transmission correction is applied.
     :param spot_flux: Sat spot peak fluxes
     :param aper_over_peak_ratio: 37 elements array defining the peak over aperture flux ratio
     :param spot_ratio: sat spot contrast
@@ -1528,7 +1544,10 @@ def spec2inputflux(spectrum,star_sp,spot_flux,aper_over_peak_ratio,spot_ratio=No
     inputflux = copy(spot_flux)
     # Peak value of the fake planet for each slice. To be define below.
     for k in range(N_cubes):
-        inputflux[k*nl:(k+1)*nl] = spectrum/star_sp*spot_flux[k*nl:(k+1)*nl]*aper_over_peak_ratio
+        if star_sp is not None:
+            inputflux[k*nl:(k+1)*nl] = spectrum/star_sp*spot_flux[k*nl:(k+1)*nl]*aper_over_peak_ratio
+        else:
+            inputflux[k*nl:(k+1)*nl] = spectrum
         # Here inputflux[k*nl:(k+1)*nl] has the correct spectrum but arbitrary units.
         inputflux[k*nl:(k+1)*nl] = inputflux[k*nl:(k+1)*nl]/np.nansum(inputflux[k*nl:(k+1)*nl])
         # Here inputflux[k*nl:(k+1)*nl] has the correct spectrum but unit sum.

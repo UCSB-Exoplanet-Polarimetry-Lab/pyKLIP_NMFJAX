@@ -324,7 +324,6 @@ class CADIQuicklook(KPPSuperClass):
 
         :return: None
         """
-
         # Removing the old quicklook if there is already one available with less input cubes.
         glob_filename = glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+"_*"+'.png')
         file_exist = (len(glob_filename) >= 1)

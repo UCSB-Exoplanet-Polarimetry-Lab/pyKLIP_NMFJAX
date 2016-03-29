@@ -150,10 +150,55 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = False,pa_sep = Fals
                 except:
                     print("Missing data in GOI database for {0}".format(object_name))
 
-    print(sep_vec,pa_vec)
     if pa_sep:
         return sep_vec,pa_vec
     elif xy:
         return x_vec,y_vec
     else:
         return row_vec,col_vec
+
+
+def make_GOI_list(outputDir,GOI_list_csv,GPI_TID_csv):
+    """
+    Generate the GOI files from the GOI table and the TID table (queried from the database).
+
+    :param outputDir: Output directory in which to save the GOI files.
+    :param GOI_list_csv: Table with the list of GOIs (including separation, PA...)
+    :param GPI_TID_csv: Table giving the TID code for a given object name.
+    :return: One .csv file per target for which at list one GOI exists.
+            The filename follows: [object]_GOI.csv. For e.g. c_Eri_GOI.csv.
+    """
+    with open(GOI_list_csv, 'rb') as csvfile_GOI_list:
+        GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+        GOI_csv_as_list = list(GOI_list_reader)
+        attrib_name = GOI_csv_as_list[0]
+        GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
+
+        TID_id = attrib_name.index("TID")
+        TID_GOI = GOI_list[:,TID_id]
+        TID_unique = np.unique(TID_GOI)
+
+        with open(GPI_TID_csv, 'rb') as csvfile_TID:
+            TID_reader = csv.reader(csvfile_TID, delimiter=';')
+            TID_csv_as_list = list(TID_reader)
+            TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
+            TID_campaign = np.ndarray.tolist(TID_csv_as_nparr[:,0])
+            star_campaign = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+            #print(TID_campaign)
+            #print(star_campaign)
+
+            dict_matching_TID_to_name = {}
+            for TID_it in TID_unique:
+                star_raw_name = star_campaign[TID_campaign.index(TID_it)]
+                star_name = star_raw_name.replace(" ","_")
+                dict_matching_TID_to_name[TID_it] = star_name
+            #print(dict_matching_TID_to_name)
+
+        for TID_it in TID_unique:
+            where_same_star = np.where(TID_GOI == TID_it)
+
+            with open(outputDir+os.path.sep+dict_matching_TID_to_name[TID_it]+'_GOI.csv', 'w+') as csvfile:
+                csvwriter = csv.writer(csvfile, delimiter=';')
+                table_to_csv = [attrib_name]+np.ndarray.tolist(GOI_list[where_same_star[0],:])#.insert(0,attrib_name)
+                #print(table_to_csv)
+                csvwriter.writerows(table_to_csv)
