@@ -668,7 +668,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         #divide annuli into subsections
         dphi = 2 * np.pi / subsections
         phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
-        phi_bounds[-1][1] = 2. * np.pi
+        phi_bounds[-1][1] = np.pi
     else:
         # Only one segment, define bounds according companion_rho, _theta, segment_dr, _dt
         rad_bounds = [(np.around(companion_rho - (segment_dr / 2.0)), np.around(companion_rho + (segment_dr / 2.0)))]
@@ -979,7 +979,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
         #divide annuli into subsections
         dphi = 2 * np.pi / subsections
         phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
-        phi_bounds[-1][1] = 2. * np.pi
+        phi_bounds[-1][1] = np.pi
     else:
         # Only one segment, define bounds according companion_rho, _theta, segment_dr, _dt
         rad_bounds = [(np.around(companion_rho - (segment_dr / 2.0)), np.around(companion_rho + (segment_dr / 2.0)))]
