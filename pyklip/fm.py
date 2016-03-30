@@ -204,6 +204,18 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_per
 
 def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list):
     """
+    Perturb the KL modes using a model of the PSF but with no assumption on the spectrum. Useful for planets.
+
+    By no assumption on the spectrum it means that the spectrum has been factored out of Delta_KL following equation (4)
+    of Laurent Pueyo 2016 noted bold "Delta Z_k^lambda (x)". In order to get the actual perturbed KL modes one needs to
+    multpily it by a spectrum.
+
+    Effectively does the same thing as pertrurb_nospec() but in a different way. It injects models with dirac spectrum
+    (all but one vanishing wavelength) and because of the linearity of the problem allow one de get reconstruct the
+    perturbed KL mode for any spectrum.
+    The difference however in the pertrurb_nospec() case is that the spectrum here is the asummed to be the same for all
+     cubes while pertrurb_nospec() fit each cube independently.
+
 
     :param evals:
     :param evecs:
@@ -246,7 +258,14 @@ def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list)
 
 def pertrurb_nospec(evals, evecs, original_KL, refs, models_ref):
     """
-    Perturb the KL modes using a model of the PSF but with no assumption on the spectrum. Useful for planets
+    Perturb the KL modes using a model of the PSF but with no assumption on the spectrum. Useful for planets.
+
+    By no assumption on the spectrum it means that the spectrum has been factored out of Delta_KL following equation (4)
+    of Laurent Pueyo 2016 noted bold "Delta Z_k^lambda (x)". In order to get the actual perturbed KL modes one needs to
+    multpily it by a spectrum.
+
+    This function fits each cube's spectrum independently. So the effective spectrum size is N_wavelengths * N_cubes.
+
 
     Args:
         evals: array of eigenvalues of the reference PSF covariance matrix (array of size numbasis)
@@ -307,33 +326,6 @@ def pertrurb_nospec(evals, evecs, original_KL, refs, models_ref):
             DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk_X_models_mean_sub_X_refs_mean_sub_T.dot(Vj) + Vj*models_mean_sub_X_refs_mean_sub_T_X_Vk).dot(Zj)
 
         delta_KL_nospec[k] = DeltaZk_noSpec/np.sqrt(evals[k])
-    '''
-    if 0:  # backup slow version
-        # calculate perturbed KL modes. TODO: make this NOT a freaking for loop
-        for k in range(max_basis):
-            # Define Z_{k}. Variable name: kl_basis_noPl[k,:], Shape: (1, N_pix)
-            Zk = np.reshape(original_KL[k,:],(1,original_KL[k,:].size))
-            # Define V_{k}. Variable name: eigvec_noPl[:,k], Shape: (1, N_ref)
-            Vk = np.reshape(evecs[:,k],(evecs[:,k].size,1))
-            # Define bolt{V}_{k}. Variable name: diagV_k = np.diag(eigvec_noPl[:,k]), Shape: (N_ref,N_ref)
-            diagVk = np.diag(evecs[:,k])
-
-
-            DeltaZk_noSpec = -(1/np.sqrt(evals[k]))*diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk).dot(Zk)+diagVk.dot(models_mean_sub)
-            # TODO: Make this NOT a for loop
-            for j in range(k):
-                Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
-                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
-                diagVj = np.diag(evecs[:, j])
-                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
-            for j in range(k+1, max_basis):
-                Zj = np.reshape(original_KL[j, :], (1, original_KL[j, :].size))
-                Vj = np.reshape(evecs[:, j], (evecs[:, j].size,1))
-                diagVj = np.diag(evecs[:, j])
-                DeltaZk_noSpec += np.sqrt(evals[j])/(evals[k]-evals[j])*(diagVk.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vj) + diagVj.dot(models_mean_sub).dot(refs_mean_sub.transpose()).dot(Vk)).dot(Zj)
-
-            delta_KL_nospec[k] = (Sel_wv/np.sqrt(evals[k])).dot(DeltaZk_noSpec)
-    '''
 
     return delta_KL_nospec
 
@@ -342,7 +334,11 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
     """
     Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
     and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
-    the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL)
+    the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
+
+    Note: if inputflux is None and delta_KL_nospec has three dimensions (ie delta_KL_nospec was calculated using
+    pertrurb_nospec() or perturb_nospec_modelsBased()) then only klipped_oversub and klipped_selfsub are returned.
+    Besides they will have an extra first spectral dimension.
 
     Args:
         delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
@@ -356,6 +352,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
 
     Returns:
         fm_psf: array of shape (b,p) showing the forward modelled PSF
+                Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
         klipped_oversub: array of shape (b, p) showing the effect of oversubtraction as a function of KL modes
         klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
         Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
@@ -368,7 +365,6 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     # remove means and nans from science image
-    #print("c")
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
     sci_mean_sub[sci_nanpix] = 0
@@ -387,6 +383,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
 
     # calculate perturbed KL modes based on spectrum
     if inputflux is not None:
+        # delta_KL_nospec.shape = (max_basis,N_lambda,N_pix) or (max_basis,N_ref,N_pix)
         delta_KL = np.dot(inputflux, delta_KL_nospec) # this will take the last dimension of input_spectrum (wv) and sum over the second to last dimension of delta_KL_nospec (wv)
     else:
         delta_KL = delta_KL_nospec
@@ -394,23 +391,68 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
     # Forward model the PSF
     # 3 terms: 1 for oversubtracton (planet attenauted by speckle KL modes),
     # and 2 terms for self subtraction (planet signal leaks in KL modes which get projected onto speckles)
+    #
+    # Klipped = N-Sum(<N|KL>KL) + S-Sum(<S|KL>KL) - Sum(<N|DKL>KL) - Sum(<N|KL>DKL)
+    # With  N = noise/speckles (science image)
+    #       S = signal/planet model
+    #       KL = KL modes
+    #       DKL = perturbation of the KL modes/Delta_KL
+    #
+    # sci_mean_sub_rows.shape = (max_basis,N_pix)  (tiled)
+    # model_sci_mean_sub_rows.shape = (max_basis,N_pix) (tiled)
+    # original_KL.shape = (max_basis,N_pix)
+    # delta_KL.shape = (max_basis,N_pix)
     oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, original_KL.T)
-    selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, delta_KL.T)
+    if np.size(delta_KL.shape) == 2:
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, delta_KL.T)
+        # selfsubtraction_1_inner_products.shape = (max_basis,N_pix,max_basis)
+    else:
+        Nlambda = delta_KL.shape[1]
+        #Before delta_KL.shape = (max_basis,N_lambda or N_ref,N_pix)
+        delta_KL = np.rollaxis(delta_KL,1,0)
+        #Now delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
+        # np.rollaxis(delta_KL,2,1).shape = (N_lambda or N_ref,N_pix,max_basis)
+        # np.dot() takes the last dimension of first array and sum over the second to last dimension of second array
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, np.rollaxis(delta_KL,2,1))
+        # selfsubtraction_1_inner_products.shape = (N_lambda or N_ref,max_basis,max_basis)
     selfsubtraction_2_inner_products = np.dot(sci_mean_sub_rows, original_KL.T)
 
+    # lower_tri is a matrix with all the element below and one the diagonal equal to unity. The upper part of the matrix
+    #  is full of zeros.
+    # lower_tri,shape = (max_basis,max_basis)
+    # oversubtraction_inner_products = (N_ref=max_basis,max_basis)
     lower_tri = np.tril(np.ones([max_basis,max_basis]))
     oversubtraction_inner_products = oversubtraction_inner_products * lower_tri
-    selfsubtraction_1_inner_products = selfsubtraction_1_inner_products * lower_tri
-    selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
-
     klipped_oversub = np.dot(np.take(oversubtraction_inner_products, numbasis_index, axis=0), original_KL)
-    klipped_selfsub = np.dot(np.take(selfsubtraction_1_inner_products, numbasis_index, axis=0), original_KL) + \
-                      np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
+    if np.size(delta_KL.shape) == 2:
+        # selfsubtraction_1_inner_products = (max_basis,max_basis)
+        # selfsubtraction_2_inner_products = (max_basis,max_basis)
+        selfsubtraction_1_inner_products = selfsubtraction_1_inner_products * lower_tri
+        selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
+        klipped_selfsub = np.dot(np.take(selfsubtraction_1_inner_products, numbasis_index, axis=0), original_KL) + \
+                          np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
 
-    return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+        return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+    else:
+        selfsubtraction_1_inner_products = np.array([selfsubtraction_1_inner_products[:,k,:] * lower_tri for k in range(Nlambda)])
+        selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
+        # selfsubtraction_1_inner_products = (N_lambda or N_ref,max_basis,max_basis)
+        # selfsubtraction_2_inner_products = (N_ref=max_basis,max_basis)
+        # original_KL.shape = (max_basis,N_pix)
+        # delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
+        klipped_selfsub1 = np.dot(np.take(selfsubtraction_1_inner_products, numbasis_index, axis=1), original_KL)
+        klipped_selfsub2 = np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
+        klipped_selfsub = np.rollaxis(klipped_selfsub1,1,0) + klipped_selfsub2
+
+        # klipped_oversub.shape = (size(numbasis),Npix)
+        # klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+        # klipped_oversub = Sum(<S|KL>KL)
+        # klipped_selfsub = Sum(<N|DKL>KL) + Sum(<N|KL>DKL)
+        return klipped_oversub, klipped_selfsub
 
 
-def calculate_validity(covar_perturb, models_ref, numbasis):
+
+def calculate_validity(covar_perturb, models_ref, numbasis, evals_orig, covar_orig, evecs_orig):
     """
     Calculate the validity of the perturbation based on the eigenvalues or the 2nd order term compared
      to the 0th order term of the covariance matrix expansion
@@ -420,6 +462,7 @@ def calculate_validity(covar_perturb, models_ref, numbasis):
         models_ref: N x p array of the N models corresponding to reference images.
                     Each model should contain spectral information
         numbasis: array of KL mode cutoffs
+        evevs_orig: size of [N, maxKL]
 
     Returns:
         delta_KL_nospec: perturbed KL modes. Shape is (numKL, wv, pix)
@@ -432,58 +475,46 @@ def calculate_validity(covar_perturb, models_ref, numbasis):
     numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
     max_basis = np.max(numbasis) + 1
 
-    # calculate eigenvectors/values of 1st order term in covariance matrix expansion
-    evals_perturb, evecs_perturb = la.eigh(covar_perturb, eigvals = (tot_basis-max_basis, tot_basis-1))
-    evals_perturb = np.copy(evals_perturb[::-1])
-    # calculate eigenvectors/values of 2nd order term in covariance matrix expansion
-    evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
-    evals_model = np.copy(evals_model[::-1])
-    # evecs_model = np.copy(evecs_model[:,::-1])
+    ## calculate eigenvectors/values including 1st order term in covariance matrix expansion
+    #evals_linear, evecs_linear = la.eigh(covar_orig + covar_perturb, eigvals = (tot_basis-max_basis, tot_basis-1))
+    #evals_linear = np.copy(evals_linear[::-1]) 
+    ## calculate eigenvectors/values including first and 2nd order term in covariance matrix expansion
+    #evals_full, evecs_full = la.eigh(covar_orig + covar_perturb + covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
+    #evals_full = np.copy(evals_full[::-1])
+    #
+    #linear_perturb = evals_linear - evals_orig
+    #quad_perturb = evals_full - evals_linear
+    
 
-    # calculate relative magnitude of the second order term compared to the first order term
-    perturb_mag = np.abs(evals_model / evals_perturb) # 2nd order / 1st order << 1
+    linear_perturb = np.sum((evecs_orig.T.dot(covar_perturb)).T * evecs_orig, axis=0)
+    quad_perturb = np.sum((evecs_orig.T.dot(covars_model)).T * evecs_orig, axis=0)
 
-    validity = np.zeros(np.size(numbasis))
-    for i, basis_cutoff in enumerate(numbasis):
-        validity[i] = np.max(perturb_mag[:basis_cutoff+1])
 
-    return validity
+    perturb_mag = np.abs(quad_perturb/linear_perturb)
 
-def calculate_validity2(evals_orig, models_ref, numbasis):
-    """
-    Calculate the validity of the perturbation based on the eigenvalues or the 2nd order term compared
-     to the 0th order term of the covariance matrix expansion
+    perturb_mag[np.where(linear_perturb == 0)] = 0
 
-    Args:
-        evals_perturb: linear expansion of the perturbed covariance matrix (C_AS). Shape of N x N
-        models_ref: N x p array of the N models corresponding to reference images.
-                    Each model should contain spectral information
-        numbasis: array of KL mode cutoffs
+    ## calculate eigenvectors/values of 1st order term in covariance matrix expansion
+    #evals_perturb, evecs_perturb = la.eigh(covar_perturb, eigvals = (tot_basis-max_basis, tot_basis-1))
+    #evals_perturb = np.copy(evals_perturb[::-1])
+    ## calculate eigenvectors/values of 2nd order term in covariance matrix expansion
+    #evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
+    #evals_model = np.copy(evals_model[::-1])
+    ## evecs_model = np.copy(evecs_model[:,::-1])
+    #
+    ## calculate relative magnitude of the second order term compared to the first order term
+    #perturb_mag = np.abs(evals_model / evals_perturb) # 2nd order / 1st order << 1
+    # correct for divide by zeros
+    #perturb_mag[np.where(evals_model == 0)] = 0
 
-    Returns:
-        delta_KL_nospec: perturbed KL modes. Shape is (numKL, wv, pix)
-    """
-
-    # calculate the C_AA matrix, covariance of the model psf with itself in the sequence
-    covars_model = np.dot(models_ref, models_ref.T)
-    tot_basis = covars_model.shape[0]
-
-    numbasis = np.clip(numbasis - 1, 0, tot_basis-1)
-    max_basis = np.max(numbasis) + 1
-
-    # calculate eigenvectors/values of 2nd order term in covariance matrix expansion
-    evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
-    evals_model = np.copy(evals_model[::-1])
-    # evecs_model = np.copy(evecs_model[:,::-1])
-
-    # calculate relative magnitude of the second order term compared to the first order term
-    perturb_mag = np.abs(evals_model / evals_orig) # 2nd order / 1st order << 1
 
     validity = np.zeros(np.size(numbasis))
     for i, basis_cutoff in enumerate(numbasis):
-        validity[i] = np.max(perturb_mag[:basis_cutoff+1])
+        validity[i] = np.median(perturb_mag[:basis_cutoff+1])
+
 
     return validity
+
 
 def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None,aligned_center=None, minrot=0): #Zack
     """
@@ -904,7 +935,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=3, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=3, save_klipped=True,
-                      N_pix_sector = None):
+                      N_pix_sector = None,mute_progression = False):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -947,6 +978,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         padding: for each sector, how many extra pixels of padding should we have around the sides.
         save_klipped: if True, will save the regular klipped image. If false, it wil not and sub_imgs will return None
+        mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
+                        doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
+                        idea.
 
 
     Returns:
@@ -1177,8 +1211,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                 tpool_outputs.pop(0).wait()
                 N_it = N_it+1
                 N_it_perSector = N_it_perSector+1
-                stdout.write("\r {0:.2f}% of sector, {1:.2f}% of total completed".format(100*float(N_it_perSector)/float(totalimgs),100*float(N_it)/float(N_tot_it)))
-                stdout.flush()
+                if not mute_progression:
+                    stdout.write("\r {0:.2f}% of sector, {1:.2f}% of total completed".format(100*float(N_it_perSector)/float(totalimgs),100*float(N_it)/float(N_tot_it)))
+                    stdout.flush()
                 #JB debug
                 #print("outputs klip_section_multifile_perfile",tpool_outputs)
 
@@ -1393,7 +1428,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                  covar_psfs=covar_files,)
     klipped, original_KL, evals, evecs = klip_math_return
 
-
     # write standard klipped image to output if we are saving outputs
     if output_imgs is not None:
         for thisnumbasisindex in range(klipped.shape[1]):
@@ -1417,6 +1451,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
-                           fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped)
+                           fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped, covar_files=covar_files)
 
     return sector_index
