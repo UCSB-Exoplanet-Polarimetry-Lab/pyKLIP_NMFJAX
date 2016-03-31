@@ -295,6 +295,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ra
     y.shape = (y.shape[0] * y.shape[1])
     r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
     phi = np.arctan2(y - ref_center[1], x - ref_center[0])
+    # make sure phi is in range [-pi, pi)
+    phi = (phi % (2*np.pi)) - np.pi
 
     #grab the pixel location of the section we are going to anaylze
     section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
