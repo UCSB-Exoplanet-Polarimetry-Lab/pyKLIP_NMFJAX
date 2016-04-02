@@ -1271,7 +1271,6 @@ def generate_spdc_with_fakes(dataset,
     if star_type is None:
         if SpT_file_csv is not None:
             star_type = spec.get_specType(object_name,SpT_file_csv)
-            print(star_type)
 
     #date = prihdr['DATE']
     #compact_date = date.replace("-","")
@@ -1336,8 +1335,8 @@ def generate_spdc_with_fakes(dataset,
     if fake_position_dict["mode"] == "ROC":
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
-        annuli = 6
-        dr = 20
+        annuli = 8
+        dr = 15
         delta_th = 90
 
         # Get parallactic angle of where to put fake planets
@@ -1349,7 +1348,7 @@ def generate_spdc_with_fakes(dataset,
         # for row_id in range(pa_grid.shape[0]):
         #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
         for col_id in range(radii_grid.shape[1]):
-            radii_grid[:,col_id] = radii_grid[:,col_id] + 5*col_id
+            radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
         pa_grid[range(1,annuli,3),:] += 30
         pa_grid[range(2,annuli,3),:] += 60
 
@@ -1370,6 +1369,7 @@ def generate_spdc_with_fakes(dataset,
         102.,  107.,  113.,  116.,  123.,  126.,  129.,  134.,  137.,\
         142.,  147.,  150.,  154.,  161.,  161.,  159.,  159.,  161.,\
         159.,  163.,  166.,  161.,  156.,  154.,  149.,  150.,  152.,  150.]
+        planet_sp_flat = planet_sp_flat/np.mean(planet_sp_flat)
 
         # import matplotlib.pyplot as plt
         # plt.plot(wv,star_sp/np.mean(star_sp),'r')
@@ -1383,12 +1383,12 @@ def generate_spdc_with_fakes(dataset,
         planet_spectra = []
         for fake_id, (radius,pa) in enumerate(sep_pa_iter_list):
             if rd.random() >= 0.5: # methane spec
-                planets_contrasts.append(1.*10**-3)
-                planet_sp = addNoise2Spectrum(planet_sp_meth)
+                planets_contrasts.append(1.*10**-6)
+                planet_sp = addNoise2Spectrum(planet_sp_meth,ampl=0.3, w_ker = 10,rand_slope = 0.2)
                 #planet_sp = planet_sp_meth
             else: # flat spec
-                planets_contrasts.append(5.*10**-3)
-                planet_sp = addNoise2Spectrum(planet_sp_flat)
+                planets_contrasts.append(5.*10**-6)
+                planet_sp = addNoise2Spectrum(planet_sp_flat,ampl=0.3, w_ker = 10,rand_slope = 0.2)
                 #planet_sp = planet_sp_flat
             planet_spectra.append(planet_sp)
             inputflux.append(spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio))
@@ -1508,20 +1508,37 @@ def generate_spdc_with_fakes(dataset,
                          user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
 
 
-def addNoise2Spectrum(spectrum):
+def addNoise2Spectrum(spectrum,ampl=None, w_ker = None,rand_slope = None):
     """
     Add low pass filtered gaussian noise to a given spectrum
 
     :param spectrum:1D array with the spectrum (size = 37)
+    :param ampl: Amplitude of the noise relative to the spectrum.
+    :param w_ker: Size of the box kernell used to smooth the noise
+    :param rand_slope: Amplitude of the noise on the slope relative to the spectrum fitted slope.
+                    If None (Default) the slope is unchanged: no noise.
     :return: noisy spectrum/inputflux
     """
     noise = np.random.randn(37)
-    w_ker = 5
+    if w_ker is None:
+        w_ker = 5
+    if ampl is None:
+        ampl = 0.3
+    if rand_slope is not None:
+        spectrum
+        wv = np.arange(37)
+        fit_coefs = np.polynomial.polynomial.polyfit(wv, spectrum, 1)
+        noisy_coefs = fit_coefs*(1+rand_slope*np.random.randn())#[fit_coefs[0],fit_coefs[1]*(1+rand_slope*np.random.randn())]
+        poly_fit = np.poly1d(fit_coefs[::-1])
+        poly_noisy = np.poly1d(noisy_coefs[::-1])
+        fit = poly_fit(wv)
+        noisy = poly_noisy(wv)
+        spectrum = spectrum-fit+noisy
     #x_ker = np.arange(-10,11)
     #ker = np.exp(-x_ker**2/w_ker)
     ker = np.ones(w_ker)/w_ker
     filt_noise = np.convolve(noise,ker,mode = "same")
-    filt_noise = spectrum * filt_noise * 0.3
+    filt_noise = spectrum * filt_noise * ampl
 
     return spectrum+filt_noise
 

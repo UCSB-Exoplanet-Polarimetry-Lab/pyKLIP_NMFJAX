@@ -239,6 +239,25 @@ class MatchedFilter(NoFM):
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
+        # for k in range(aligned_imgs.shape[0]):
+        #     blackboard1 = np.zeros((self.ny,self.nx)) + np.nan
+        #     #print(section_ind)
+        #     plt.figure(1)
+        #     # plt.subplot(1,2,1)
+        #     blackboard1.shape = [input_img_shape[0] * input_img_shape[1]]
+        #     tmp = copy(refs[k,:])
+        #     #tmp[np.where(np.isnan(tmp))] = 1000
+        #     blackboard1[section_ind] = tmp
+        #     blackboard1.shape = [input_img_shape[0],input_img_shape[1]]
+        #     plt.imshow(blackboard1,interpolation="nearest")
+        #     plt.colorbar()
+        #     # plt.subplot(1,2,2)
+        #     # coucou = copy(aligned_imgs[ref_psfs_indicies, :])
+        #     # print(coucou.shape)
+        #     # coucou.shape = [coucou.shape[0],input_img_shape[0],input_img_shape[1]]
+        #     # plt.imshow(coucou[k,:,:],interpolation="nearest")
+        #     plt.show()
+
 
         # Calculate the PA,sep 2D map
         x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.0)- ref_center[0], np.arange(self.ny * 1.0)- ref_center[1])
@@ -305,15 +324,31 @@ class MatchedFilter(NoFM):
                 # 3/ Calculate the perturbation of the KL modes
                 # using original Kl modes and reference models, compute the perturbed KL modes.
                 # Spectrum is already in the model, that's why we use perturb_specIncluded(). (Much faster)
+                #print(np.sum(np.isnan(evals)),np.sum(np.isnan(evecs)),np.sum(np.isnan(klmodes)),np.sum(np.isnan(refs)),np.sum(np.isnan(models_ref)))
                 delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+                #print(np.sum(np.isnan(delta_KL)))
 
                 # 4/ Calculate the FM: calculate postklip_psf using delta_KL
                 # postklip_psf has unit broadband flux
                 postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
 
+                # 5/ Calculate dot product (matched filter)
+                # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+                # First dimension details:
+                # 0: dot product
+                # 1: square of the norm of the model
+                # 2: square of the norm of the image
+                sky = np.mean(klipped[where_background,N_KL_id])
+                #print(sky)
+                # Subtract local sky background to the klipped image
+                klipped_sub = klipped[where_fk,N_KL_id]-sky
+                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
+                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
+                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
+                #print(fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id])
+
                 # Plot for debug only
-                if 0 and np.size(klipped[where_background,N_KL_id])==0:
-                    print(where_background)
+                if 0:
 
                     #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
@@ -345,20 +380,6 @@ class MatchedFilter(NoFM):
                     print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
                     print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
                     plt.show()
-
-                # 5/ Calculate dot product (matched filter)
-                # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-                # First dimension details:
-                # 0: dot product
-                # 1: square of the norm of the model
-                # 2: square of the norm of the image
-                sky = np.mean(klipped[where_background,N_KL_id])
-                # Subtract local sky background to the klipped image
-                klipped_sub = klipped[where_fk,N_KL_id]-sky
-                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
-                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
-                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
-
 
 
 

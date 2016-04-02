@@ -143,7 +143,6 @@ class FMMF(KPPSuperClass):
         if predefined_sectors == "maskEdge":
             self.N_pix_sector = 100
             self.subsections = None
-            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202)]
         if predefined_sectors == "smallSep":
             self.OWA = 0.6/0.01413
@@ -151,22 +150,20 @@ class FMMF(KPPSuperClass):
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
-        if predefined_sectors == "OneAc":
-            self.N_pix_sector = 100
-            self.subsections = None
-            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
-            self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
+        if predefined_sectors == "oneAc":
+            #self.N_pix_sector = 100
+            self.subsections = [[88./180.*np.pi,93./180.*np.pi]]
+            #self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
+            self.annuli = [(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 300
             self.subsections = None
-            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 19.953433013911035), (19.953433013911035, 42.46284501061571)]
         if predefined_sectors == "avgSep":
             self.OWA = 0.8/0.01413
             self.N_pix_sector = 200
             self.subsections = None
-            # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 41),(41, 56.5)]
         elif predefined_sectors == "c_Eri":
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
@@ -467,6 +464,8 @@ class FMMF(KPPSuperClass):
         # self.matched_filter_maps_methane[np.where(self.matched_filter_maps_methane==0)]=np.nan
         # self.matched_filter_maps_other[np.where(self.matched_filter_maps_other ==0)]=np.nan
 
+        fmout[np.where(fmout==0)] = np.nan
+
         metric_MF_uncollapsed = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.nl,self.ny,self.nx))
         for k in range(self.N_cubes):
             metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
@@ -475,10 +474,19 @@ class FMMF(KPPSuperClass):
         ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
         sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
         metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        # for k in range(72):
+        #     import matplotlib.pyplot as plt
+        #     plt.imshow(fmout[1,0,0,k,:,:])
+        #     plt.colorbar()
+        #     plt.show()
         for k in range(self.N_cubes):
-            sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
-            metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
-                            / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+            sat_spot_flux_for_calib = np.sum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+            # print(np.sum(np.isnan(np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2))))
+            # print(np.sum(np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)==0))
+            # print(np.sum(sat_spot_flux_for_calib==0))
+            print(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:].shape)
+            metric_pFlux = metric_pFlux+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / sat_spot_flux_for_calib * sat_spot_ratio
         metric_pFlux = metric_pFlux/self.N_cubes
         metric_pFlux[np.where(metric_pFlux==0)]=np.nan
@@ -487,9 +495,9 @@ class FMMF(KPPSuperClass):
         #self.dataset.psfs
 
         # Build the matched filter and shape maps from fmout
-        matched_filter_maps = np.nansum(fmout[0,:,:,:,:,:],axis=2)
-        model_square_norm_maps = np.nansum(fmout[1,:,:,:,:,:],axis=2)
-        image_square_norm_maps = np.nansum(fmout[2,:,:,:,:,:],axis=2)
+        matched_filter_maps = np.sum(fmout[0,:,:,:,:,:],axis=2)
+        model_square_norm_maps = np.sum(fmout[1,:,:,:,:,:],axis=2)
+        image_square_norm_maps = np.sum(fmout[2,:,:,:,:,:],axis=2)
 
         matched_filter_maps[np.where(matched_filter_maps==0)]=np.nan
         model_square_norm_maps[np.where(model_square_norm_maps==0)]=np.nan
@@ -514,7 +522,8 @@ class FMMF(KPPSuperClass):
         cubes_list = []
         for k in range(self.N_cubes):
             cubes_list.append(sub_imgs[:,k*self.nl:(k+1)*self.nl,:,:])
-        self.final_cube_modes = np.nansum(cubes_list,axis = 0)
+        self.final_cube_modes = np.sum(cubes_list,axis = 0)
+        self.final_cube_modes[np.where(self.final_cube_modes==0)] = np.nan
         #print(self.final_cube_modes.shape)
 
         return self.metricMap

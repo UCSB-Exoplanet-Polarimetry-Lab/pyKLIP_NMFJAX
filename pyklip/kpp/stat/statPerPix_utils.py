@@ -187,6 +187,10 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 statistic is calculated.
     :param N: Defines the width of the ring by the number of pixels it has to include.
             The width of the annuli will therefore vary with sepration.
+    :param firstZone_radii: When N is not None it contains the meam_radius, the min radius and the max radius defining
+                        the first sector. The first sector in that case has includes roughly N pixels. For pixel too
+                        close to the inner edge this sector is taken by default.
+    :param lastZone_radii: Same as firstZone_radii for the outer edge.
     :param centroid: Define the cente rof the image. Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
     :param mute: Won't print any logs.
     :param N_threads: Number of threads to be used. If None run sequentially.

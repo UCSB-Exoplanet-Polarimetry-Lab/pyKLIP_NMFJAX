@@ -86,15 +86,29 @@ def find_lower_nearest(array,value):
     idx = np.nanargmax(diff)
     return array[idx], idx
 
-def get_specType(object_name,SpT_file_csv):
+def get_specType(object_name,SpT_file_csv = None):
     """
     Return the spectral type for a target based on the table in SpT_file
 
     :param object_name: Name of the target: ie "c_Eri"
     :param SpT_file: Filename (.csv) of the table containing the target names and their spectral type.
                     Can be generated from bu quering Simbad.
+                    If None (default), the function directly tries to query Simbad.
     :return: Spectral type
     """
+
+    if SpT_file_csv is None:
+        import urllib
+
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        return spec_type
+
 
     with open(SpT_file_csv, 'rb') as csvfile_TID:
         TID_reader = csv.reader(csvfile_TID, delimiter=';')
@@ -103,7 +117,31 @@ def get_specType(object_name,SpT_file_csv):
         target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
         specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
 
-    return specTypes[target_names.index(object_name)]
+    try:
+        return specTypes[target_names.index(object_name)]
+    except:
+        import urllib
+
+        print("Couldn't find {0} in spectral type list. Try to retrieve it from Simbad.".format(object_name))
+
+        target_names.append(object_name)
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        specTypes.append(spec_type)
+
+
+        attrib_name=["name","specType"]
+        with open(SpT_file_csv, 'w+') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=';')
+            table_to_csv = [attrib_name]+zip(target_names,specTypes)
+            csvwriter.writerows(table_to_csv)
+
+        return spec_type
 
 def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = None):
     """

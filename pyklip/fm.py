@@ -36,7 +36,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         refs: N x p array of the N reference images that
                   characterizes the extended source with p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
-                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         covar_psfs: covariance matrix of reference images (for large N, useful). Normalized following numpy normalization in np.cov documentation
         # The following arguments must all be passed in, or none of them for klip_math to work
         models_ref: N x p array of the N models corresponding to reference images. Each model should be normalized to unity (no flux information)
@@ -77,7 +77,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     # calculate the total number of KL basis we need based on the number of reference PSFs and number requested
     tot_basis = covar_psfs.shape[0]
 
-    if numbasis[0] == 0:
+    if numbasis[0] == None:
         evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-np.min([100,tot_basis-1]), tot_basis-1))
         evals = np.copy(evals[::-1])
         evecs = np.copy(evecs[:,::-1])
@@ -103,26 +103,39 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     KL_basis = KL_basis * (1. / np.sqrt(evals))[None,:]
     KL_basis = KL_basis.T # flip dimensions to be consistent with Laurent's paper
 
-    # prepare science frame for KLIP subtraction
-    sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
-    sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
+    # If we are interested in only one numbasis there is no need to use the triangular matrices.
+    if np.size(numbasis) == 1:
+        N_pix = np.size(sci_mean_sub)
+        sci_rows_selected = np.reshape(sci_mean_sub, (1,N_pix))
 
-    sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
-    sci_mean_sub_rows[sci_nanpix] = 0
-    sci_nanpix = np.where(np.isnan(sci_rows_selected))
-    sci_rows_selected[sci_nanpix] = 0
+        sci_nanpix = np.where(np.isnan(sci_rows_selected))
+        sci_rows_selected[sci_nanpix] = 0
 
-    # run KLIP on this sector and subtract the stellar PSF
-    inner_products = np.dot(sci_mean_sub_rows, KL_basis.T)
-    lower_tri = np.tril(np.ones([max_basis,max_basis]))
-    inner_products = inner_products * lower_tri
+        # run KLIP on this sector and subtract the stellar PSF
+        inner_products = np.dot(sci_rows_selected, KL_basis.T)
+        inner_products[0,max_basis::]=0
 
-    # JB, this code is broken here. It will always do this if the first numbasis is 1.
-    # if numbasis[0] == 0:
-    if False:
-        klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+        klip = np.dot(inner_products, KL_basis)
+
     else:
-        klip = np.dot(inner_products[numbasis,:], KL_basis)
+        # prepare science frame for KLIP subtraction
+        sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis,1))
+        sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1))
+
+        sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
+        sci_mean_sub_rows[sci_nanpix] = 0
+        sci_nanpix = np.where(np.isnan(sci_rows_selected))
+        sci_rows_selected[sci_nanpix] = 0
+
+        # run KLIP on this sector and subtract the stellar PSF
+        inner_products = np.dot(sci_mean_sub_rows, KL_basis.T)
+        lower_tri = np.tril(np.ones([max_basis,max_basis]))
+        inner_products = inner_products * lower_tri
+
+        if numbasis[0] == None:
+            klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+        else:
+            klip = np.dot(inner_products[numbasis,:], KL_basis)
 
 
     sub_img_rows_selected = sci_rows_selected - klip
@@ -170,12 +183,10 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_per
     N_pix = original_KL.shape[1]
 
     refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
-    # JB: check if commenting that is fine
-    #refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
-    # JB: check if commenting that is fine
-    #models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+    models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
 
     #print(evals.shape,evecs.shape,original_KL.shape,refs.shape,models_ref.shape)
 
@@ -345,7 +356,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
                          Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
         orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
         numbasis: array of KL mode cutoffs
-                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         sci: array of size p representing the science data
         model_sci: array of size p corresponding to the PSF of the science frame
         input_spectrum: array of size wv with the assumed spectrum of the model
@@ -358,8 +369,11 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
               (shape of b,p)
     """
+    if np.size(numbasis) == 1:
+        return calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = inputflux)
+
     max_basis = original_KL.shape[0]
-    if numbasis[0]==0:
+    if numbasis[0]==None:
         numbasis_index = [max_basis-1]
     else:
         numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
@@ -442,6 +456,128 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         # delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
         klipped_selfsub1 = np.dot(np.take(selfsubtraction_1_inner_products, numbasis_index, axis=1), original_KL)
         klipped_selfsub2 = np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
+        klipped_selfsub = np.rollaxis(klipped_selfsub1,1,0) + klipped_selfsub2
+
+        # klipped_oversub.shape = (size(numbasis),Npix)
+        # klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+        # klipped_oversub = Sum(<S|KL>KL)
+        # klipped_selfsub = Sum(<N|DKL>KL) + Sum(<N|KL>DKL)
+        return klipped_oversub, klipped_selfsub
+
+
+def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = None):
+    """
+    Same function as calculate_fm() but faster when numbasis has only one element. It doesn't do the mutliplication with
+    the triangular matrix.
+
+    Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
+    and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
+    the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
+
+    Note: if inputflux is None and delta_KL_nospec has three dimensions (ie delta_KL_nospec was calculated using
+    pertrurb_nospec() or perturb_nospec_modelsBased()) then only klipped_oversub and klipped_selfsub are returned.
+    Besides they will have an extra first spectral dimension.
+
+    Args:
+        delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
+                         Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
+        orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
+        numbasis: array of (ONE ELEMENT ONLY) KL mode cutoffs
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
+        sci: array of size p representing the science data
+        model_sci: array of size p corresponding to the PSF of the science frame
+        input_spectrum: array of size wv with the assumed spectrum of the model
+
+    Returns:
+        fm_psf: array of shape (b,p) showing the forward modelled PSF
+                Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
+        klipped_oversub: array of shape (b, p) showing the effect of oversubtraction as a function of KL modes
+        klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
+        Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
+              (shape of b,p)
+    """
+    max_basis = original_KL.shape[0]
+    if numbasis[0]==None:
+        numbasis_index = [max_basis-1]
+    else:
+        numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
+
+    N_pix = np.size(sci)
+
+    # remove means and nans from science image
+    sci_mean_sub = sci - np.nanmean(sci)
+    sci_nanpix = np.where(np.isnan(sci_mean_sub))
+    sci_mean_sub[sci_nanpix] = 0
+    sci_mean_sub_rows = np.reshape(sci_mean_sub,(1,N_pix))
+
+
+    # science PSF models, ready for FM
+    # /!\ JB: If subtracting the mean. It should be done here. not in klip_math since we don't use model_sci there.
+    model_sci_mean_sub = model_sci # should be subtracting off the mean?
+    model_nanpix = np.where(np.isnan(model_sci_mean_sub))
+    model_sci_mean_sub[model_nanpix] = 0
+    model_sci_mean_sub_rows = np.reshape(model_sci_mean_sub,(1,N_pix))
+
+
+    # calculate perturbed KL modes based on spectrum
+    if inputflux is not None:
+        # delta_KL_nospec.shape = (max_basis,N_lambda,N_pix) or (max_basis,N_ref,N_pix)
+        delta_KL = np.dot(inputflux, delta_KL_nospec) # this will take the last dimension of input_spectrum (wv) and sum over the second to last dimension of delta_KL_nospec (wv)
+    else:
+        delta_KL = delta_KL_nospec
+
+    # Forward model the PSF
+    # 3 terms: 1 for oversubtracton (planet attenauted by speckle KL modes),
+    # and 2 terms for self subtraction (planet signal leaks in KL modes which get projected onto speckles)
+    #
+    # Klipped = N-Sum(<N|KL>KL) + S-Sum(<S|KL>KL) - Sum(<N|DKL>KL) - Sum(<N|KL>DKL)
+    # With  N = noise/speckles (science image)
+    #       S = signal/planet model
+    #       KL = KL modes
+    #       DKL = perturbation of the KL modes/Delta_KL
+    #
+    # sci_mean_sub_rows.shape = (1,N_pix)
+    # model_sci_mean_sub_rows.shape = (1,N_pix)
+    # original_KL.shape = (max_basis,N_pix)
+    # delta_KL.shape = (max_basis,N_pix)
+    oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, original_KL.T)
+    if np.size(delta_KL.shape) == 2:
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, delta_KL.T)
+        # selfsubtraction_1_inner_products.shape = (max_basis,N_pix,max_basis)
+    else:
+        Nlambda = delta_KL.shape[1]
+        #Before delta_KL.shape = (max_basis,N_lambda or N_ref,N_pix)
+        delta_KL = np.rollaxis(delta_KL,1,0)
+        #Now delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
+        # np.rollaxis(delta_KL,2,1).shape = (N_lambda or N_ref,N_pix,max_basis)
+        # np.dot() takes the last dimension of first array and sum over the second to last dimension of second array
+        selfsubtraction_1_inner_products = np.dot(sci_mean_sub_rows, np.rollaxis(delta_KL,2,1))
+        # selfsubtraction_1_inner_products.shape = (N_lambda or N_ref,max_basis,max_basis)
+    selfsubtraction_2_inner_products = np.dot(sci_mean_sub_rows, original_KL.T)
+
+    # oversubtraction_inner_products = (1,max_basis)
+    oversubtraction_inner_products[max_basis::] = 0
+    klipped_oversub = np.dot(oversubtraction_inner_products, original_KL)
+    if np.size(delta_KL.shape) == 2:
+        # selfsubtraction_1_inner_products = (1,max_basis)
+        # selfsubtraction_2_inner_products = (1,max_basis)
+        selfsubtraction_1_inner_products[0,max_basis::] = 0
+        selfsubtraction_2_inner_products[0,max_basis::] = 0
+        klipped_selfsub = np.dot(selfsubtraction_1_inner_products, original_KL) + \
+                          np.dot(selfsubtraction_2_inner_products, delta_KL)
+
+        return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+    else:
+        for k in range(Nlambda):
+            selfsubtraction_1_inner_products[:,k,max_basis::] = 0
+        selfsubtraction_1_inner_products = np.rollaxis(selfsubtraction_1_inner_products,0,1)
+        selfsubtraction_2_inner_products[:,max_basis::] = 0
+        # selfsubtraction_1_inner_products = (N_lambda or N_ref,max_basis,max_basis)
+        # selfsubtraction_2_inner_products = (N_ref=max_basis,max_basis)
+        # original_KL.shape = (max_basis,N_pix)
+        # delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
+        klipped_selfsub1 = np.dot(selfsubtraction_1_inner_products, original_KL)
+        klipped_selfsub2 = np.dot(selfsubtraction_2_inner_products, delta_KL)
         klipped_selfsub = np.rollaxis(klipped_selfsub1,1,0) + klipped_selfsub2
 
         # klipped_oversub.shape = (size(numbasis),Npix)
@@ -962,7 +1098,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
@@ -1005,14 +1141,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         else:
             numbasis = np.array([numbasis])
 
-    if numbasis[0]==0:
+    if numbasis[0]==None:
         if np.size(numbasis)>1:
             print("numbasis should have only one element if numbasis[0] = 0.")
             return None
 
-    if maxnumbasis is None and numbasis[0]>0:
+    if maxnumbasis is None and numbasis[0] is not None:
         maxnumbasis = np.max(numbasis)
-    elif maxnumbasis is None and numbasis[0]==0:
+    elif maxnumbasis is None and numbasis[0]==None:
         maxnumbasis = 100
 
     if numthreads is None:
@@ -1296,7 +1432,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
                 It defines the separation interva in which klip will be run.
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-                If numbasis is [0] the number of KL modes to be used is automatically picked based on the eigenvalues.
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         maxmove:minimum movement (opposite of minmove) - CURRENTLY NOT USED
