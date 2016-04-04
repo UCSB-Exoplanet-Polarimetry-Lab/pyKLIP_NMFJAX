@@ -205,7 +205,12 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
                     # splitted_line[2]: Temperature in K
                     dict_temp[splitted_line[0]] = splitted_line[2]
 
-        target_temp = float(dict_temp[star_type])
+        try:
+            target_temp = float(dict_temp[star_type])
+        except:
+            if not mute:
+                print("Returning None. Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
+            return sampling_pip,None
     else:
         target_temp = temperature
 

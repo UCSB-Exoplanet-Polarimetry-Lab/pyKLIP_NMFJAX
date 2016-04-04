@@ -54,9 +54,8 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         Otherwise:
             evals: array of eigenvalues (size of max number of KL basis requested aka nummaxKL)
             evecs: array of corresponding eigenvectors (shape of [p, nummaxKL])
-
-
     """
+
     # remove means and nans
     sci_mean_sub = sci - np.nanmean(sci)
     sci_nanpix = np.where(np.isnan(sci_mean_sub))
