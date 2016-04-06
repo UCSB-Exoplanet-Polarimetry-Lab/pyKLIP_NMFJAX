@@ -262,7 +262,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
 
 
 def get_image_stddev(image,
-                     IOWA,
+                     IOWA = None,
                      N = 2000,
                      centroid = None,
                      r_step = None,
@@ -270,7 +270,13 @@ def get_image_stddev(image,
                      image_wide = None):
     if image_wide is None:
         image_wide = False
-    IWA,OWA = IOWA
+
+
+    if IOWA is None:
+        IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
+    else:
+        IWA,OWA = IOWA
+
     ny,nx = image.shape
 
     image_mask = np.ones((ny,nx))

@@ -6,10 +6,12 @@ import multiprocessing as mp
 import numpy as np
 from scipy.signal import convolve2d
 
+import matplotlib.pyplot as plt
+
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
-from pyklip.kpp.stat.StatPerPix_utils import *
+from pyklip.kpp.stat.statPerPix_utils import *
 from pyklip.kpp.utils.GOI import *
-import pyklip.kpp.utils.mathfunc as kppmath
+from pyklip.kpp.utils.GPIimage import *
 
 class ContrastFMMF(KPPSuperClass):
     """
@@ -23,15 +25,9 @@ class ContrastFMMF(KPPSuperClass):
                  label = None,
                  mask_radius = None,
                  IOWA = None,
-                 N = None,
-                 Dr = None,
-                 Dth = None,
-                 type = None,
-                 rm_edge = None,
                  GOI_list_folder = None,
                  overwrite = False,
-                 kernel_type = None,
-                 kernel_width = None):
+                 contrast_filename = None):
         """
 
 
@@ -56,29 +52,17 @@ class ContrastFMMF(KPPSuperClass):
                                      overwrite = overwrite)
 
         if mask_radius is None:
-            self.mask_radius = 7
+            self.mask_radius = 3
         else:
             self.mask_radius = mask_radius
 
-        if Dr is None:
-            self.Dr = 2
-        else:
-            self.Dr = Dr
-
-        if type is None:
-            self.type = "SNR"
-        else:
-            self.type = type
-
         self.IOWA = IOWA
-        self.N = N
-        self.Dth = Dth
-        self.rm_edge = rm_edge
+        self.N = 400
+        self.Dr = 4
+        self.type = "stddev"
+        self.suffix = "2Dcontrast"
         self.GOI_list_folder = GOI_list_folder
-
-        self.kernel_type = kernel_type
-        # The default value is defined later
-        self.kernel_width = kernel_width
+        self.contrast_filename = contrast_filename
 
 
     def initialize(self,inputDir = None,
@@ -123,6 +107,20 @@ class ContrastFMMF(KPPSuperClass):
                                          folderName = folderName,
                                          label=label)
 
+        if self.contrast_filename is not None:
+            # Check file existence and define filename_path
+            if self.inputDir is None:
+                try:
+                    self.contrast_filename_path = os.path.abspath(glob(self.contrast_filename)[self.id_matching_file])
+                except:
+                    raise Exception("File "+self.contrast_filename+"doesn't exist.")
+            else:
+                try:
+                    self.contrast_filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.contrast_filename)[self.id_matching_file])
+                except:
+                    raise Exception("File "+self.inputDir+os.path.sep+self.contrast_filename+" doesn't exist.")
+
+
         # Get center of the image (star position)
         try:
             # Retrieve the center of the image from the fits headers.
@@ -133,8 +131,6 @@ class ContrastFMMF(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
-        if self.label == "CADI":
-            self.center = [140,140]
 
         try:
             self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -143,20 +139,6 @@ class ContrastFMMF(KPPSuperClass):
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
-        #self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
-        self.suffix = self.type+"PerPix"
-        tmp_suffix = ""
-        if self.Dr is not None:
-            tmp_suffix = tmp_suffix+"Dr"+str(self.Dr)
-        elif self.N is not None:
-            tmp_suffix = tmp_suffix+"N"+str(self.N)
-        if self.Dth is not None:
-            tmp_suffix = tmp_suffix+"Dth"+str(self.Dth)
-        if self.kernel_type is not None:
-            tmp_suffix = tmp_suffix+self.kernel_type
-            # if self.kernel_width is not None:
-            #     tmp_suffix = tmp_suffix+str(self.kernel_width)
-        self.suffix = self.suffix+tmp_suffix
 
         return init_out
 
@@ -186,13 +168,6 @@ class ContrastFMMF(KPPSuperClass):
         if not self.mute:
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
-        if self.rm_edge is not None:
-            # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
-            IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center)
-            conv_kernel = np.ones((self.rm_edge,self.rm_edge))
-            wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
-            self.image[np.where(np.isnan(wider_mask))] = np.nan
-
         # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
         # PDF. This masked image is given separately to the probability calculation function.
         if self.GOI_list_folder is not None:
@@ -200,45 +175,83 @@ class ContrastFMMF(KPPSuperClass):
         else:
             self.image_without_planet = self.image
 
-        if self.kernel_type is not None:
-            # Check if the input file is 2D or 3D
-            if hasattr(self, 'nl'): # If the file is a 3D cube
-                for l_id in np.arange(self.nl):
-                    self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
-                    self.image_noSignal[l_id,:,:] = convolve2d(self.image_noSignal[l_id,:,:],self.PSF,mode="same")
-            else: # image is 2D
-                print(self.image_noSignal.shape)
-                self.image = convolve2d(self.image,self.PSF,mode="same")
-                self.image_noSignal = convolve2d(self.image_noSignal,self.PSF,mode="same")
+        self.flux_1Dstddev,self.flux_stddev_rSamp = get_image_stddev(self.image_without_planet,
+                                                                     self.IOWA,
+                                                                     N = None,
+                                                                     centroid = self.center,
+                                                                     r_step = self.Dr/2,
+                                                                     Dr=self.Dr)
+        self.flux_stddev_rSamp = np.array([r_tuple[0] for r_tuple in self.flux_stddev_rSamp])
+        print(self.flux_stddev_rSamp)
+        self.flux_1Dstddev = np.array(self.flux_1Dstddev)
+        self.flux_1Dstddev_map = get_image_stat_map(self.image,
+                                                    self.image_without_planet,
+                                                    IOWA = self.IOWA,
+                                                    N = None,
+                                                    centroid = self.center,
+                                                    r_step = self.Dr/2,
+                                                    Dr = self.Dr,
+                                                    type = "stddev",
+                                                    image_wide = None)
 
-        if np.size(self.image.shape) == 3:
-            # Not tested
-            self.stat_cube_map = np.zeros(self.image.shape)
-            for k in range(self.nl):
-                self.stat_cube_map[k,:,:] = get_image_stat_map_perPixMasking(self.image[k,:,:],
-                                                                        self.image_without_planet[k,:,:],
-                                                                        mask_radius = self.mask_radius,
-                                                                        IOWA = self.IOWA,
-                                                                        N = self.N,
-                                                                        centroid = self.center,
-                                                                        mute = self.mute,
-                                                                        N_threads = self.N_threads,
-                                                                        Dr= self.Dr,
-                                                                        Dth = self.Dth,
-                                                                        type = self.type)
-        elif np.size(self.image.shape) == 2:
-            self.stat_cube_map = get_image_stat_map_perPixMasking(self.image,
-                                                             self.image_without_planet,
-                                                             mask_radius = self.mask_radius,
-                                                             IOWA = self.IOWA,
-                                                             N = self.N,
-                                                             centroid = self.center,
-                                                             mute = self.mute,
-                                                             N_threads = self.N_threads,
-                                                             Dr= self.Dr,
-                                                             Dth = self.Dth,
-                                                             type = self.type)
-        return self.stat_cube_map
+
+        self.fluxMap_stddev = get_image_stat_map_perPixMasking(self.image,
+                                                         self.image_without_planet,
+                                                         mask_radius = self.mask_radius,
+                                                         IOWA = self.IOWA,
+                                                         N = self.N,
+                                                         centroid = self.center,
+                                                         mute = self.mute,
+                                                         N_threads = self.N_threads,
+                                                         Dr= self.Dr,
+                                                         Dth = None,
+                                                         type = self.type)
+
+
+        legend_str_list = []
+        plt.figure(1,figsize=(12,6))
+        plt.subplot(1,2,1)
+        if self.contrast_filename is not None:
+            with open(self.contrast_filename_path, 'rt') as cvs_contrast:
+                cvs_contrast_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_contrast),delimiter=' ')
+                list_contrast = list(cvs_contrast_reader)
+                contrast_str_arr = np.array(list_contrast, dtype='string')
+                col_names = contrast_str_arr[0]
+                contrast_arr = contrast_str_arr[1::].astype(np.float)
+                self.sep_samples = contrast_arr[:,0]
+                self.Ttype_contrast = np.squeeze(contrast_arr[:,np.where("T-Type"==col_names)])
+                self.Ltype_contrast = np.squeeze(contrast_arr[:,np.where("L-Type"==col_names)])
+
+
+                plt.plot(self.sep_samples,self.Ttype_contrast,"--", color='b', linewidth=3.0)
+                legend_str_list.append("T-type pyklip")
+                plt.plot(self.sep_samples,self.Ltype_contrast,"--", color='r', linewidth=3.0)
+                legend_str_list.append("L-type pyklip")
+
+        plt.plot(self.flux_stddev_rSamp*0.01413,self.flux_1Dstddev, color='r', linewidth=3.0)
+        legend_str_list.append("{0} FMpF".format(self.folderName))
+        plt.xlabel("Separation (arcsec)", fontsize=20)
+        plt.ylabel("Contrast (log10)", fontsize=20)
+        plt.legend(legend_str_list)
+        ax= plt.gca()
+        ax.set_yscale('log')
+        ax.tick_params(axis='x', labelsize=20)
+        ax.tick_params(axis='y', labelsize=20)
+        # ax.spines['right'].set_visible(False)
+        # ax.spines['top'].set_visible(False)
+        # ax.xaxis.set_ticks_position('bottom')
+        # ax.yaxis.set_ticks_position('left')
+
+        plt.subplot(1,2,2)
+        plt.imshow(self.fluxMap_stddev-self.flux_1Dstddev_map)
+        plt.colorbar()
+        ax = plt.gca()
+        # Remove box and axes ticks
+        ax.set_axis_off()
+        # rect = fig.patch
+        # rect.set_facecolor('white')
+
+        return self.fluxMap_stddev
 
 
     def save(self):
@@ -249,6 +262,12 @@ class ContrastFMMF(KPPSuperClass):
 
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
+
+
+        self.suffix = "1Dcontrast"
+        if not self.mute:
+            print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.png')
+        plt.savefig(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+".png", bbox_inches='tight')
 
         if hasattr(self,"prihdr") and hasattr(self,"exthdr"):
             # Save the parameters as fits keywords
@@ -264,26 +283,23 @@ class ContrastFMMF(KPPSuperClass):
             self.exthdr["STA_IOWA"] = str(self.IOWA)
             self.exthdr["STA_N"] = self.N
             self.exthdr["STA_DR"] = self.Dr
-            self.exthdr["STA_DTH"] = self.Dth
             self.exthdr["STA_TYPE"] = self.type
-            self.exthdr["STARMEDG"] = self.rm_edge
             self.exthdr["STAGOILF"] = self.GOI_list_folder
-            self.exthdr["STAKERTY"] = str(self.kernel_type)
-            self.exthdr["STAKERWI"] = str(self.kernel_width)
 
             # # This parameters are not always defined
             # if hasattr(self,"spectrum_name"):
             #     self.exthdr["STASPECN"] = self.spectrum_name
 
+            self.suffix = "2Dcontrast"
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist = pyfits.HDUList()
             hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
-            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.stat_cube_map, name=self.suffix))
+            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.fluxMap_stddev, name=self.suffix))
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
         else:
             hdulist = pyfits.HDUList()
-            hdulist.append(pyfits.ImageHDU(data=self.stat_cube_map, name=self.suffix))
+            hdulist.append(pyfits.ImageHDU(data=self.fluxMap_stddev, name=self.suffix))
             hdulist.append(pyfits.ImageHDU(name=self.suffix))
 
             hdulist[1].header["STA_TYPE"] = self.type
@@ -297,13 +313,10 @@ class ContrastFMMF(KPPSuperClass):
             hdulist[1].header["STA_IOWA"] = self.IOWA
             hdulist[1].header["STA_N"] = self.N
             hdulist[1].header["STA_DR"] = self.Dr
-            hdulist[1].header["STA_DTH"] = self.Dth
             hdulist[1].header["STA_TYPE"] = self.type
-            hdulist[1].header["STARMEDG"] = self.rm_edge
             hdulist[1].header["STAGOILF"] = self.GOI_list_folder
-            hdulist[1].header["STAKERTY"] = str(self.kernel_type)
-            hdulist[1].header["STAKERWI"] = str(self.kernel_width)
 
+            self.suffix = "2Dcontrast"
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)

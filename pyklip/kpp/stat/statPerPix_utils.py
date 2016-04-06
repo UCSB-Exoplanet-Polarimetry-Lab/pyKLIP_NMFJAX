@@ -44,7 +44,7 @@ def get_image_stat_map_perPixMasking(image,
     :param centroid: Define the cente rof the image. Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
     :param mute: Won't print any logs.
     :param N_threads: Number of threads to be used. If None run sequentially.
-    :param Dr: If not None defines the width of the ring as Dr. N is then ignored.
+    :param Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined as well.
     :param Dth: Define the angular size of a sector in degree (will apply for either Dr or N)
     :param type: Indicate the type of statistic to be calculated.
                 If "SNR" (default) simple stddev calculation and returns SNR.
@@ -76,17 +76,20 @@ def get_image_stat_map_perPixMasking(image,
 
     image_noNans = np.where(np.isfinite(image)*(r_grid>IWA)*(r_grid<OWA))
 
-    if N is not None:
-        r_min_firstZone,r_max_firstZone = (IWA,np.sqrt(N/np.pi+IWA**2))
-        r_limit_firstZone = (r_min_firstZone + r_max_firstZone)/2.
-        r_min_lastZone,r_max_lastZone = (OWA,np.max([ny,nx]))
-        r_limit_lastZone = OWA - N/(4*np.pi*OWA)
-    else:
-        r_min_firstZone,r_max_firstZone,r_limit_firstZone = None,None,None
-        r_min_lastZone,r_max_lastZone,r_limit_lastZone = None,None,None
+    # if N is not None:
+    #     r_min_firstZone,r_max_firstZone = (IWA,np.sqrt(N/np.pi+IWA**2))
+    #     r_limit_firstZone = (r_min_firstZone + r_max_firstZone)/2.
+    #     r_min_lastZone,r_max_lastZone = (OWA,np.max([ny,nx]))
+    #     r_limit_lastZone = OWA - N/(4*np.pi*OWA)
+    # else:
+    #     r_min_firstZone,r_max_firstZone,r_limit_firstZone = None,None,None
+    #     r_min_lastZone,r_max_lastZone,r_limit_lastZone = None,None,None
 
     stat_map = np.zeros(image.shape) + np.nan
-    if N_threads is not None:
+    if N_threads is None:
+        N_threads = mp.cpu_count()
+
+    if N_threads != -1:
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
 
@@ -122,8 +125,8 @@ def get_image_stat_map_perPixMasking(image,
                        itertools.repeat(y_grid),
                        itertools.repeat(N),
                        itertools.repeat(mask_radius),
-                       itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
-                       itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone)),
+                       itertools.repeat((None,None,None)),# itertools.repeat((r_limit_firstZone,r_min_firstZone,r_max_firstZone)),
+                       itertools.repeat((None,None,None)),# itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone)),
                        itertools.repeat(Dr),
                        itertools.repeat(Dth),
                        itertools.repeat(type)))
@@ -141,8 +144,8 @@ def get_image_stat_map_perPixMasking(image,
                                                                x_grid,y_grid,
                                                                N,
                                                                mask_radius,
-                                                               (r_limit_firstZone,r_min_firstZone,r_max_firstZone),
-                                                               (r_limit_lastZone,r_min_lastZone,r_max_lastZone),
+                                                               (None,None,None),#(r_limit_firstZone,r_min_firstZone,r_max_firstZone),
+                                                               (None,None,None),#(r_limit_lastZone,r_min_lastZone,r_max_lastZone),
                                                                Dr = Dr,
                                                                Dth = Dth,
                                                                type = type)
@@ -187,10 +190,10 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 statistic is calculated.
     :param N: Defines the width of the ring by the number of pixels it has to include.
             The width of the annuli will therefore vary with sepration.
-    :param firstZone_radii: When N is not None it contains the meam_radius, the min radius and the max radius defining
+    :param firstZone_radii: (DISABLED) When N is not None it contains the meam_radius, the min radius and the max radius defining
                         the first sector. The first sector in that case has includes roughly N pixels. For pixel too
                         close to the inner edge this sector is taken by default.
-    :param lastZone_radii: Same as firstZone_radii for the outer edge.
+    :param lastZone_radii: (DISABLED) Same as firstZone_radii for the outer edge.
     :param centroid: Define the cente rof the image. Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
     :param mute: Won't print any logs.
     :param N_threads: Number of threads to be used. If None run sequentially.
@@ -210,9 +213,9 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
     image_without_planet_mask = np.ones((ny,nx))
     image_without_planet_mask[np.where(np.isnan(image_without_planet))] = 0
 
-    if N is not None:
-        r_limit_firstZone,r_min_firstZone,r_max_firstZone = firstZone_radii
-        r_limit_lastZone,r_min_lastZone,r_max_lastZone = lastZone_radii
+    # if N is not None:
+    #     r_limit_firstZone,r_min_firstZone,r_max_firstZone = firstZone_radii
+    #     r_limit_lastZone,r_min_lastZone,r_max_lastZone = lastZone_radii
 
     # Calculate the radial distance of each pixel
     r_grid = abs(x_grid +y_grid*1j)
@@ -235,35 +238,53 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
             th = th_grid[(k,l)]
 
             if Dr is None:
-                if r < r_limit_firstZone:
-                    #Calculate stat for pixels close to IWA
-                    r_min,r_max = r_min_firstZone,r_max_firstZone
-                elif r > r_limit_lastZone:
-                    r_min,r_max = r_min_lastZone,r_max_lastZone
-                else:
-                    dr = N/(4*np.pi*r)
-                    r_min,r_max = (r-dr, r+dr)
+                # if r < r_limit_firstZone:
+                #     #Calculate stat for pixels close to IWA
+                #     r_min,r_max = r_min_firstZone,r_max_firstZone
+                # elif r > r_limit_lastZone:
+                #     r_min,r_max = r_min_lastZone,r_max_lastZone
+                # else:
+                #     dr = N/(4*np.pi*r)
+                #     r_min,r_max = (r-dr, r+dr)
+                dr = N/(4*np.pi*r)
+                r_min,r_max = (r-dr, r+dr)
 
             else:
                 r_min,r_max = (r-Dr, r+Dr)
 
             if Dth is None:
-                where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
+                if N is None:
+                    where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask)
+                else:
+                    N_ring = np.pi*(r_max**2-r_min**2)
+                    Dth_rad = np.pi*(N/N_ring)
+                    # print((N/N_ring),Dth_rad)
+                    delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
+                    where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask * \
+                                        (abs(delta_th_grid)<Dth_rad))
+                    # import matplotlib.pyplot as plt
+                    # im_cpy = copy(image)
+                    # im_cpy[where_ring] = 1000
+                    # plt.figure(1)
+                    # plt.imshow(im_cpy)
+                    # plt.show()
+                    # print(where_ring)
             else:
                 delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
                 where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask * \
-                                    (abs(delta_th_grid)<(+Dth_rad*50./r)))
+                                    (abs(delta_th_grid)<(Dth_rad*50./r)))
 
             where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
-            #print(np.shape(where_ring_masked[0]))
 
+            # print(where_ring_masked)
             data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
 
-            if 0:
+            if 0:#(k == 135 and l == 155) or (k == 162 and l == 165) or (k == 139 and l == 133) or (k == 165 and l == 132) :
                 import matplotlib.pyplot as plt
                 print(image[k,l])
                 im_cpy = copy(image)
-                im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = np.nan
+                im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = 1000
+                #im_cpy[where_ring] = 1000
                 plt.figure(1)
                 plt.imshow(im_cpy)
                 plt.show()
