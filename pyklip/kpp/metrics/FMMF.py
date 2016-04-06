@@ -151,10 +151,9 @@ class FMMF(KPPSuperClass):
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
         if predefined_sectors == "oneAc":
-            #self.N_pix_sector = 100
-            self.subsections = [[88./180.*np.pi,93./180.*np.pi]]
-            #self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
-            self.annuli = [(55.5,70.8)]
+            self.N_pix_sector = 100
+            self.subsections = None
+            self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 300

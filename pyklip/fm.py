@@ -577,7 +577,7 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         # delta_KL.shape = (N_lambda or N_ref,max_basis,N_pix)
         klipped_selfsub1 = np.dot(selfsubtraction_1_inner_products, original_KL)
         klipped_selfsub2 = np.dot(selfsubtraction_2_inner_products, delta_KL)
-        klipped_selfsub = np.rollaxis(klipped_selfsub1,1,0) + klipped_selfsub2
+        klipped_selfsub = klipped_selfsub1 + klipped_selfsub2
 
         # klipped_oversub.shape = (size(numbasis),Npix)
         # klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)

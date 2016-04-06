@@ -1208,7 +1208,9 @@ def generate_spdc_with_fakes(dataset,
                              GOI_list_folder = None,
                              mute = False,
                              suffix = None,
-                             SpT_file_csv = None):
+                             SpT_file_csv = None,
+                             sep_skip_real_pl = None,
+                             pa_skip_real_pl = None):
     '''
     Generate spectral datacubes with fake planets.
     It will do a copy of the cubes read in GPIData after having injected fake planets in them.
@@ -1250,12 +1252,20 @@ def generate_spdc_with_fakes(dataset,
     :param GOI_list_folder: Folder where are stored the table with the known objects.
     :param mute: If True prevent printed log outputs.
     :param suffix: Suffix to be added at the end of the spdc filename.
+    :param SpT_file_csv: Filename of the table (.csv) contaning the spectral type of the stars.
+    :param sep_skip_real_pl: Limit in seperation of how close a fake can be injected of a known GOI.
+    :param pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
     :return:
     '''
 
 
     if suffix is None:
         suffix = "fakes"
+
+    if sep_skip_real_pl is None:
+        sep_skip_real_pl = 20
+    if pa_skip_real_pl is None:
+        pa_skip_real_pl = 90
 
     prihdr = copy(dataset.prihdrs[0])
     exthdr = copy(dataset.exthdrs[0])
@@ -1460,7 +1470,7 @@ def generate_spdc_with_fakes(dataset,
             for sep_real_object,pa_real_object  in zip(sep_real_object_list,pa_real_object_list):
                 delta_angle = np.min([np.abs(np.mod(pa,360)-np.mod(pa_real_object,360)),
                                np.min([np.mod(pa,360),np.mod(pa_real_object,360)])+360-np.max([np.mod(pa,360),np.mod(pa_real_object,360)])])
-                if np.abs(sep_real_object-radius) < 20. and delta_angle < 90:
+                if np.abs(sep_real_object-radius) < sep_skip_real_pl and delta_angle < pa_skip_real_pl:
                     too_close = True
                     if not mute:
                         print("Skipping planet. Real object too close.")
