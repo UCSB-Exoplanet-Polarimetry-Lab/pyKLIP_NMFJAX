@@ -43,7 +43,8 @@ class FMMF(KPPSuperClass):
                  predefined_sectors = None,
                  label = None,
                  quickTest = False,
-                 mute_progression = False):
+                 mute_progression = False,
+                 SpT_file_csv = None):
         """
         Define the general parameters of the metric.
 
@@ -83,6 +84,7 @@ class FMMF(KPPSuperClass):
         :param sky_aper_radius: Radius of the mask applied on the stamps to calculated the background value.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :param quickTest: Read only two files (the first and the last) instead of the all sequence
+        :param SpT_file_csv: Filename of the table (.csv) containing the spectral type of the stars.
         """
         # allocate super class
         super(FMMF, self).__init__(filename,
@@ -98,6 +100,7 @@ class FMMF(KPPSuperClass):
         self.process_all_files = False
         self.quickTest = quickTest
         self.mute_progression = mute_progression
+        self.SpT_file_csv = SpT_file_csv
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -176,6 +179,9 @@ class FMMF(KPPSuperClass):
         elif predefined_sectors == "HR_5121":
             self.subsections = [[90./180.*np.pi,110./180.*np.pi]]
             self.annuli = [[30,40]]
+        elif predefined_sectors == "fluxTest":
+            self.subsections = [[(46-10)/180.*np.pi,(46+10)/180.*np.pi]]
+            self.annuli = [[36-5,36+5]]
 
 
 
@@ -229,7 +235,7 @@ class FMMF(KPPSuperClass):
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
+                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]], #Spectrum in flux (not in contrast)
                                      mute = False,
                                      star_type = None,
                                      filter = self.filter,
@@ -243,8 +249,7 @@ class FMMF(KPPSuperClass):
                          PSF_cube_filename = None,
                          prihdr = None,
                          exthdr = None,
-                         star_type = None,
-                         star_temperature = None,
+                         star_type = "auto",
                          compact_date = None,
                          label=None):
         """
@@ -256,6 +261,8 @@ class FMMF(KPPSuperClass):
         - Build or load the PSF if needed
         - load the spectrum if needed (it can be redefined later using self.init_new_spectrum())
         - read headers if they exist
+
+        The injected model have a spectrum normalized to unit broadband flux in DN space.
 
 
         :param inputDir: If defined it allows filename to not include the whole path and just the filename.
@@ -270,6 +277,7 @@ class FMMF(KPPSuperClass):
                         which pyklip is installed. It that case it should be a spectrum from Mark Marley.
                         Instead of a path it can be a simple ndarray with the right dimension.
                         Or by default it is a completely flat spectrum.
+                        Spectra are assumed to be in FLUX UNITS.
         :param folderName: Name of the folder containing the outputs. It will be located in outputDir.
                         Default folder name is "default_out" if not spectrum is defined or the name of the spectrum
                         otherwise.
@@ -281,9 +289,11 @@ class FMMF(KPPSuperClass):
                         one PSF cube in this folder.
         :param prihdr: User defined primary fits headers in case the file read has none.
         :param exthdr: User defined extension fits headers in case the file read has none.
-        :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star. It is ignored
-                        of temperature is defined.
-        :param star_temperature: Temperature of the star. Overwrite star_type if defined.
+        :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
+                        If "auto" (default), spec.get_specType(self.star_name,self.SpT_file_csv) is called.
+                        If self.SpT_file_csv is defined then it reads the spectral type from the table otherwise try to
+                        query simbad directly.
+                        If None, the spectra are assumed to be in units of contrast.
         :param compact_date: Define the compact date to be used in the output filenames.
                             If a PSF has to be measured from the satellite spots it will define itself.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
@@ -298,8 +308,6 @@ class FMMF(KPPSuperClass):
                                          folderName = folderName,
                                          label=label)
 
-        self.star_type = star_type
-        self.star_temperature = star_temperature
 
         if compact_date is None:
             self.compact_date = "noDate"
@@ -324,6 +332,10 @@ class FMMF(KPPSuperClass):
             # If the object name could nto be found cal lit unknown_object
             self.star_name = "UNKNOWN_OBJECT"
 
+        if star_type is "auto":
+            self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
+        else:
+            self.star_type = star_type
 
         # Get the list of spdc files
         filelist = glob(self.inputDir+os.path.sep+self.filename)
@@ -470,20 +482,13 @@ class FMMF(KPPSuperClass):
             metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
         self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
 
+        # Retrieve the flux map
+        # Note: the injected model had a unit broadband flux in DN space.
         ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
         sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
         metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
-        # for k in range(72):
-        #     import matplotlib.pyplot as plt
-        #     plt.imshow(fmout[1,0,0,k,:,:])
-        #     plt.colorbar()
-        #     plt.show()
         for k in range(self.N_cubes):
             sat_spot_flux_for_calib = np.sum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
-            # print(np.sum(np.isnan(np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2))))
-            # print(np.sum(np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)==0))
-            # print(np.sum(sat_spot_flux_for_calib==0))
-            print(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:].shape)
             metric_pFlux = metric_pFlux+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / sat_spot_flux_for_calib * sat_spot_ratio
@@ -563,8 +568,6 @@ class FMMF(KPPSuperClass):
 
         if hasattr(self,"star_type"):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))
-        if hasattr(self,"star_temperature"):
-            extra_exthdr_keywords.append(("METSTTEM",self.star_temperature))
 
 
         if self.quickTest:

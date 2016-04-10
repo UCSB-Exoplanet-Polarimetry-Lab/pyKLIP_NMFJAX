@@ -355,7 +355,7 @@ class ShapeOrMF(KPPSuperClass):
             if PSF_cube_filename is not None:
                 self.PSF_cube_filename = PSF_cube_filename
 
-            if self.PSF_cube_filename == None:
+            if self.PSF_cube_filename is None:
                 self.PSF_cube_filename = "*-original_radial_PSF_cube.fits"
                 if not self.mute:
                     print("Using default filename for PSF cube: "+self.PSF_cube_filename)

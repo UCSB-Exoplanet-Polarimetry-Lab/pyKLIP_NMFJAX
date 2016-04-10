@@ -445,7 +445,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         klipped_selfsub = np.dot(np.take(selfsubtraction_1_inner_products, numbasis_index, axis=0), original_KL) + \
                           np.dot(np.take(selfsubtraction_2_inner_products,numbasis_index, axis=0), delta_KL)
 
-        return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+        return model_sci[None,:] - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
     else:
         selfsubtraction_1_inner_products = np.array([selfsubtraction_1_inner_products[:,k,:] * lower_tri for k in range(Nlambda)])
         selfsubtraction_2_inner_products = selfsubtraction_2_inner_products * lower_tri
@@ -565,7 +565,8 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         klipped_selfsub = np.dot(selfsubtraction_1_inner_products, original_KL) + \
                           np.dot(selfsubtraction_2_inner_products, delta_KL)
 
-        return model_sci - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+        return model_sci[None,:] - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
+        #return model_sci[None,:], klipped_oversub, klipped_selfsub
     else:
         for k in range(Nlambda):
             selfsubtraction_1_inner_products[:,k,max_basis::] = 0

@@ -107,8 +107,10 @@ def get_specType(object_name,SpT_file_csv = None):
         for line in text.splitlines():
             if line.startswith('%S'):
                 spec_type = line.split(" ")[1]
-        return spec_type
-
+        try:
+            return spec_type
+        except:
+            return None
 
     with open(SpT_file_csv, 'rb') as csvfile_TID:
         TID_reader = csv.reader(csvfile_TID, delimiter=';')

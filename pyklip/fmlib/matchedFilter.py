@@ -26,12 +26,27 @@ class MatchedFilter(NoFM):
     Matched filter with forward modelling.
     """
     def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,# flux_conversion,
-                 spectrallib = None,
+                 spectrallib = None, # Input spectra should be in flux not in contrast. The transmission is accounted for.
                  mute = False,
                  star_type = None,
                  filter = None,
                  save_per_sector = None,
                  datatype="float"):
+        '''
+
+        :param inputs_shape:
+        :param numbasis:
+        :param input_psfs:
+        :param input_psfs_wvs:
+        :param spectrallib:
+        :param mute:
+        :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
+                        If None, the spectrum is assumed to be in contrast units.
+        :param filter:
+        :param save_per_sector:
+        :param datatype:
+        :return:
+        '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
 
@@ -56,8 +71,6 @@ class MatchedFilter(NoFM):
         if filter is None:
             filter = "H"
 
-        if star_type is None:
-            star_type = "G4"
 
         self.inputs_shape = self.inputs_shape
         if spectrallib is not None:
@@ -75,6 +88,7 @@ class MatchedFilter(NoFM):
         #self.flux_conversion = flux_conversion
         self.input_psfs = input_psfs
         # Make sure the total flux of each PSF is unity for all wavelengths
+        # So the peak value won't be unity.
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
         self.aper_over_peak_ratio = np.zeros(37)
         for l_id in range(self.input_psfs.shape[0]):
@@ -91,8 +105,14 @@ class MatchedFilter(NoFM):
         self.col_p = np.ceil(self.nx_psf/2.0)     # col_plus
 
         # TODO: calibrate to contrast units
-        # calibrate spectra to DN
-        self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
+        # Correct spectra for transmission
+
+        if star_type is None:
+            # Spectrum is in contrast units
+            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum for spectrum in self.spectrallib]
+        else:
+            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
+        # Normalize the spectra to unit broadband flux
         self.spectrallib = [spectrum/np.sum(spectrum) for spectrum in self.spectrallib]
         self.fake_contrast = 1.0#10**-5 # ratio of flux of the planet/flux of the star (broad band flux)
 
@@ -278,6 +298,7 @@ class MatchedFilter(NoFM):
         r_list = r_grid[where_section]
         pa_list = pa_grid[where_section]
 
+
         # Loop over the input template spectra and the number of KL modes in numbasis
         for spec_id,N_KL_id in itertools.product(range(self.N_spectra),range(self.N_numbasis)):
             # Calculate the projection of the FM and the klipped section for every pixel in the section.
@@ -299,7 +320,7 @@ class MatchedFilter(NoFM):
                     model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
 
                 # self.spectrallib[spec_id] is one of the input template spectrum
-                #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)
+                #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)  in DN space.
                 # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
                 model_sci = model_sci*self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
                 where_fk = np.where(mask>=1)[0]

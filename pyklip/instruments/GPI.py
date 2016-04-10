@@ -1,5 +1,6 @@
 import os
 import re
+import glob
 import subprocess
 from copy import deepcopy
 
@@ -514,7 +515,7 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-    def generate_psf_cube(self, boxw=14, threshold=0.05, tapersize=0, zero_neg=False):
+    def generate_psf_cube(self, boxw=14, threshold=0.01, tapersize=0, zero_neg=False):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -1342,6 +1343,28 @@ def generate_spdc_with_fakes(dataset,
     if fake_position_dict["mode"] == "custom":
         sep_pa_iter_list = fake_position_dict["pa_sep_list"]
 
+    if fake_position_dict["mode"] == "spirals":
+        # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
+        # We want to inject one planet per section where klip is independently applied.
+        annuli = 8
+        dr = 15
+        delta_th = 90
+
+        # Get parallactic angle of where to put fake planets
+        # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
+        # delta_pa = 180/np.pi*PSF_dist/radius
+        pa_list = np.arange(-180.,180.-0.01,delta_th)
+        radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
+        pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
+        # for row_id in range(pa_grid.shape[0]):
+        #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
+        for col_id in range(radii_grid.shape[1]):
+            radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
+        pa_grid[range(1,annuli,3),:] += 30
+        pa_grid[range(2,annuli,3),:] += 60
+
+        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+
     if fake_position_dict["mode"] == "ROC":
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
@@ -1435,9 +1458,9 @@ def generate_spdc_with_fakes(dataset,
         # Manage spectrum
         pyklip_dir = os.path.dirname(os.path.realpath(spec.__file__))
         if planet_spectrum is None:
-            planet_spectrum_dir = pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx"
-        else:
-            planet_spectrum_dir = pyklip_dir+os.path.sep+"spectra"+os.path.sep+planet_spectrum
+            planet_spectrum = "t950g32nc"
+        planet_spectrum_dir = glob.glob(os.path.join(pyklip_dir,"spectra","*",planet_spectrum+".flx"))[0]
+        print(planet_spectrum_dir)
 
         # Define the peak value of the fake planet for each slice depending if a star and a planet type is given.
         # Interpolate a spectrum of the star based on its spectral type/temperature
@@ -1504,9 +1527,9 @@ def generate_spdc_with_fakes(dataset,
             exthdr_it["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
             try:
                 #print(planet_spectra[fake_id])
-                exthdr_it["FKSPECTR".format(fake_id)] = str(planet_spectra[fake_id]).replace('\n', ' ')
+                exthdr_it["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = str(planet_spectra[fake_id]).replace('\n', ' ')
             except:
-                exthdr_it["FKSPECTR".format(fake_id)] = str(planet_sp).replace('\n', ' ')
+                exthdr_it["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = str(planet_sp).replace('\n', ' ')
 
     #Save each cube with the fakes
     for cube_id in range(N_cubes):
