@@ -333,7 +333,7 @@ class PlanetChar(NoFM):
         # calculate validity of linear perturbation on KLIP modes
         pca_img = (sci - np.nanmean(sci))[:, None] - klipped # shape of ( size(section), b)
         perturb_frac = np.nanmax(np.abs(oversubtraction + selfsubtraction), axis=1)/np.nanstd(pca_img, axis=0) # array of b
-        this_validity = fm.calculate_validity(covar_perturb, models_ref, numbasis, evals, covar_files, evecs) # array of b
+        this_validity = fm.calculate_validity(covar_perturb, models_ref, numbasis, evals, covar_files, evecs, klmodes, delta_KL) # array of b
         #this_validity = fm.calculate_validity2(evals, models_ref, numbasis) # array of b
         perturbmag[input_img_num] = this_validity
 

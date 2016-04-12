@@ -588,7 +588,7 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
 
 
 
-def calculate_validity(covar_perturb, models_ref, numbasis, evals_orig, covar_orig, evecs_orig):
+def calculate_validity(covar_perturb, models_ref, numbasis, evals_orig, covar_orig, evecs_orig, KL_orig, delta_KL):
     """
     Calculate the validity of the perturbation based on the eigenvalues or the 2nd order term compared
      to the 0th order term of the covariance matrix expansion
@@ -620,34 +620,37 @@ def calculate_validity(covar_perturb, models_ref, numbasis, evals_orig, covar_or
     #
     #linear_perturb = evals_linear - evals_orig
     #quad_perturb = evals_full - evals_linear
-    
 
-    linear_perturb = np.sum((evecs_orig.T.dot(covar_perturb)).T * evecs_orig, axis=0)
-    quad_perturb = np.sum((evecs_orig.T.dot(covars_model)).T * evecs_orig, axis=0)
+    # Calculate ~second order of \delta KL
+
+
+    evals_tiled = np.tile(evals_orig,(max_basis,1))
+    np.fill_diagonal(evals_tiled,np.nan)
+    evals_sqrt = np.sqrt(evals_orig)
+    evalse_inv_sqrt = 1./evals_sqrt
+    evals_ratio = (evalse_inv_sqrt[:,None]).dot(evals_sqrt[None,:])
+    beta_tmp = 1./(evals_tiled.transpose()- evals_tiled)
+    #print(evals)
+    beta_tmp[np.diag_indices(np.size(evals_orig))] = -0.5/evals_orig
+    beta = evals_ratio*beta_tmp
+
+    alpha = (evecs_orig.transpose()).dot(covars_model).dot(evecs_orig)
+
+    quad_delta_KL = (beta*alpha).dot(KL_orig)
+
+    linear_perturb = np.std(delta_KL, axis=1)
+    quad_perturb = np.std(quad_delta_KL, axis=1)
 
 
     perturb_mag = np.abs(quad_perturb/linear_perturb)
 
     perturb_mag[np.where(linear_perturb == 0)] = 0
 
-    ## calculate eigenvectors/values of 1st order term in covariance matrix expansion
-    #evals_perturb, evecs_perturb = la.eigh(covar_perturb, eigvals = (tot_basis-max_basis, tot_basis-1))
-    #evals_perturb = np.copy(evals_perturb[::-1])
-    ## calculate eigenvectors/values of 2nd order term in covariance matrix expansion
-    #evals_model, evecs_model = la.eigh(covars_model, eigvals = (tot_basis-max_basis, tot_basis-1))
-    #evals_model = np.copy(evals_model[::-1])
-    ## evecs_model = np.copy(evecs_model[:,::-1])
-    #
-    ## calculate relative magnitude of the second order term compared to the first order term
-    #perturb_mag = np.abs(evals_model / evals_perturb) # 2nd order / 1st order << 1
-    # correct for divide by zeros
-    #perturb_mag[np.where(evals_model == 0)] = 0
 
 
     validity = np.zeros(np.size(numbasis))
     for i, basis_cutoff in enumerate(numbasis):
-        validity[i] = np.median(perturb_mag[:basis_cutoff+1])
-
+        validity[i] = np.mean(perturb_mag[:basis_cutoff+1])
 
     return validity
 
