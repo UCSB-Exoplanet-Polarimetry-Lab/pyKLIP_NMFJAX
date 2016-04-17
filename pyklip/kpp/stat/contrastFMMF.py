@@ -228,7 +228,7 @@ class ContrastFMMF(KPPSuperClass):
                 plt.plot(self.sep_samples,self.Ltype_contrast,"--", color='r', linewidth=3.0)
                 legend_str_list.append("L-type pyklip")
 
-        plt.plot(self.flux_stddev_rSamp*0.01413,self.flux_1Dstddev, color='r', linewidth=3.0)
+        plt.plot(self.flux_stddev_rSamp*0.01413,5*self.flux_1Dstddev, color='r', linewidth=3.0)
         legend_str_list.append("{0} FMpF".format(self.folderName))
         plt.xlabel("Separation (arcsec)", fontsize=20)
         plt.ylabel("Contrast (log10)", fontsize=20)
@@ -243,7 +243,7 @@ class ContrastFMMF(KPPSuperClass):
         # ax.yaxis.set_ticks_position('left')
 
         plt.subplot(1,2,2)
-        plt.imshow(self.fluxMap_stddev-self.flux_1Dstddev_map)
+        plt.imshow(5*(self.fluxMap_stddev-self.flux_1Dstddev_map))
         plt.colorbar()
         ax = plt.gca()
         # Remove box and axes ticks

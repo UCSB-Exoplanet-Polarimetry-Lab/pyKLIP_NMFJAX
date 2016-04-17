@@ -114,6 +114,12 @@ class MatchedFilter(NoFM):
             self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
         # Normalize the spectra to unit broadband flux
         self.spectrallib = [spectrum/np.sum(spectrum) for spectrum in self.spectrallib]
+        # import matplotlib.pyplot as plt
+        # plt.plot(self.spectrallib[0]/np.sum(self.spectrallib[0]))
+        # plt.plot(specmanage.get_star_spectrum(filter, star_type=star_type)[1]/np.sum(specmanage.get_star_spectrum(filter, star_type=star_type)[1]))
+        # #plt.plot(spectrum/np.sum(spectrum))
+        # plt.plot(self.sat_spot_spec/np.sum(self.sat_spot_spec))
+        # plt.show()
         self.fake_contrast = 1.0#10**-5 # ratio of flux of the planet/flux of the star (broad band flux)
 
         self.psf_centx_notscaled = {}

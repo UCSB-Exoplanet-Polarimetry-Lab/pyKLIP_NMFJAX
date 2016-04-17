@@ -170,15 +170,6 @@ class FMMF(KPPSuperClass):
         elif predefined_sectors == "c_Eri":
             self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
-        elif predefined_sectors == "HD_40781":
-            self.subsections = [[220./180.*np.pi,260./180.*np.pi]]
-            self.annuli = [[60,80]]
-        elif predefined_sectors == "HR_4597":
-            self.subsections = [[75./180.*np.pi,105./180.*np.pi]]
-            self.annuli = [[16,36]]
-        elif predefined_sectors == "HR_5121":
-            self.subsections = [[90./180.*np.pi,110./180.*np.pi]]
-            self.annuli = [[30,40]]
         elif predefined_sectors == "fluxTest":
             self.subsections = [[(46-10)/180.*np.pi,(46+10)/180.*np.pi]]
             self.annuli = [[36-5,36+5]]
@@ -343,7 +334,7 @@ class FMMF(KPPSuperClass):
             filelist = [filelist[0],filelist[-1]]
 
         # read data using GPIData class
-        self.dataset = GPI.GPIData(filelist,highpass=True)
+        self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None)
 
         # Filename of the PSF cube
         if PSF_cube_filename is not None:

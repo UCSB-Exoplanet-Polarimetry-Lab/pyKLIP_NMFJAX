@@ -103,7 +103,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=True):
+    def __init__(self, filepaths=None, skipslices=None, highpass=True,meas_satspot_flux=False,numthreads=-1):
         """
         Initialization code for GPIData
 
@@ -112,6 +112,9 @@ class GPIData(Data):
             skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units
+            meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
+            numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                        If None, numthreads = mp.cpu_count().
 
         """
         super(GPIData, self).__init__()
@@ -131,7 +134,7 @@ class GPIData(Data):
             self.exthdrs = None
             self.flux_units = None
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,numthreads=numthreads)
 
     ################################
     ### Instance Required Fields ###
@@ -202,7 +205,7 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False):
+    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1):
         """
         Method to open and read a list of GPI data
 
@@ -212,6 +215,8 @@ class GPIData(Data):
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units
             meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
+            numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                        If None, numthreads = mp.cpu_count().
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -235,7 +240,7 @@ class GPIData(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux)
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads)
 
             data.append(cube)
             centers.append(center)
@@ -747,7 +752,7 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False):
+def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1):
     """
     Method to open and parse a GPI file
 
@@ -757,6 +762,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
         meas_satspot_flux: if True, measure sat spot fluxes. Will be down after high pass filter
+        numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                    If None, numthreads = mp.cpu_count().
 
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -889,7 +896,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         if exthdr['CTYPE3'].strip() == 'WAVE':
             spot_fluxes = []
 
-            if 1:
+            if numthreads == -1:
                 # default sat spot measuring code
                 for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
                     new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
@@ -899,7 +906,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
 
             else:
                 # JB: On going test..
-                numthreads = 10
+                if numthreads is None:
+                    numthreads = mp.cpu_count()
                 tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
                                                                 args=(slice, spots_xs, spots_ys))
@@ -909,7 +917,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     out.wait()
                     new_spotfluxes = out.get()
                     spot_fluxes.append(np.nanmean(new_spotfluxes))
-
+                tpool.close()
         #print(spot_fluxes)
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
