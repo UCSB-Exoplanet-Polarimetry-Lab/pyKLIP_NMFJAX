@@ -152,7 +152,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     if PSFarea_tobeklipped is not None:
         inner_products_solePSFs = np.dot(PSFarea_tobeklipped_rows, np.require(kl_basis, requirements=['F']))
         inner_products_solePSFs = inner_products_solePSFs * np.tril(np.ones([max_basis, max_basis]))
-        klip_solePSFs = np.dot(inner_products_solePSFs[numbasis,:], kl_basis.T)
+        klip_solePSFs = np.dot(inner_products_solePSFs[:,numbasis,:], kl_basis.T)
         PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
         PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
 
