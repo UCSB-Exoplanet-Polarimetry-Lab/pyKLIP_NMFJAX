@@ -15,7 +15,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
                   characterizes the PSF of the p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
         covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
-        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped.
+        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped. Can be a cube.
         PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
                               the klipping. ie from which the modes are calculated.
         return_basis: If true, return KL basis vectors (used when onesegment==True)
@@ -91,8 +91,18 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # Do the same for the PFSs (fake planet)
     if PSFarea_tobeklipped is not None:
-        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
-        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
+        # JA edits
+        # old
+        #PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
+        #PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
+        # this version allows a cube of fake planets to be passed
+        # by rolling the image index axis to the front (0), proper array broadcasting is maintained for the linear algebra
+        # unused axes will be removed before returning, so the original shape is maintained
+        # these changes should be transparent to the user
+        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1, 1))
+        PSFarea_tobeklipped_rows = np.rollaxis(PSFarea_tobeklipped_rows, 1, 0)
+        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1, 1)) 
+        PSFarea_tobeklipped_rows_selected = np.rollaxis(PSFarea_tobeklipped_rows_selected, 1, 0)
 
 
     # bad pixel mask
@@ -146,8 +156,9 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
         PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
         PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
 
-        # need to flip them so the output is shaped (p,b)
-        return sub_img_rows_selected.transpose(), PSFarea_tobeklipped_rows_selected.transpose()
+        # need to flip them so the output is shaped (p,b) for sci img
+        # and (nfake,p,b) for fakes (or just (p,b) if only one fake PSF was passed)
+        return sub_img_rows_selected.transpose(), np.squeeze(np.rollaxis(PSFarea_tobeklipped_rows_selected.transpose(),-1,0))
 
     if return_basis is True:
         return sub_img_rows_selected.transpose(), kl_basis.transpose()
