@@ -1,11 +1,11 @@
 # pyKLIP README #
 
-A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo (see contributors.txt for a detailed list).
+A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, and Laurent Pueyo (see contributors.txt for a detailed list).
 If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [http://ascl.net/1506.001](http://ascl.net/1506.001).
 
 ### Overview ###
 
-* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) and [KLIP-FM](http://arxiv.org/pdf/1604.06097.pdf) in Python
+* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) and [KLIP-FM](http://arxiv.org/abs/1604.06097) in Python
 * Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
 * Library of KLIP-FM capabilties including forward-modelling a PSF, detection algorithms, and spectral extraction.
 * Post-processing planet detection algorithms included
