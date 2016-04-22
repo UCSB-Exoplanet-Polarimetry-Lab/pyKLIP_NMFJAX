@@ -5,14 +5,14 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 
 ### Overview ###
 
-* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) in Python
+* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) and [KLIP-FM](http://arxiv.org/pdf/1604.06097.pdf) in Python
 * Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
-* Can forward model PSFs through KLIP analytically using the KLIP-FM (Pueyo in press) framework
+* Library of KLIP-FM capabilties including forward-modelling a PSF, detection algorithms, and spectral extraction.
 * Post-processing planet detection algorithms included
-* Parallelized with both a quick memory-intensive mdoe and a slower memory-lite mode
+* Parallelized with both a quick memory-intensive mode and a slower memory-lite mode
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
-[GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
-* If confused about what a function is doing, read the docstring for it.
+[GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too (e.g. a NIRC2 interface has been added)
+* If confused about what a function is doing, read the docstring for it. Full documentation site coming!
 * Version 1.1
 
 ### Dependencies ###
