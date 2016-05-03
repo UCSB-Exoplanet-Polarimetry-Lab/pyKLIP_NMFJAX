@@ -31,7 +31,9 @@ class MatchedFilter(NoFM):
                  star_type = None,
                  filter = None,
                  save_per_sector = None,
-                 datatype="float"):
+                 datatype="float",
+                 fakes_sepPa_list = None,
+                 disable_FM = None):
         '''
 
         :param inputs_shape:
@@ -45,6 +47,7 @@ class MatchedFilter(NoFM):
         :param filter:
         :param save_per_sector:
         :param datatype:
+        :param fakes_sepPa_list:
         :return:
         '''
         # allocate super class
@@ -71,6 +74,11 @@ class MatchedFilter(NoFM):
         if filter is None:
             filter = "H"
 
+        self.fakes_sepPa_list = fakes_sepPa_list
+        if disable_FM is None:
+            self.disable_FM = False
+        else:
+            self.disable_FM = disable_FM
 
         self.inputs_shape = self.inputs_shape
         if spectrallib is not None:
@@ -303,6 +311,33 @@ class MatchedFilter(NoFM):
         # Get a list of the PAs and sep of the PA,sep map falling in the current section
         r_list = r_grid[where_section]
         pa_list = pa_grid[where_section]
+        x_list = x_grid[where_section]
+        y_list = y_grid[where_section]
+        row_id_list = where_section[0]
+        col_id_list = where_section[1]
+        # Only select pixel with fakes if needed
+        if self.fakes_sepPa_list is not None:
+            r_list_tmp = []
+            pa_list_tmp = []
+            row_id_list_tmp = []
+            col_id_list_tmp = []
+            for sep_it,pa_it in self.fakes_sepPa_list:
+                x_it = sep_it*np.cos(np.radians(90+pa_it))
+                y_it = sep_it*np.sin(np.radians(90+pa_it))
+                dist_list = np.sqrt((x_list-x_it)**2+(y_list-y_it)**2)
+                min_id = np.nanargmin(dist_list)
+                min_dist = dist_list[min_id]
+                if min_dist < np.sqrt(2)/2:
+                    r_list_tmp.append(r_list[min_id])
+                    pa_list_tmp.append(pa_list[min_id])
+                    row_id_list_tmp.append(row_id_list[min_id])
+                    col_id_list_tmp.append(col_id_list[min_id])
+            r_list = r_list_tmp
+            pa_list = pa_list_tmp
+            row_id_list = row_id_list_tmp
+            col_id_list = col_id_list_tmp
+            #print(r_list,np.rad2deg(pa_list),row_id_list,col_id_list)
+
 
 
         # Loop over the input template spectra and the number of KL modes in numbasis
@@ -314,7 +349,7 @@ class MatchedFilter(NoFM):
             # 3/ Calculate the perturbation of the KL modes
             # 4/ Calculate the FM
             # 5/ Calculate dot product (matched filter)
-            for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),where_section[0],where_section[1]):
+            for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),row_id_list,col_id_list):
                 #print(sep_fk,pa_fk,r_grid[row_id,col_id],pa_grid[row_id,col_id]/np.pi*180)
 
                 # 1/ Inject a fake at one pa and sep in the science image
@@ -334,30 +369,37 @@ class MatchedFilter(NoFM):
 
                 # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
                 # references rotate.
-                if self.nearestNeigh_PSF_interp != 0:
-                    models_ref = self.generate_models_nearestNeigh(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+                if not self.disable_FM:
+                    if self.nearestNeigh_PSF_interp != 0:
+                        models_ref = self.generate_models_nearestNeigh(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+                    else:
+                        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+
+                    # Calculate the spectra to determine the flux of each model reference PSF
+                    # self.spectrallib[spec_id] is one of the input template spectrum
+                    #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)
+                    # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
+                    input_spectrum =  self.spectrallib[spec_id]
+                    input_spectrum = np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
+                    input_spectrum = input_spectrum[ref_psfs_indicies]
+                    models_ref = models_ref * input_spectrum[:, None]
+
+                    # 3/ Calculate the perturbation of the KL modes
+                    # using original Kl modes and reference models, compute the perturbed KL modes.
+                    # Spectrum is already in the model, that's why we use perturb_specIncluded(). (Much faster)
+                    #print(np.sum(np.isnan(evals)),np.sum(np.isnan(evecs)),np.sum(np.isnan(klmodes)),np.sum(np.isnan(refs)),np.sum(np.isnan(models_ref)))
+                    delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+                    #print(np.sum(np.isnan(delta_KL)))
+
+                    # 4/ Calculate the FM: calculate postklip_psf using delta_KL
+                    # postklip_psf has unit broadband flux
+                    postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
                 else:
-                    models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
-
-                # Calculate the spectra to determine the flux of each model reference PSF
-                # self.spectrallib[spec_id] is one of the input template spectrum
-                #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)
-                # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
-                input_spectrum =  self.spectrallib[spec_id]
-                input_spectrum = np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
-                input_spectrum = input_spectrum[ref_psfs_indicies]
-                models_ref = models_ref * input_spectrum[:, None]
-
-                # 3/ Calculate the perturbation of the KL modes
-                # using original Kl modes and reference models, compute the perturbed KL modes.
-                # Spectrum is already in the model, that's why we use perturb_specIncluded(). (Much faster)
-                #print(np.sum(np.isnan(evals)),np.sum(np.isnan(evecs)),np.sum(np.isnan(klmodes)),np.sum(np.isnan(refs)),np.sum(np.isnan(models_ref)))
-                delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
-                #print(np.sum(np.isnan(delta_KL)))
-
-                # 4/ Calculate the FM: calculate postklip_psf using delta_KL
-                # postklip_psf has unit broadband flux
-                postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
+                    #if one doesn't want the FM
+                    if np.size(numbasis) == 1:
+                        postklip_psf = model_sci[None,:]
+                    else:
+                        postklip_psf = model_sci
 
                 # 5/ Calculate dot product (matched filter)
                 # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)

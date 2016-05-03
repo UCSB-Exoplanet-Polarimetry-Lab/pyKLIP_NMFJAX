@@ -117,8 +117,11 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
         object_name = "UNKNOWN_OBJECT"
 
     # Get center of the image (star position)
-    # Retrieve the center of the image from the fits headers.
-    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    try:
+        # Retrieve the center of the image from the fits headers.
+        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    except:
+        center = [np.nan,np.nan]
 
     #Julian Day OBServation
     MJDOBS_fits = prihdr['MJD-OBS']

@@ -31,7 +31,8 @@ class StatPerPix(KPPSuperClass):
                  GOI_list_folder = None,
                  overwrite = False,
                  kernel_type = None,
-                 kernel_width = None):
+                 kernel_width = None,
+                 filename_noPlanets = None):
         """
 
 
@@ -75,6 +76,7 @@ class StatPerPix(KPPSuperClass):
         self.Dth = Dth
         self.rm_edge = rm_edge
         self.GOI_list_folder = GOI_list_folder
+        self.filename_noPlanets = filename_noPlanets
 
         self.kernel_type = kernel_type
         # The default value is defined later
@@ -158,6 +160,37 @@ class StatPerPix(KPPSuperClass):
             #     tmp_suffix = tmp_suffix+str(self.kernel_width)
         self.suffix = self.suffix+tmp_suffix
 
+        if self.filename_noPlanets is not None:# Check file existence and define filename_path
+            if self.inputDir is None or os.path.isabs(self.filename_noPlanets):
+                try:
+                    self.filename_noPlanets_path = os.path.abspath(glob(self.filename_noPlanets)[0])
+                except:
+                    raise Exception("File "+self.filename_noPlanets+"doesn't exist.")
+            else:
+                try:
+                    self.filename_noPlanets_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_noPlanets)[0])
+                except:
+                    raise Exception("File "+self.inputDir+os.path.sep+self.filename_noPlanets+" doesn't exist.")
+
+            # Open the fits file on which the metric will be applied
+            hdulist = pyfits.open(self.filename_noPlanets_path)
+            if not self.mute:
+                print("Opened: "+self.filename_noPlanets_path)
+
+            # grab the data and headers
+            try:
+                self.image_noPlanets = hdulist[1].data
+                self.exthdr_noPlanets = hdulist[1].header
+                self.prihdr_noPlanets = hdulist[0].header
+            except:
+                # This except was used for datacube not following GPI headers convention.
+                if not self.mute:
+                    print("Couldn't read the fits file with GPI conventions. Try assuming data in primary and no headers.")
+                try:
+                    self.image_noPlanets = hdulist[0].data
+                except:
+                    raise Exception("Couldn't read "+self.filename_noPlanets_path+". Is it a fits?")
+
 
         if self.kernel_type is not None:
             self.ny_PSF = 20 # should be even
@@ -230,10 +263,14 @@ class StatPerPix(KPPSuperClass):
 
         # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
         # PDF. This masked image is given separately to the probability calculation function.
-        if self.GOI_list_folder is not None:
-            self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        if self.filename_noPlanets is not None:
+            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.prihdr_noPlanets,self.exthdr_noPlanets,self.GOI_list_folder, mask_radius = self.mask_radius)
         else:
-            self.image_without_planet = self.image
+            self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        # if self.GOI_list_folder is not None:
+        #     self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        # else:
+        #     self.image_without_planet = self.image
 
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D

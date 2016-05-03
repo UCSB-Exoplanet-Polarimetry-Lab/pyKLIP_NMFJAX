@@ -214,7 +214,7 @@ class GPIData(Data):
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units
-            meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
+            meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be done after hp filter)
             numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
 
@@ -241,6 +241,12 @@ class GPIData(Data):
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads)
+
+
+            # import matplotlib.pyplot as plt
+            # print(filepath)
+            # plt.plot(spot_flux,'r')
+            # plt.show()
 
             data.append(cube)
             centers.append(center)
@@ -307,6 +313,13 @@ class GPIData(Data):
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
+
+
+        # import matplotlib.pyplot as plt
+        # for k in range(len(prihdrs)):
+        #     plt.plot(spot_fluxes[k*37:(k+1)*37],'r')
+        # plt.show()
+
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
                  fakePlparams = None,user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
@@ -889,6 +902,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
 
+
     # remeasure satellite spot fluxes
     if meas_satspot_flux:
 
@@ -1324,10 +1338,12 @@ def generate_spdc_with_fakes(dataset,
 
     nl,ny_PSF,nx_PSF = PSF_cube.shape
 
+    prefix = object_name+"_"+compact_date+"_"+IFSfilter
     # Save the original PSF calculated from combining the sat spots
-    dataset.savedata(outputdir + os.path.sep + "S"+compact_date+"-"+IFSfilter+"-original_PSF_cube.fits", PSF_cube,
+    dataset.savedata(outputdir + os.path.sep + prefix+"-original_PSF_cube.fits", PSF_cube,
                               astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
 
+    dataset.get_radial_psf(save = outputdir + os.path.sep + prefix)
 
     n_frames,ny,nx = dataset.input.shape
 

@@ -49,7 +49,8 @@ class ShapeOrMF(KPPSuperClass):
                  kernel_width = None,
                  sky_aper_radius = None,
                  label = None,
-                 add2prefix = None):
+                 add2prefix = None,
+                 keepPrefix = None):
         """
         Define the general parameters of the metric.
 
@@ -101,6 +102,8 @@ class ShapeOrMF(KPPSuperClass):
         :param kernel_width: Define the width of the Kernel depending on kernel_type. See kernel_width.
         :param sky_aper_radius: Radius of the mask applied on the stamps to calculated the background value.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param keepPrefix: Keep the prefix of the input file instead of using the default:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+self.add2prefix
         """
         # allocate super class
         super(ShapeOrMF, self).__init__(filename,
@@ -126,6 +129,7 @@ class ShapeOrMF(KPPSuperClass):
         # The default value is defined later
         self.kernel_width = kernel_width
 
+
         # Radius of the mask applied on the stamps to calculated the background value.
         if sky_aper_radius is None:
             self.sky_aper_radius = 2.5
@@ -139,6 +143,11 @@ class ShapeOrMF(KPPSuperClass):
             self.add2prefix = "_"+add2prefix
         else:
             self.add2prefix = ""
+
+        if keepPrefix is not None:
+            self.keepPrefix = keepPrefix
+        else:
+            self.keepPrefix = False
 
 
     def spectrum_iter_available(self):
@@ -536,9 +545,8 @@ class ShapeOrMF(KPPSuperClass):
 
             self.folderName = self.spectrum_name+os.path.sep
 
-
             for k in range(self.nl):
-                self.PSF_cube[k,:,:] *= self.spectrum_vec[k]
+                self.PSF_cube[k,:,:] = self.PSF_cube[k,:,:]*self.spectrum_vec[k]
             # normalize spectrum with norm 2.
             self.spectrum_vec = self.spectrum_vec / np.sqrt(np.nansum(self.spectrum_vec**2))
             # normalize PSF with norm 2.
@@ -554,7 +562,12 @@ class ShapeOrMF(KPPSuperClass):
             dim_suffix = "2D"
         self.suffix = self.metric_type+dim_suffix+self.kernel_type
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+self.add2prefix
+        if self.keepPrefix:
+            file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
+            self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
+        else:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+self.add2prefix
+
 
         return init_out
 

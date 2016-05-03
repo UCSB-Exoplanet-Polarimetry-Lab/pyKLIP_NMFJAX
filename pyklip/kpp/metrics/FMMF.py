@@ -13,6 +13,7 @@ import pyklip.spectra_management as spec
 import pyklip.fm as fm
 import pyklip.fmlib.matchedFilter as mf
 import pyklip.klip as klip
+import pyklip.kpp.utils.GOI as GOI
 
 
 class FMMF(KPPSuperClass):
@@ -44,7 +45,9 @@ class FMMF(KPPSuperClass):
                  label = None,
                  quickTest = False,
                  mute_progression = False,
-                 SpT_file_csv = None):
+                 SpT_file_csv = None,
+                 fakes_only = None,
+                 disable_FM = None):
         """
         Define the general parameters of the metric.
 
@@ -85,6 +88,8 @@ class FMMF(KPPSuperClass):
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
         :param quickTest: Read only two files (the first and the last) instead of the all sequence
         :param SpT_file_csv: Filename of the table (.csv) containing the spectral type of the stars.
+        :param fakes_only:
+        :param disable_FM:
         """
         # allocate super class
         super(FMMF, self).__init__(filename,
@@ -107,6 +112,11 @@ class FMMF(KPPSuperClass):
         else:
             self.filename = filename
 
+        self.fakes_only = fakes_only
+        if disable_FM is None:
+            self.disable_FM = False
+        else:
+            self.disable_FM = disable_FM
 
         self.PSF_cube_filename = PSF_cube_filename
 
@@ -211,11 +221,11 @@ class FMMF(KPPSuperClass):
 
         self.folderName = self.spectrum_name+os.path.sep
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name+"_{0:.2f}".format(self.mvt)
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        self.spectrum_filename  = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
         spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
         spectrum_wvs = spectrum_dat[:,1]
         spectrum_fluxes = spectrum_dat[:,3]
@@ -224,13 +234,16 @@ class FMMF(KPPSuperClass):
         # This should however be the same. I know it's weird but the two codes are seperate
         self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
+
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]], #Spectrum in flux (not in contrast)
+                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
                                      mute = False,
-                                     star_type = None,
+                                     star_type = self.star_type,
                                      filter = self.filter,
-                                     save_per_sector = self.save_per_sector)
+                                     save_per_sector = self.save_per_sector,
+                                     fakes_sepPa_list = self.fakes_sepPa_list,
+                                     disable_FM=self.disable_FM)
         return None
 
     def initialize(self, inputDir = None,
@@ -334,6 +347,7 @@ class FMMF(KPPSuperClass):
             filelist = [filelist[0],filelist[-1]]
 
         # read data using GPIData class
+        # todo: change measure sat spot to True
         self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None)
 
         # Filename of the PSF cube
@@ -389,6 +403,15 @@ class FMMF(KPPSuperClass):
         
         self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
+        #todo if self.fakes_only
+        # read fakes from headers and give sepPa list to MatchedFilter
+        # else give None
+        if self.fakes_only:
+            sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True)
+            self.fakes_sepPa_list = [(sep/0.01413,pa) for sep,pa in zip(sep_list, pa_list)]
+        else:
+            self.fakes_sepPa_list = None
+
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
         self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
@@ -400,13 +423,16 @@ class FMMF(KPPSuperClass):
         # This should however be the same. I know it's weird but the two codes are seperate
         self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
+
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
                                      spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
                                      mute = False,
                                      star_type = self.star_type,
                                      filter = self.filter,
-                                     save_per_sector = self.save_per_sector)
+                                     save_per_sector = self.save_per_sector,
+                                     fakes_sepPa_list = self.fakes_sepPa_list,
+                                     disable_FM=self.disable_FM)
 
         return init_out
 
