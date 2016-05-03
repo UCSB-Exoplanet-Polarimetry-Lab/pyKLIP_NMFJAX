@@ -1313,6 +1313,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #print(np.shape(section_ind))
         #print(radstart, radend, phistart, phiend)
 
+        if fm_class.skipSection(radstart, radend, phistart, phiend):
+            continue
+
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
         interm_data, interm_shape = fm_class.alloc_interm(sector_size, original_imgs_shape[0])
 

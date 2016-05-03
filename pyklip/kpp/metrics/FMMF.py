@@ -587,11 +587,6 @@ class FMMF(KPPSuperClass):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))
 
 
-        if self.quickTest:
-            susuffix = "QT"
-        else:
-            susuffix = ""
-
         # suffix = "FMMFmeth"
         # extra_exthdr_keywords.append(("METSUFFI",suffix))
         # self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
@@ -607,7 +602,17 @@ class FMMF(KPPSuperClass):
         #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
         #                  extra_exthdr_keywords = extra_exthdr_keywords)
 
-        suffix = "FMMFcube"+susuffix
+        if self.quickTest:
+            susuffix = "QT"
+        else:
+            susuffix = ""
+
+        if self.disable_FM:
+            presuffix = "no"
+        else:
+            presuffix = ""
+
+        suffix = presuffix+"FMMFcube"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_MF_uncollapsed,
@@ -616,21 +621,21 @@ class FMMF(KPPSuperClass):
                          extra_exthdr_keywords = extra_exthdr_keywords)
 
         # Save the outputs (matched filter, shape map and klipped image) as fits files
-        suffix = "FMMF"+susuffix
+        suffix = presuffix+"FMMF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_MF,
                          filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = "FMpF"+susuffix
+        suffix = presuffix+"FMpF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_pFlux,
                          filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = "FMSH"+susuffix
+        suffix = presuffix+"FMSH"+susuffix
         extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                          self.metric_shape,

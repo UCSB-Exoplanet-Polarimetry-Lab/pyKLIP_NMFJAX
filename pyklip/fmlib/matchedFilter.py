@@ -234,6 +234,54 @@ class MatchedFilter(NoFM):
 
         return fmout, fmout_shape
 
+    def skipSection(self,radstart, radend, phistart, phiend):
+        """
+        Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
+        When True is returned the current section in the loop in klip_parallelized() is skipped.
+
+        Args:
+            radstart: minimum radial distance of sector [pixels]
+            radend: maximum radial distance of sector [pixels]
+            phistart: minimum azimuthal coordinate of sector [radians]
+            phiend: maximum azimuthal coordinate of sector [radians]
+
+        Returns:
+            Boolean: False so by default it never skips.
+        """
+
+        # print(radstart, radend, phistart, phiend)
+        margin_sep = np.sqrt(2)/2
+        margin_phi = np.sqrt(2)/(2*radstart)
+        # print(margin_sep,margin_phi)
+        if self.fakes_sepPa_list is not None:
+            skipSectionBool = True
+            for sep_it,pa_it in self.fakes_sepPa_list:
+                #print(sep_it,pa_it,(pa_it%360)/180.*np.pi)
+                paend= ((2*np.pi-phistart +np.pi/2)% (2.0 * np.pi))
+                pastart = ((2*np.pi-phiend +np.pi/2)% (2.0 * np.pi))
+                # Normal case when there are no 2pi wrap
+                if pastart < paend:
+                    if (radstart-margin_sep<=sep_it<=radend+margin_sep) and ((pa_it%360)/180.*np.pi >= pastart-margin_phi) & ((pa_it%360)/180.*np.pi < paend+margin_phi):
+                        skipSectionBool = False
+                        print("coucou")
+                        break
+                # 2 pi wrap case
+                else:
+                    if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (((pa_it%360)/180.*np.pi >= pastart-margin_phi) | ((pa_it%360)/180.*np.pi < paend+margin_phi)):
+                        skipSectionBool = False
+                        print("coucou")
+                        break
+                # if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (phistart-margin_phi<=(pa_it%360)/180.*np.pi<=phiend+margin_phi):
+                #     skipSectionBool = False
+                #     print("coucou")
+                #     #print(radstart, radend, phistart, phiend)
+                #     print(sep_it,pa_it,(pa_it%360)/180.*np.pi)
+                    break
+        else:
+            skipSectionBool = False
+
+        return skipSectionBool
+
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
@@ -336,7 +384,7 @@ class MatchedFilter(NoFM):
             pa_list = pa_list_tmp
             row_id_list = row_id_list_tmp
             col_id_list = col_id_list_tmp
-            #print(r_list,np.rad2deg(pa_list),row_id_list,col_id_list)
+            # print(r_list,np.rad2deg(pa_list),row_id_list,col_id_list)
 
 
 

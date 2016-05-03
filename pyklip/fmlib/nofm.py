@@ -128,3 +128,19 @@ class NoFM(object):
         """
 
         return fmout
+
+    def skipSection(self,radstart, radend, phistart, phiend):
+        """
+        Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
+        When True is returned the current section in the loop in klip_parallelized() is skipped.
+
+        Args:
+            radstart: minimum radial distance of sector [pixels]
+            radend: maximum radial distance of sector [pixels]
+            phistart: minimum azimuthal coordinate of sector [radians]
+            phiend: maximum azimuthal coordinate of sector [radians]
+
+        Returns:
+            Boolean: False so by default it never skips.
+        """
+        return False
