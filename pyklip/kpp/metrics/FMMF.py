@@ -445,12 +445,20 @@ class FMMF(KPPSuperClass):
         :return: Boolean indicating the existence of the metric map.
         """
 
-        suffix1 = "FMMF"
-        suffix2 = "FMSH"
-        suffix3 = "speccube-PSFs"
+        if self.quickTest:
+            susuffix = "QT"
+        else:
+            susuffix = ""
+
+        if self.disable_FM:
+            presuffix = "no"
+        else:
+            presuffix = ""
+
+        suffix1 = presuffix+"FMMF"+susuffix
+        suffix2 = presuffix+"FMSH"+susuffix
         file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)\
-               and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix2+'.fits')) >= 1)\
-               and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix3+'.fits')) >= 1)
+               and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix2+'.fits')) >= 1)
 
         if file_exist and not self.mute:
             print("Output already exist.")
