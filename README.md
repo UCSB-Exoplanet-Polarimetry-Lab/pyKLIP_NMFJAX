@@ -1,7 +1,9 @@
 # pyKLIP README #
 
 A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, and Laurent Pueyo (see contributors.txt for a detailed list).
-If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [http://ascl.net/1506.001](http://ascl.net/1506.001).
+If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [ASCL](http://ascl.net/1506.001) or [ADS](http://adsabs.harvard.edu/abs/2015ascl.soft06001W).
+
+> Wang, J. J., Ruffio, J.-B., De Rosa, R. J., et al. 2015, Astrophysics Source Code Library, ascl:1506.001
 
 ### Overview ###
 
@@ -13,7 +15,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
 [GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too (e.g. a NIRC2 interface has been added)
 * If confused about what a function is doing, read the docstring for it. Full documentation site coming!
-* Version 1.1
+* Version 1.1 - see ``release_notes.txt`` for update notes
 
 ### Dependencies ###
 
@@ -21,7 +23,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 * scipy
 * astropy
 * python2.7 or python3.4
-* Recommended: a computer with lots of cores (16+) and lots of memory (20 GB for a standard GPI 1hr sequence without using lite mode)
+* Recommended: a computer with lots of cores (16+) and lots of memory (20+ GB for a standard GPI 1hr sequence without using lite mode)
 
 ### Installation ###
 
