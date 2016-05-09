@@ -48,13 +48,17 @@ To disable OpenBLAS, just set the following environment variable before running 
     :::bash
        $ export OPENBLAS_NUM_THREADS=1
 
-[A recent update to anaconda](https://www.continuum.io/blog/developer-blog/anaconda-25-release-now-mkl-optimizations) included some MKL optimizations which may cause load averages to greatly exceed the number of threads specified in pyKLIP. As with the OpenBLAS optimizations, this can be avoided by setting the maximum number of threads the MKL-enabled processes can use. As these optimizations may be useful for other python tasks, the variable should be set when pyKLIP is called, rather than on a system-wide level. Note that to modify the number of threads MKL uses on a per-code basis, you need to install ``mkl-service`` to run the following piece of code.
+[A recent update to anaconda](https://www.continuum.io/blog/developer-blog/anaconda-25-release-now-mkl-optimizations) included some MKL optimizations which may cause load averages to greatly exceed the number of threads specified in pyKLIP. As with the OpenBLAS optimizations, this can be avoided by setting the maximum number of threads the MKL-enabled processes can use. 
+
+    :::bash
+       $ export MKL_NUM_THREADS=1
+
+As these optimizations may be useful for other python tasks, you may only want MKL_NUM_THREADS=1 only when pyKLIP is called, rather than on a system-wide level. By defaulf in ``parallelized.py``, if ``mkl-service`` is installed, the original maximum number of threads for MKL is saved, and restored to its original value after pyKLIP has finished. You can also modify the number of threads MKL uses on a per-code basis by running the following piece of code (assuming ``mkl-service`` is installed).
 
     :::python
       import mkl
       mkl.set_num_threads(1)
 
-This command will now be executed in ``parallelized.py`` by default, if ``mkl-service`` is installed. The original maximum number of threads is saved, and restored to its original value after pyKLIP has finished.
 
 ### Bugs/Feature Requests ###
 
