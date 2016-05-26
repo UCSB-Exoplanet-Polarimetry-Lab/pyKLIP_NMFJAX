@@ -5,7 +5,7 @@ import scipy.ndimage as ndimage
 from scipy.stats import t
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False, return_basis_and_eig=False):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -15,15 +15,21 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
                   characterizes the PSF of the p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
         covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
-        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped.
+        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped. Can be a cube.
         PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
                               the klipping. ie from which the modes are calculated.
         return_basis: If true, return KL basis vectors (used when onesegment==True)
+        return_basis_and_eig: If true, return KL basis vectors as well as the eigenvalues and eigenvectors of the
+                                covariance matrix. Used for KLIP Forward Modelling of Laurent Pueyo.
 
     Returns:
         sub_img_rows_selected: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                                cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
-
+        KL_basis: array of shape (max(numbasis),p). Only if return_basis or return_basis_and_eig is True.
+        evals: Eigenvalues of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
+                Only if return_basis_and_eig is True.
+        evecs: Eigenvectors of the covariance matrix. The covariance matrix is assumed NOT to be normalized by (p-1).
+                Only if return_basis_and_eig is True.
     """
     # for the science image, subtract the mean and mask bad pixels
     sci_mean_sub = sci - np.nanmean(sci)
@@ -85,8 +91,18 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # Do the same for the PFSs (fake planet)
     if PSFarea_tobeklipped is not None:
-        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
-        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
+        # JA edits
+        # old
+        #PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
+        #PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
+        # this version allows a cube of fake planets to be passed
+        # by rolling the image index axis to the front (0), proper array broadcasting is maintained for the linear algebra
+        # unused axes will be removed before returning, so the original shape is maintained
+        # these changes should be transparent to the user
+        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1, 1))
+        PSFarea_tobeklipped_rows = np.rollaxis(PSFarea_tobeklipped_rows, 1, 0)
+        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1, 1)) 
+        PSFarea_tobeklipped_rows_selected = np.rollaxis(PSFarea_tobeklipped_rows_selected, 1, 0)
 
 
     # bad pixel mask
@@ -136,15 +152,18 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     if PSFarea_tobeklipped is not None:
         inner_products_solePSFs = np.dot(PSFarea_tobeklipped_rows, np.require(kl_basis, requirements=['F']))
         inner_products_solePSFs = inner_products_solePSFs * np.tril(np.ones([max_basis, max_basis]))
-        klip_solePSFs = np.dot(inner_products_solePSFs[numbasis,:], kl_basis.T)
+        klip_solePSFs = np.dot(inner_products_solePSFs[:,numbasis,:], kl_basis.T)
         PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
         PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
 
-        # need to flip them so the output is shaped (p,b)
-        return sub_img_rows_selected.transpose(), PSFarea_tobeklipped_rows_selected.transpose()
+        # need to flip them so the output is shaped (p,b) for sci img
+        # and (nfake,p,b) for fakes (or just (p,b) if only one fake PSF was passed)
+        return sub_img_rows_selected.transpose(), np.squeeze(np.rollaxis(PSFarea_tobeklipped_rows_selected.transpose(),-1,0))
 
     if return_basis is True:
         return sub_img_rows_selected.transpose(), kl_basis.transpose()
+    elif return_basis_and_eig is True:
+        return sub_img_rows_selected.transpose(), kl_basis.transpose(),evals*(np.size(sci)-1), evecs
     else:
         return sub_img_rows_selected.transpose()
 
@@ -235,7 +254,7 @@ def calc_scaling(sats, refwv=18):
     scaling_factors = separations/separations[refwv]
     return scaling_factors
 
-def align_and_scale(img, new_center, old_center=None, scale_factor=1):
+def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float):
     """
     Helper function that realigns and/or scales the image
 
@@ -258,7 +277,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
-    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+    x, y = np.meshgrid(np.arange(dims[1], dtype=dtype), np.arange(dims[0], dtype=dtype))
     mod_flag = 0 #check how many modifications we are making
 
     #if old_center is specified, realign the images

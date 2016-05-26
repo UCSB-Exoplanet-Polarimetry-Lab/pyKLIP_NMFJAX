@@ -1,17 +1,21 @@
 # pyKLIP README #
 
-A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, and Laurent Pueyo.
-If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [http://ascl.net/1506.001](http://ascl.net/1506.001).
+A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, and Laurent Pueyo (see contributors.txt for a detailed list).
+If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [ASCL](http://ascl.net/1506.001) or [ADS](http://adsabs.harvard.edu/abs/2015ascl.soft06001W).
+
+> Wang, J. J., Ruffio, J.-B., De Rosa, R. J., et al. 2015, Astrophysics Source Code Library, ascl:1506.001
 
 ### Overview ###
 
-* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) in Python
+* Implementation of [KLIP](http://arxiv.org/abs/1207.4197) and [KLIP-FM](http://arxiv.org/abs/1604.06097) in Python
 * Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
-* Parallelized with both a quick memory-intensive mdoe and a slower memory-lite mode
+* Library of KLIP-FM capabilties including forward-modelling a PSF, detection algorithms, and spectral extraction.
+* Post-processing planet detection algorithms included
+* Parallelized with both a quick memory-intensive mode and a slower memory-lite mode
 * Initially built for [P1640](http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640) and 
-[GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too
-* If confused about what a function is doing, read the docstring for it.
-* Version 1.1
+[GPI](http://planetimager.org/) data reduction, but modularized so that interfaces can be written for other instruments too (e.g. a NIRC2 interface has been added)
+* If confused about what a function is doing, read the docstring for it. Full documentation site coming!
+* Version 1.1 - see ``release_notes.txt`` for update notes
 
 ### Dependencies ###
 
@@ -19,7 +23,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 * scipy
 * astropy
 * python2.7 or python3.4
-* Recommended: a computer with lots of cores (16+) and lots of memory (40 GB for a standard GPI 1hr sequence without using lite mode)
+* Recommended: a computer with lots of cores (16+) and lots of memory (20+ GB for a standard GPI 1hr sequence without using lite mode)
 
 ### Installation ###
 
@@ -33,7 +37,28 @@ Then ``cd`` into it and run ``setup.py`` with the ``develop`` option
     :::bash
         $ python setup.py develop
 
-If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).  
+If you use multiple versions of python, you will need to run ``setup.py`` with each version of python (this should not apply to most people).
+
+### Note on parallelized performance ###
+
+Due to the fact that numpy compiled with BLAS and MKL also parallelizes linear algebra routines across multiple cores, performance can actually sharply decrease when multiprocessing and BLAS/MKL both try to parallelize the KLIP math. If you are noticing your load averages greatly exceeding the number of threads/CPUs, try disabling the BLAS/MKL optimization when running pyKLIP.
+
+To disable OpenBLAS, just set the following environment variable before running pyKLIP:
+
+    :::bash
+       $ export OPENBLAS_NUM_THREADS=1
+
+[A recent update to anaconda](https://www.continuum.io/blog/developer-blog/anaconda-25-release-now-mkl-optimizations) included some MKL optimizations which may cause load averages to greatly exceed the number of threads specified in pyKLIP. As with the OpenBLAS optimizations, this can be avoided by setting the maximum number of threads the MKL-enabled processes can use. 
+
+    :::bash
+       $ export MKL_NUM_THREADS=1
+
+As these optimizations may be useful for other python tasks, you may only want MKL_NUM_THREADS=1 only when pyKLIP is called, rather than on a system-wide level. By defaulf in ``parallelized.py``, if ``mkl-service`` is installed, the original maximum number of threads for MKL is saved, and restored to its original value after pyKLIP has finished. You can also modify the number of threads MKL uses on a per-code basis by running the following piece of code (assuming ``mkl-service`` is installed).
+
+    :::python
+      import mkl
+      mkl.set_num_threads(1)
+
 
 ### Bugs/Feature Requests ###
 
@@ -74,4 +99,5 @@ To measure the contrast (ignoring algorithm throughput), the ``klip.meas_contras
         import pyklip.klip as klip
 
         avgframe = np.nanmean(dataset.output[1], axis=(0,1))
-        seps, contrast = klip.meas_contrast(avgframe, dataset.IWA, 1.1/GPI.GPIData.lenslet_scale, 3.5)
+        calib_frame = dataset.calibrate_output(avgframe)
+        seps, contrast = klip.meas_contrast(calib_frame, dataset.IWA, 1.1/GPI.GPIData.lenslet_scale, 3.5)

@@ -4,12 +4,12 @@ import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
-#import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 from scipy.optimize import leastsq
 from scipy.optimize import minimize
 import glob
 import os
+import csv
 
 
 # First and last wavelength of each band
@@ -86,16 +86,76 @@ def find_lower_nearest(array,value):
     idx = np.nanargmax(diff)
     return array[idx], idx
 
-def get_star_spectrum(filter_name,star_type = None, temperature = None):
+def get_specType(object_name,SpT_file_csv = None):
+    """
+    Return the spectral type for a target based on the table in SpT_file
+
+    :param object_name: Name of the target: ie "c_Eri"
+    :param SpT_file: Filename (.csv) of the table containing the target names and their spectral type.
+                    Can be generated from bu quering Simbad.
+                    If None (default), the function directly tries to query Simbad.
+    :return: Spectral type
+    """
+
+    if SpT_file_csv is None:
+        import urllib
+
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        try:
+            return spec_type
+        except:
+            return None
+
+    with open(SpT_file_csv, 'rb') as csvfile_TID:
+        TID_reader = csv.reader(csvfile_TID, delimiter=';')
+        TID_csv_as_list = list(TID_reader)
+        TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
+        target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
+        specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+
+    try:
+        return specTypes[target_names.index(object_name)]
+    except:
+        import urllib
+
+        print("Couldn't find {0} in spectral type list. Try to retrieve it from Simbad.".format(object_name))
+
+        target_names.append(object_name)
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        specTypes.append(spec_type)
+
+
+        attrib_name=["name","specType"]
+        with open(SpT_file_csv, 'w+') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=';')
+            table_to_csv = [attrib_name]+zip(target_names,specTypes)
+            csvwriter.writerows(table_to_csv)
+
+        return spec_type
+
+def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = None):
     """
     Get the spectrum of a star with given spectral type interpolating in the pickles database.
     The sampling is the one of pipeline reduced cubes.
     The spectrum is normalized to unit mean.
-    Work only for V (ie brown dwarf) star
+    Work only for type V star.
 
     Inputs:
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
-        star_type: 'A5','F4',... Assume type V star. Is ignored if temperature is defined.
+        star_type: 'A5','F4',... Is ignored if temperature is defined.
+                If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
 
     Output:
@@ -106,12 +166,34 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
 
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
 
+    if mute is None:
+        mute = True
+
+    w_start, w_end, N_sample = band_sampling[filter_name]
+    dw = (w_end-w_start)/N_sample
+    sampling_pip = np.arange(w_start,w_end,dw)
+
+    if star_type is None:
+        return sampling_pip,None
+
+    if len(star_type) > 2:
+            star_type = star_type[0:2]
+
+    try:
+        int(star_type[1])
+    except:
+        if not mute:
+            print("Returning None. Couldn't parse spectral type.")
+        return sampling_pip,None
+
     pykliproot = os.path.dirname(os.path.realpath(__file__))
     filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
     filename_pickles_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"AA_README"
 
     #a = np.genfromtxt(filename_temp_lookup, names=True, delimiter=' ', dtype=None)
 
+    # The interpolation is based on the temperature of the star
+    # If the input was not the temperature then it is taken from the mainseq_colors.txt based on the input spectral type
     if temperature is None:
         #Read pickles list
         dict_temp = dict()
@@ -125,10 +207,17 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
                     # splitted_line[2]: Temperature in K
                     dict_temp[splitted_line[0]] = splitted_line[2]
 
-        target_temp = float(dict_temp[star_type])
+        try:
+            target_temp = float(dict_temp[star_type])
+        except:
+            if not mute:
+                print("Returning None. Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
+            return sampling_pip,None
     else:
         target_temp = temperature
 
+    # "AA_README" contains the list of the temperature for which a spectrum is available
+    # Read it here
     dict_filename = dict()
     temp_list=[]
     with open(filename_pickles_lookup, 'r') as f:
@@ -182,9 +271,6 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
     # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
     lower_spec = np.array(lower_spec)*delta_wave
 
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
 
     upper_counts_per_bin, bin_edges = np.histogram(upper_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=upper_spec)
     lower_counts_per_bin, bin_edges = np.histogram(lower_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=lower_spec)
@@ -256,6 +342,7 @@ def get_planet_spectrum(filename,filter_name):
     #     plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
     #     plt.show()
 
+    # todo: check that it matches the actual sampling
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
     sampling_pip = np.arange(w_start,w_end,dw)
@@ -446,72 +533,3 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
         # plt.show()
 
     return get_gpi_wavelength_sampling(filter), spectrum
-
-
-
-
-
-if __name__ == "__main__":
-
-    OS = platform.system()
-    if OS == "Windows":
-        print("Using WINDOWS!!")
-    else:
-        print("I hope you are using a UNIX OS")
-
-
-    if 0:
-        if OS == "Windows":
-            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\HD_100491\\autoreduced\\"
-            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\bet_cir\\autoreduced\\"
-            cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\c_Eri\\autoreduced\\pyklip-S20141218-k100a7s4m3-KL20-speccube.fits"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
-            #outputDir = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\"
-            spectrum_model = ["","C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx",""] #"C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\t2400g100nc.flx",
-            user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
-        else:
-            cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/beta_pictoris/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/bet_cir/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
-            #outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
-            #spectrum_model = ""
-            spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx",""]
-            user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/code/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
-
-        wave_samp,spectrum = extract_planet_spectrum(cube_filename, (110, 135), user_defined_PSF_cube, method="aperture")
-        # plt.plot(wave_samp,spectrum)
-        # plt.show()
-
-    if 1:
-        if OS == "Windows":
-            #spectrum_model = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx"
-            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\*.flx")
-            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g18ncflx\\*.flx")
-        else:
-            spectrum_model = "/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx"
-
-        for spectrum_model in filelist:
-            print(spectrum_model)
-            #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
-            wv,spectrum  = get_planet_spectrum(spectrum_model,'H')
-
-            # plt.plot(wv,spectrum/np.nanmean(spectrum))
-            # plt.show()
-
-        # if 0:
-        #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
-        #     hdulist = pyfits.open(filename)
-        #     cube = hdulist[1].data
-        #     N_samples = np.size(cube)
-        #     c = []
-        #     d = []
-        #     for a,b in cube:
-        #         c.append(a)
-        #         d.append(b)
-        #     print(c,d)
-        #     wavelengths = cube[0][0]
-        #     filter_spec = cube[0][1]
-        #     plt.figure(1)
-        #     plt.plot(wavelengths,filter_spec)
-        #     plt.show()
