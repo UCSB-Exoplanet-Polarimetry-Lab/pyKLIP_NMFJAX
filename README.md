@@ -101,3 +101,9 @@ To measure the contrast (ignoring algorithm throughput), the ``klip.meas_contras
         avgframe = np.nanmean(dataset.output[1], axis=(0,1))
         calib_frame = dataset.calibrate_output(avgframe)
         seps, contrast = klip.meas_contrast(calib_frame, dataset.IWA, 1.1/GPI.GPIData.lenslet_scale, 3.5)
+
+#### Notes on use for Project 1640
+
+Usage instructions for Project 1640 are similar to those for GPI with the exception that the grid spot positions must be found before KLIP can be run. Import the P1640 instrument class instead of the GPI instrument class. 
+
+The grid spots locations only need to be found once, after which they can be read from a file. Instructions for how to find the grid spots are located in pyklip/Instruments/P1640_support/README.md.
