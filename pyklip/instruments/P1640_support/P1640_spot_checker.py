@@ -14,6 +14,9 @@ import os
 import glob
 import warnings
 
+import argparse
+import ConfigParser
+
 from multiprocessing import Pool, Process, Queue
 
 import numpy as np
@@ -24,12 +27,12 @@ from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
 
-#plt.ion()
 
 sys.path.append(".")
 import P1640spots
 
-spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
+dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
+
 
 # open a fits file and draw the cube
 def draw_cube(cube, cube_name, spots):
@@ -46,8 +49,33 @@ def draw_cube(cube, cube_name, spots):
     
     #try:
     fig = plt.figure()
+    fig.suptitle(cube_name, fontsize='x-large')
+    gridsize = (8,8)
+
+    """ this was too fancy and just messed things up
+    # scaling
+    ax_radial = plt.subplot2grid(gridsize, (1,6), rowspan=2, colspan=3)
+    ax_radial.plot(np.linalg.norm(np.array(spots) - star_positions, axis=-1).T)
+    ax_radial.set_title("Radial position")
+    ax_radial.grid(True, axis='both', which='major')
+    ax_radial.set_xlabel("channel")
+    ax_radial.set_ylabel("Separation")
+    
+    # centering
+    ax_center = plt.subplot2grid(gridsize, (5,6), rowspan=2, colspan=3)
+    ax_center.set_xlim(np.min(star_positions[:,1])-1,
+                       np.max(star_positions[:,1])+1)
+
+     main image axis object
+    ax = plt.subplot2grid(gridsize, (1,0),
+                          rowspan=6,
+                          colspan=5)
+    """
+    
+    ax = fig.add_subplot(111)
     while True:
-        plt.cla()
+        ax.clear()
+    
         chan = chan % nchan
 
         patches1 = [CirclePolygon(xy=spot[chan][::-1], radius=5,
@@ -61,30 +89,67 @@ def draw_cube(cube, cube_name, spots):
                        for spot in spots] # star position
         patchcoll = PatchCollection(patches1+patches2, match_original=True)
         
-        imax = plt.imshow(cube[chan], norm=LogNorm())
+        imax = ax.imshow(cube[chan], norm=LogNorm())
         imax.axes.add_collection(patchcoll)
-        plt.title("{0}\nChannel {1:02d}".format(cubefile_name, chan))
-        
+        ax.set_title("Channel {1:02d}".format(cubefile_name, chan))
+
+        """
+        ax_center.set_title("Star position")
+        ax_center.plot(star_positions[:,1], star_positions[:,0], 'b-')
+        ax_center.plot(star_positions[chan,1], star_positions[chan,0],
+                       'bx',
+                       ms=10, mew=2)
+        ax_center.grid(True, axis='both', which='major')
+        ax_center.set_xlabel("x")
+        ax_center.set_ylabel("y")
+        """
         plt.pause(0.2)
         chan += 1
     #except KeyboardInterrupt:
     #    pass
 
+    
+# Command-line option handling
+# if switch --config is used, treat the following argument like the path to a config file
+# if --config is not present, treat the following arguments like individual datacubes
+class ConfigAction(argparse.Action):
+    """
+    Create a custom action to parse the 
+    """
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        #if nargs is not None:
+        #    raise ValueError("nargs not allowed")
+        super(ConfigAction, self).__init__(option_strings, dest, **kwargs)
+    def __call__(self, parser, namespace, values, option_string=None):
+        configparser = ConfigParser.ConfigParser()
+        configparser.read(values)
+        # get the list of files
+        filelist = configparser.get("Input","occulted_files").split()
+        setattr(namespace, self.dest, filelist)
+        setattr(namespace, 'spot_path', configparser.get("Spots","spot_file_path"))
+        
+        # get the spot file path
+        # get the spot file name info
+
+parser = argparse.ArgumentParser(prog="P1640_spot_checker.py",
+                                 description='A utility to verify the grid spot fitting')
+group = parser.add_mutually_exclusive_group()
+group.add_argument('--files', dest='files', nargs='*', 
+                    help='list of datacube files')
+group.add_argument('--config', dest='files', nargs=1, action=ConfigAction,
+                    help='config file containing fits files')
+parser.add_argument('--spot_path', dest='spot_path', default=dnah_spot_directory,
+                    help='directory where spot position files are stored')
+        
+
 
 if __name__ == "__main__":
 
-    if sys.argv[1] == 'help':
-        print """
-        Usage:
-        python cube_checker.py /path/to/data/cube.fits
-        OR
-        python cube_checker.py space.fits separated.fits sets.fits of.fits paths.fits to.fits cubes.fits
-        If running from IPython:
-        #files = glob.glob("all/the/fits/*fits")
-        %run cube_checker.py {' '.join(files)}
-        """
-    
-    fitsfiles = sys.argv[1:]
+    parseobj = parser.parse_args(sys.argv[1:])
+    fitsfiles = parseobj.files
+    spot_directory = parseobj.spot_path
+
+    #fitsfiles = sys.argv[1:]
     
     good_cubes = dict(zip(fitsfiles, [None for f in fitsfiles]))
 
@@ -140,16 +205,15 @@ if __name__ == "__main__":
             good_cubes[key] = None
     
     #print good_cubes
-    print "Good cubes: "
-    for i in sorted([key for key, val in good_cubes.iteritems() if val == True]):
-        print i
+    #print "Good cubes: "
+    #for i in sorted([key for key, val in good_cubes.iteritems() if val == True]):
+    #    print i
+    if np.all(good_cubes.values()):
+        print "\nSpot fitting succeeded for all cubes.\n"
+    else:
+        print "\nSpot fitting failed for the following cubes:"
+        print "\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False])
+        print "\n"
+"""
 
-
-
-
-
-
-
-
-
-
+"""
