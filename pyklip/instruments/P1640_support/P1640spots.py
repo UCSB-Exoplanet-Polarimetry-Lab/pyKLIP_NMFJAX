@@ -453,9 +453,9 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir,
             output_filepath = os.path.join(output_dir, output_filename)
             np.savetxt(output_filepath, spot, delimiter=",",
                            header='row,column')
-        except:
-            # implement error handling later?
-            pass
+    except:
+        # implement error handling later?
+        pass
     return
         
 
@@ -611,13 +611,13 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
 
     return refined_spot_locs
 
-def get_single_file_spot_positions(fitsfile):
+def get_single_file_spot_positions(fitsfile, rotated_spots=False):
     """
     Wrapper for get_single_cube_spot_positions
     """
     hdulist = fits.open(fitsfile)
     cube = hdulist[0].data
-    spot_positions = get_single_cube_spot_positions(cube, rotated=False)
+    spot_positions = get_single_cube_spot_positions(cube, rotated_spots)
     hdulist.close()
     return spot_positions
 

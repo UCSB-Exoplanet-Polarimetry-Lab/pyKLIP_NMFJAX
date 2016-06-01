@@ -765,7 +765,7 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
     spot_filepostfix = config.get("spots","spot_file_postfix")
     spot_fileext = config.get("spots", "spot_file_ext")
     P1640spots.write_spots_to_file(data_filepath, spot_positions,
-                                   spot_filedir, overwrite=overwrite,
+                                   spot_filedir, overwrite,
                                    spot_filepostfix, spot_fileext)
     """ old code
     spot_filepaths = get_p1640_spot_filepaths(config, data_filepath)
