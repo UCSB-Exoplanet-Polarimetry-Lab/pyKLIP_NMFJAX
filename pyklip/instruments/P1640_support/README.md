@@ -56,6 +56,7 @@ from an IPython terminal, do: (the syntax here is weird because you're mixing py
         %run {PYKLIP_PATH}/instruments/P1640_support/P1640_cube_checker.py {" ".join(filelist)}
 
 from a bash terminal, do:
+
     :::python
         filelist = `ls data/*Occulted*fits`
         python ${PYKLIP_PATH}/instruments/P1640_support/P1640_cube_checker.py ${filelist}
@@ -72,21 +73,23 @@ In order to fit the spots, we need the P1640spots module:
         import sys
         sys.path.append(PYKLIP_PATH)
         from pyklip.instruments.P1640 import P1640spots
+        # note: this can take a few minutes per file so settle in
         for filename in filelist:
-            spot_positions = P1640spots.get_single_file_spots(filename, rotated=False)
+            spot_positions = P1640spots.get_single_file_spot_positions(filename, rotated_spots=False)
             spot_filepath = 'shared_spot_folder/'
             spot_filesuffix = '-spot'
             spot_fileext = 'csv'
             P1640spots.write_spots_to_file(filename, spot_positions, spot_filepath, 
                                            overwrite=False, spotid=spot_filesuffix, ext=spot_fileext)
                                            
-(For now, only normally-oriented gridspots can be fit, but in the future you should be able to set rotated=True to fit 45deg-rotated grid spots).
-The default values for the spot file filenames and directories (on Dnah at AMNH) are found in the P1640.ini config file. I tend to write my own config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
+(For now, only normally-oriented gridspots can be used, but in the future you should be able to set rotated_spots=True to fit 45deg-rotated grid spots).
+The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the P1640.ini config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
 
 ## Vet grid spots
 Again, there's a handy-ish command line tool.
 
 From IPython:
+
     :::python
         filelist = [list of files that you ran grid spot fitting on]
         %run $PYKLIP_PATH/instruments/P1640_support/P1640_spot_checker.py --files {" ".join(filelist)} --spot_path shared_spot_path/
