@@ -57,7 +57,7 @@ from an IPython terminal, do: (the syntax here is weird because you're mixing py
 
 from a bash terminal, do:
 
-    :::python
+    :::bash
         filelist = `ls data/*Occulted*fits`
         python ${PYKLIP_PATH}/instruments/P1640_support/P1640_cube_checker.py ${filelist}
 
