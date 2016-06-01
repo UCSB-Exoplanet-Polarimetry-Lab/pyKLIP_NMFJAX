@@ -421,7 +421,8 @@ def write_spots_to_header(spots, fitsfile):
     header['Spot3y'] = spots[3,:,0]
     return hdu
 
-def write_spots_to_file(data_filepath, spot_positions, output_dir):
+def write_spots_to_file(data_filepath, spot_positions, output_dir,
+                        overwrite=True, spotid='-spot', ext='csv'):
     """
     Write one file for each spot to the directory defined at the top of
     this file. Output file name is data_filename -fits +spoti.csv.
@@ -430,20 +431,33 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir):
         data_filename: the base name of the file with the spots
         spot_positions: Nspot x Nchan x 2 array of spot positions
         output_dir: directory to write the output files
+        overwrite: (True) overwrite existing spot files
+        spotid: (-spoti) identifier for the 4 different spot files
+        ext: (csv) file extension
     Returns:
         None
+        writes a file to the output dir whose name corresponds to the cube 
+        used to generate the spots + spotidN.ext (N is 0-3)
     """
+    data_filename = os.path.basename(data_filepath)
+    exists = glob.glob(os.path.join(output_dir,data_filename)+"*")
+    # If you shouldn't overwrite existing files, quit here
+    if (exists is not None) and (not overwrite):
+        print "Spot files exist and overwrite is False, skipping..."
+        return
     try:
         for i, spot in enumerate(spot_positions):
             data_filename = os.path.basename(data_filepath)
-            output_filename = os.path.splitext(data_filename)[0]+'-spot{0}.csv'.format(i)
+            spotnum = spotid+'{0}'.format(i)
+            output_filename = os.path.splitext(data_filename)[0]+spotnum+'.'+ext
             output_filepath = os.path.join(output_dir, output_filename)
             np.savetxt(output_filepath, spot, delimiter=",",
-                       header='row,column')
-    except:
-        # implement error handling later?
-        pass
-
+                           header='row,column')
+        except:
+            # implement error handling later?
+            pass
+    return
+        
 
 ##################################################
 # Complete spot extraction
@@ -505,11 +519,12 @@ def fit_grid_spots(masked_cubes, centers, spots_guesses):
 # Single-cube methods
 #################################
 
-def get_single_cube_spot_positions(cube):
+def get_single_cube_spot_positions(cube, rotated_spots=False):
     """
     Return the spot positions for a single cube
     Input:
         cube: a data cube from P1640
+        rotated_spots: (False) if True, use the rotated masks
     Output:
         spot_array: Nspots x Nchan x 2 array of spot positions. 
     """
@@ -596,6 +611,21 @@ def get_single_cube_spot_positions(cube):
 
     return refined_spot_locs
 
+def get_single_file_spot_positions(fitsfile):
+    """
+    Wrapper for get_single_cube_spot_positions
+    """
+    hdulist = fits.open(fitsfile)
+    cube = hdulist[0].data
+    spot_positions = get_single_cube_spot_positions(cube, rotated=False)
+    hdulist.close()
+    return spot_positions
+
+
+#################################
+# Operations on spot arrays
+#################################
+
 def get_single_cube_star_positions(spot_array):
     """
     Using the spot positions for a single cube, find the star position at each wavelength.
@@ -662,6 +692,7 @@ def get_single_file_scaling_and_centering(fitsfile):
     scaling_factors = get_single_cube_scaling_factors(spot_positions, star_positions)
     hdulist.close()
     return scaling_factors, star_positions
+
 
 
 ##################################

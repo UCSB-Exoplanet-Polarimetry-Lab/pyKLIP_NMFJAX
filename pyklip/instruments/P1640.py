@@ -749,6 +749,8 @@ def get_p1640_spot_filepaths(config, data_filepath):
 
 def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=True):
     """
+    EDIT: NOW THIS IS JUST A WRAPPER FOR THE P1640spots.write_spots_to_file() METHOD
+
     Write the spot (row, col) positions to 4 files (1 per spot) in the directory specified
     in the config file.
     Input:
@@ -759,6 +761,13 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
     Output:
         None
     """
+    spot_filedir = config.get("spots","spot_file_path")
+    spot_filepostfix = config.get("spots","spot_file_postfix")
+    spot_fileext = config.get("spots", "spot_file_ext")
+    P1640spots.write_spots_to_file(data_filepath, spot_positions,
+                                   spot_filedir, overwrite=overwrite,
+                                   spot_filepostfix, spot_fileext)
+    """ old code
     spot_filepaths = get_p1640_spot_filepaths(config, data_filepath)
     exists = [os.path.isfile(i) for i in spot_filepaths]
     for i, spot in enumerate(spot_positions):
@@ -768,6 +777,8 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
         np.savetxt(spot_filepaths[i], spot,
                    delimiter=",",
                    header="row, column")    
+    """
+    return
 
 def _p1640_process_file(filepath, skipslices=None):
     """
