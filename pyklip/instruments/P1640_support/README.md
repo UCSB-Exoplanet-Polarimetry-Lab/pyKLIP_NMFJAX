@@ -46,9 +46,9 @@ Easy-peasy.
         filelist = glob.glob("data/*Occulted*fits")
 
 ## Vet the datacubes
-This uses the cube checker, a separate command-line tool that lets quickly decide whether or not you should include a particular cube in your reduction. The bash
+This uses the cube checker, a separate command-line tool that lets you quickly decide whether or not you should include a particular cube in your reduction.
 
-define $PYKLIP_PATH as the path to the root folder of PyKLIP. Then, 
+Define $PYKLIP_PATH as the path to the root folder of PyKLIP. Then, 
 
 from an IPython terminal, do: (the syntax here is weird because you're mixing python with bash commands)
 
