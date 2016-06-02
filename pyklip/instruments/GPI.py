@@ -317,6 +317,7 @@ class GPIData(Data):
 
         # import matplotlib.pyplot as plt
         # for k in range(len(prihdrs)):
+        #     print(spot_fluxes[k*37:(k+1)*37])
         #     plt.plot(spot_fluxes[k*37:(k+1)*37],'r')
         # plt.show()
 
@@ -1386,6 +1387,7 @@ def generate_spdc_with_fakes(dataset,
             radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
         pa_grid[range(1,annuli,3),:] += 30
         pa_grid[range(2,annuli,3),:] += 60
+        pa_grid = pa_grid + 5
 
         sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
 

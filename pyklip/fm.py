@@ -1540,7 +1540,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
         ref_psfs_indicies = file_ind[0][closest_matched]
-
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[file_ind[0], :]

@@ -513,9 +513,9 @@ class FMMF(KPPSuperClass):
         sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
         metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
         for k in range(self.N_cubes):
-            sat_spot_flux_for_calib = np.sum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
-            metric_pFlux = metric_pFlux+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
-                            / np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+            sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+            metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / sat_spot_flux_for_calib * sat_spot_ratio
         metric_pFlux = metric_pFlux/self.N_cubes
         metric_pFlux[np.where(metric_pFlux==0)]=np.nan

@@ -73,7 +73,6 @@ class ExtractSpec(NoFM):
         self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
         self.nl = np.size(input_psfs_wvs)
         #self.flux_conversion = flux_conversion
-        self.input_psfs = input_psfs
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
         self.aper_over_peak_ratio = np.zeros(37)

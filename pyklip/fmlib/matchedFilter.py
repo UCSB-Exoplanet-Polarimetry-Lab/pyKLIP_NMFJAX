@@ -263,13 +263,11 @@ class MatchedFilter(NoFM):
                 if pastart < paend:
                     if (radstart-margin_sep<=sep_it<=radend+margin_sep) and ((pa_it%360)/180.*np.pi >= pastart-margin_phi) & ((pa_it%360)/180.*np.pi < paend+margin_phi):
                         skipSectionBool = False
-                        print("coucou")
                         break
                 # 2 pi wrap case
                 else:
                     if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (((pa_it%360)/180.*np.pi >= pastart-margin_phi) | ((pa_it%360)/180.*np.pi < paend+margin_phi)):
                         skipSectionBool = False
-                        print("coucou")
                         break
                 # if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (phistart-margin_phi<=(pa_it%360)/180.*np.pi<=phiend+margin_phi):
                 #     skipSectionBool = False
