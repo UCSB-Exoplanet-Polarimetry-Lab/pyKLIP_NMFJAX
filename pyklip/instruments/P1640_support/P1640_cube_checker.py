@@ -256,6 +256,8 @@ def draw_spot_cube(cube, cube_name, spots):
     #    pass
 
 
+# ALTERNATIVE TO REDEFINING SPOT CHECKER BUT THEN IT REQUIRES THE P1640_SPOT_CHECKER TO EXIST
+#run_spot_checker = P1640_spot_checker.run_checker
 
 def run_spot_checker(files=None, config=None, spot_path=None):
     """
