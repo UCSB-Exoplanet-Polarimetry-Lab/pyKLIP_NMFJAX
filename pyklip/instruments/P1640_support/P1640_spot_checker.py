@@ -27,7 +27,6 @@ from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
 
-
 sys.path.append(".")
 import P1640spots
 
@@ -91,7 +90,7 @@ def draw_cube(cube, cube_name, spots):
         
         imax = ax.imshow(cube[chan], norm=LogNorm())
         imax.axes.add_collection(patchcoll)
-        ax.set_title("Channel {1:02d}".format(cubefile_name, chan))
+        ax.set_title("Channel {1:02d}".format(cube_name, chan))
 
         """
         ax_center.set_title("Star position")
@@ -141,18 +140,40 @@ group.add_argument('--config', dest='files', nargs=1, action=ConfigAction,
 parser.add_argument('--spot_path', dest='spot_path', default=dnah_spot_directory,
                     help='directory where spot position files are stored')
         
+    
 
+def run_checker(files=None, config=None, spot_path=None):
+    """
+    Supply ONE OF:
+    files: list of files
+    config: config file with a list of files
+    """
+    if spot_path is None:
+        # set this default here so it can be overridden by a config
+        configparser = ConfigParser.ConfigParser()
+        configparser.read("../../P1640.ini")
+        spot_directory = configparser.get("spots","spot_file_path")
 
-if __name__ == "__main__":
+    # files vs config: two args enter! one arg leaves!
+    if not (files is None) != (config is None):
+        print "Please supply either a list if files or a config file"
+        return None
+    elif files is not None:
+        fitsfiles = files
+    elif config is not None:
+        configparser = ConfigParser.ConfigParser()
+        configparser.read(config)
+        # get the list of files
+        fitsfiles = configparser.get("Input","occulted_files").split()
+        spot_directory = configparser.get("Spots","spot_file_path")   
+    else:
+        print "Please supply either list of files or a config file"
+        return None
 
-    parseobj = parser.parse_args(sys.argv[1:])
-    fitsfiles = parseobj.files
-    spot_directory = parseobj.spot_path
-
-    #fitsfiles = sys.argv[1:]
+    # spot path - if None, read default
     
     good_cubes = dict(zip(fitsfiles, [None for f in fitsfiles]))
-
+    
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         #fig = plt.figure()
@@ -164,7 +185,7 @@ if __name__ == "__main__":
                 
             # get spots
             cubefile_name = os.path.splitext(os.path.basename(ff))[0]
-            spot_files = glob.glob(os.path.join(spot_directory, cubefile_name)+"*")
+            spot_files = glob.glob(os.path.join(spot_path, cubefile_name)+"*")
             if len(spot_files) == 0:
                 print("No spot files found for {0}".format(os.path.basename(ff)))
                 sys.exit(0)
@@ -206,7 +227,7 @@ if __name__ == "__main__":
     
     #print good_cubes
     #print "Good cubes: "
-    #for i in sorted([key for key, val in good_cubes.iteritems() if val == True]):
+    #for i in sorted([key for key, val inre good_cubes.iteritems() if val == True]):
     #    print i
     if np.all(good_cubes.values()):
         print "\nSpot fitting succeeded for all cubes.\n"
@@ -214,6 +235,16 @@ if __name__ == "__main__":
         print "\nSpot fitting failed for the following cubes:"
         print "\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False])
         print "\n"
-"""
 
-"""
+    final_good_cubes = sorted([os.path.abspath(i) for i in good_cubes.keys() if good_cubes[i] == True])
+    return final_good_cubes
+
+
+if __name__ == "__main__":
+
+    parseobj = parser.parse_args(sys.argv[1:])
+    fitsfiles = parseobj.files
+    spot_directory = parseobj.spot_path
+
+    good_cubes = run_checker(fitsfiles, spot_path=spot_directory)
+    
