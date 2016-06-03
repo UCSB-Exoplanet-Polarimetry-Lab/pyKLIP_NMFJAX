@@ -46,9 +46,9 @@ Easy-peasy.
         filelist = glob.glob("data/*Occulted*fits")
 
 ## Vet the datacubes
-This uses the cube checker, a separate command-line tool that lets quickly decide whether or not you should include a particular cube in your reduction. The bash
+This uses the cube checker, a separate command-line tool that lets you quickly decide whether or not you should include a particular cube in your reduction.
 
-define $PYKLIP_PATH as the path to the root folder of PyKLIP. Then, 
+Define $PYKLIP_PATH as the path to the root folder of PyKLIP. Then, 
 
 from an IPython terminal, do: (the syntax here is weird because you're mixing python with bash commands)
 
@@ -56,7 +56,8 @@ from an IPython terminal, do: (the syntax here is weird because you're mixing py
         %run {PYKLIP_PATH}/pyklip/instruments/P1640_support/P1640_cube_checker.py {" ".join(filelist)}
 
 from a bash terminal, do:
-    :::python
+
+    :::bash
         filelist = `ls data/*Occulted*fits`
         python ${PYKLIP_PATH}/pyklip/instruments/P1640_support/P1640_cube_checker.py ${filelist}
 
@@ -80,8 +81,8 @@ In order to fit the spots, we need the P1640spots module:
         P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath, 
                                        overwrite=False, spotid=spot_filesuffix, ext=spot_fileext)
                                            
-(For now, only normally-oriented gridspots can be fit, but in the future you should be able to set rotated=True to fit 45deg-rotated grid spots).
-The default values for the spot file filenames and directories (on Dnah at AMNH) are found in the P1640.ini config file. I tend to write my own config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
+(For now, only normally-oriented gridspots can be used, but in the future you should be able to set rotated_spots=True to fit 45deg-rotated grid spots).
+The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the P1640.ini config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
 
 ## Vet grid spots
 Again, there's a handy-ish command line tool.
