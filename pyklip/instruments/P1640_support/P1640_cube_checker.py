@@ -182,7 +182,10 @@ if __name__ == "__main__":
                 # ask if cube is good or not
                 keep_cube = None
                 while keep_cube not in ['y', 'n']:
-                    keep_cube = raw_input('\tKeep? Y/n: ').lower()[0]
+                    try:
+                        keep_cube = raw_input('\tKeep? Y/n: ').lower()[0]
+                    except IndexError:
+                        pass
                 good_cubes[ff] = keep_cube
                 hdulist.close()
                 # close drawing subprocess
