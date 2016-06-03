@@ -2,7 +2,7 @@
    sphinx-quickstart on Thu Mar 12 16:05:49 2015.
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
-.. image:: ../../pyklip_logo.png
+.. image:: pyklip_logo_150.png
    :align: center
    :alt: pyKLIP: om nom nom star
    :height: 150px
