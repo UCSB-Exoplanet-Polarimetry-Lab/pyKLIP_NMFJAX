@@ -441,8 +441,9 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir,
     """
     data_filename = os.path.basename(data_filepath)
     exists = glob.glob(os.path.join(output_dir,data_filename)+"*")
+    print exists
     # If you shouldn't overwrite existing files, quit here
-    if (exists is not None) and (not overwrite):
+    if (exists) and (not overwrite):
         print "Spot files exist and overwrite is False, skipping..."
         return
     try:
