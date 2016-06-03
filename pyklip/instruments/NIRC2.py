@@ -31,6 +31,9 @@ class NIRC2Data(object):
     """
     A sequence of Keck NIRC2 ADI Data. Each NIRC2Data object has the following fields and functions
 
+    Args:
+        filepaths: list of filepaths to files
+
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -91,8 +94,8 @@ class NIRC2Data(object):
         """
         Initialization code for NIRC2Data
 
-        Inputs:
-            filepaths: list of filepaths to files
+        Note:
+            see class docstring for argument details
         """
         super(NIRC2Data, self).__init__()
         self._output = None
