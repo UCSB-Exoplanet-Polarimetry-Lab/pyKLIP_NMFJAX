@@ -6,7 +6,7 @@ If you use pyKLIP in your research, please cite the Astrophysical Source Code Li
 
 > Wang, J. J., Ruffio, J.-B., De Rosa, R. J., et al. 2015, Astrophysics Source Code Library, ascl:1506.001
 
-Read the [documentation](pyklip.readthedocs.org) online!
+Read the [documentation](http://pyklip.readthedocs.io/en/latest/) online!
 
 ### Overview ###
 
