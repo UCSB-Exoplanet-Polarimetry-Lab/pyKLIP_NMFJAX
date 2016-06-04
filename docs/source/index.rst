@@ -32,7 +32,7 @@ Features
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
   `GPI <http://planetimager.org/>`_, and NIRC2.
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
-* Version 1.1 - see `Release Notes`_ for update notes
+* Version 1.1 - see :ref:`release-notes` for update notes
 
 
 Attribution
