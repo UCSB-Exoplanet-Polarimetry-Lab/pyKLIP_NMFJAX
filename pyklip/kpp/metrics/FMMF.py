@@ -346,10 +346,6 @@ class FMMF(KPPSuperClass):
         if self.quickTest:
             filelist = [filelist[0],filelist[-1]]
 
-        # read data using GPIData class
-        # todo: change measure sat spot to True
-        self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None)
-
         # Filename of the PSF cube
         if PSF_cube_filename is not None:
             self.PSF_cube_filename = PSF_cube_filename
@@ -363,6 +359,12 @@ class FMMF(KPPSuperClass):
         if self.inputDir is None:
             try:
                 self.PSF_cube_path = os.path.abspath(glob(self.PSF_cube_filename)[0])
+                if not self.mute:
+                    print("Loading PSF cube: "+self.PSF_cube_path)
+                hdulist = pyfits.open(self.PSF_cube_path)
+                PSF_cube = hdulist[1].data
+                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset.psfs = PSF_cube
             except:
                 raise Exception("File "+self.PSF_cube_filename+"doesn't exist.")
         else:
@@ -371,12 +373,15 @@ class FMMF(KPPSuperClass):
                 if not self.mute:
                     print("Loading PSF cube: "+self.PSF_cube_path)
                 hdulist = pyfits.open(self.PSF_cube_path)
-                self.dataset.psfs = hdulist[1].data
+                PSF_cube = hdulist[1].data
+                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset.psfs = PSF_cube
             except:
                 prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
 
                 if not self.mute:
                     print("Calculating the planet PSF from the satellite spots...")
+                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=False,numthreads=None)
                 # generate the PSF cube from the satellite spots
                 self.dataset.generate_psf_cube(20)
                 # Save the original PSF calculated from combining the sat spots
@@ -387,6 +392,7 @@ class FMMF(KPPSuperClass):
                 # self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"
                 self.dataset.get_radial_psf(save = self.inputDir + os.path.sep + prefix)
                 self.PSF_cube_path = self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"
+                self.dataset.spot_flux = GPI.recalculate_sat_spot_fluxes(self.dataset,numthreads=None,residuals=False)
                 if not self.mute:
                     print(self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"+"and"+\
                           self.inputDir + os.path.sep + prefix+"-original_PSF_cube.fits"+ " have been saved.")
@@ -504,7 +510,7 @@ class FMMF(KPPSuperClass):
 
         metric_MF_uncollapsed = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.nl,self.ny,self.nx))
         for k in range(self.N_cubes):
-            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
+            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]#/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
         self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
 
         # Retrieve the flux map

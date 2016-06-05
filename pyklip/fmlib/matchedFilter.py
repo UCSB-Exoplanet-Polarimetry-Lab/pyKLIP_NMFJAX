@@ -140,7 +140,7 @@ class MatchedFilter(NoFM):
         self.sub_sampling_coef = 10
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(ny_psf* 1.)-ny_psf/2, np.arange(nx_psf * 1.)-nx_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
         if  self.nearestNeigh_PSF_interp==1:
             x_psf_HD_vec = np.linspace(0,nx_psf-1.,nx_psf*self.sub_sampling_coef)-nx_psf/2
             y_psf_HD_vec = np.linspace(0,ny_psf-1.,ny_psf*self.sub_sampling_coef)-ny_psf/2
@@ -384,6 +384,20 @@ class MatchedFilter(NoFM):
             col_id_list = col_id_list_tmp
             # print(r_list,np.rad2deg(pa_list),row_id_list,col_id_list)
 
+        # import glob
+        # mvt,metric = 0.5,"FMMF"
+        # campaign_dir_Fakes = "/home/sda/Dropbox (GPI)/GPIDATA-Fakes/"
+        # filename = "*{0}*{1}.fits".format(mvt,metric)
+        # inputdir = os.path.join(campaign_dir_Fakes,"LQ_Hya","autoreduced","20141218_H_Spec_t1800g100nc_1e6")
+        # filename_path = glob.glob(os.path.join(inputdir,"planet_detec_FMMF_oneAc","t1800g100nc", filename))
+        # hdulist = pyfits.open(filename_path[0])
+        # image = hdulist[1].data
+        # exthdr = hdulist[1].header
+        # prihdr = hdulist[0].header
+        # import pyklip.kpp.utils.GOI as goi
+        # row_id_list2,col_id_list2 = goi.get_pos_known_objects(prihdr,exthdr)
+        # print("coucou",[(a,b) for a,b in zip(row_id_list2,col_id_list2)])
+        # print("bonjou",row_id_list,col_id_list)
 
 
         # Loop over the input template spectra and the number of KL modes in numbasis
@@ -607,7 +621,7 @@ class MatchedFilter(NoFM):
 
         # use intepolation spline to generate a model PSF and write to temp img
         whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
+                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -835,7 +849,7 @@ class MatchedFilter(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

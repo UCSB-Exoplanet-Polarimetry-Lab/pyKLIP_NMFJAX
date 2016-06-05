@@ -36,6 +36,7 @@ from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
+from pyklip.fakes import PSFcubefit
 import pyklip.spectra_management as spec
 
 
@@ -51,6 +52,8 @@ class GPIData(Data):
         meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
+        PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -80,7 +83,7 @@ class GPIData(Data):
     centralwave = {}  # in microns
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
-    spot_ratio = {} # w.r.t. central star
+    spot_ratio = {} #w.r.t. central star
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
@@ -112,7 +115,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=True,meas_satspot_flux=False,numthreads=-1):
+    def __init__(self, filepaths=None, skipslices=None, highpass=True,meas_satspot_flux=False,numthreads=-1,PSF_cube=None):
         """
         Initialization code for GPIData
 
@@ -136,7 +139,7 @@ class GPIData(Data):
             self.exthdrs = None
             self.flux_units = None
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,numthreads=numthreads)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,PSF_cube=PSF_cube)
 
     ################################
     ### Instance Required Fields ###
@@ -207,7 +210,7 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1):
+    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,PSF_cube=None):
         """
         Method to open and read a list of GPI data
 
@@ -219,6 +222,7 @@ class GPIData(Data):
             meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be done after hp filter)
             numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
+            PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -239,10 +243,21 @@ class GPIData(Data):
         prihdrs = []
         exthdrs = []
 
+        if PSF_cube is not None:
+            numwv,ny_psf,nx_psf =  PSF_cube.shape
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+            psfs_func_list = []
+            from scipy import interpolate
+            for wv_index in range(numwv):
+                model_psf = PSF_cube[wv_index, :, :]
+                psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+        else:
+            psfs_func_list = None
+
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads)
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,psfs_func_list=psfs_func_list)
 
 
             # import matplotlib.pyplot as plt
@@ -317,11 +332,6 @@ class GPIData(Data):
         self.exthdrs = exthdrs
 
 
-        # import matplotlib.pyplot as plt
-        # for k in range(len(prihdrs)):
-        #     print(spot_fluxes[k*37:(k+1)*37])
-        #     plt.plot(spot_fluxes[k*37:(k+1)*37],'r')
-        # plt.show()
 
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
@@ -536,7 +546,7 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-    def generate_psf_cube(self, boxw=14, threshold=0.01, tapersize=0, zero_neg=False):
+    def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -546,8 +556,12 @@ class GPIData(Data):
         (If even width of the array it is the middle pixel with the highest row and column index.)
         The center pixel index is always (nx/2,nx/2) assuming integer division.
 
+        The output PSF cube shape doesn't depend on the underlying sat spot flux calculation.
+        The sat spot fluxes are only used to set the spectrum of the PSF at the very end.
+        The spectrum is taken as the mean of all the sat spots spectra in the dataset.
+
         Args:
-            boxw: the width the extracted PSF (in pixels). Should be bigger than 12 because there is an interpolation
+            boxw: the width the extracted PSF (in pixels). Should be bigger than 20 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
             threashold: fractional pixel value of max pixel value below which everything gets set to 0's
             tapersize: if > 0, apply a hann window on the edges with size equal to this argument
@@ -614,12 +628,12 @@ class GPIData(Data):
                     stamp_masked = copy(stamp)
                     stamp_x_masked = stamp_x-dx
                     stamp_y_masked = stamp_y-dy
-                    stamp_center = np.where(stamp_r<4)
+                    stamp_center = np.where(stamp_r<7)
                     stamp_masked[stamp_center] = np.nan
                     stamp_x_masked[stamp_center] = np.nan
                     stamp_y_masked[stamp_center] = np.nan
                     background_med =  np.nanmedian(stamp_masked)
-                    stamp_masked -= background_med
+                    stamp_masked = stamp_masked - background_med
                     #Solve 2d linear fit to remove background
                     xx = np.nansum(stamp_x_masked**2)
                     yy = np.nansum(stamp_y_masked**2)
@@ -629,19 +643,18 @@ class GPIData(Data):
                     #Cramer's rule
                     a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
                     b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
-                    stamp -= a*(stamp_x-dx)+b*(stamp_y-dy) + background_med
+                    stamp = stamp - (a*(stamp_x-dx)+b*(stamp_y-dy) + background_med)
                     #stamp -= background_med
 
                     #rescale to take into account wavelength widening
                     if 1:
                         stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
-                        stamp_th = np.arctan2(stamp_x-dx-boxw/2,stamp_y-dy-boxw/2)
+                        stamp_th = np.arctan2(stamp_y-dy-boxw/2,stamp_x-dx-boxw/2)
                         stamp_r /= lambda_ref/lambda_curr
                         stamp_x = stamp_r*np.cos(stamp_th)+boxw/2
                         stamp_y = stamp_r*np.sin(stamp_th)+boxw/2
-                        #print(stamp_x,stamp_y)
 
-                    stamp = ndimage.map_coordinates(stamp, [stamp_y+dx, stamp_x+dy])
+                    stamp = ndimage.map_coordinates(stamp, [stamp_y+dy, stamp_x+dx])
                     #print(stamp)
                     if tapersize > 0:
                         tapery, taperx = np.indices(stamp.shape)
@@ -768,7 +781,7 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1):
+def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,psfs_func_list=None):
     """
     Method to open and parse a GPI file
 
@@ -780,6 +793,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         meas_satspot_flux: if True, measure sat spot fluxes. Will be down after high pass filter
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
+        psfs_func_list: List of spline fit function for the PSF_cube.
 
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
@@ -913,10 +927,12 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         if exthdr['CTYPE3'].strip() == 'WAVE':
             spot_fluxes = []
 
+            wv_unique = np.unique(wvs)
+
             if numthreads == -1:
                 # default sat spot measuring code
-                for slice, spots_xs, spots_ys in zip(cube, spots_xloc, spots_yloc):
-                    new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys)
+                for slice, spots_xs, spots_ys, wv in zip(cube, spots_xloc, spots_yloc, wvs):
+                    new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys,psfs_func_list=psfs_func_list,wave_index=np.where(wv_unique == wv)[0])
                     if np.sum(np.isfinite(new_spotfluxes)) == 0:
                         print("Infite satellite spot fluxes", (slice, spots_xs, spots_ys))
                     spot_fluxes.append(np.nanmean(new_spotfluxes))
@@ -927,8 +943,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     numthreads = mp.cpu_count()
                 tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
-                                                                args=(slice, spots_xs, spots_ys))
-                                                for id,(slice, spots_xs, spots_ys) in enumerate(zip(cube, spots_xloc, spots_yloc))]
+                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,np.where(wv_unique == wv)[0]))
+                                                for id,(slice, spots_xs, spots_ys,wv) in enumerate(zip(cube, spots_xloc, spots_yloc,wvs))]
 
                 for out in tpool_outputs:
                     out.wait()
@@ -940,7 +956,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 
 
-def measure_sat_spot_fluxes(img, spots_x, spots_y):
+def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
     """
     Measure satellite spot peak fluxes using a Gaussian matched filter
 
@@ -948,13 +964,28 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
         img: 2D frame with 4 sat spots
         spots_x: list of 4 satellite spot x coordinates
         spots_y: list of 4 satellite spot y coordinates
+        psfs_func_list: List of spline fit function for the PSF_cube. If None (default) a gaussian fit is used.
+        wave_index: Index of the current wavelength. In [0,36] for GPI. Only used when psfs_func_list is not None.
+        residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
     Return:
         spots_f: list of 4 satellite spot fluxes
     """
     spots_f = []
+    residual_map_list=[]
     for spotx, spoty in zip(spots_x, spots_y):
         # flux, fwhm, xfit, yfit = gaussfit2d(img, spotx, spoty, refinefit=False)
-        flux = gaussfit2dLSQ(img, spotx, spoty)
+        if psfs_func_list is None:
+            if residuals:
+                flux,residual_map = gaussfit2dLSQ(img, spotx, spoty,residuals=residuals)
+                residual_map_list.append(residual_map)
+            else:
+                flux = gaussfit2dLSQ(img, spotx, spoty,residuals=residuals)
+        else:
+            if residuals:
+                flux,residual_map = PSFcubefit(img, spotx, spoty,psfs_func_list=psfs_func_list,wave_index=wave_index,residuals=residuals)
+                residual_map_list.append(residual_map)
+            else:
+                flux = PSFcubefit(img, spotx, spoty,psfs_func_list=psfs_func_list,wave_index=wave_index,residuals=residuals)
         fwhm = 3
 
         if flux == np.inf:
@@ -966,9 +997,113 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y):
 
         spots_f.append(flux)
 
-    return spots_f
+    if residuals:
+        return spots_f,residual_map_list
+    else:
+        return spots_f
 
+def recalculate_sat_spot_fluxes(dataset, skipslices=None, numthreads=-1, PSF_cube=None, residuals = False):
+    """
+    Recalculate the satellite spots fluxes.
 
+    Args:
+        dataset: GPIData object.
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+                WARNING! SKIPSLICES features hasn't been tested with this function.
+        numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                    If None, numthreads = mp.cpu_count().
+        PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
+
+    Return:
+        spot_fluxes: The list of sat spot fluxes. Can be used to redefine dataset.spot_flux.
+    """
+
+    if PSF_cube is not None:
+        numwv,ny_psf,nx_psf =  PSF_cube.shape
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        psfs_func_list = []
+        from scipy import interpolate
+        for wv_index in range(numwv):
+            model_psf = PSF_cube[wv_index, :, :]
+            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+    else:
+        psfs_func_list = None
+
+    N_cubes = len(dataset.exthdrs)
+    wv_unique = np.unique(dataset.wvs)
+    nl = np.size(wv_unique)
+
+    spot_fluxes = []
+    residuals_map_list = []
+    for cube_id,(prihdr,exthdr) in enumerate(zip(dataset.prihdrs,dataset.exthdrs)):
+        #for spectral mode we need to treat each wavelegnth slice separately
+        if exthdr['CTYPE3'].strip() == 'WAVE':
+            channels = exthdr['NAXIS3']
+            spots_xloc = []
+            spots_yloc = []
+            cube = []
+
+            #calculate centers from satellite spots
+            for i in range(channels):
+                slice_id = nl*cube_id + i
+                if skipslices is not None:
+                    if not (slice_id in skipslices):
+                        cube.append(dataset.input[slice_id])
+
+                        #grab satellite spot positions
+                        spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
+                        spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
+                        spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
+                        spot3 = exthdr['SATS{wave}_3'.format(wave=i)].split()
+                        spots_xloc.append([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
+                        spots_yloc.append([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
+                else:
+                    cube.append(dataset.input[slice_id])
+
+                    #grab satellite spot positions
+                    spot0 = exthdr['SATS{wave}_0'.format(wave=i)].split()
+                    spot1 = exthdr['SATS{wave}_1'.format(wave=i)].split()
+                    spot2 = exthdr['SATS{wave}_2'.format(wave=i)].split()
+                    spot3 = exthdr['SATS{wave}_3'.format(wave=i)].split()
+                    spots_xloc.append([float(spot0[0]), float(spot1[0]), float(spot2[0]), float(spot3[0])])
+                    spots_yloc.append([float(spot0[1]), float(spot1[1]), float(spot2[1]), float(spot3[1])])
+
+            if numthreads == -1:
+                # default sat spot measuring code
+                for slice, spots_xs, spots_ys, wv in zip(cube, spots_xloc, spots_yloc, dataset.wvs):
+                    meas_sat_spot_out = measure_sat_spot_fluxes(slice, spots_xs, spots_ys,psfs_func_list=psfs_func_list,wave_index=np.where(wv_unique == wv)[0],residuals=residuals)
+                    if residuals:
+                        new_spotfluxes,residuals_map = meas_sat_spot_out
+                        residuals_map_list.extend(residuals_map)
+                    else:
+                        new_spotfluxes = meas_sat_spot_out
+                    if np.sum(np.isfinite(new_spotfluxes)) == 0:
+                        print("Infite satellite spot fluxes", (slice, spots_xs, spots_ys))
+                    spot_fluxes.append(np.nanmean(new_spotfluxes))
+            else:
+                # JB: On going test..
+                if numthreads is None:
+                    numthreads = mp.cpu_count()
+                tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+                tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
+                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,np.where(wv_unique == wv)[0],residuals))
+                                                for id,(slice, spots_xs, spots_ys,wv) in enumerate(zip(cube, spots_xloc, spots_yloc,dataset.wvs))]
+
+                for out in tpool_outputs:
+                    out.wait()
+                    if residuals:
+                        new_spotfluxes,residuals_map = out.get()
+                        residuals_map_list.extend(residuals_map)
+                    else:
+                        new_spotfluxes = out.get()
+                    spot_fluxes.append(np.nanmean(new_spotfluxes))
+                tpool.close()
+
+    if residuals:
+        return spot_fluxes,residuals_map_list
+    else:
+        return spot_fluxes
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
