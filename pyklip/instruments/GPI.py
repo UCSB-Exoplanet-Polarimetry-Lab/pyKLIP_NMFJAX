@@ -43,6 +43,15 @@ class GPIData(Data):
     """
     A sequence of GPI Data. Each GPIData object has the following fields and functions
 
+    Args:
+        filepaths: list of filepaths to files
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
+        meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
+        numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                    If None, numthreads = mp.cpu_count().
+
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -67,11 +76,11 @@ class GPIData(Data):
     ##########################
     ###Class Initilization ###
     ##########################
-    #some static variables to define the GPI instrument
+    # some static variables to define the GPI instrument
     centralwave = {}  # in microns
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
-    spot_ratio = {} #w.r.t. central star
+    spot_ratio = {} # w.r.t. central star
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
@@ -107,15 +116,8 @@ class GPIData(Data):
         """
         Initialization code for GPIData
 
-        Inputs:
-            filepaths: list of filepaths to files
-            skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
-            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
-                      can also be a number specifying FWHM of box in pixel units
-            meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
-            numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
-                        If None, numthreads = mp.cpu_count().
-
+        Note:
+            Argument information is in the GPIData class definition docstring
         """
         super(GPIData, self).__init__()
         self._output = None
