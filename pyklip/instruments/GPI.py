@@ -651,8 +651,8 @@ class GPIData(Data):
                         stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
                         stamp_th = np.arctan2(stamp_y-dy-boxw/2,stamp_x-dx-boxw/2)
                         stamp_r /= lambda_ref/lambda_curr
-                        stamp_x = stamp_r*np.cos(stamp_th)+boxw/2
-                        stamp_y = stamp_r*np.sin(stamp_th)+boxw/2
+                        stamp_x = stamp_r*np.cos(stamp_th)+boxw/2 + dx
+                        stamp_y = stamp_r*np.sin(stamp_th)+boxw/2 + dy 
 
                     stamp = ndimage.map_coordinates(stamp, [stamp_y+dy, stamp_x+dx])
                     #print(stamp)
