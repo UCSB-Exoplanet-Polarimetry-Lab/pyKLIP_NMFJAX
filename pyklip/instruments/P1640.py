@@ -110,13 +110,13 @@ class P1640Data(Data):
             self._centers = None
             self._filenums = None
             self._filenames = None
-            self._corefilenames = corefilepaths
             self._PAs = None
             self._wvs = None
             self._wcs = None
             self._IWA = None
+            self.corefilenames = corefilepaths
             self.spot_flux = None # Currently not implemented, may be in future
-            self.spot_scaling = None # scaling factor between wavelengths
+            self.scale_factors = None # scaling factor between wavelengths
             self.contrast_scaling = None # Currently not implemented, may be in future
             self.prihdrs = None # Not used by P1640
             self.exthdrs = None # for P1640 this is the prihdrs; exthdrs used for compatibility with P1640 class
@@ -196,8 +196,15 @@ class P1640Data(Data):
         return self._corefilenames
     @corefilenames.setter
     def corefilenames(self, newval):
-        return self._corefilenames
-        
+        self._corefilenames = newval
+
+    @property
+    def scale_factors(self):
+        return self._scale_factors
+    @scale_factors.setter
+    def scale_factors(self, newval):
+        self._scale_factors = newval
+    
     ###############
     ### Methods ###
     ###############
@@ -255,12 +262,12 @@ class P1640Data(Data):
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
-        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation)  # want North Up
+        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation) # want North Up
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-
+        spot_scalings = np.array(spot_scalings).reshape([dims[0]*dims[1]])
 
         # Not used by P1640
         '''
@@ -286,10 +293,11 @@ class P1640Data(Data):
         self._filenames = filenames
         self._corefilenames = corefilepaths
         self._PAs = rot_angles
-        self._wvs = wvs
+        self._wvs = spot_scalings # wvs # because pykip was written to use wavelengths, not spots, for scaling
         self._wcs = None # wcs_hdrs not used by P1640 
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
+        self.scale_factors = spot_scalings
         self.contrast_scaling = None #P1640Data.spot_ratio[ppm_band]/np.mean(spot_fluxes)
         self.flux_units = "DN"
         self.prihdrs = prihdrs

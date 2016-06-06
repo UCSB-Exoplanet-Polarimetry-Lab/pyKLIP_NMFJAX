@@ -442,7 +442,7 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir,
     data_filename = os.path.basename(data_filepath)
     exists = glob.glob(os.path.join(output_dir,data_filename)+"*")
     # If you shouldn't overwrite existing files, quit here
-    if (exists is not None) and (not overwrite):
+    if (exists) and (not overwrite):
         print "Spot files exist and overwrite is False, skipping..."
         return
     try:
@@ -671,7 +671,8 @@ def get_single_cube_scaling_factors(spot_array, star_array=None):
         star_array = get_single_cube_star_positions(spot_array)
     centered_spots = spot_array - star_array
     rad_spots = np.linalg.norm(centered_spots, axis=-1)
-    scaling = (rad_spots.T/rad_spots[:, P1640params.refchan]).T
+    scaling = rad_spots / rad_spots[:, P1640params.refchan][:,None] 
+    #scaling = rad_spots[:, P1640params.refchan][:,None] / rad_spots
     return scaling
 
 def get_single_file_scaling_and_centering(fitsfile):
