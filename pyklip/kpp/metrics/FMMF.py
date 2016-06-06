@@ -36,7 +36,7 @@ class FMMF(KPPSuperClass):
                  overwrite=False,
                  numbasis = None,
                  maxnumbasis = None,
-                 mvt = None,
+                 flux_overlap = None,
                  OWA = None,
                  N_pix_sector = None,
                  subsections = None,
@@ -134,10 +134,10 @@ class FMMF(KPPSuperClass):
         else:
             self.maxnumbasis = maxnumbasis
 
-        if mvt is None:
-            self.mvt = 0.5
+        if flux_overlap is None:
+            self.flux_overlap = 0.2
         else:
-            self.mvt = mvt
+            self.flux_overlap = flux_overlap
 
 
         self.OWA = OWA
@@ -221,7 +221,7 @@ class FMMF(KPPSuperClass):
 
         self.folderName = self.spectrum_name+os.path.sep
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
@@ -407,7 +407,7 @@ class FMMF(KPPSuperClass):
 
         self.folderName = self.spectrum_name+os.path.sep
         
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
 
         #todo if self.fakes_only
         # read fakes from headers and give sepPa list to MatchedFilter
@@ -483,7 +483,7 @@ class FMMF(KPPSuperClass):
         sub_imgs, fmout,tmp = fm.klip_parallelized(self.dataset.input, self.dataset.centers, self.dataset.PAs, self.dataset.wvs, self.dataset.IWA, self.fm_class,
                                    numbasis=self.numbasis,
                                    maxnumbasis=self.maxnumbasis,
-                                   movement=self.mvt,
+                                   flux_overlap=self.flux_overlap,
                                    spectrum=self.spectra_template,
                                    annuli=self.annuli,
                                    subsections=self.subsections,
@@ -580,7 +580,7 @@ class FMMF(KPPSuperClass):
         # Save the parameters as fits keywords
         extra_exthdr_keywords = [("METNUMBA",str(self.numbasis)),
                                  ("METMAXNB",self.maxnumbasis),
-                                 ("MET_MVT",self.mvt),
+                                 ("METFLXOV",self.flux_overlap),
                                  ("MET_OWA",str(self.OWA)),
                                  ("METNPIXS",self.N_pix_sector),
                                  ("METSUBSE",str(self.subsections)),
