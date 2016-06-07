@@ -575,12 +575,150 @@ class GPIData(Data):
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
         """
 
-        if same_wv_only:
-            return self.generate_psf_cube_samewv(boxw=boxw, threshold=threshold, tapersize=tapersize,
-                                                 zero_neg=zero_neg)
-        else:
-            return self.generate_psf_cube_allwv(boxw=boxw, threshold=threshold, tapersize=tapersize,
-                                                zero_neg=zero_neg)
+        # if same_wv_only:
+        #     return self.generate_psf_cube_samewv(boxw=boxw, threshold=threshold, tapersize=tapersize,
+        #                                          zero_neg=zero_neg)
+        # else:
+        #     return self.generate_psf_cube_allwv(boxw=boxw, threshold=threshold, tapersize=tapersize,
+        #                                         zero_neg=zero_neg)
+
+        n_frames,ny,nx = self.input.shape
+        unique_wvs = np.unique(self.wvs)
+        numwaves = np.size(np.unique(self.wvs))
+
+        # Array containing all the individual measured sat spots form the dataset
+        # - 0th dim: The wavelength of the final PSF cube
+        # - 1st dim: spatial x-axis
+        # - 2nd dim: spatial y-axis
+        # - 3rd dim: All the slices in dataset
+        # - 4th dim: The 4 spots per slice
+        psfs = np.zeros((numwaves,boxw,boxw,n_frames,4)) + np.nan
+
+        # Loop over the wavelength of the final PSF cube
+        for lambda_ref_id, lambda_ref in enumerate(unique_wvs):
+            # Loop over all the all slices (cubes and wavelengths). Note that each slice has 4 sat spots.
+            if same_wv_only:
+                frames_iter = [(k,self.input[k,:,:]) for k in range(lambda_ref_id,n_frames,37)]
+            else:
+                frames_iter = enumerate(self.input)
+
+            for i,frame in frames_iter:
+                #figure out which header and which wavelength slice
+                hdrindex = int(i)/int(numwaves)
+                slice = i % numwaves
+                lambda_curr = unique_wvs[slice]
+                #now grab the values from them by parsing the header
+                hdr = self.exthdrs[hdrindex]
+                # Each 'SATS{wave}_i' is a tuple and corresponds to the (x,y) coordinates of the given sat spot.
+                spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
+                spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
+                spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
+                spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
+
+                #put all the sat spot coordinates together
+                spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
+                         [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+
+                #mask nans
+                cleaned = np.copy(frame)
+                cleaned[np.where(np.isnan(cleaned))] = 0
+
+                # Loop over the 4 spots in the current slice
+                for loc_id, loc in enumerate(spots):
+                    #grab current satellite spot positions
+                    spotx = loc[0]
+                    spoty = loc[1]
+                    # Get the closest pixel
+                    xarr_spot = np.round(spotx)
+                    yarr_spot = np.round(spoty)
+                    # Extract a stamp around the sat spot
+                    stamp = cleaned[(yarr_spot-np.floor(boxw/2.0)):(yarr_spot+np.ceil(boxw/2.0)),\
+                                    (xarr_spot-np.floor(boxw/2.0)):(xarr_spot+np.ceil(boxw/2.0))]
+                    # Define coordinates grids for the stamp
+                    stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
+                    # Calculate the shift of the sat spot centroid relative to the closest pixel.
+                    dx = spotx-xarr_spot
+                    dy = spoty-yarr_spot
+
+
+                    # The goal of the following section is to remove the local background (or sky) around the sat spot.
+                    # The plane is defined by 3 constants (a,b,c) such that z = a*x+b*y+c
+                    # In order to do so we fit a 2D plane to the stamp after having masked the sat spot (centered disk)
+                    stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
+                    stamp_masked = copy(stamp)
+                    stamp_x_masked = stamp_x-dx
+                    stamp_y_masked = stamp_y-dy
+                    stamp_center = np.where(stamp_r<7)
+                    stamp_masked[stamp_center] = np.nan
+                    stamp_x_masked[stamp_center] = np.nan
+                    stamp_y_masked[stamp_center] = np.nan
+                    background_med =  np.nanmedian(stamp_masked)
+                    stamp_masked = stamp_masked - background_med
+                    #Solve 2d linear fit to remove background
+                    xx = np.nansum(stamp_x_masked**2)
+                    yy = np.nansum(stamp_y_masked**2)
+                    xy = np.nansum(stamp_y_masked*stamp_x_masked)
+                    xz = np.nansum(stamp_masked*stamp_x_masked)
+                    yz = np.nansum(stamp_y_masked*stamp_masked)
+                    #Cramer's rule
+                    a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
+                    b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
+                    stamp = stamp - (a*(stamp_x-dx)+b*(stamp_y-dy) + background_med)
+
+                    if not same_wv_only:
+                        # The next section rescale the grid to take into account wavelength widening
+                        # For example if lambda_ref < lambda_curr the grid values need to increase because the current stamp
+                        #  is bigger than the reference.
+                        # The next 2 lines convert cartesion coordinates to cylindrical.
+                        stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
+                        stamp_th = np.arctan2(stamp_y-dy-boxw/2,stamp_x-dx-boxw/2)
+                        # Rescale radius grid
+                        stamp_r /= lambda_ref/lambda_curr
+                        # Converting cylindrical back to cartesian.
+                        stamp_x = stamp_r*np.cos(stamp_th)+boxw/2 + dx
+                        stamp_y = stamp_r*np.sin(stamp_th)+boxw/2 + dy
+                        # At this point stamp_x/y is centered on the center pixel but properly scaled wrt wavelength.
+
+                    # Because map_coordinates wants the coordinate of the new grid relative to the old we need to shift
+                    # it in the opposite direction as before (+dx/dy instead of -dx/dy)
+                    stamp = ndimage.map_coordinates(stamp, [stamp_y+dy, stamp_x+dx])
+
+                    # apply a hann window on the edges with size equal to this argument
+                    if tapersize > 0:
+                        tapery, taperx = np.indices(stamp.shape)
+                        taperr = np.sqrt((taperx-boxw/2)**2 + (tapery-boxw/2)**2)
+                        stamp[np.where(taperr > boxw/2)] = 0
+                        hann_window = 0.5  - 0.5 * np.cos(np.pi * (boxw/2 - taperr) / tapersize)
+                        taper_region = np.where(taperr > boxw/2 - tapersize)
+                        stamp[taper_region] *= hann_window[taper_region]
+
+                    # Set to zero negative values if requested
+                    if zero_neg:
+                        stamp[np.where(stamp < 0)] = 0
+
+                    # Store the rescaled PSF in the big array
+                    psfs[lambda_ref_id,:,:,i,loc_id] = stamp
+
+        # Collapse big array over the dimensions corresponding to:
+        # - 3rd dim: All the slices in dataset
+        # - 4th dim: The 4 spots per slice
+        PSF_cube = np.nanmean(psfs,axis=(3,4))
+
+        #Build the average spectrum of the sat spots
+        # Number of cubes in dataset
+        N_cubes = int(self.input.shape[0])/int(numwaves)
+        all_sat_spot_spec = np.zeros((37,N_cubes))
+        for k in range(N_cubes):
+            all_sat_spot_spec[:,k] = self.spot_flux[37*k:37*(k+1)]
+        sat_spot_spec = np.nanmean(all_sat_spot_spec,axis=1)
+
+        # Include sat spot spectrum PSF_cube and apply threshold.
+        PSF_cube /= np.sqrt(np.nansum(PSF_cube**2))
+        for l in range(numwaves):
+            PSF_cube[l,:,:] *= sat_spot_spec[l]/np.nanmax(PSF_cube[l,:,:])
+            PSF_cube[l,:,:][np.where(abs(PSF_cube[l,:,:])/np.nanmax(abs(PSF_cube[l,:,:]))< threshold)] = 0.0
+
+        self.psfs = PSF_cube
 
 
     def generate_psf_cube_samewv(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False):
