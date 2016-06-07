@@ -135,7 +135,7 @@ class FMMF(KPPSuperClass):
             self.maxnumbasis = maxnumbasis
 
         if flux_overlap is None:
-            self.flux_overlap = 0.2
+            self.flux_overlap = 0.7
         else:
             self.flux_overlap = flux_overlap
 
@@ -167,6 +167,7 @@ class FMMF(KPPSuperClass):
             self.N_pix_sector = 100
             self.subsections = None
             self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
+            # self.annuli = [(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 300

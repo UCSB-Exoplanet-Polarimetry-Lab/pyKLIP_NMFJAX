@@ -274,7 +274,7 @@ class MatchedFilter(NoFM):
                 #     print("coucou")
                 #     #print(radstart, radend, phistart, phiend)
                 #     print(sep_it,pa_it,(pa_it%360)/180.*np.pi)
-                    break
+                #     break
         else:
             skipSectionBool = False
 
