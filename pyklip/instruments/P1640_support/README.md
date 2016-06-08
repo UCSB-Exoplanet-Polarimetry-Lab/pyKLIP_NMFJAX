@@ -79,7 +79,7 @@ An animation of each cube, along with observing conditions and a comparison to t
 ### Fit grid spots
 Note: you should only need to do this once, after which you can just read in the grid spot positions from a file.
 
-First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are available at https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data Unpack the fits files into the tutorial/data folder.
+First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are [available here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data). Download the tarball and unpack the fits files into the `tutorial/data` folder.
 
 Grid spots MUST exist, and (for now) the MUST be in the normal orientation. If this isn't true, then the code will hang. 
 
@@ -99,12 +99,12 @@ In order to fit the spots, we need the P1640spots module:
             P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath, 
                                           spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
                                            
-(For now, only normally-oriented gridspots can be used, but in the future you should be able to set rotated_spots=True to fit 45deg-rotated grid spots).
+(For now, only normally-oriented gridspots can be used, but in the future you should be able to set `rotated_spots=True` to fit 45deg-rotated grid spots).
 
-The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the P1640.ini config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
+The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the `P1640.ini` config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
 
 ### Vet grid spots
-We can run P1640_cube_checker in "spots" mode to check the spots. Usage is similar to before except now you need to use the --spots flag and specify the location of the spot file folder.
+We can run `P1640_cube_checker` in "spots" mode to check the spots. Usage is similar to before except now you need to use the `--spots` flag and specify the location of the spot file folder.
 
 From IPython, there are two ways:
 
@@ -123,13 +123,13 @@ From bash, do: (note: check the value of good_cubes before you pass it, make sur
         python ../P1640_cube_checker --files ${good_cubes} --spots --spot_path shared_spot_folder
 
 
-Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. For these files, you can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+Again, you will be prompted `Y/n` for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. For these files, you can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
 
-When running in python mode, the variable *good_spots* stores the file names for which you said the spot fitting succeeeded. These are the files which you will use to run KLIP, and can be used to initialize the P1640Data object (more below). 
+When running in python mode, the variable `good_spots` stores the file names for which you said the spot fitting succeeeded. These are the files which you will use to run KLIP, and can be used to initialize the P1640Data object (more below). 
 
 ### Run KLIP
 
-Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. We'll start off by assuming that the variable *filelist* stores a list of the files that you want to include in your reduction (i.e. they passed all the vetting stages above). 
+Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. We'll start off by assuming that the variable `filelist` stores a list of the files that you want to include in your reduction (i.e. they passed all the vetting stages above). 
 
     :::python
         import sys
