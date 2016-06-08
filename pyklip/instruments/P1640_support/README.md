@@ -53,20 +53,20 @@ Easy-peasy.
 
     :::python
         import glob
-        filelist = glob.glob("data/*Occulted*fits")
+        filelist=glob.glob("data/*Occulted*fits")
 
-## Vet the datacubes
+### Vet the datacubes
 This uses the cube checker, a separate command-line tool that lets you quickly decide whether or not you should include a particular cube in your reduction.
 
 From an IPython terminal, do: (the syntax here is weird because telling python to evaluate python variables)
 
     :::python
-        %run ../P1640_cube_checker.py {" ".join(filelist)}
-      or
         import sys
         sys.path.append("..")
         import P1640_cube_checker
         good_cubes = P1640_cube_checker.run_checker(filelist)
+      or
+        %run ../P1640_cube_checker.py --files {" ".join(filelist)}
         
 Alternatively, from a bash terminal, do:
 
@@ -74,12 +74,12 @@ Alternatively, from a bash terminal, do:
         filelist=`ls data/*Occulted*fits`
         python ../P1640_cube_checker.py --files ${filelist}
 
-An animation of each cube, along with observing conditions and a comparison to the other cubes in the set, will pop up and the terminal will prompt you Y/N to keep it in the "good cubes" list. If you like the cube, press Y. If you don't, press N. All the Y's will be spit out in a copy-pasteable format at the end. 
+An animation of each cube, along with observing conditions and a comparison to the other cubes in the set, will pop up and the terminal will prompt you Y/N to keep it in the "good cubes" list. These are the files that you will keep for KLIP. If you like the cube, press Y. If you don't, press N. All the Y's will be spit out in a copy-pasteable format at the end, and stored in memory (in this case, in the variable *good_cubes*). After you've looped through all the cubes, you'll be prompted to quit or re-inspect the cubes. If you're happy with your selection, go ahead and quit (Y), but if you want to revisit your choices, press N to restart the loop. You'll have redo all of your decisions.
 
 ### Fit grid spots
 Note: you should only need to do this once, after which you can just read in the grid spot positions from a file.
 
-First, re-assemble your handy list of P1640 data. A couple datacubes (with the target information stripped from them) are found in instruments/P1640_support/tutorial/data. I'm going to assume that you are working in the "tutorial" folder.
+First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are available at https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data 
 
 Grid spots MUST exist, and (for now) the MUST be in the normal orientation. If this isn't true, then the code will hang. 
 
@@ -109,12 +109,12 @@ We can run P1640_cube_checker in "spots" mode to check the spots. Usage is simil
 From IPython, there are two ways:
 
     :::python
-        %run ../P1640_cube_checker.py --files {" ".join(good_cubes)} --spots --spot_path shared_spot_folder/
-      or
         import sys
         sys.path.append("..")
         import P1640_cube_checker
-        good_cubes = P1640_cube_checker.run_spot_checker(good_cubes, spot_path='shared_spot_folder/')
+        good_spots = P1640_cube_checker.run_spot_checker(good_cubes, spot_path='shared_spot_folder/')
+      or
+        %run ../P1640_cube_checker.py --files {" ".join(good_cubes)} --spots --spot_path shared_spot_folder/
 
 From bash, do: (note: check the value of good_cubes before you pass it, make sure it got set properly)
 
@@ -123,7 +123,9 @@ From bash, do: (note: check the value of good_cubes before you pass it, make sur
         python ../P1640_cube_checker --files ${good_cubes} --spots --spot_path shared_spot_folder
 
 
-Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. You can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. For these files, you can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+
+When running in python mode, the variable *good_spots* stores the file names for which you said the spot fitting succeeeded. These are the files which you will use to run KLIP, and can be used to initialize the P1640Data object (more below). 
 
 ### Run KLIP
 
