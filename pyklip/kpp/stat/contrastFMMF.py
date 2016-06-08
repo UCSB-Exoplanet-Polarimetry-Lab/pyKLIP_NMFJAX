@@ -111,12 +111,18 @@ class ContrastFMMF(KPPSuperClass):
             # Check file existence and define filename_path
             if self.inputDir is None:
                 try:
-                    self.contrast_filename_path = os.path.abspath(glob(self.contrast_filename)[self.id_matching_file])
+                    if len(glob(self.contrast_filename)) == self.N_matching_files:
+                        self.contrast_filename_path = os.path.abspath(glob(self.contrast_filename)[self.id_matching_file-1])
+                    else:
+                        self.contrast_filename_path = os.path.abspath(glob(self.contrast_filename)[0])
                 except:
                     raise Exception("File "+self.contrast_filename+"doesn't exist.")
             else:
                 try:
-                    self.contrast_filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.contrast_filename)[self.id_matching_file])
+                    if len(glob(self.inputDir+os.path.sep+self.contrast_filename)) == self.N_matching_files:
+                        self.contrast_filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.contrast_filename)[self.id_matching_file-1])
+                    else:
+                        self.contrast_filename_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.contrast_filename)[0])
                 except:
                     raise Exception("File "+self.inputDir+os.path.sep+self.contrast_filename+" doesn't exist.")
 
@@ -182,7 +188,6 @@ class ContrastFMMF(KPPSuperClass):
                                                                      r_step = self.Dr/2,
                                                                      Dr=self.Dr)
         self.flux_stddev_rSamp = np.array([r_tuple[0] for r_tuple in self.flux_stddev_rSamp])
-        print(self.flux_stddev_rSamp)
         self.flux_1Dstddev = np.array(self.flux_1Dstddev)
         self.flux_1Dstddev_map = get_image_stat_map(self.image,
                                                     self.image_without_planet,
@@ -320,6 +325,8 @@ class ContrastFMMF(KPPSuperClass):
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
             hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
+
+        plt.close(1)
 
         return None
 

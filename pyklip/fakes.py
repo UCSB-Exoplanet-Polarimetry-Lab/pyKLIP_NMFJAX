@@ -4,6 +4,7 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as interp
 
 from scipy.optimize import minimize
+from copy import copy
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -318,30 +319,113 @@ def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):
     Helper function for least square fit.
     The model is a 2d symmetric gaussian.
 
-    :param planet_image: stamp image (y,x) of the satellite spot.
-    :param x_grid: x samples grid as given by meshgrid.
-    :param y_grid: y samples grid as given by meshgrid.
-    :param a: amplitude of the 2d gaussian
-    :param x_cen: x center of the gaussian
-    :param y_cen: y center of the gaussian
-    :param sig: standard deviation of the gaussian
-    :return: Squared norm of the residuals
+    Args:
+        planet_image: stamp image (y,x) of the satellite spot.
+        x_grid: x samples grid as given by meshgrid.
+        y_grid: y samples grid as given by meshgrid.
+        a: amplitude of the 2d gaussian
+        x_cen: x center of the gaussian
+        y_cen: y center of the gaussian
+        sig: standard deviation of the gaussian
+
+    Returns:
+        Squared norm of the residuals
     """
     #gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0, theta = 0, offset = 0)
     model = gauss2d(x_cen,y_cen, a, sig)(x_grid, y_grid)
     #model = gauss2d(x_grid, y_grid,a,x_cen,y_cen,sig,sig,0.0)
     return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
 
-def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5):
+
+def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_index=None,residuals=False):
     """
     Estimate satellite spot amplitude (peak value) by fitting a symmetric 2d gaussian.
     Fit parameters: x,y position, amplitude, standard deviation (same in x and y direction)
 
-    :param frame: the data - Array of size (y,x)
-    :param xguess: x location to fit the 2d guassian to.
-    :param yguess: y location to fit the 2d guassian to.
-    :param searchrad: 1/2 the length of the box used for the fit
-    :return: scalar: Estimation of the peak flux of the satellite spot.
+    Args:
+        frame: the data - Array of size (y,x)
+        xguess: x location to fit the 2d guassian to.
+        yguess: y location to fit the 2d guassian to.
+        searchrad: 1/2 the length of the box used for the fit
+        psfs_func_list: List of spline fit function for the PSF_cube.
+        wave_index: Index of the current wavelength. In [0,36] for GPI. Only used when psfs_func_list is not None.
+        residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
+
+    Returns:
+        returned_flux: scalar, Estimation of the peak flux of the satellite spot.
+            ie Amplitude of the fitted gaussian.
+    """
+    x0 = np.round(xguess)
+    y0 = np.round(yguess)
+    #construct our searchbox
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
+
+    xguess_box = xguess-x0 + searchrad
+    yguess_box = yguess-y0 + searchrad
+
+    xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xguess_box, np.arange(0, 2*searchrad+1, 1.0)-yguess_box)
+    stamp_r = np.sqrt((xfitbox)**2+(yfitbox)**2)
+    small_aper_indices = np.where(stamp_r<3)
+    big_aper_indices = np.where(stamp_r<7)
+
+    # try to remove background
+    if 1:
+        stamp_masked = copy(fitbox)
+        stamp_x_masked = copy(xfitbox)
+        stamp_y_masked = copy(yfitbox)
+        stamp_masked[big_aper_indices] = np.nan
+        stamp_x_masked[big_aper_indices] = np.nan
+        stamp_y_masked[big_aper_indices] = np.nan
+        background_med =  np.nanmedian(stamp_masked)
+        stamp_masked = stamp_masked - background_med
+        #Solve 2d linear fit to remove background
+        xx = np.nansum(stamp_x_masked**2)
+        yy = np.nansum(stamp_y_masked**2)
+        xy = np.nansum(stamp_y_masked*stamp_x_masked)
+        xz = np.nansum(stamp_masked*stamp_x_masked)
+        yz = np.nansum(stamp_y_masked*stamp_masked)
+        #Cramer's rule
+        a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
+        b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
+        fitbox = fitbox - (a*(xfitbox)+b*(yfitbox) + background_med)
+
+    model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)-xguess_box,np.arange(0, 2*searchrad+1, 1.0)-yguess_box).transpose()
+    # model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)+(xguess-x0) - searchrad,np.arange(0, 2*searchrad+1, 1.0)+(yguess-y0) - searchrad)#.transpose()
+
+    returned_flux = np.sum(model[small_aper_indices]*fitbox[small_aper_indices])/np.sum(model[small_aper_indices]**2)*model[searchrad,searchrad]
+
+    # import matplotlib.pyplot as plt
+    # plt.figure(1)
+    # plt.subplot(2,1,1)
+    # plt.imshow(model,interpolation="nearest")
+    # plt.colorbar()
+    # plt.subplot(2,1,2)
+    # plt.imshow(fitbox,interpolation="nearest")
+    # plt.colorbar()
+    # plt.show()
+
+
+    if residuals:
+        residuals_map = fitbox - returned_flux*model/model[searchrad,searchrad]
+        return returned_flux,residuals_map
+    else:
+        return returned_flux
+
+def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5,fit_centroid = False,residuals=False):
+    """
+    Estimate satellite spot amplitude (peak value) by fitting a symmetric 2d gaussian.
+    Fit parameters: x,y position, amplitude, standard deviation (same in x and y direction)
+
+    Args:
+        frame: the data - Array of size (y,x)
+        xguess: x location to fit the 2d guassian to.
+        yguess: y location to fit the 2d guassian to.
+        searchrad: 1/2 the length of the box used for the fit
+        fit_centroid: If False (default), disable the centroid fit and only fit the amplitude and the standard deviation
+        residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
+
+    Returns:
+        returned_flux: scalar, estimation of the peak flux of the satellite spot.
             ie Amplitude of the fitted gaussian.
     """
     x0 = np.round(xguess)
@@ -354,17 +438,43 @@ def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5):
 
     xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xguess_box, np.arange(0, 2*searchrad+1, 1.0)-yguess_box)
 
-    param0 = [xguess,0.,0.,1.5]
-    LSQ_func = lambda para: LSQ_gauss2d(fitbox,xfitbox, yfitbox,para[0],para[1],para[2],para[3])
-    param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
+    if fit_centroid:
+        param0 = [fitbox[searchrad,searchrad],0.,0.,1.5]
+        LSQ_func = lambda para: LSQ_gauss2d(fitbox,xfitbox, yfitbox,para[0],para[1],para[2],para[3])
 
+        param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
 
-    if (param_fit[1]**2+param_fit[2]**2)>2.**2 or (param_fit[0]/param0[0] >10.) or param_fit[3] > 3. or param_fit[3] < 0.5:
-        returned_flux = np.nan
+        if (param_fit[1]**2+param_fit[2]**2)>2.**2 or (param_fit[0]/param0[0] >10.) or param_fit[3] > 3. or param_fit[3] < 0.5:
+            returned_flux = np.nan
+        else:
+            returned_flux = param_fit[0]
+
+        if residuals:
+            model = gauss2d(param_fit[1],param_fit[2], param_fit[0], param_fit[3])(xfitbox, yfitbox)
+            residuals_map = fitbox - model
+            return returned_flux,residuals_map
+        else:
+            return returned_flux
     else:
-        returned_flux = param_fit[0]
+        param0 = [fitbox[searchrad,searchrad],1.5]
+        LSQ_func = lambda para: LSQ_gauss2d(fitbox,xfitbox, yfitbox,para[0],0,0,para[1])
 
-    return returned_flux
+        param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
+
+        # print(param_fit[1])
+        if abs(param_fit[0] - fitbox[searchrad,searchrad]) > 0.5*fitbox[searchrad,searchrad]:
+            returned_flux = np.nan
+        else:
+            returned_flux = param_fit[0]
+
+        if residuals:
+            model = gauss2d(0,0, param_fit[0], param_fit[1])(xfitbox, yfitbox)
+            residuals_map = fitbox - model
+            return returned_flux,residuals_map
+        else:
+            return returned_flux
+
+
 
 def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False, thetas=None):
     """

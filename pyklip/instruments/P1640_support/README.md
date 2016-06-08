@@ -94,7 +94,7 @@ In order to fit the spots, we need the P1640spots module:
         spot_filepath = 'shared_spot_folder/'
         spot_filesuffix = '-spot'
         spot_fileext = 'csv'
-        for test_file in filelist:
+        for test_file in good_cubes:
             spot_positions = P1640spots.get_single_file_spot_positions(test_file, rotated_spots=False)
             P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath, 
                                           spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
@@ -109,16 +109,18 @@ We can run P1640_cube_checker in "spots" mode to check the spots. Usage is simil
 From IPython, there are two ways:
 
     :::python
-        %run ../P1640_cube_checker.py --files {" ".join(filelist)} --spots --spot_path shared_spot_folder/
+        %run ../P1640_cube_checker.py --files {" ".join(good_cubes)} --spots --spot_path shared_spot_folder/
       or
         import sys
         sys.path.append("..")
         import P1640_cube_checker
-        good_cubes = P1640_cube_checker.run_spot_checker(filelist, spot_path='shared_spot_folder/')
+        good_cubes = P1640_cube_checker.run_spot_checker(good_cubes, spot_path='shared_spot_folder/')
 
-From bash, do:
+From bash, do: (note: check the value of good_cubes before you pass it, make sure it got set properly)
+
     :::bash
-        python ../P1640_cube_checker --files ${filelist} --spots --spot_path shared_spot_folder
+        good_cubes="copy names of vetted files here"
+        python ../P1640_cube_checker --files ${good_cubes} --spots --spot_path shared_spot_folder
 
 
 Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. You can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.

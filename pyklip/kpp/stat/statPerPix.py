@@ -261,6 +261,7 @@ class StatPerPix(KPPSuperClass):
             wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
             self.image[np.where(np.isnan(wider_mask))] = np.nan
 
+
         # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
         # PDF. This masked image is given separately to the probability calculation function.
         if self.filename_noPlanets is not None:
@@ -277,11 +278,11 @@ class StatPerPix(KPPSuperClass):
             if hasattr(self, 'nl'): # If the file is a 3D cube
                 for l_id in np.arange(self.nl):
                     self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
-                    self.image_noSignal[l_id,:,:] = convolve2d(self.image_noSignal[l_id,:,:],self.PSF,mode="same")
+                    self.image_without_planet[l_id,:,:] = convolve2d(self.image_without_planet[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 print(self.image_noSignal.shape)
                 self.image = convolve2d(self.image,self.PSF,mode="same")
-                self.image_noSignal = convolve2d(self.image_noSignal,self.PSF,mode="same")
+                self.image_without_planet = convolve2d(self.image_without_planet,self.PSF,mode="same")
 
         if np.size(self.image.shape) == 3:
             # Not tested
@@ -298,6 +299,7 @@ class StatPerPix(KPPSuperClass):
                                                                         Dr= self.Dr,
                                                                         Dth = self.Dth,
                                                                         type = self.type)
+
         elif np.size(self.image.shape) == 2:
             self.stat_cube_map = get_image_stat_map_perPixMasking(self.image,
                                                              self.image_without_planet,
@@ -310,6 +312,7 @@ class StatPerPix(KPPSuperClass):
                                                              Dr= self.Dr,
                                                              Dth = self.Dth,
                                                              type = self.type)
+
         return self.stat_cube_map
 
 
@@ -343,9 +346,9 @@ class StatPerPix(KPPSuperClass):
             self.exthdr["STAKERTY"] = str(self.kernel_type)
             self.exthdr["STAKERWI"] = str(self.kernel_width)
 
-            # # This parameters are not always defined
-            # if hasattr(self,"spectrum_name"):
-            #     self.exthdr["STASPECN"] = self.spectrum_name
+            # This parameters are not always defined
+            if hasattr(self,"filename_noSignal_path"):
+                self.exthdr["STAFILNS"] = self.filename_noSignal_path
 
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')

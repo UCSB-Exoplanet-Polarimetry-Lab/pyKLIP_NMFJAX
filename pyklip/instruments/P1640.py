@@ -34,7 +34,12 @@ class P1640Data(Data):
     """
     Note: update object string when output is decided
     A sequence of P1640 Data. Each P1640Data object has the following fields and functions
-    
+
+    Args:
+        filepaths: list of filepaths to occulted files
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
+
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -98,10 +103,8 @@ class P1640Data(Data):
         """
         Initialization code for P1640Data
 
-        Inputs:
-            filepaths: list of filepaths to occulted files
-            skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
-            corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
+        Note:
+            Information on arguments are available in the class docstring
         """
         super(P1640Data, self).__init__()
         self._output = None
