@@ -79,7 +79,7 @@ An animation of each cube, along with observing conditions and a comparison to t
 ### Fit grid spots
 Note: you should only need to do this once, after which you can just read in the grid spot positions from a file.
 
-First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are available at https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data 
+First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are available at https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data. Unpack the fits files into the tutorial/data folder.
 
 Grid spots MUST exist, and (for now) the MUST be in the normal orientation. If this isn't true, then the code will hang. 
 
