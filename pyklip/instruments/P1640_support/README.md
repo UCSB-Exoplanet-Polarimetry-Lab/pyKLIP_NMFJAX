@@ -129,6 +129,17 @@ When running in python mode, the variable *good_spots* stores the file names for
 
 ### Run KLIP
 
-Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. 
+Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. We'll start off by assuming that the variable *filelist* stores a list of the files that you want to include in your reduction (i.e. they passed all the vetting stages above). 
 
-Rest of the tutorial to come. The short version is, replace "GPI" with "P1640" in the tutorial in pyklip/README.md. Some modifications are necessary before this will run anywhere but the server at AMNH. Coming soon!
+    :::python
+        import sys
+        sys.path.append("../../../../")
+        import pyklip.instruments.P1640 as P1640
+        dataset = P1640.P1640Data(filelist, spot_directory="shared_spot_folder/")
+        import pyklip.parallelized as parallelized
+        parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsect=4, movement=3, numbasis=[1,20,100], calibrate_flux=False, mode="SDI")
+
+This will run the KLIP PSF subtraction algorithm. The resulting images are stored in the `dataset.output` field and written as FITS files to the output directory with the file prefix you provided. The P1640 output header format is that the first header stores the KLIP parameters, and the subsequent headers store copies of the headers from the original FITS files that were combined in this analysis. One file containing a datacube is written for each KL cutoff specified.
+
+
+
