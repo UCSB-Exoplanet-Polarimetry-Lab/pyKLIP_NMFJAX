@@ -25,7 +25,7 @@ from pyklip.instruments.utils.nair import nMathar
 
 from pyklip.instruments.P1640_support import P1640spots
 from pyklip.instruments.P1640_support import P1640utils
-#from pyklip.instruments.P1640_support import cube_verifier
+from pyklip.instruments.P1640_support import P1640_cube_checker
 
 from scipy.interpolate import interp1d
 

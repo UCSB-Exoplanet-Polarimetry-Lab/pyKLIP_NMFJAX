@@ -89,7 +89,7 @@ In order to fit the spots, we need the P1640spots module:
         import sys
         sys.path.append("..")
         import P1640spots
-        # if these are not set, default values will be read from P1640.ini
+        # if the variables below are not set, default values will be read from P1640.ini
         # for the tutorial, let's set them explicitly
         spot_filepath = 'shared_spot_folder/'
         spot_filesuffix = '-spot'
@@ -121,7 +121,7 @@ From bash, do:
         python ../P1640_cube_checker --files ${filelist} --spots --spot_path shared_spot_folder
 
 
-Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED. You can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. You can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
 
 ### Run KLIP
 
