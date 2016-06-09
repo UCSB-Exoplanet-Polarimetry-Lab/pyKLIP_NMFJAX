@@ -33,7 +33,10 @@ class Stat(KPPSuperClass):
                  overwrite = False,
                  kernel_type = None,
                  kernel_width = None,
-                 image_wide = None):
+                 image_wide = None,
+                 collapse = None,
+                 weights = None,
+                 nans2zero = None):
         """
 
 
@@ -49,6 +52,8 @@ class Stat(KPPSuperClass):
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param collapse: If true and input is 3D then it will collapse the final map.
+        :param weights: If not None and collapse is True then a weighted mean is performed using the weights.
         """
         # allocate super class
         super(Stat, self).__init__(filename,
@@ -92,6 +97,16 @@ class Stat(KPPSuperClass):
         # The default value is defined later
         self.kernel_width = kernel_width
 
+        if collapse is None:
+            self.collapse = False
+        else:
+            self.collapse = collapse
+        self.weights = weights
+        if nans2zero is None:
+            self.nans2zero = False
+        else:
+            self.nans2zero = nans2zero
+
     def initialize(self,inputDir = None,
                          outputDir = None,
                          folderName = None,
@@ -133,6 +148,7 @@ class Stat(KPPSuperClass):
                                          outputDir = outputDir,
                                          folderName = folderName,
                                          label=label)
+
 
 
         if self.filename_noPlanets is not None:# Check file existence and define filename_path
@@ -332,15 +348,32 @@ class Stat(KPPSuperClass):
         #     else:
         #         self.image_noSignal = self.image
 
+        if self.collapse:
+            if self.weights is not None:
+                image_collapsed = np.zeros((self.ny,self.nx))
+                image_without_planet_collapsed = np.zeros((self.ny,self.nx))
+                for k in range(self.nl):
+                    image_collapsed = image_collapsed + self.weights[k]*self.image[k,:,:]
+                    image_without_planet_collapsed = image_without_planet_collapsed + self.weights[k]*self.image_without_planet[k,:,:]
+                self.image = image_collapsed/np.sum(self.weights)
+                self.image_without_planet = image_without_planet_collapsed/np.sum(self.weights)
+            else:
+                self.image = np.nanmean(self.image,axis=0)
+                self.image_without_planet = np.nanmean(self.image_without_planet,axis=0)
+
+        if self.nans2zero:
+            self.image = np.nan_to_num(self.image)
+
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D
-            if hasattr(self, 'nl'): # If the file is a 3D cube
+            if np.size(self.image.shape) == 3: # If the file is a 3D cube
                 for l_id in np.arange(self.nl):
                     self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
                     self.image_without_planet[l_id,:,:] = convolve2d(self.image_without_planet[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 self.image = convolve2d(self.image,self.PSF,mode="same")
                 self.image_without_planet = convolve2d(self.image_without_planet,self.PSF,mode="same")
+
 
         if np.size(self.image.shape) == 3:
             # Not tested
@@ -356,6 +389,15 @@ class Stat(KPPSuperClass):
                                                                Dr= self.Dr,
                                                                type = self.type,
                                                                image_wide=self.image_wide)
+
+            # if self.collapse:
+            #     if self.weights is not None:
+            #         stat_collapsed_map = np.zeros((self.ny,self.nx))
+            #         for k in range(self.nl):
+            #             stat_collapsed_map = stat_collapsed_map + self.weights[k]*self.stat_cube_map[k,:,:]
+            #         self.stat_cube_map = stat_collapsed_map/np.sum(self.weights)
+            #     else:
+            #         self.stat_cube_map = np.nanmean(self.stat_cube_map,axis=0)
         elif np.size(self.image.shape) == 2:
             self.stat_cube_map = get_image_stat_map(self.image,
                                                     self.image_without_planet,

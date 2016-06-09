@@ -37,6 +37,7 @@ class FMMF(KPPSuperClass):
                  numbasis = None,
                  maxnumbasis = None,
                  flux_overlap = None,
+                 mvt = None,
                  OWA = None,
                  N_pix_sector = None,
                  subsections = None,
@@ -135,9 +136,15 @@ class FMMF(KPPSuperClass):
             self.maxnumbasis = maxnumbasis
 
         if flux_overlap is None:
-            self.flux_overlap = 0.7
+            if mvt is None:
+                self.flux_overlap = 0.7
+                self.mvt = None
+            else:
+                self.flux_overlap = None
+                self.mvt = mvt
         else:
             self.flux_overlap = flux_overlap
+            self.mvt = None
 
 
         self.OWA = OWA
@@ -222,7 +229,10 @@ class FMMF(KPPSuperClass):
 
         self.folderName = self.spectrum_name+os.path.sep
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+        if self.flux_overlap is not None:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+        else:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
@@ -384,7 +394,7 @@ class FMMF(KPPSuperClass):
                     print("Calculating the planet PSF from the satellite spots...")
                 self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=False,numthreads=None)
                 # generate the PSF cube from the satellite spots
-                self.dataset.generate_psf_cube(20)
+                self.dataset.generate_psf_cube(20,same_wv_only=True)
                 # Save the original PSF calculated from combining the sat spots
                 self.dataset.savedata(self.inputDir + os.path.sep + prefix+"-original_PSF_cube.fits", self.dataset.psfs,
                                           astr_hdr=self.dataset.wcs[0], filetype="PSF Spec Cube")
@@ -407,8 +417,11 @@ class FMMF(KPPSuperClass):
             spec_path = spectrum
 
         self.folderName = self.spectrum_name+os.path.sep
-        
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+
+        if self.flux_overlap is not None:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+        else:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         #todo if self.fakes_only
         # read fakes from headers and give sepPa list to MatchedFilter
@@ -485,6 +498,7 @@ class FMMF(KPPSuperClass):
                                    numbasis=self.numbasis,
                                    maxnumbasis=self.maxnumbasis,
                                    flux_overlap=self.flux_overlap,
+                                   movement=self.mvt,
                                    spectrum=self.spectra_template,
                                    annuli=self.annuli,
                                    subsections=self.subsections,
@@ -581,7 +595,8 @@ class FMMF(KPPSuperClass):
         # Save the parameters as fits keywords
         extra_exthdr_keywords = [("METNUMBA",str(self.numbasis)),
                                  ("METMAXNB",self.maxnumbasis),
-                                 ("METFLXOV",self.flux_overlap),
+                                 ("METFLXOV",str(self.flux_overlap)),
+                                 ("MET_MVT",str(self.mvt)),
                                  ("MET_OWA",str(self.OWA)),
                                  ("METNPIXS",self.N_pix_sector),
                                  ("METSUBSE",str(self.subsections)),

@@ -32,7 +32,9 @@ class StatPerPix(KPPSuperClass):
                  overwrite = False,
                  kernel_type = None,
                  kernel_width = None,
-                 filename_noPlanets = None):
+                 filename_noPlanets = None,
+                 collapse = None,
+                 weights = None):
         """
 
 
@@ -45,6 +47,8 @@ class StatPerPix(KPPSuperClass):
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param collapse: If true and input is 3D then it will collapse the final map.
+        :param weights: If not None and collapse is True then a weighted mean is performed using the weights.
         """
         # allocate super class
         super(StatPerPix, self).__init__(filename,
@@ -81,6 +85,12 @@ class StatPerPix(KPPSuperClass):
         self.kernel_type = kernel_type
         # The default value is defined later
         self.kernel_width = kernel_width
+
+        if collapse is None:
+            self.collapse = False
+        else:
+            self.collapse = collapse
+        self.weights = weights
 
 
     def initialize(self,inputDir = None,
@@ -272,6 +282,19 @@ class StatPerPix(KPPSuperClass):
         #     self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
         # else:
         #     self.image_without_planet = self.image
+
+        if self.collapse:
+            if self.weights is not None:
+                image_collapsed = np.zeros((self.ny,self.nx))
+                image_without_planet_collapsed = np.zeros((self.ny,self.nx))
+                for k in range(self.nl):
+                    image_collapsed = image_collapsed + self.weights[k]*self.image[k,:,:]
+                    image_without_planet_collapsed = image_without_planet_collapsed + self.weights[k]*self.image_without_planet[k,:,:]
+                self.image = image_collapsed/np.sum(self.weights)
+                self.image_without_planet = image_without_planet_collapsed/np.sum(self.weights)
+            else:
+                self.image = np.nanmean(self.image,axis=0)
+                self.image_without_planet = np.nanmean(self.image_without_planet,axis=0)
 
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D
