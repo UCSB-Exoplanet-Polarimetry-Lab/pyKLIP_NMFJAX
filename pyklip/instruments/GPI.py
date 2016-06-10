@@ -1173,7 +1173,6 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
             noise_annulus = np.where((r_img > 9) & (r_img <= 12))
             background_mean = np.nanmean(cleaned[noise_annulus])
             spotpsf -= background_mean
-            print(background_mean)
 
         genpsf.append(spotpsf)
 
