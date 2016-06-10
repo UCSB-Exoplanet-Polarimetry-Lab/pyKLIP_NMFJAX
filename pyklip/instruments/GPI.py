@@ -526,18 +526,18 @@ class GPIData(Data):
         self.psfs = []
 
         for i,frame in enumerate(self.input):
-            #figure out which header and which wavelength slice
+            # figure out which header and which wavelength slice
             numwaves = np.size(np.unique(self.wvs))
             hdrindex = int(i)/int(numwaves)
             slice = i % numwaves
-            #now grab the values from them by parsing the header
+            # now grab the values from them by parsing the header
             hdr = self.exthdrs[hdrindex]
             spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
             spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
             spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
             spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
 
-            #put all the sat spot info together
+            # put all the sat spot info together
             spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
                      [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
             #now make a psf
@@ -545,6 +545,11 @@ class GPIData(Data):
             self.psfs.append(spotpsf)
 
         self.psfs = np.array(self.psfs)
+
+        # collapse in time dimension
+        numwvs = np.size(np.unique(self.wvs))
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = False):
         """
@@ -616,8 +621,7 @@ class GPIData(Data):
                 spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
 
                 #put all the sat spot coordinates together
-                spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
-                         [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+                spots = [[float(spot[0]), float(spot[1])] for spot in [spot0, spot1, spot2, spot3]]
 
                 #mask nans
                 cleaned = np.copy(frame)
@@ -1141,12 +1145,12 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
 
     #highpass filter to remove background
     #mask source for median filter
-    masked = np.copy(cleaned)
-    for loc in locations:
-        spotx = np.round(loc[0])
-        spoty = np.round(loc[1])
-        masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
-            masked.reshape(masked.shape[0]*masked.shape[1]))
+    # masked = np.copy(cleaned)
+    # for loc in locations:
+    #     spotx = np.round(loc[0])
+    #     spoty = np.round(loc[1])
+    #     masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
+    #         masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
 
     #cleaned -= ndimage.median_filter(masked, size=(medianboxsize,medianboxsize))
@@ -1161,6 +1165,16 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         #create arrays of size 2*boxrad+2)
         x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
         spotpsf = ndimage.map_coordinates(cleaned, [y,x])
+
+        # if applicable, do a background subtraction
+        if boxrad > 9:
+            y_img, x_img = np.indices(frame.shape)
+            r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+            noise_annulus = np.where((r_img > 9) & (r_img <= 12))
+            background_mean = np.nanmean(cleaned[noise_annulus])
+            spotpsf -= background_mean
+            print(background_mean)
+
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)
