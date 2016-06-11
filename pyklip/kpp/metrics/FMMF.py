@@ -48,7 +48,8 @@ class FMMF(KPPSuperClass):
                  mute_progression = False,
                  SpT_file_csv = None,
                  fakes_only = None,
-                 disable_FM = None):
+                 disable_FM = None,
+                 high_pass_filter = None):
         """
         Define the general parameters of the metric.
 
@@ -118,6 +119,10 @@ class FMMF(KPPSuperClass):
             self.disable_FM = False
         else:
             self.disable_FM = disable_FM
+        if high_pass_filter is None:
+            self.high_pass_filter = True
+        else:
+            self.high_pass_filter = high_pass_filter
 
         self.PSF_cube_filename = PSF_cube_filename
 
@@ -374,7 +379,7 @@ class FMMF(KPPSuperClass):
                     print("Loading PSF cube: "+self.PSF_cube_path)
                 hdulist = pyfits.open(self.PSF_cube_path)
                 PSF_cube = hdulist[1].data
-                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
                 self.dataset.psfs = PSF_cube
             except:
                 raise Exception("File "+self.PSF_cube_filename+"doesn't exist.")
@@ -385,14 +390,14 @@ class FMMF(KPPSuperClass):
                     print("Loading PSF cube: "+self.PSF_cube_path)
                 hdulist = pyfits.open(self.PSF_cube_path)
                 PSF_cube = hdulist[1].data
-                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
                 self.dataset.psfs = PSF_cube
             except:
                 prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
 
                 if not self.mute:
                     print("Calculating the planet PSF from the satellite spots...")
-                self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=False,numthreads=None)
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=False,numthreads=None)
                 # generate the PSF cube from the satellite spots
                 self.dataset.generate_psf_cube(20,same_wv_only=True)
                 # Save the original PSF calculated from combining the sat spots
