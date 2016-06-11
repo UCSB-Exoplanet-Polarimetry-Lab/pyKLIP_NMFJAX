@@ -551,7 +551,7 @@ class GPIData(Data):
         self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
         self.psfs = np.mean(self.psfs, axis=0)
 
-    def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = False):
+    def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = True):
         """
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube is normalized to have the average sat spot spectrum in DN units.
@@ -567,25 +567,21 @@ class GPIData(Data):
         The output PSF cube shape doesn't depend on the underlying sat spot flux calculation.
         The sat spot fluxes are only used to set the spectrum of the PSF at the very end.
 
+        CAUTION: I think same_wv_only = False has a bug even in the rescaling of the coordinates
+
         Args:
             boxw: the width the extracted PSF (in pixels). Should be bigger than 20 because there is an interpolation
                 of the background by a plane which is then subtracted to remove linear biases.
             threshold: fractional pixel value of max pixel value below which everything gets set to 0's
             tapersize: if > 0, apply a hann window on the edges with size equal to this argument
             zero_neg: if True, set all negative values to zero instead
-            same_wv_only: If true (default False), it only combines sat spot from the same wavelength.
+            same_wv_only: If true (default), it only combines sat spot from the same wavelength.
                         Otherwise it rescales them to each wavelengths.
+                        CAUTION: I think same_wv_only = False has a bug even in the rescaling of the coordinates
 
         Returns:
             A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
         """
-
-        # if same_wv_only:
-        #     return self.generate_psf_cube_samewv(boxw=boxw, threshold=threshold, tapersize=tapersize,
-        #                                          zero_neg=zero_neg)
-        # else:
-        #     return self.generate_psf_cube_allwv(boxw=boxw, threshold=threshold, tapersize=tapersize,
-        #                                         zero_neg=zero_neg)
 
         n_frames,ny,nx = self.input.shape
         unique_wvs = np.unique(self.wvs)
@@ -676,6 +672,7 @@ class GPIData(Data):
                         # The next 2 lines convert cartesion coordinates to cylindrical.
                         stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
                         stamp_th = np.arctan2(stamp_y-dy-boxw/2,stamp_x-dx-boxw/2)
+                        #stamp_th = np.arctan2(stamp_x-dx-boxw/2,stamp_y-dy-boxw/2)
                         # Rescale radius grid
                         stamp_r /= lambda_ref/lambda_curr
                         # Converting cylindrical back to cartesian.
@@ -686,6 +683,7 @@ class GPIData(Data):
                     # Because map_coordinates wants the coordinate of the new grid relative to the old we need to shift
                     # it in the opposite direction as before (+dx/dy instead of -dx/dy)
                     stamp = ndimage.map_coordinates(stamp, [stamp_y+dy, stamp_x+dx])
+                    #stamp = ndimage.map_coordinates(stamp, [stamp_y+dx, stamp_x+dy])
 
                     # apply a hann window on the edges with size equal to this argument
                     if tapersize > 0:
@@ -1389,9 +1387,9 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None):
 
 
 def generate_spdc_with_fakes(dataset,
-                             outputdir,
                              fake_position_dict,
                              fake_flux_dict,
+                             outputdir = None,
                              planet_spectrum = None,
                              PSF_cube = None,
                              star_type = None,
@@ -1413,6 +1411,7 @@ def generate_spdc_with_fakes(dataset,
             function.
     :param outputdir:
             Output directory in which the spectral data cube with fakes will be saved.
+            If outputdir = None (default), just the dataset is modified but the cubes are not saved
     :param fake_position_dict:
             Dictionary defining the way the fake planets are positionned
             - fake_position_dict["mode"]="sector": Put a planet in each klip sector. Can actually generate several
@@ -1507,10 +1506,11 @@ def generate_spdc_with_fakes(dataset,
 
     prefix = object_name+"_"+compact_date+"_"+IFSfilter
     # Save the original PSF calculated from combining the sat spots
-    dataset.savedata(outputdir + os.path.sep + prefix+"-original_PSF_cube.fits", PSF_cube,
-                              astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
+    if outputdir is not None:
+        dataset.savedata(outputdir + os.path.sep + prefix+"-original_PSF_cube.fits", PSF_cube,
+                                  astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
 
-    dataset.get_radial_psf(save = outputdir + os.path.sep + prefix)
+        dataset.get_radial_psf(save = outputdir + os.path.sep + prefix)
 
     n_frames,ny,nx = dataset.input.shape
 
@@ -1724,13 +1724,14 @@ def generate_spdc_with_fakes(dataset,
                 exthdr_it["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = str(planet_sp).replace('\n', ' ')
 
     #Save each cube with the fakes
-    for cube_id in range(N_cubes):
-        spdc_filename = dataset.filenames[(cube_id*numwaves)].split(os.path.sep)[-1].split(".")[0]
-        print("Saving file: "+outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits")
-        dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
-                         dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
-                         astr_hdr=dataset.wcs[(cube_id*numwaves)], filetype="fake spec cube",
-                         user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
+    if outputdir is not None:
+        for cube_id in range(N_cubes):
+            spdc_filename = dataset.filenames[(cube_id*numwaves)].split(os.path.sep)[-1].split(".")[0]
+            print("Saving file: "+outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits")
+            dataset.savedata(outputdir + os.path.sep + spdc_filename+"_"+suffix+".fits",
+                             dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
+                             astr_hdr=dataset.wcs[(cube_id*numwaves)], filetype="fake spec cube",
+                             user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
 
 
 def addNoise2Spectrum(spectrum,ampl=None, w_ker = None,rand_slope = None):
