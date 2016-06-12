@@ -49,7 +49,8 @@ class FMMF(KPPSuperClass):
                  SpT_file_csv = None,
                  fakes_only = None,
                  disable_FM = None,
-                 high_pass_filter = None):
+                 high_pass_filter = None,
+                 mvt_noTemplate = None):
         """
         Define the general parameters of the metric.
 
@@ -123,6 +124,10 @@ class FMMF(KPPSuperClass):
             self.high_pass_filter = True
         else:
             self.high_pass_filter = high_pass_filter
+        if mvt_noTemplate is None:
+            self.mvt_noTemplate = False
+        else:
+            self.mvt_noTemplate = mvt_noTemplate
 
         self.PSF_cube_filename = PSF_cube_filename
 
@@ -242,13 +247,16 @@ class FMMF(KPPSuperClass):
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
         self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-        spectrum_wvs = spectrum_dat[:,1]
-        spectrum_fluxes = spectrum_dat[:,3]
-        spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-        # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-        # This should however be the same. I know it's weird but the two codes are seperate
-        self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+        if self.mvt_noTemplate:
+            self.spectra_template = None
+        else:
+            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # This should however be the same. I know it's weird but the two codes are seperate
+            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
 
         # Build the FM class to do matched filter
@@ -440,13 +448,17 @@ class FMMF(KPPSuperClass):
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
         self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-        spectrum_wvs = spectrum_dat[:,1]
-        spectrum_fluxes = spectrum_dat[:,3]
-        spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-        # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-        # This should however be the same. I know it's weird but the two codes are seperate
-        self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+
+        if self.mvt_noTemplate:
+            self.spectra_template = None
+        else:
+            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # This should however be the same. I know it's weird but the two codes are seperate
+            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
 
         # Build the FM class to do matched filter
@@ -458,6 +470,8 @@ class FMMF(KPPSuperClass):
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
                                      disable_FM=self.disable_FM)
+
+
 
         return init_out
 
@@ -497,6 +511,7 @@ class FMMF(KPPSuperClass):
 
         :return: [self.metric_MF,self.metric_shape,self.sub_imgs].
         """
+
 
         # Run KLIP with the forward model matched filter
         sub_imgs, fmout,tmp = fm.klip_parallelized(self.dataset.input, self.dataset.centers, self.dataset.PAs, self.dataset.wvs, self.dataset.IWA, self.fm_class,
