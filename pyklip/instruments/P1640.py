@@ -293,7 +293,7 @@ class P1640Data(Data):
         self._filenames = filenames
         self._corefilenames = corefilepaths
         self._PAs = rot_angles
-        self._wvs = spot_scalings # wvs # because pykip was written to use wavelengths, not spots, for scaling
+        self._wvs =  wvs # spot_scalings # because pykip was written to use wavelengths, not spots, for scaling
         self._wcs = None # wcs_hdrs not used by P1640 
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
