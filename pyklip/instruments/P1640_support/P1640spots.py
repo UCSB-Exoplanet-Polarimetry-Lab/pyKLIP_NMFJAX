@@ -780,20 +780,32 @@ def get_spot_positions(fitsfiles):
 
 def get_star_positions(spot_array):
     """
-    Get the center of a set of 4 spots.
+    Get the center of a set of 4 spots for a single cube
     Input:
-        spot_locations: (Ncube x) Nspot x Nlambda x 2 array of [row, col] spot positions
+        spot_locations: Nspot x Nlambda x 2 array of [row, col] spot positions
     Returns:
-        star_array: (Ncube x) Nlambda x 2 array of [row, col] star positions
+        star_array: Nlambda x 2 array of [row, col] star positions
     """
-    # Re-order the array so that you can iterate across each datacube slice
-    if spot_array.shape[-2] != 4:
-        axid = np.where(np.array(spot_array.shape) == 4)[0][0]
-        spot_array = np.rollaxis(spot_array, axid,-1)
+    num_spots=4
+    
+    # find the pairs of opposite spots
+    # sorry for the confusing python shorthand
+    spot_list = range(num_spots)
+    pairs=[]
+    pair1 = 0
+    pairs.append([pair1, np.linalg.norm(spot_array[pair1] - spot_array, axis=-1).mean(axis=-1).argmax()])
+    for i in sorted(pairs[0])[::-1]:
+        spot_list.pop(i)
+    pair2 = spot_list.pop(0)
+    pairs.append([pair2, np.linalg.norm(spot_array[pair2] - spot_array, axis=-1).mean(axis=-1).argmax()])
 
+    # Re-order the array so that channels are on the first axis
+    if spot_array.shape[-2] != num_spots:
+        spotaxid = np.where(np.array(spot_array.shape) == num_spots)[0][0]
+        spot_array = np.rollaxis(spot_array, spotaxid,-1)
     orig_shape = spot_array.shape
     orig_ndim = spot_array.ndim
-    if orig_ndim == 4:
+    if orig_ndim == 4: # more than one cube - 
         # collapse channels since we'll be processing the slices independently
         spot_array = spot_array.reshape((orig_shape[-4]*orig_shape[-3], 
                                          orig_shape[-2], orig_shape[-1]))
@@ -801,21 +813,13 @@ def get_star_positions(spot_array):
     # each element of spot_array is a set of four co-wavelength spots to be centered
     nslices = len(spot_array)
     star_positions = np.zeros((len(spot_array), 2))
-    for i in range(nslices):
-        # find the intersection of two lines between the diagonals
-        line20 = fit_poly(np.array((spot_array[i,0,1], 
-                                    spot_array[i,2,1])),
-                          np.array((spot_array[i,0,0], 
-                                    spot_array[i,2,0])),
-                          order=1)
-        line31 = fit_poly(np.array((spot_array[i,1,1], 
-                                    spot_array[i,3,1])),
-                          np.array((spot_array[i,1,0], 
-                                    spot_array[i,3,0])),
-                          order=1)
-        x_star = (line20[0]-line31[0])/(line31[1]-line20[1])
-        y_star = (line20[1]*line31[0]-line31[1]*line20[0])/(line20[1]-line31[1])
-        star_positions[i] = (y_star, x_star)
+    for chan in range(nslices):
+        b20,m20 = fit_poly(spot_array[chan,pairs[0],1], spot_array[chan,pairs[0],0], order=1)
+        b31,m31 = fit_poly(spot_array[chan,pairs[1],1], spot_array[chan,pairs[1],0], order=1)
+        x_star = (b31-b20)/(m20-m31)  
+        y_star = (m31*b20-m20*b31)/(m31-m20)
+        star_positions[chan] = (y_star, x_star)
+    return star_positions
     # for the final shape, separate out the cubes again
     new_shape = list(orig_shape)
     new_shape.pop(-2) # remove the Nspots index
