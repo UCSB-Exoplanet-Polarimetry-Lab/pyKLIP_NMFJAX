@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import glob
 
 import astropy.io.fits as fits
 from astropy import wcs
@@ -25,7 +26,7 @@ from pyklip.instruments.utils.nair import nMathar
 
 from pyklip.instruments.P1640_support import P1640spots
 from pyklip.instruments.P1640_support import P1640utils
-#from pyklip.instruments.P1640_support import cube_verifier
+from pyklip.instruments.P1640_support import P1640_cube_checker
 
 from scipy.interpolate import interp1d
 
@@ -34,7 +35,12 @@ class P1640Data(Data):
     """
     Note: update object string when output is decided
     A sequence of P1640 Data. Each P1640Data object has the following fields and functions
-    
+
+    Args:
+        filepaths: list of filepaths to occulted files
+        skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
+        corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
+        spot_directory: (None) path to the directory where the spot positions are stored. Defaults to P1640.ini val
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -94,18 +100,24 @@ class P1640Data(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, corefilepaths=None):
+    def __init__(self, filepaths=None, skipslices=None, corefilepaths=None, spot_directory=None):
         """
         Initialization code for P1640Data
 
-        Inputs:
-            filepaths: list of filepaths to occulted files
-            skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
-            corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
+        Note:
+            Information on arguments are available in the class docstring
         """
         super(P1640Data, self).__init__()
         self._output = None
+
+        # P1640 stuff
+        self.corefilenames = corefilepaths
+        self.spot_directory = spot_directory
+        self.spot_flux = None # Currently not implemented, may be in future
+        self.spot_scaling = None # scaling factor between wavelengths
+
         if filepaths is None:
+            # general stuff
             self._input = None
             self._centers = None
             self._filenums = None
@@ -190,7 +202,7 @@ class P1640Data(Data):
     def output(self, newval):
         self._output = newval
 
-    # do I need a decorator here?
+    # P1640 stuff
     @property
     def corefilenames(self):
         return self._corefilenames
@@ -204,7 +216,16 @@ class P1640Data(Data):
     @scale_factors.setter
     def scale_factors(self, newval):
         self._scale_factors = newval
-    
+
+    def spot_directory(self):
+        return self._spot_directory
+    @spot_directory.setter
+    def spot_directory(self, newval):
+        #if newval is None:
+        #    newval = P1640Data.config("spots","spot_file_path")
+        self._spot_directory = newval
+        print("Spot file directory set to {0}".format(self.spot_directory))
+        
     ###############
     ### Methods ###
     ###############
@@ -238,7 +259,7 @@ class P1640Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, skipslices=skipslices)
+            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
@@ -788,12 +809,13 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
     """
     return
 
-def _p1640_process_file(filepath, skipslices=None):
+def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
     """
     Method to open and parse a P1640 file
 
     Args:
         filepath: the file to open
+        spot_directory: path to folder were spot positions are stored (defaults to P1640.ini)
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
 
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
@@ -845,7 +867,16 @@ def _p1640_process_file(filepath, skipslices=None):
         # first, check if spot positions have been stored on disk
         # build the path
         try:
-            spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
+            if spot_directory is not None:
+                spot_filedir = spot_directory
+                print spot_filedir
+            else: # use the default set in P1640.ini
+                spot_filedir = P1640Data.config.get("spots","spot_filepath")
+                #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
+            spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
+            spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
+            spot_filepaths = glob.glob(spot_fullpath+'*')
+            
             # check if all the spot files exist, if so, read them in
             exist = np.all([os.path.isfile(f) for f in spot_filepaths])
             assert(exist is not False)
@@ -878,7 +909,7 @@ def _p1640_process_file(filepath, skipslices=None):
         spot_fluxes = np.delete(spot_fluxes, skipslices)
     
     # pyklip centers need to be [x,y] instead of (row, col)
-    print center.shape
+    #print center.shape
     center = np.fliplr(center) # [0] because of the way P1640spots works
     return cube, center, scale_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 

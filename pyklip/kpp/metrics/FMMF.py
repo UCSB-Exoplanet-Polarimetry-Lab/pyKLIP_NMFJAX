@@ -36,6 +36,7 @@ class FMMF(KPPSuperClass):
                  overwrite=False,
                  numbasis = None,
                  maxnumbasis = None,
+                 flux_overlap = None,
                  mvt = None,
                  OWA = None,
                  N_pix_sector = None,
@@ -47,7 +48,9 @@ class FMMF(KPPSuperClass):
                  mute_progression = False,
                  SpT_file_csv = None,
                  fakes_only = None,
-                 disable_FM = None):
+                 disable_FM = None,
+                 high_pass_filter = None,
+                 mvt_noTemplate = None):
         """
         Define the general parameters of the metric.
 
@@ -117,6 +120,14 @@ class FMMF(KPPSuperClass):
             self.disable_FM = False
         else:
             self.disable_FM = disable_FM
+        if high_pass_filter is None:
+            self.high_pass_filter = True
+        else:
+            self.high_pass_filter = high_pass_filter
+        if mvt_noTemplate is None:
+            self.mvt_noTemplate = False
+        else:
+            self.mvt_noTemplate = mvt_noTemplate
 
         self.PSF_cube_filename = PSF_cube_filename
 
@@ -134,10 +145,16 @@ class FMMF(KPPSuperClass):
         else:
             self.maxnumbasis = maxnumbasis
 
-        if mvt is None:
-            self.mvt = 0.5
+        if flux_overlap is None:
+            if mvt is None:
+                self.flux_overlap = 0.7
+                self.mvt = None
+            else:
+                self.flux_overlap = None
+                self.mvt = mvt
         else:
-            self.mvt = mvt
+            self.flux_overlap = flux_overlap
+            self.mvt = None
 
 
         self.OWA = OWA
@@ -167,6 +184,7 @@ class FMMF(KPPSuperClass):
             self.N_pix_sector = 100
             self.subsections = None
             self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
+            # self.annuli = [(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
             self.OWA = 0.6/0.01413
             self.N_pix_sector = 300
@@ -221,18 +239,24 @@ class FMMF(KPPSuperClass):
 
         self.folderName = self.spectrum_name+os.path.sep
 
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+        if self.flux_overlap is not None:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+        else:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
         self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-        spectrum_wvs = spectrum_dat[:,1]
-        spectrum_fluxes = spectrum_dat[:,3]
-        spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-        # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-        # This should however be the same. I know it's weird but the two codes are seperate
-        self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+        if self.mvt_noTemplate:
+            self.spectra_template = None
+        else:
+            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # This should however be the same. I know it's weird but the two codes are seperate
+            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
 
         # Build the FM class to do matched filter
@@ -346,10 +370,6 @@ class FMMF(KPPSuperClass):
         if self.quickTest:
             filelist = [filelist[0],filelist[-1]]
 
-        # read data using GPIData class
-        # todo: change measure sat spot to True
-        self.dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=True,numthreads=None)
-
         # Filename of the PSF cube
         if PSF_cube_filename is not None:
             self.PSF_cube_filename = PSF_cube_filename
@@ -363,6 +383,12 @@ class FMMF(KPPSuperClass):
         if self.inputDir is None:
             try:
                 self.PSF_cube_path = os.path.abspath(glob(self.PSF_cube_filename)[0])
+                if not self.mute:
+                    print("Loading PSF cube: "+self.PSF_cube_path)
+                hdulist = pyfits.open(self.PSF_cube_path)
+                PSF_cube = hdulist[1].data
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset.psfs = PSF_cube
             except:
                 raise Exception("File "+self.PSF_cube_filename+"doesn't exist.")
         else:
@@ -371,14 +397,17 @@ class FMMF(KPPSuperClass):
                 if not self.mute:
                     print("Loading PSF cube: "+self.PSF_cube_path)
                 hdulist = pyfits.open(self.PSF_cube_path)
-                self.dataset.psfs = hdulist[1].data
+                PSF_cube = hdulist[1].data
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=True,numthreads=None,PSF_cube=PSF_cube)
+                self.dataset.psfs = PSF_cube
             except:
                 prefix = self.star_name+"_"+self.compact_date+"_"+self.filter
 
                 if not self.mute:
                     print("Calculating the planet PSF from the satellite spots...")
+                self.dataset = GPI.GPIData(filelist,highpass=self.high_pass_filter,meas_satspot_flux=False,numthreads=None)
                 # generate the PSF cube from the satellite spots
-                self.dataset.generate_psf_cube(20)
+                self.dataset.generate_psf_cube(20,same_wv_only=True)
                 # Save the original PSF calculated from combining the sat spots
                 self.dataset.savedata(self.inputDir + os.path.sep + prefix+"-original_PSF_cube.fits", self.dataset.psfs,
                                           astr_hdr=self.dataset.wcs[0], filetype="PSF Spec Cube")
@@ -387,6 +416,7 @@ class FMMF(KPPSuperClass):
                 # self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"
                 self.dataset.get_radial_psf(save = self.inputDir + os.path.sep + prefix)
                 self.PSF_cube_path = self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"
+                self.dataset.spot_flux = GPI.recalculate_sat_spot_fluxes(self.dataset,numthreads=None,residuals=False)
                 if not self.mute:
                     print(self.inputDir + os.path.sep + prefix+"-original_radial_PSF_cube.fits"+"and"+\
                           self.inputDir + os.path.sep + prefix+"-original_PSF_cube.fits"+ " have been saved.")
@@ -400,8 +430,11 @@ class FMMF(KPPSuperClass):
             spec_path = spectrum
 
         self.folderName = self.spectrum_name+os.path.sep
-        
-        self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+
+        if self.flux_overlap is not None:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+        else:
+            self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
 
         #todo if self.fakes_only
         # read fakes from headers and give sepPa list to MatchedFilter
@@ -415,13 +448,17 @@ class FMMF(KPPSuperClass):
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
         self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
-        spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-        spectrum_wvs = spectrum_dat[:,1]
-        spectrum_fluxes = spectrum_dat[:,3]
-        spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-        # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-        # This should however be the same. I know it's weird but the two codes are seperate
-        self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+
+        if self.mvt_noTemplate:
+            self.spectra_template = None
+        else:
+            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # This should however be the same. I know it's weird but the two codes are seperate
+            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
 
 
         # Build the FM class to do matched filter
@@ -433,6 +470,8 @@ class FMMF(KPPSuperClass):
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
                                      disable_FM=self.disable_FM)
+
+
 
         return init_out
 
@@ -473,10 +512,12 @@ class FMMF(KPPSuperClass):
         :return: [self.metric_MF,self.metric_shape,self.sub_imgs].
         """
 
+
         # Run KLIP with the forward model matched filter
         sub_imgs, fmout,tmp = fm.klip_parallelized(self.dataset.input, self.dataset.centers, self.dataset.PAs, self.dataset.wvs, self.dataset.IWA, self.fm_class,
                                    numbasis=self.numbasis,
                                    maxnumbasis=self.maxnumbasis,
+                                   flux_overlap=self.flux_overlap,
                                    movement=self.mvt,
                                    spectrum=self.spectra_template,
                                    annuli=self.annuli,
@@ -504,7 +545,7 @@ class FMMF(KPPSuperClass):
 
         metric_MF_uncollapsed = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.nl,self.ny,self.nx))
         for k in range(self.N_cubes):
-            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
+            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]#/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
         self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
 
         # Retrieve the flux map
@@ -513,9 +554,9 @@ class FMMF(KPPSuperClass):
         sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
         metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
         for k in range(self.N_cubes):
-            sat_spot_flux_for_calib = np.sum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
-            metric_pFlux = metric_pFlux+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
-                            / np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+            sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+            metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / sat_spot_flux_for_calib * sat_spot_ratio
         metric_pFlux = metric_pFlux/self.N_cubes
         metric_pFlux[np.where(metric_pFlux==0)]=np.nan
@@ -574,7 +615,8 @@ class FMMF(KPPSuperClass):
         # Save the parameters as fits keywords
         extra_exthdr_keywords = [("METNUMBA",str(self.numbasis)),
                                  ("METMAXNB",self.maxnumbasis),
-                                 ("MET_MVT",self.mvt),
+                                 ("METFLXOV",str(self.flux_overlap)),
+                                 ("MET_MVT",str(self.mvt)),
                                  ("MET_OWA",str(self.OWA)),
                                  ("METNPIXS",self.N_pix_sector),
                                  ("METSUBSE",str(self.subsections)),

@@ -34,7 +34,7 @@ def get_image_stat_map(image,
         image_wide = False
 
     if IOWA is None:
-        IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
+        IWA,OWA = get_IOWA(image_without_planet, centroid = centroid)
     else:
         IWA,OWA = IOWA
 

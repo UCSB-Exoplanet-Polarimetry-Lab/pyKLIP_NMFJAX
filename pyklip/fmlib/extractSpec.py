@@ -73,7 +73,6 @@ class ExtractSpec(NoFM):
         self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
         self.nl = np.size(input_psfs_wvs)
         #self.flux_conversion = flux_conversion
-        self.input_psfs = input_psfs
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
         self.aper_over_peak_ratio = np.zeros(37)
@@ -87,7 +86,7 @@ class ExtractSpec(NoFM):
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(ny_psf* 1.)-ny_psf/2, np.arange(nx_psf * 1.)-nx_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
@@ -250,7 +249,7 @@ class ExtractSpec(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

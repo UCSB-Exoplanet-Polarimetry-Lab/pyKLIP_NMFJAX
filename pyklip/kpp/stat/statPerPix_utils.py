@@ -54,9 +54,8 @@ def get_image_stat_map_perPixMasking(image,
     """
     ny,nx = image.shape
 
-
     if IOWA is None:
-        IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = centroid)
+        IWA,OWA = get_IOWA(image_without_planet, centroid = centroid)
     else:
         IWA,OWA = IOWA
 
@@ -84,6 +83,7 @@ def get_image_stat_map_perPixMasking(image,
     # else:
     #     r_min_firstZone,r_max_firstZone,r_limit_firstZone = None,None,None
     #     r_min_lastZone,r_max_lastZone,r_limit_lastZone = None,None,None
+
 
     stat_map = np.zeros(image.shape) + np.nan
     if N_threads is None:

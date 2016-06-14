@@ -1072,7 +1072,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
-                      movement=3, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
+                      movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=3, save_klipped=True,
                       N_pix_sector = None,mute_progression = False):
     """
@@ -1100,6 +1100,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                             defined in fm_from_eigen(). (I am taking about matched filter by the way)
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
+        flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
+                    covariance matrix. Flux_overlap should be used instead of "movement" when a template spectrum is used.
+                    However if movement is not None then the old code is used and flux_overlap is ignored.
+                    The overlap is estimated for 1D gaussians with FWHM defined by PSF_FWHM. So note that the overlap is
+                    not exactly the overlap of two real 2D PSF for a given instrument but it will behave similarly.
+        PSF_FWHM: FWHM of the PSF used to calculate the overlap (cf flux_overlap). Default is FWHM = 3.5 corresponding
+                to sigma ~ 1.5.
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
                 If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
@@ -1143,6 +1150,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    if movement is None:
+        if spectrum is None:
+            movement = 3
 
     if numbasis[0]==None:
         if np.size(numbasis)>1:
@@ -1331,7 +1342,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                     args=(file_index, sector_index, radstart, radend, phistart, phiend,
                                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                           numbasis,maxnumbasis,
-                                                          movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                          movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
                                                           fm_class))
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
@@ -1340,7 +1351,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                 tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
                                                                   parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                                   numbasis,maxnumbasis,
-                                                                  movement, aligned_center, minrot, maxrot, mode, spectrum,
+                                                                  movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
                                                                   fm_class)
                                     for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
@@ -1418,7 +1429,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phistart, phiend, parang, wavelength,
                                     wv_index, avg_rad, padding,IOWA,
-                                    numbasis,maxnumbasis, minmove, ref_center, minrot, maxrot, mode, spectrum,
+                                    numbasis,maxnumbasis, minmove,flux_overlap,PSF_FWHM, ref_center, minrot, maxrot,
+                                    mode, spectrum,
                                     fm_class):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
@@ -1441,6 +1453,13 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                 If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
+                    covariance matrix. Flux_overlap should be used instead of "movement" when a template spectrum is used.
+                    However if movement is not None then the old code is used and flux_overlap is ignored.
+                    The overlap is estimated for 1D gaussians with FWHM defined by PSF_FWHM. So note that the overlap is
+                    not exactly the overlap of two real 2D PSF for a given instrument but it will behave similarly.
+        PSF_FWHM: FWHM of the PSF used to calculate the overlap (cf flux_overlap). Default is FWHM = 3.5 corresponding
+                to sigma ~ 1.5.
         maxmove:minimum movement (opposite of minmove) - CURRENTLY NOT USED
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
@@ -1498,12 +1517,18 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     if spectrum is None:
         goodmv = (moves >= minmove)
     else:
-        if minmove > 0:
-            # optimize the selection based on the spectral template rather than just an exclusion principle
-            goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+        if minmove is not None:
+            if minmove > 0:
+                # optimize the selection based on the spectral template rather than just an exclusion principle
+                goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+            else:
+                # handle edge case of minmove == 0
+                goodmv = (moves >= minmove) # should be all true
         else:
-            # handle edge case of minmove == 0
-            goodmv = (moves >= minmove) # should be all true
+            # Calculate the flux overlap between the current slice and all the other based on moves and PSF_FWHM.
+            overlaps = (spectrum * norm.sf(moves-PSF_FWHM/2.355, scale=PSF_FWHM/2.355))/spectrum[wv_index]
+            # optimize the selection based on the spectral template rather than just an exclusion principle
+            goodmv = overlaps <= flux_overlap
 
     # enough field rotation
     if minrot > 0:
@@ -1540,7 +1565,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
         ref_psfs_indicies = file_ind[0][closest_matched]
-
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[file_ind[0], :]

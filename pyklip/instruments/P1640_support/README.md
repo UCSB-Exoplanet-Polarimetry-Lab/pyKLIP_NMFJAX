@@ -15,12 +15,12 @@ The code here defines the instrument class for Project 1640 that interacts with 
 * astropy
 * python 2.7 or 3.4
 * photutils
-#### Recommended
+#### Recommended (required to run the cube and spot verifier tools)
 * matplotlib
-    
-The trickiest part is setting up the grid spot fitting and making sure it succeeds. Once that's done, the grid spot positions can simply be read in from a file. This is described in more detail below.
 
-TODO: Contrast curves and fake injections require unocculted cubes. Currently there is no way to hook these in. Yeah, I want it too. If you want it so bad, do it yourself.
+#### Installing photutils ####
+Instructions for installing photutils can be found here: http://photutils.readthedocs.io/en/latest/photutils/install.html. Note that the conda instructions are outdated - use `conda install -c https://conda.anaconda.org/astropy photutils`
+
 
 ### Steps
 The general steps are: 
@@ -33,71 +33,113 @@ The general steps are:
 
 A set of tools built into PyKLIP makes this easier to do.
 
-## Tutorial v1: Putting yourself in the hands of fate
-The P1640Data class *will* automatically check for the presence of the spot files and, if it doesn't find them, will attempt to do the fitting itself. You're then trusting that the fitting succeeds. It normally does, but generally I like to fit the grid spots first, visually inspect them, and then move on to the KLIP step. 
+The trickiest part is setting up the grid spot fitting and making sure it succeeds. Once that's done, the grid spot positions can simply be read in from a file. This is described in more detail below.
 
-If you don't think you need to do this - or you already have done the grid spot fitting and vetting - then you can move right on to the Run KLIP step. Otherwise, proceed below to fit the grid spots.
+TODO: Contrast curves and fake injections require unocculted cubes. Currently there is no way to hook these in. Yeah, I want it too. If you want it so bad, do it yourself.
 
-## Collect the datacubes
+
+## Tutorial
+
+**Important** This tutorial assumes you are inside the following directory:
+`pyklip/pyklip/instruments/P1640_support/tutorial`
+
+#### Living On The Edge Version
+If you trust me, you can do only steps "Collect the datacubes", "Fit the gridspots", and "Run KLIP". This skips visual inspection of the datacubes and spot fitting.
+
+The P1640Data class *will* automatically check for the presence of the spot files and, if it doesn't find them, will attempt to do the fitting itself. You're then trusting that the fitting succeeds. It normally does, but generally I like to fit the grid spots first, visually inspect them, and then move on to the KLIP step.  If you don't think you need to do this - or you already have done the grid spot fitting and vetting - then you can move right on to the Run KLIP step. Otherwise, proceed below to fit the grid spots.
+
+### Collect the datacubes
 Easy-peasy.
 
     :::python
         import glob
-        filelist = glob.glob("data/*Occulted*fits")
+        filelist=glob.glob("data/*Occulted*fits")
 
-## Vet the datacubes
+### Vet the datacubes
 This uses the cube checker, a separate command-line tool that lets you quickly decide whether or not you should include a particular cube in your reduction.
 
-Define $PYKLIP_PATH as the path to the root folder of PyKLIP. Then, 
-
-from an IPython terminal, do: (the syntax here is weird because you're mixing python with bash commands)
+From an IPython terminal, do: (the syntax here is weird because telling python to evaluate python variables)
 
     :::python
-        %run {PYKLIP_PATH}/instruments/P1640_support/P1640_cube_checker.py {" ".join(filelist)}
-
-from a bash terminal, do:
+        import sys
+        sys.path.append("..")
+        import P1640_cube_checker
+        good_cubes = P1640_cube_checker.run_checker(filelist)
+      or
+        %run ../P1640_cube_checker.py --files {" ".join(filelist)}
+        
+Alternatively, from a bash terminal, do:
 
     :::bash
-        filelist = `ls data/*Occulted*fits`
-        python ${PYKLIP_PATH}/instruments/P1640_support/P1640_cube_checker.py ${filelist}
+        filelist=`ls data/*Occulted*fits`
+        python ../P1640_cube_checker.py --files ${filelist}
 
-An animation of each cube, along with observing conditions and a comparison to the other cubes in the set, will pop up and the terminal will prompt you Y/N to keep it in the "good cubes" list. If you like the cube, press Y. If you don't, press N. All the Y's will be spit out in a copy-pasteable format at the end. 
+An animation of each cube, along with observing conditions and a comparison to the other cubes in the set, will pop up and the terminal will prompt you Y/N to keep it in the "good cubes" list. These are the files that you will keep for KLIP. If you like the cube, press Y. If you don't, press N. All the Y's will be spit out in a copy-pasteable format at the end, and stored in memory (in this case, in the variable *good_cubes*). After you've looped through all the cubes, you'll be prompted to quit or re-inspect the cubes. If you're happy with your selection, go ahead and quit (Y), but if you want to revisit your choices, press N to restart the loop. You'll have redo all of your decisions.
 
-## Fit grid spots
-First, assemble your handy list of P1640 data. A couple datacubes (with the target information stripped from them) are found in instruments/P1640_support/tutorial/data. I'm going to assume that you are working in the "tutorial" folder.
+### Fit grid spots
+Note: you should only need to do this once, after which you can just read in the grid spot positions from a file.
 
+First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are [available here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data). Download the tarball and unpack the fits files into the `tutorial/data` folder.
+
+Grid spots MUST exist, and (for now) the MUST be in the normal orientation. If this isn't true, then the code will hang. 
 
 In order to fit the spots, we need the P1640spots module:
 
     :::python
         import sys
-        sys.path.append(PYKLIP_PATH)
-        from pyklip.instruments.P1640 import P1640spots
-        # note: this can take a few minutes per file so settle in
-        for filename in filelist:
-            spot_positions = P1640spots.get_single_file_spot_positions(filename, rotated_spots=False)
-            spot_filepath = 'shared_spot_folder/'
-            spot_filesuffix = '-spot'
-            spot_fileext = 'csv'
-            P1640spots.write_spots_to_file(filename, spot_positions, spot_filepath, 
-                                           overwrite=False, spotid=spot_filesuffix, ext=spot_fileext)
+        sys.path.append("..")
+        import P1640spots
+        # if the variables below are not set, default values will be read from P1640.ini
+        # for the tutorial, let's set them explicitly
+        spot_filepath = 'shared_spot_folder/'
+        spot_filesuffix = '-spot'
+        spot_fileext = 'csv'
+        for test_file in good_cubes:
+            spot_positions = P1640spots.get_single_file_spot_positions(test_file, rotated_spots=False)
+            P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath, 
+                                          spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
                                            
-(For now, only normally-oriented gridspots can be used, but in the future you should be able to set rotated_spots=True to fit 45deg-rotated grid spots).
-The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the P1640.ini config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
+(For now, only normally-oriented gridspots can be used, but in the future you should be able to set `rotated_spots=True` to fit 45deg-rotated grid spots).
 
-## Vet grid spots
-Again, there's a handy-ish command line tool.
+The default values for the spot file filenames and directories (on Dnah at AMNH) can be found in the `P1640.ini` config file. I tend to write a separate config file specifically for the reduction and define them again there, with a custom directory if I want. An example reduction config file will eventually be added to the repo.
 
-From IPython:
+### Vet grid spots
+We can run `P1640_cube_checker` in "spots" mode to check the spots. Usage is similar to before except now you need to use the `--spots` flag and specify the location of the spot file folder.
+
+From IPython, there are two ways:
 
     :::python
-        filelist = [list of files that you ran grid spot fitting on]
-        %run $PYKLIP_PATH/instruments/P1640_support/P1640_spot_checker.py --files {" ".join(filelist)} --spot_path shared_spot_path/
+        import sys
+        sys.path.append("..")
+        import P1640_cube_checker
+        good_spots = P1640_cube_checker.run_spot_checker(good_cubes, spot_path='shared_spot_folder/')
+      or
+        %run ../P1640_cube_checker.py --files {" ".join(good_cubes)} --spots --spot_path shared_spot_folder/
 
-Again, you will be prompted Y/n for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED. You can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+From bash, do: (note: check the value of good_cubes before you pass it, make sure it got set properly)
 
-## Run KLIP
+    :::bash
+        good_cubes="copy names of vetted files here"
+        python ../P1640_cube_checker --files ${good_cubes} --spots --spot_path shared_spot_folder
 
-Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. 
 
-Rest of the tutorial to come.
+Again, you will be prompted `Y/n` for each cube. Y = keep it, N = throw it out. At the end, you will be told all the files for which the spot fitting FAILED and for which it succeeded. For these files, you can either try to re-run the fitting, or (more likely) remove that cube from the datacubes that get sent to PyKLIP.
+
+When running in python mode, the variable `good_spots` stores the file names for which you said the spot fitting succeeeded. These are the files which you will use to run KLIP, and can be used to initialize the P1640Data object (more below). 
+
+### Run KLIP
+
+Running KLIP on P1640 data is nearly identical to running it on GPI, with the exception that you have to be careful to only use cubes that have corresponding grid spot files. We'll start off by assuming that the variable `filelist` stores a list of the files that you want to include in your reduction (i.e. they passed all the vetting stages above). 
+
+    :::python
+        import sys
+        sys.path.append("../../../../")
+        import pyklip.instruments.P1640 as P1640
+        dataset = P1640.P1640Data(filelist, spot_directory="shared_spot_folder/")
+        import pyklip.parallelized as parallelized
+        parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsect=4, movement=3, numbasis=[1,20,100], calibrate_flux=False, mode="SDI")
+
+This will run the KLIP PSF subtraction algorithm. The resulting images are stored in the `dataset.output` field and written as FITS files to the output directory with the file prefix you provided. The P1640 output header format is that the first header stores the KLIP parameters, and the subsequent headers store copies of the headers from the original FITS files that were combined in this analysis. One file containing a datacube is written for each KL cutoff specified.
+
+
+

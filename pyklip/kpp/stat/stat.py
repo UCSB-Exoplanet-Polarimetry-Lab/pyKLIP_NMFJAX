@@ -16,7 +16,7 @@ class Stat(KPPSuperClass):
     Class for SNR calculation.
     """
     def __init__(self,filename,
-                 filename_noSignal = None,
+                 filename_noPlanets = None,
                  inputDir = None,
                  outputDir = None,
                  mute=None,
@@ -33,14 +33,17 @@ class Stat(KPPSuperClass):
                  overwrite = False,
                  kernel_type = None,
                  kernel_width = None,
-                 image_wide = None):
+                 image_wide = None,
+                 collapse = None,
+                 weights = None,
+                 nans2zero = None):
         """
 
 
         :param filename: Filename of the file on which to calculate the metric. It should be the complete path unless
                         inputDir is defined.
                         It can include wild characters. The file will be selected using the first output of glob.glob().
-        :param filename_noSignal: One should be careful with this one since it requires it should find the same number
+        :param filename_noPlanets: One should be careful with this one since it requires it should find the same number
                             of files with no signal than normal images when calling glob.glob().
                             Besides one has to check that the ordering of glob outputs are matching for both lists.
         :param mute: If True prevent printed log outputs.
@@ -49,6 +52,8 @@ class Stat(KPPSuperClass):
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
         :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        :param collapse: If true and input is 3D then it will collapse the final map.
+        :param weights: If not None and collapse is True then a weighted mean is performed using the weights.
         """
         # allocate super class
         super(Stat, self).__init__(filename,
@@ -85,12 +90,22 @@ class Stat(KPPSuperClass):
         self.N = N
         self.rm_edge = rm_edge
         self.GOI_list_folder = GOI_list_folder
-        self.filename_noSignal = filename_noSignal
+        self.filename_noPlanets = filename_noPlanets
         self.image_wide = image_wide
 
         self.kernel_type = kernel_type
         # The default value is defined later
         self.kernel_width = kernel_width
+
+        if collapse is None:
+            self.collapse = False
+        else:
+            self.collapse = collapse
+        self.weights = weights
+        if nans2zero is None:
+            self.nans2zero = False
+        else:
+            self.nans2zero = nans2zero
 
     def initialize(self,inputDir = None,
                          outputDir = None,
@@ -135,40 +150,78 @@ class Stat(KPPSuperClass):
                                          label=label)
 
 
-        if self.filename_noSignal is not None:
-            # Check file existence and define filename_path
-            if self.inputDir is None:
+
+        if self.filename_noPlanets is not None:# Check file existence and define filename_path
+            if self.inputDir is None or os.path.isabs(self.filename_noPlanets):
                 try:
-                    self.filename_noSignal_path = os.path.abspath(glob(self.filename_noSignal)[self.id_matching_file])
-                    self.N_matching_files = len(glob(self.filename_noSignal))
+                    if len(glob(self.filename_noPlanets)) == self.N_matching_files:
+                        self.filename_noPlanets_path = os.path.abspath(glob(self.filename_noPlanets)[self.id_matching_file-1])
+                    else:
+                        self.filename_noPlanets_path = os.path.abspath(glob(self.filename_noPlanets)[0])
                 except:
-                    raise Exception("File "+self.filename_noSignal+"doesn't exist.")
+                    raise Exception("File "+self.filename_noPlanets+"doesn't exist.")
             else:
                 try:
-                    self.filename_noSignal_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_noSignal)[self.id_matching_file])
-                    self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename_noSignal))
+                    if len(glob(self.inputDir+os.path.sep+self.filename_noPlanets)) == self.N_matching_files:
+                        self.filename_noPlanets_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_noPlanets)[self.id_matching_file-1])
+                    else:
+                        self.filename_noPlanets_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_noPlanets)[0])
                 except:
-                    raise Exception("File "+self.inputDir+os.path.sep+self.filename_noSignal+" doesn't exist.")
+                    raise Exception("File "+self.inputDir+os.path.sep+self.filename_noPlanets+" doesn't exist.")
 
             # Open the fits file on which the metric will be applied
-            hdulist = pyfits.open(self.filename_noSignal_path)
+            hdulist = pyfits.open(self.filename_noPlanets_path)
             if not self.mute:
-                print("Opened: "+self.filename_noSignal_path)
+                print("Opened: "+self.filename_noPlanets_path)
 
             # grab the data and headers
             try:
-                self.image_noSignal = hdulist[1].data
+                self.image_noPlanets = hdulist[1].data
+                self.exthdr_noPlanets = hdulist[1].header
+                self.prihdr_noPlanets = hdulist[0].header
             except:
                 # This except was used for datacube not following GPI headers convention.
                 if not self.mute:
-                    print("Couldn't read the fits file with GPI conventions. Try assuming data in primary.")
+                    print("Couldn't read the fits file with GPI conventions. Try assuming data in primary and no headers.")
                 try:
-                    self.image_noSignal = hdulist[0].data
+                    self.image_noPlanets = hdulist[0].data
                 except:
-                    raise Exception("Couldn't read "+self.filename_noSignal_path+". Is it a fits?")
-        else:
-            self.image_noSignal = None
-            self.filename_noSignal_path = None
+                    raise Exception("Couldn't read "+self.filename_noPlanets_path+". Is it a fits?")
+
+        # if self.filename_noSignal is not None:
+        #     # Check file existence and define filename_path
+        #     if self.inputDir is None:
+        #         try:
+        #             self.filename_noSignal_path = os.path.abspath(glob(self.filename_noSignal)[self.id_matching_file])
+        #             self.N_matching_files = len(glob(self.filename_noSignal))
+        #         except:
+        #             raise Exception("File "+self.filename_noSignal+"doesn't exist.")
+        #     else:
+        #         try:
+        #             self.filename_noSignal_path = os.path.abspath(glob(self.inputDir+os.path.sep+self.filename_noSignal)[self.id_matching_file])
+        #             self.N_matching_files = len(glob(self.inputDir+os.path.sep+self.filename_noSignal))
+        #         except:
+        #             raise Exception("File "+self.inputDir+os.path.sep+self.filename_noSignal+" doesn't exist.")
+        #
+        #     # Open the fits file on which the metric will be applied
+        #     hdulist = pyfits.open(self.filename_noSignal_path)
+        #     if not self.mute:
+        #         print("Opened: "+self.filename_noSignal_path)
+        #
+        #     # grab the data and headers
+        #     try:
+        #         self.image_noSignal = hdulist[1].data
+        #     except:
+        #         # This except was used for datacube not following GPI headers convention.
+        #         if not self.mute:
+        #             print("Couldn't read the fits file with GPI conventions. Try assuming data in primary.")
+        #         try:
+        #             self.image_noSignal = hdulist[0].data
+        #         except:
+        #             raise Exception("Couldn't read "+self.filename_noSignal_path+". Is it a fits?")
+        # else:
+        #     self.image_noSignal = None
+        #     self.filename_noSignal_path = None
 
 
         # Get center of the image (star position)
@@ -285,28 +338,49 @@ class Stat(KPPSuperClass):
 
         # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
         # PDF. This masked image is given separately to the probability calculation function.
-        if self.image_noSignal is None:
-            if self.GOI_list_folder is not None:
-                self.image_noSignal = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        if self.filename_noPlanets is not None:
+            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.prihdr_noPlanets,self.exthdr_noPlanets,self.GOI_list_folder, mask_radius = self.mask_radius)
+        else:
+            self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        # if self.image_noSignal is None:
+        #     if self.GOI_list_folder is not None:
+        #         self.image_noSignal = mask_known_objects(self.image,self.prihdr,self.exthdr,self.GOI_list_folder, mask_radius = self.mask_radius)
+        #     else:
+        #         self.image_noSignal = self.image
+
+        if self.collapse:
+            if self.weights is not None:
+                image_collapsed = np.zeros((self.ny,self.nx))
+                image_without_planet_collapsed = np.zeros((self.ny,self.nx))
+                for k in range(self.nl):
+                    image_collapsed = image_collapsed + self.weights[k]*self.image[k,:,:]
+                    image_without_planet_collapsed = image_without_planet_collapsed + self.weights[k]*self.image_without_planet[k,:,:]
+                self.image = image_collapsed/np.sum(self.weights)
+                self.image_without_planet = image_without_planet_collapsed/np.sum(self.weights)
             else:
-                self.image_noSignal = self.image
+                self.image = np.nanmean(self.image,axis=0)
+                self.image_without_planet = np.nanmean(self.image_without_planet,axis=0)
+
+        if self.nans2zero:
+            self.image = np.nan_to_num(self.image)
 
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D
-            if hasattr(self, 'nl'): # If the file is a 3D cube
+            if np.size(self.image.shape) == 3: # If the file is a 3D cube
                 for l_id in np.arange(self.nl):
                     self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
-                    self.image_noSignal[l_id,:,:] = convolve2d(self.image_noSignal[l_id,:,:],self.PSF,mode="same")
+                    self.image_without_planet[l_id,:,:] = convolve2d(self.image_without_planet[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 self.image = convolve2d(self.image,self.PSF,mode="same")
-                self.image_noSignal = convolve2d(self.image_noSignal,self.PSF,mode="same")
+                self.image_without_planet = convolve2d(self.image_without_planet,self.PSF,mode="same")
+
 
         if np.size(self.image.shape) == 3:
             # Not tested
             self.stat_cube_map = np.zeros(self.image.shape)
             for k in range(self.nl):
                 self.stat_cube_map[k,:,:] = get_image_stat_map(self.image[k,:,:],
-                                                               self.image_noSignal[k,:,:],
+                                                               self.image_without_planet[k,:,:],
                                                                IOWA = self.IOWA,
                                                                N = self.N,
                                                                centroid = self.center,
@@ -315,9 +389,18 @@ class Stat(KPPSuperClass):
                                                                Dr= self.Dr,
                                                                type = self.type,
                                                                image_wide=self.image_wide)
+
+            # if self.collapse:
+            #     if self.weights is not None:
+            #         stat_collapsed_map = np.zeros((self.ny,self.nx))
+            #         for k in range(self.nl):
+            #             stat_collapsed_map = stat_collapsed_map + self.weights[k]*self.stat_cube_map[k,:,:]
+            #         self.stat_cube_map = stat_collapsed_map/np.sum(self.weights)
+            #     else:
+            #         self.stat_cube_map = np.nanmean(self.stat_cube_map,axis=0)
         elif np.size(self.image.shape) == 2:
             self.stat_cube_map = get_image_stat_map(self.image,
-                                                    self.image_noSignal,
+                                                    self.image_without_planet,
                                                     IOWA = self.IOWA,
                                                     N = self.N,
                                                     centroid = self.center,
@@ -344,7 +427,6 @@ class Stat(KPPSuperClass):
             self.exthdr["STA_TYPE"] = self.type
 
             self.exthdr["STAFILEN"] = self.filename_path
-            self.exthdr["STAFILNS"] = str(self.filename_noSignal_path)
             self.exthdr["STAINDIR"] = self.inputDir
             self.exthdr["STAOUTDI"] = self.outputDir
             self.exthdr["STAFOLDN"] = self.folderName
@@ -361,9 +443,9 @@ class Stat(KPPSuperClass):
             self.exthdr["STAKERWI"] = str(self.kernel_width)
             self.exthdr["STAIMWID"] = str(self.image_wide)
 
-            # # This parameters are not always defined
-            # if hasattr(self,"spectrum_name"):
-            #     self.exthdr["STAKERTY"] = self.kernel_type
+            # This parameters are not always defined
+            if hasattr(self,"filename_noSignal_path"):
+                self.exthdr["STAFILNS"] = self.filename_noSignal_path
 
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')

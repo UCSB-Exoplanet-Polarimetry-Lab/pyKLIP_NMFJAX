@@ -12,6 +12,7 @@ from __future__ import division
 import sys
 import os
 import warnings
+import glob
 
 from multiprocessing import Pool, Process, Queue
 
@@ -22,8 +23,20 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.colors import LogNorm
+from matplotlib.collections import PatchCollection
+from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
+
+import argparse
+import ConfigParser
+
+sys.path.append(".")
+import P1640spots
+import P1640_spot_checker
+
+dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
+
 
 #plt.ion()
 
@@ -121,32 +134,14 @@ def plot_airmass_and_seeing(fitsfiles):
     axes[1].set_title("Airmass")
     plt.draw()
 
-def usage():
-    print """Required packages:
-    sys, os
-    warnings, multiprocessing
-    numpy, matplotlib
-    astropy
-Usage:
-    python cube_checker.py /path/to/data/cube.fits
-    OR
-    python cube_checker.py space.fits separated.fits sets.fits of.fits paths.fits to.fits cubes.fits
-    OR
-    python cube_checker.py `ls path/to/cubes/*fits`
-    If running from IPython:
-    files = glob.glob("all/the/fits/*fits")
-    %run cube_checker.py {' '.join(files)}
 
-Prints a list of the chosen file paths
-"""
-
-        
-if __name__ == "__main__":
-
-    if sys.argv[1] == 'help':
+def run_checker(fitsfiles):
+    """
+    Run the checker
+    """
+    if fitsfiles == 'help':
         usage()
-        
-    fitsfiles = sys.argv[1:]
+        return
     seeing = [fits.getval(ff,'SEEING') for ff in fitsfiles]
     airmass = [fits.getval(ff,'INIT_AM') for ff in fitsfiles]
     
@@ -181,11 +176,12 @@ if __name__ == "__main__":
 
                 # ask if cube is good or not
                 keep_cube = None
+
                 while keep_cube not in ['y', 'n']:
                     try:
                         keep_cube = raw_input('\tKeep? Y/n: ').lower()[0]
                     except IndexError:
-                        pass
+                        continue
                 good_cubes[ff] = keep_cube
                 hdulist.close()
                 # close drawing subprocess
@@ -194,7 +190,7 @@ if __name__ == "__main__":
 #            proc_cube_stats.terminate()
 #            proc_cube_stats.join()
             plt.close('all')
-            repeat = raw_input("Finished viewing cubes. Print list and quit? Y/n: ").lower()[0]
+            repeat = raw_input("Finished viewing cubes. Return list and quit? (n to loop again) Y/n: ").lower()[0]
             if repeat == 'y':
                 repeat = False
             else:
@@ -208,10 +204,235 @@ if __name__ == "__main__":
         else:
             good_cubes[key] = None
     
+    final_good_cubes = sorted([os.path.abspath(key) for key, val in good_cubes.iteritems() if val == True])
+
+    return final_good_cubes
+
+
+#########################
+# Spot checker ##########
+#########################
+def draw_spot_cube(cube, cube_name, spots):
+    """
+    Make a figure and draw cube slices on it
+    spots are a list of [row, col] positions for each spot
+    """
+    # mask center for better image scaling
+    cube[:,100:150,100:150] = np.nan #cube[:,100:150,100:150]*1e-3
+    chan=0
+    nchan = cube.shape[0]
+    # get star positions
+    star_positions = P1640spots.get_single_cube_star_positions(np.array(spots))
+    
+    #try:
+    fig = plt.figure()
+    fig.suptitle(cube_name, fontsize='x-large')
+    gridsize = (8,8)
+
+    ax = fig.add_subplot(111)
+    while True:
+        ax.clear()
+    
+        chan = chan % nchan
+
+        patches1 = [CirclePolygon(xy=spot[chan][::-1], radius=5,
+                                  fill=False, alpha=1, ec='k', lw=2)
+                    for spot in spots] # large circles centered on spot
+        patches2 = [CirclePolygon(xy=spot[chan][::-1], radius=1,
+                                  fill=True, alpha=0.3, ec='k', lw=2)
+                    for spot in spots] # dots in location of spot
+        starpatches = [CirclePolygon(xy=star_positions[chan][::-1], radius=3,
+                                     fill=True, alpha=0.3, ec='k', lw=2)
+                       for spot in spots] # star position
+        patchcoll = PatchCollection(patches1+patches2, match_original=True)
+        
+        imax = ax.imshow(cube[chan], norm=LogNorm())
+        imax.axes.add_collection(patchcoll)
+        ax.set_title("Channel {1:02d}".format(cube_name, chan))
+        
+        plt.pause(0.2)
+        chan += 1
+    #except KeyboardInterrupt:
+    #    pass
+
+
+# ALTERNATIVE TO REDEFINING SPOT CHECKER BUT THEN IT REQUIRES THE P1640_SPOT_CHECKER TO EXIST
+#run_spot_checker = P1640_spot_checker.run_checker
+
+def run_spot_checker(files=None, config=None, spot_path=None):
+    """
+    Supply ONE OF:
+    files: list of files
+    config: config file with a list of files
+    """
+    if spot_path is None:
+        # set this default here so it can be overridden by a config
+        configparser = ConfigParser.ConfigParser()
+        configparser.read("../../P1640.ini")
+        spot_directory = configparser.get("spots","spot_file_path")
+
+    # files vs config: two args enter! one arg leaves!
+    if not (files is None) != (config is None):
+        print "Please supply either a list if files or a config file"
+        return None
+    elif files is not None:
+        fitsfiles = files
+    elif config is not None:
+        configparser = ConfigParser.ConfigParser()
+        configparser.read(config)
+        # get the list of files
+        fitsfiles = configparser.get("Input","occulted_files").split()
+        spot_directory = configparser.get("Spots","spot_file_path")   
+    else:
+        print "Please supply either list of files or a config file"
+        return None
+
+    # spot path - if None, read default
+    
+    good_cubes = dict(zip(fitsfiles, [None for f in fitsfiles]))
+    
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        #fig = plt.figure()
+        for i, ff in enumerate(fitsfiles):
+            # check file
+            if not os.path.isfile(ff):
+                print("File not found: {0}".format(ff))
+                sys.exit(0)
+                
+            # get spots
+            cubefile_name = os.path.splitext(os.path.basename(ff))[0]
+            spot_files = glob.glob(os.path.join(spot_path, cubefile_name)+"*")
+            if len(spot_files) == 0:
+                print("No spot files found for {0}".format(os.path.basename(ff)))
+                sys.exit(0)
+            spots = [np.genfromtxt(f, delimiter=',') for f in spot_files]
+
+            hdulist = fits.open(ff)
+            cube = hdulist[0].data
+            cube_name = os.path.splitext(os.path.basename(ff))[0]
+
+            # start drawing subprocess
+            p = Process(target=draw_spot_cube, args=(cube, cube_name, spots))
+            p.start()
+
+            # print cube information
+            print "\n{0}/{1} files".format(i+1, len(fitsfiles))
+            print "\nCube: {0}".format(cube_name)
+            print "\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME"))
+            print "\tSeeing: {0}".format(fits.getval(ff, "SEEING"))
+            print "\tAirmass: {0}".format(np.mean([fits.getval(ff, "INIT_AM"),
+                                                   fits.getval(ff, "FINL_AM")]))
+            # ask if cube is good or not
+            keep_cube = None
+            while keep_cube not in ['y', 'n']:
+                try:
+                    keep_cube = raw_input('\t\tKeep? y/n: ').lower()[0]
+                except IndexError:
+                    continue
+            good_cubes[ff] = keep_cube
+
+            # close drawing subprocess
+            p.terminate()
+            p.join()
+
+        plt.close('all')
+    for key, val in good_cubes.iteritems():
+        if val == 'y': 
+            good_cubes[key] = True
+        elif val == 'n': 
+            good_cubes[key] = False
+        else:
+            good_cubes[key] = None
     
     #print good_cubes
-    print "Good cubes: "
-    for i in sorted([key for key, val in good_cubes.iteritems() if val == True]):
-        print os.path.abspath(i)
+    #print "Good cubes: "
+    #for i in sorted([key for key, val inre good_cubes.iteritems() if val == True]):
+    #    print i
+    if np.all(good_cubes.values()):
+        print "\nSpot fitting succeeded for all cubes.\n"
+    else:
+        print "\nSpot fitting failed for the following cubes:"
+        print "\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False])
+        print "\n"
 
+    final_good_cubes = sorted([os.path.abspath(i) for i in good_cubes.keys() if good_cubes[i] == True])
+    return final_good_cubes
+
+
+
+def usage():
+    print """Required packages:
+sys, os
+warnings, multiprocessing
+numpy, matplotlib
+astropy
+Usage:
+    python cube_checker.py /path/to/data/cube.fits
+    OR
+    python cube_checker.py space.fits separated.fits sets.fits of.fits paths.fits to.fits cubes.fits
+    OR
+    python cube_checker.py `ls path/to/cubes/*fits`
+    If running from IPython:
+    files = glob.glob("all/the/fits/*fits")
+    %run cube_checker.py {' '.join(files)}
+
+Prints a list of the chosen file paths
+"""
+
+# Command-line option handling
+# if switch --config is used, treat the following argument like the path to a config file
+# if --config is not present, treat the following arguments like individual datacubes
+class ConfigAction(argparse.Action):
+    """
+    Create a custom action to parse the 
+    """
+    def __init__(self, option_strings, dest, nargs=None, **kwargs):
+        #if nargs is not None:
+        #    raise ValueError("nargs not allowed")
+        super(ConfigAction, self).__init__(option_strings, dest, **kwargs)
+    def __call__(self, parser, namespace, values, option_string=None):
+        configparser = ConfigParser.ConfigParser()
+        configparser.read(values)
+        # get the list of files
+        filelist = configparser.get("Input","occulted_files").split()
+        setattr(namespace, self.dest, filelist)
+        try:
+            setattr(namespace, 'spot_path', configparser.get("Spots","spot_file_path"))
+        except:
+            setattr(namespace, 'spot_path', None)
+
+
+        
+parser = argparse.ArgumentParser(prog="P1640_cube_checker.py",
+                                 description='A utility to visually inspect P1640 cubes and spots')
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('--files', dest='files', nargs='*',
+                    help='list of datacube files')
+group.add_argument('--config', dest='files', nargs=1, action=ConfigAction,
+                    help='config file containing fits files')
+spotargs = parser.add_argument_group("spots", description="Use this if you want to check spot locations")
+spotargs.add_argument("--spots", dest='spots',action='store_true', default=False,
+                      help="use this flag if you want to overplot spot positions")
+spotargs.add_argument("--spot_path", dest='spot_path', action='store',
+                       default=dnah_spot_directory,
+                       help='directory where spot position files are stored')
+        
+if __name__ == "__main__":
+
+    if sys.argv[1] == 'help':
+        usage()
+        sys.exit()
+
+    parseobj = parser.parse_args(sys.argv[1:])
+    fitsfiles = parseobj.files
+
+    if parseobj.spots:
+        spot_directory = parseobj.spot_path
+        good_cubes = run_spot_checker(fitsfiles, spot_path=spot_directory)
+        #good_cubes = P1640_spot_checker.run_checker(fitsfiles, spot_path=spot_directory)
+    else:
+        good_cubes = run_checker(fitsfiles)
+    print "Good cubes:"
+    for i in good_cubes: print i
 
