@@ -21,6 +21,8 @@ from matplotlib import animation
 
 from photutils import aperture_photometry, CircularAperture
 
+import ConfigParser
+
 class P1640params:
     num_spots = 4
     refchan = 26
@@ -442,10 +444,16 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
     data_filename = os.path.basename(data_filepath)
     exists = glob.glob(os.path.join(output_dir,data_filename)+"*")
 
+    # If you shouldn't overwrite existing files, quit here
+    if (exists) and (not overwrite):
+        print "Spot files exist and overwrite is False, skipping..."
+        return
+
     # if output_dir, spotid, and ext are NOT specified, used P1640.ini as defaults
-    if np.all([i is None for i in [output_dir, spotid, ext]]):
+    if np.any([i is None for i in [output_dir, spotid, ext]]):
+        # default config file
         config = ConfigParser.ConfigParser()
-        config.read("../../P1640.ini")
+        config.read("/data/home/jaguilar/pyklip/pyklip/instruments/P1640.ini")
         if output_dir is None:
             output_dir = config.get("spots", "spot_file_path")
             print "Using value in P1640.ini for spot output directory: " + output_dir
@@ -453,13 +461,9 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
             spotid = config.get("spots", "spot_file_postfix")
             print "Using value in P1640.ini for spot file ID: " + spotid
         if ext is None:
-            ext = config.get("spot_file_ext")
+            ext = config.get("spots", "spot_file_ext")
             print "Using value in P1640.ini for spot file ext: " + ext
     
-    # If you shouldn't overwrite existing files, quit here
-    if (exists) and (not overwrite):
-        print "Spot files exist and overwrite is False, skipping..."
-        return
     try:
         for i, spot in enumerate(spot_positions):
             data_filename = os.path.basename(data_filepath)
@@ -468,6 +472,7 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
             output_filepath = os.path.join(output_dir, output_filename)
             np.savetxt(output_filepath, spot, delimiter=",",
                            header='row,column')
+            print os.path.basename(output_filepath) + " written"
     except:
         # implement error handling later?
         pass
