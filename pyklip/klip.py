@@ -66,7 +66,9 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # check if there are negative eignevalues as they will cause NaNs later that we have to remove
     # the eigenvalues are ordered smallest to largest
-    check_nans = evals[-1] < 0
+    #check_nans = evals[-1] < 0 # currently this checks that *all* the evals are neg, but we want just one.
+    # also, include 0 because that is a bad value too
+    check_nans = np.any(evals <= 0) # alternatively, check_nans = evals[0] <= 0
 
     # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
     # we're going to recopy them to hopefully improve caching when doing matrix multiplication
@@ -75,7 +77,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # keep an index of the negative eignevalues for future reference if there are any
     if check_nans:
-        neg_evals = (np.where(evals < 0))[0]
+        neg_evals = (np.where(evals <= 0))[0]
 
     # calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)

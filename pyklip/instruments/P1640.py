@@ -114,7 +114,8 @@ class P1640Data(Data):
         self.corefilenames = corefilepaths
         self.spot_directory = spot_directory
         self.spot_flux = None # Currently not implemented, may be in future
-        self.spot_scaling = None # scaling factor between wavelengths
+        self.scale_factors = None # scaling between wavelength slices
+        #self.spot_scaling = None # scaling factor between wavelengths
 
         if filepaths is None:
             # general stuff
@@ -126,6 +127,9 @@ class P1640Data(Data):
             self._wvs = None
             self._wcs = None
             self._IWA = None
+            self.corefilenames = corefilepaths
+            self.spot_flux = None # Currently not implemented, may be in future
+            self.scale_factors = None # scaling factor between wavelengths
             self.contrast_scaling = None # Currently not implemented, may be in future
             self.prihdrs = None # Not used by P1640
             self.exthdrs = None # for P1640 this is the prihdrs; exthdrs used for compatibility with P1640 class
@@ -208,6 +212,13 @@ class P1640Data(Data):
         self._corefilenames = newval
 
     @property
+    def scale_factors(self):
+        return self._scale_factors
+    @scale_factors.setter
+    def scale_factors(self, newval):
+        self._scale_factors = newval
+
+    @property
     def spot_directory(self):
         return self._spot_directory
     @spot_directory.setter
@@ -220,12 +231,71 @@ class P1640Data(Data):
     ###############
     ### Methods ###
     ###############
+    def get_scaling_and_centering(self, filepaths, spot_directory=None, skipslices=None):
+        """
+        Method to get star position and wavelength scaling factors
+        Args:
+            filepaths: a list of filepaths to datacubes
+            spot_path: (None) directory where the spot files are stored. Defaults to P1640.ini value
+            skipslices: a list of wavelength slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
+        Returns:
+            Nothing. Sets centers and scale_factors fields of the P1640Data object
+        """
+        if isinstance(filepaths, str):
+            filepaths = [filepaths]
+
+        scale_factors = []
+        centers = []
+        spot_photometry = []
+            
+        for filepath in filepaths:
+            hdulist = fits.open(filepath)
+            cube = hdulist[0].data
+
+            try:
+                if spot_directory is not None:
+                    spot_filedir = spot_directory
+                    print spot_filedir
+                else: # use the default set in P1640.ini
+                    spot_filedir = P1640Data.config.get("spots","spot_filepath")
+                spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
+                spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
+                spot_filepaths = glob.glob(spot_fullpath+'*')
+
+                # check if all the spot files exist, if so, read them in
+                exist = np.all([os.path.isfile(f) for f in spot_filepaths])
+                assert(exist is not False)
+                print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+                spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
+                                           for f in spot_filepaths])
+                return spot_locations
+            except AssertionError:
+                # if they haven't already been written to file, calculate them
+                spot_locations = P1640spots.get_single_cube_spot_positions(cube)
+                # write them to disk so they don't have to be recalculated
+                write_p1640_spots_to_file(P1640Data.config, filepath, spot_locations)
+                
+            cube_spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
+            cube_scale, cube_center = P1640spots.get_scaling_and_centering_from_spots(spot_locations)
+
+            hdulist.close()
+
+            scale_factors.append(cube_scale)
+            centers.append(cube_center)
+            spot_photometry.append(cube_spot_fluxes)
+        return centers
+        #self.scale_factors = scale_factors
+        #self.centers = centers
+        #self.spot_flux = cube_spot_fluxes
+
+            
     def readdata(self, filepaths, skipslices=None, corefilepaths=None):
         """
-        Method to open and read a list of P1640 data
+        Method to open and read a list of P1640 data. Handles everything that can be done by
+        reading directly from the P1640 header or cubes, no calculations. Scaling and Centering handled elsewhere
 
         Args:
-            filespaths: a list of filepaths
+            filepaths: a list of filepaths
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
 
         Returns:
@@ -250,11 +320,11 @@ class P1640Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, scaling_factors, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices)
+            cube, center, spot_scaling_single_cube, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices)
 
             data.append(cube)
             centers.append(center)
-            spot_scalings.append(scaling_factors)
+            spot_scalings.append(spot_scaling_single_cube)
             spot_fluxes.append(spot_flux)
             rot_angles.append(pa)
             wvs.append(wv)
@@ -274,12 +344,12 @@ class P1640Data(Data):
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
-        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation)  # want North Up
+        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation) # want North Up
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-
+        spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
 
         # Not used by P1640
         '''
@@ -305,10 +375,11 @@ class P1640Data(Data):
         self._filenames = filenames
         self._corefilenames = corefilepaths
         self._PAs = rot_angles
-        self._wvs = wvs
+        self._wvs =  wvs # spot_scalings # because pykip was written to use wavelengths, not spots, for scaling
         self._wcs = None # wcs_hdrs not used by P1640 
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
+        self.scale_factors = spot_scalings
         self.contrast_scaling = None #P1640Data.spot_ratio[ppm_band]/np.mean(spot_fluxes)
         self.flux_units = "DN"
         self.prihdrs = prihdrs
@@ -766,7 +837,8 @@ def get_p1640_spot_filepaths(config, data_filepath):
     spot_filepaths = [spot_fullpath + "{0}".format(i)+spot_fileext for i in range(4)]
     return spot_filepaths
 
-def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=True):
+def write_p1640_spots_to_file(config, data_filepath, spot_positions,
+                              spot_directory=None, overwrite=True):
     """
     EDIT: NOW THIS IS JUST A WRAPPER FOR THE P1640spots.write_spots_to_file() METHOD
 
@@ -776,27 +848,18 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions, overwrite=T
         config: a ConfigParser object with the file path information
         data_filepath: source file, spot files will have same prefix
         spot_positions: a Nspot x Nchan x 2 array of (row, col) spot positions
+        spot_directory: (None) Directory to save the spot files
         overwrite: True -> overwrite (default), False -> don't overwrite existing files
     Output:
         None
     """
-    spot_filedir = config.get("spots","spot_file_path")
+    if spot_directory is None:
+        spot_directory = config.get("spots","spot_file_path")
     spot_filepostfix = config.get("spots","spot_file_postfix")
     spot_fileext = config.get("spots", "spot_file_ext")
     P1640spots.write_spots_to_file(data_filepath, spot_positions,
-                                   spot_filedir, overwrite,
+                                   spot_directory, overwrite,
                                    spot_filepostfix, spot_fileext)
-    """ old code
-    spot_filepaths = get_p1640_spot_filepaths(config, data_filepath)
-    exists = [os.path.isfile(i) for i in spot_filepaths]
-    for i, spot in enumerate(spot_positions):
-        if (exists[i] and  not overwrite):
-            print("{0} exists and overwrite flag is {1}".format(spot_filepaths[i], overwrite))
-            continue
-        np.savetxt(spot_filepaths[i], spot,
-                   delimiter=",",
-                   header="row, column")    
-    """
     return
 
 def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
@@ -861,7 +924,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
                 spot_filedir = spot_directory
                 print spot_filedir
             else: # use the default set in P1640.ini
-                spot_filedir = P1640Data.config.get("spots","spot_filepath")
+                spot_filedir = P1640Data.config.get("spots","spot_file_path")
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
             spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
             spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
@@ -886,8 +949,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
     finally:
         hdulist.close()
 
-    scale_factors = scale_factors[0].mean(axis=0) # average over the 4 spots
-    spot_fluxes = np.mean(spot_fluxes, axis=0)
+    scale_factors = np.squeeze(scale_factors).mean(axis=-2) # average over the 4 spots
+    spot_fluxes = np.mean(spot_fluxes, axis=-2)
     
     #remove undesirable slices of the datacube if necessary
     if skipslices is not None:
