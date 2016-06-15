@@ -548,34 +548,48 @@ class FMMF(KPPSuperClass):
             metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]#/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
         self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
 
-        # Retrieve the flux map
+        # Retrieve the flux map, mathced filter map and shape map
         # Note: the injected model had a unit broadband flux in DN space.
         ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
         sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
         metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        metric_MF = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        metric_shape = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
         for k in range(self.N_cubes):
             sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
             metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / sat_spot_flux_for_calib * sat_spot_ratio
+            metric_MF = metric_MF+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / np.sqrt(np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2))
+            metric_shape = metric_shape+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
+                            / (  np.sqrt(np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)) \
+                               * np.sqrt(np.sum(fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)) )
         metric_pFlux = metric_pFlux/self.N_cubes
         metric_pFlux[np.where(metric_pFlux==0)]=np.nan
         metric_pFlux = np.squeeze(metric_pFlux)
+        metric_MF = metric_MF/self.N_cubes
+        metric_MF[np.where(metric_MF==0)]=np.nan
+        metric_MF = np.squeeze(metric_MF)
+        metric_shape = metric_shape/self.N_cubes
+        metric_shape[np.where(metric_shape==0)]=np.nan
+        metric_shape = np.squeeze(metric_shape)
 
         #self.dataset.psfs
 
-        # Build the matched filter and shape maps from fmout
-        matched_filter_maps = np.sum(fmout[0,:,:,:,:,:],axis=2)
-        model_square_norm_maps = np.sum(fmout[1,:,:,:,:,:],axis=2)
-        image_square_norm_maps = np.sum(fmout[2,:,:,:,:,:],axis=2)
 
-        matched_filter_maps[np.where(matched_filter_maps==0)]=np.nan
-        model_square_norm_maps[np.where(model_square_norm_maps==0)]=np.nan
-        image_square_norm_maps[np.where(image_square_norm_maps==0)]=np.nan
-        metric_MF = matched_filter_maps/np.sqrt(model_square_norm_maps)
-        metric_shape = matched_filter_maps/np.sqrt(model_square_norm_maps*image_square_norm_maps)
-        metric_MF = np.squeeze(metric_MF)
-        metric_shape = np.squeeze(metric_shape)
+
+        # # Build the matched filter and shape maps from fmout
+        # matched_filter_maps = np.sum(fmout[0,:,:,:,:,:],axis=2)
+        # model_square_norm_maps = np.sum(fmout[1,:,:,:,:,:],axis=2)
+        # image_square_norm_maps = np.sum(fmout[2,:,:,:,:,:],axis=2)
+        # matched_filter_maps[np.where(matched_filter_maps==0)]=np.nan
+        # model_square_norm_maps[np.where(model_square_norm_maps==0)]=np.nan
+        # image_square_norm_maps[np.where(image_square_norm_maps==0)]=np.nan
+        # metric_MF = matched_filter_maps/np.sqrt(model_square_norm_maps)
+        # metric_shape = matched_filter_maps/(np.sqrt(model_square_norm_maps)*np.sqrt(image_square_norm_maps))
+        # metric_MF = np.squeeze(metric_MF)
+        # metric_shape = np.squeeze(metric_shape)
 
         # Update the wcs headers to indicate North up
         [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.dataset.PAs, self.dataset.wcs)]

@@ -167,24 +167,38 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
 
     if mute is None:
-        mute = True
+        mute = False
 
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
     sampling_pip = np.arange(w_start,w_end,dw)
 
+    # Sory hard-coded type...
+    if star_type == "kA6hA9mF0_+_DA":
+        star_type = "A8"
+
     if star_type is None:
         return sampling_pip,None
 
     if len(star_type) > 2:
-            star_type = star_type[0:2]
+        star_type_selec = star_type[0:2]
+    else:
+        star_type_selec = star_type
 
     try:
-        int(star_type[1])
+        int(star_type_selec[1])
     except:
-        if not mute:
-            print("Returning None. Couldn't parse spectral type.")
-        return sampling_pip,None
+        try:
+            star_type_selec = star_type[-3:-1]
+            int(star_type_selec[1])
+        except:
+            if not mute:
+                print("Returning None. Couldn't parse spectral type.")
+            return sampling_pip,None
+
+    # Sory hard-coded type...
+    if star_type_selec == "K8":
+        star_type_selec = "K7"
 
     pykliproot = os.path.dirname(os.path.realpath(__file__))
     filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
@@ -208,7 +222,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
                     dict_temp[splitted_line[0]] = splitted_line[2]
 
         try:
-            target_temp = float(dict_temp[star_type])
+            target_temp = float(dict_temp[star_type_selec])
         except:
             if not mute:
                 print("Returning None. Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
