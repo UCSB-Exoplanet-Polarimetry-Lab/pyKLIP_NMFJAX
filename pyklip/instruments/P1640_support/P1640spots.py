@@ -852,7 +852,7 @@ def get_spot_positions_and_photometry(fitsfiles):
         hdulist.close()
     return np.array(spot_positions, spot_photometry)
 
-def get_scaling(spot_array, star_array=None, return_mean=False):
+def get_scaling(spot_array, star_array=None, return_mean=True):
     """
     Wrapper for get_single_cube_scaling_factors, to handle multiple cubes
     Input:
@@ -862,7 +862,7 @@ def get_scaling(spot_array, star_array=None, return_mean=False):
         return_mean: (default False) If true, return mean scaling factor for
             each channel (useful for multiple cubes)
     Output:
-        scaling_array: Nfiles x Nchan array of scaling fators
+        scaling_array: (Nfiles) x Nchan array of scaling fators
     """
     if spot_array.ndim == 3:
         spot_array = np.expand_dims(spot_array, 0)
@@ -874,40 +874,45 @@ def get_scaling(spot_array, star_array=None, return_mean=False):
     scaling = np.array(scaling)
 
     if return_mean == True:
-        scaling = np.mean(scaling, axis=-1)
+        scaling = np.mean(scaling, axis=-2)
 
     return scaling
 
-    
-def get_scaling_and_centering_from_files(fitsfiles):
-    """
-    Take some fitsfiles, and return the star positions and 
-    scaling factors for each datacube
-    See also: get_scalign_and_centering_from_spots
-    Input:
-        fitsfiles: a list of fits files with data cubes
-    Output:
-        scaling_factors: scaling factors for each slice of each cube
-        star_positions: star positions in each slice of each cube
-    """
-    spot_positions = get_spot_positions(fitsfiles)
-    star_positions = get_star_positions(spot_positions)
-    scaling_factors = get_scaling(spot_positions, star_positions)
-    return scaling_factors, star_positions
-
-def get_scaling_and_centering_from_spots(spot_positions):
+def get_scaling_and_centering_from_spots(spot_positions, mean_scaling=True):
     """
     Accepts an array of spots, and returns the scaling factors and centers.
     See also: get_scaling_and_centering_from_files
     Input:
         spot_positions: Ncube x Nspot x Nchan x 2 array of (row, col) spot positions
+        mean_scaling: [True] return the average scaling of the 4 spots
     Output:
-        scaling_factors: Ncube x Nchan array of scaling factors
+        scaling_factors: Ncube x  Nchan array of scaling factors
         star_positions: Ncube x Nchan x 2 array of (row, col) star positions
     """
     star_positions = get_star_positions(spot_positions)
-    scaling_factors = get_scaling(spot_positions, star_positions)
+    scaling_factors = get_scaling(spot_positions, star_positions, mean_scaling)
     return scaling_factors, star_positions
+    
+def get_scaling_and_centering_from_files(files, mean_scaling=True):
+    """
+    Take some csv spot files, and return the star positions and 
+    scaling factors for each datacube
+    Wrapper for get_scaling_and_centering_from_spots
+    Input:
+        files: a list of fits files with data cubes
+               if the files end in fits or csv, call appropriate routines
+        mean_scaling: [True] return the mean scaling of the 4 spots
+
+    Output:
+        scaling_factors: scaling factors for each slice of each cube
+        star_positions: star positions in each slice of each cube
+    """
+    spot_positions = [np.genfromtxt(f, delimiter=',') for f in files]
+    spot_positions = np.array(spot_positions)
+    scaling_factors, star_positions = get_scaling_and_centering_from_spots(spot_positions, mean_scaling)    
+    return scaling_factors, star_positions
+
+
 
 
 
