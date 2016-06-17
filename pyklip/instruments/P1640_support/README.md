@@ -41,7 +41,11 @@ TODO: Contrast curves and fake injections require unocculted cubes. Currently th
 ## Tutorial
 
 **Important** This tutorial assumes you are inside the following directory:
+
 `pyklip/pyklip/instruments/P1640_support/tutorial`
+
+A couple datacubes (with all but the essential information stripped from them) are [available here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data). 
+Download the tarball and unpack the fits files into the `tutorial/data` folder with the command `tar -xvf data/P1640_tutorial_data.tar.gz`
 
 #### Living On The Edge Version
 If you trust me, you can do only steps "Collect the datacubes", "Fit the gridspots", and "Run KLIP". This skips visual inspection of the datacubes and spot fitting.
@@ -79,7 +83,7 @@ An animation of each cube, along with observing conditions and a comparison to t
 ### Fit grid spots
 Note: you should only need to do this once, after which you can just read in the grid spot positions from a file.
 
-First, re-assemble your handy list of P1640 data. A couple datacubes (with all but the essential information stripped from them) are [available here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data). Download the tarball and unpack the fits files into the `tutorial/data` folder.
+First, re-assemble your handy list of P1640 data. 
 
 Grid spots MUST exist, and (for now) the MUST be in the normal orientation. If this isn't true, then the code will hang. 
 
@@ -137,7 +141,7 @@ Running KLIP on P1640 data is nearly identical to running it on GPI, with the ex
         import pyklip.instruments.P1640 as P1640
         dataset = P1640.P1640Data(filelist, spot_directory="shared_spot_folder/")
         import pyklip.parallelized as parallelized
-        parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsect=4, movement=3, numbasis=[1,20,100], calibrate_flux=False, mode="SDI")
+        parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsections=4, movement=3, numbasis=[1,20,100], calibrate_flux=False, mode="SDI")
 
 This will run the KLIP PSF subtraction algorithm. The resulting images are stored in the `dataset.output` field and written as FITS files to the output directory with the file prefix you provided. The P1640 output header format is that the first header stores the KLIP parameters, and the subsequent headers store copies of the headers from the original FITS files that were combined in this analysis. One file containing a datacube is written for each KL cutoff specified.
 
