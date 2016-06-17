@@ -942,14 +942,15 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
             # write them to disk so they don't have to be recalculated
             write_p1640_spots_to_file(P1640Data.config, filepath, spot_locations)
         spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
-        scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations)
+        scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations,
+                                                                                mean_scaling=False)
         #parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
         parang = np.repeat(0, channels) #populate PA for each wavelength slice (the same)
         astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
     finally:
         hdulist.close()
 
-    scale_factors = np.squeeze(scale_factors).mean(axis=-2) # average over the 4 spots
+    scale_factors = np.squeeze(scale_factors).mean(axis=-2)
     spot_fluxes = np.mean(spot_fluxes, axis=-2)
     
     #remove undesirable slices of the datacube if necessary
