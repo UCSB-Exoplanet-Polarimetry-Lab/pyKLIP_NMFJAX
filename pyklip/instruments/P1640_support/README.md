@@ -44,7 +44,7 @@ TODO: Contrast curves and fake injections require unocculted cubes. Currently th
 
 `pyklip/pyklip/instruments/P1640_support/tutorial`
 
-A couple datacubes (with all but the essential information stripped from them) are [available here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data). 
+A couple datacubes (with all but the essential information stripped from them) are available by [clicking this link here](https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data) or from the command line with `wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data.tar.gz`
 Download the tarball and unpack the fits files into the `tutorial/data` folder with the command `tar -xvf data/P1640_tutorial_data.tar.gz`
 
 #### Living On The Edge Version
