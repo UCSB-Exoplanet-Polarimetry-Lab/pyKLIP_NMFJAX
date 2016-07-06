@@ -1165,7 +1165,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         spotpsf = ndimage.map_coordinates(cleaned, [y,x])
 
         # if applicable, do a background subtraction
-        if boxrad > 9:
+        if boxrad >= 7:
             y_img, x_img = np.indices(frame.shape)
             r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
             noise_annulus = np.where((r_img > 9) & (r_img <= 12))
