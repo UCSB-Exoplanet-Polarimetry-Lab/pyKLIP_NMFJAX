@@ -27,13 +27,13 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
+from astropy import units
 
 import argparse
 import ConfigParser
 
 sys.path.append(".")
 import P1640spots
-import P1640_spot_checker
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
@@ -54,7 +54,17 @@ Pseudocode:
 5. Move on to the next file
 """
 
-
+def get_total_exposure_time(fitsfiles, unit=units.minute):
+    """
+    Accept a list of fits files and return the total exposure time
+    Input:
+      fitsfiles: single fits file or list of files with keyword 'EXPTIME' in the header
+      units: [minute] astropy.units unit for the output
+    Output:
+      tot_exp_time: the sum of the exposure times for each cube, in minutes
+    """
+    exptimes = np.array([fits.getval(f, 'EXPTIME') for f in fitsfiles]) * units.second
+    return np.sum(exptimes).to(unit)
 
 
 # open a fits file and draw the cube
@@ -177,9 +187,12 @@ def run_checker(fitsfiles):
                 # ask if cube is good or not
                 keep_cube = None
 
-                while keep_cube not in ['y', 'n']:
+                while keep_cube not in ['y', 'n', 'r']:
                     try:
-                        keep_cube = raw_input('\tKeep? Y/n: ').lower()[0]
+                        print("\ty: keep")
+                        print("\tn: discard")
+                        print("\tr: flag for re-extraction")
+                        keep_cube = raw_input("\tChoose y/n/r: ").lower()[0]
                     except IndexError:
                         continue
                 good_cubes[ff] = keep_cube
@@ -195,17 +208,32 @@ def run_checker(fitsfiles):
                 repeat = False
             else:
                 continue
+    # remove the 're-extraction' cubes
+    reextract_list = []
     # convert good_cubes dict to Boolean
+    """
     for key, val in good_cubes.iteritems():
         if val == 'y': 
             good_cubes[key] = True
         elif val == 'n': 
             good_cubes[key] = False
+        elif val == 'r':
+            reextract_list.append(key)
         else:
             good_cubes[key] = None
-    
-    final_good_cubes = sorted([os.path.abspath(key) for key, val in good_cubes.iteritems() if val == True])
-
+    """
+    reextract_cubes = sorted([os.path.abspath(key) for key, val in good_cubes.iteritems() if val == 'r'])
+    final_good_cubes = sorted([os.path.abspath(key) for key, val in good_cubes.iteritems() if val == 'y'])
+    tot_exp_time = get_total_exposure_time(final_good_cubes, units.minute)
+    if reextract_cubes:
+        print("\n")
+        print("Cubes flagged for re-extraction: ")
+        for i in sorted(reextract_cubes): print(i)
+    if final_good_cubes:
+        print("\n")
+        print("Combined exposure time for good cubes: {0:0.2f}".format(tot_exp_time))
+    else:
+        print("No good cubes")
     return final_good_cubes
 
 
@@ -222,7 +250,7 @@ def draw_spot_cube(cube, cube_name, spots):
     chan=0
     nchan = cube.shape[0]
     # get star positions
-    star_positions = P1640spots.get_single_cube_star_positions(np.array(spots))
+    #star_positions = P1640spots.get_single_cube_star_positions(np.array(spots))
     
     #try:
     fig = plt.figure()
@@ -241,9 +269,9 @@ def draw_spot_cube(cube, cube_name, spots):
         patches2 = [CirclePolygon(xy=spot[chan][::-1], radius=1,
                                   fill=True, alpha=0.3, ec='k', lw=2)
                     for spot in spots] # dots in location of spot
-        starpatches = [CirclePolygon(xy=star_positions[chan][::-1], radius=3,
-                                     fill=True, alpha=0.3, ec='k', lw=2)
-                       for spot in spots] # star position
+        #starpatches = [CirclePolygon(xy=star_positions[chan][::-1], radius=3,
+        #                             fill=True, alpha=0.3, ec='k', lw=2)
+        #               for spot in spots] # star position
         patchcoll = PatchCollection(patches1+patches2, match_original=True)
         
         imax = ax.imshow(cube[chan], norm=LogNorm())
@@ -357,6 +385,8 @@ def run_spot_checker(files=None, config=None, spot_path=None):
         print "\n"
 
     final_good_cubes = sorted([os.path.abspath(i) for i in good_cubes.keys() if good_cubes[i] == True])
+    tot_exp_time = get_total_exposure_time(final_good_cubes, units.minute)
+    print("Combined exposure time for good cubes: {0:0.2f} min".format(tot_exp_time))
     return final_good_cubes
 
 

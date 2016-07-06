@@ -28,7 +28,7 @@ from matplotlib.patches import CirclePolygon
 from astropy.io import fits
 
 sys.path.append(".")
-import P1640spots
+from P1640spots import get_single_cube_star_positions
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
@@ -44,7 +44,7 @@ def draw_cube(cube, cube_name, spots):
     chan=0
     nchan = cube.shape[0]
     # get star positions
-    star_positions = P1640spots.get_single_cube_star_positions(np.array(spots))
+    star_positions = get_single_cube_star_positions(np.array(spots))#P1640spots.get_single_cube_star_positions(np.array(spots))
     
     #try:
     fig = plt.figure()
