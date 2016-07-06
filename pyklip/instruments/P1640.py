@@ -375,7 +375,9 @@ class P1640Data(Data):
         self._filenames = filenames
         self._corefilenames = corefilepaths
         self._PAs = rot_angles
-        self._wvs =  wvs # spot_scalings # because pykip was written to use wavelengths, not spots, for scaling
+        # use the spot scalings instead of the wavelength solution; that comes separately anyway
+        #self._wvs =  wvs
+        self._wvs = np.tile(np.mean(spot_scalings, axis=0), spot_scalings.shape[0])
         self._wcs = None # wcs_hdrs not used by P1640 
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
@@ -944,6 +946,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
         spot_fluxes = P1640spots.get_single_cube_spot_photometry(cube, spot_locations)
         scale_factors, center = P1640spots.get_scaling_and_centering_from_spots(spot_locations,
                                                                                 mean_scaling=False)
+        
         #parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
         parang = np.repeat(0, channels) #populate PA for each wavelength slice (the same)
         astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
