@@ -188,7 +188,7 @@ class KPPSuperClass(object):
 
         if read:
             # Check file existence and define filename_path
-            if self.inputDir is None:
+            if self.inputDir is None or os.path.isabs(self.filename):
                 try:
                     self.filename_path = os.path.abspath(glob(self.filename)[self.id_matching_file])
                     self.N_matching_files = len(glob(self.filename))

@@ -7,7 +7,8 @@ from  glob import glob
 import csv
 import os
 
-def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 7):
+def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 7,
+                          include_speckles = False):
 
     cube_cpy = copy(cube)
 
@@ -61,6 +62,7 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
                 pa_id = attrib_name.index("PA")
                 sep_id = attrib_name.index("SEP")
                 MJDOBS_id = attrib_name.index("MJDOBS")
+                STATUS_id = attrib_name.index("STATUS")
 
                 MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
                 MJDOBS_unique = np.unique(MJDOBS_arr)
@@ -75,14 +77,16 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
                     try:
                         pa = float(GOI_list[obj_id,pa_id])
                         radius = float(GOI_list[obj_id,sep_id])/0.01413
-                        x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-                        y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-                        col_centroid = x_max_pos+center[0]
-                        row_centroid = y_max_pos+center[1]
-                        k = round(row_centroid)
-                        l = round(col_centroid)
+                        status = str(GOI_list[obj_id,STATUS_id])
+                        if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
+                            x_max_pos = float(radius)*np.cos(np.radians(90+pa))
+                            y_max_pos = float(radius)*np.sin(np.radians(90+pa))
+                            col_centroid = x_max_pos+center[0]
+                            row_centroid = y_max_pos+center[1]
+                            k = round(row_centroid)
+                            l = round(col_centroid)
 
-                        cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
+                            cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
                     except:
                         print("Missing data in GOI database for {0}".format(object_name))
@@ -107,7 +111,8 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
     return np.squeeze(cube_cpy)
 
 
-def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep = False):
+def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,
+                          include_speckles = False,IWA=None,OWA=None):
 
 
     try:
@@ -147,6 +152,7 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
                 pa_id = attrib_name.index("PA")
                 sep_id = attrib_name.index("SEP")
                 MJDOBS_id = attrib_name.index("MJDOBS")
+                STATUS_id = attrib_name.index("STATUS")
 
                 MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
                 MJDOBS_unique = np.unique(MJDOBS_arr)
@@ -161,33 +167,47 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
                     try:
                         pa = float(GOI_list[obj_id,pa_id])
                         radius = float(GOI_list[obj_id,sep_id])
-
-                        pa_vec.append(pa)
-                        sep_vec.append(radius)
-                        x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
-                        y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
-                        x_vec.append(x_max_pos)
-                        y_vec.append(y_max_pos)
-                        row_vec.append(y_max_pos+center[1])
-                        col_vec.append(x_max_pos+center[0])
+                        if IWA is not None:
+                            if radius/0.01413 < IWA:
+                                continue
+                        if OWA is not None:
+                            if radius/0.01413 > OWA:
+                                continue
+                        status = str(GOI_list[obj_id,STATUS_id])
+                        # print(status, include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]))
+                        if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
+                            pa_vec.append(pa)
+                            sep_vec.append(radius)
+                            x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
+                            y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
+                            x_vec.append(x_max_pos)
+                            y_vec.append(y_max_pos)
+                            row_vec.append(y_max_pos+center[1])
+                            col_vec.append(x_max_pos+center[0])
                     except:
                         print("Missing data in GOI database for {0}".format(object_name))
 
-
-    for fake_id in range(100):
-        try:
-            pa = exthdr["FKPA{0:02d}".format(fake_id)]
-            radius = exthdr["FKSEP{0:02d}".format(fake_id)]*0.01413
-            pa_vec.append(pa)
-            sep_vec.append(radius)
-            x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
-            y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
-            x_vec.append(x_max_pos)
-            y_vec.append(y_max_pos)
-            row_vec.append(y_max_pos+center[1])
-            col_vec.append(x_max_pos+center[0])
-        except:
-            continue
+    if not ignore_fakes:
+        for fake_id in range(100):
+            try:
+                pa = exthdr["FKPA{0:02d}".format(fake_id)]
+                radius = exthdr["FKSEP{0:02d}".format(fake_id)]*0.01413
+                if IWA is not None:
+                    if radius/0.01413 < IWA:
+                        continue
+                if OWA is not None:
+                    if radius/0.01413 > OWA:
+                        continue
+                pa_vec.append(pa)
+                sep_vec.append(radius)
+                x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
+                y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
+                x_vec.append(x_max_pos)
+                y_vec.append(y_max_pos)
+                row_vec.append(y_max_pos+center[1])
+                col_vec.append(x_max_pos+center[0])
+            except:
+                continue
 
 
     if pa_sep:

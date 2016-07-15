@@ -86,6 +86,20 @@ def find_lower_nearest(array,value):
     idx = np.nanargmax(diff)
     return array[idx], idx
 
+
+def find_nearest(array,value):
+    """
+    Find the nearest element to value in array.
+
+    :param array: Array of value
+    :param value: Value for which one wants the closest value.
+    :return: (closest_value, id) with closest_value the closest lower value and id its index.
+    """
+    diff = np.array(array)-value
+    # diff[np.where(diff>0.0)] = np.nan
+    idx = np.nanargmin(np.abs(diff))
+    return array[idx], idx
+
 def get_specType(object_name,SpT_file_csv = None):
     """
     Return the spectral type for a target based on the table in SpT_file
@@ -169,6 +183,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
     if mute is None:
         mute = False
 
+    # sampling_pip = get_gpi_wavelength_sampling(filter_name)
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
     sampling_pip = np.arange(w_start,w_end,dw)

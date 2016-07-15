@@ -1119,9 +1119,9 @@ def recalculate_sat_spot_fluxes(dataset, skipslices=None, numthreads=-1, PSF_cub
                 tpool.close()
 
     if residuals:
-        return spot_fluxes,residuals_map_list
+        return np.array(spot_fluxes),residuals_map_list
     else:
-        return spot_fluxes
+        return np.array(spot_fluxes)
 
 def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     """
@@ -1476,7 +1476,7 @@ def generate_spdc_with_fakes(dataset,
     compact_date = dataset.filenames[0].split(os.path.sep)[-1].split("S")[1]
 
     if GOI_list_folder is not None:
-        sep_real_object_list,pa_real_object_list = goi.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep = True)
+        sep_real_object_list,pa_real_object_list = goi.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep = True,include_speckles=False)
         sep_real_object_list = [sep/0.01413 for sep in sep_real_object_list]
 
     # Retrieve the filter used from the fits headers.
@@ -1663,16 +1663,23 @@ def generate_spdc_with_fakes(dataset,
 
     if (fake_flux_dict["mode"] == "satSpot"):
         inputflux = spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio=None)
-    elif (fake_flux_dict["mode"] == "contrast"):
+    elif (fake_flux_dict["mode"] == "contrast") or (fake_flux_dict["mode"] == "SNR"):
         inputflux = spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio=spot_ratio)
     else:
         print("Unknown fake_flux_dict['mode']. Abort")
         return None
 
-    if isinstance(fake_flux_dict["contrast"], list) or isinstance(fake_flux_dict["contrast"], np.ndarray):
-        planets_contrasts = fake_flux_dict["contrast"]
-    else:
-        planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
+    # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
+    if (fake_flux_dict["mode"] == "satSpot") or (fake_flux_dict["mode"] == "contrast"):
+        if isinstance(fake_flux_dict["contrast"], list) or isinstance(fake_flux_dict["contrast"], np.ndarray):
+            planets_contrasts = fake_flux_dict["contrast"]
+        else:
+            planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
+    elif (fake_flux_dict["mode"] == "SNR"):
+        f = interp1d(fake_flux_dict["sep_arr"], fake_flux_dict["contrast_arr"],bounds_error=False,fill_value=fake_flux_dict["contrast_arr"][-1])
+        print([f(sep*0.01413) for (sep,pa) in sep_pa_iter_list])
+        planets_contrasts = [fake_flux_dict["SNR"]*f(sep*0.01413)/5. for (sep,pa) in sep_pa_iter_list]
+        print(planets_contrasts)
 
     # Loop for injecting fake planets. One planet per section of the image.
     for fake_id, ((radius,pa),contrast) in enumerate(zip(sep_pa_iter_list,planets_contrasts)):

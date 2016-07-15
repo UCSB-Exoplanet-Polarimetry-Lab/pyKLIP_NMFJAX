@@ -22,7 +22,8 @@ class Quicklook(KPPSuperClass):
                  label = None,
                  GOI_list_folder = None,
                  overwrite = False,
-                 copy_save = None):
+                 copy_save = None,
+                 SNR = None):
         """
 
 
@@ -55,6 +56,10 @@ class Quicklook(KPPSuperClass):
         self.copy_save = copy_save
         self.GOI_list_folder = GOI_list_folder
         self.suffix = label+"quicklook"
+        if SNR is None:
+            self.SNR = False
+        else:
+            self.SNR = SNR
 
 
     def initialize(self,inputDir = None,
@@ -349,7 +354,11 @@ class Quicklook(KPPSuperClass):
                 ax = plt.subplot2grid((2,4),(0,3),colspan=1,rowspan=1)
             title_obj = plt.title("Candidate {0}".format(k))
             plt.setp(title_obj, color='white')
-            ax.text(0.,1.3*n_stamp,"False Pos. rate: 10^-{0:.1f}\nSep: {1:.1f}pix, {2:.2f}ac\nPA: {3:.1f}deg".format(proba,curr_sep_pix,curr_sep_ac,curr_pa) ,color=cand_color, fontsize=15)
+            if self.SNR == False:
+                ax.text(0.,1.3*n_stamp,"False Pos. rate: 10^-{0:.1f}\nSep: {1:.1f}pix, {2:.2f}ac\nPA: {3:.1f}deg".format(proba,curr_sep_pix,curr_sep_ac,curr_pa) ,color=cand_color, fontsize=15)
+            else:
+                ax.text(0.,1.3*n_stamp,"SNR: {0:.1f}\nSep: {1:.1f}pix, {2:.2f}ac\nPA: {3:.1f}deg".format(proba,curr_sep_pix,curr_sep_ac,curr_pa) ,color=cand_color, fontsize=15)
+
             plt.imshow(stamp[::-1,:], interpolation="nearest",cmap=cmap_name)#,extent=[x_grid[0,0],x_grid[0,nx-1],y_grid[0,0],y_grid[ny-1,0]])
             # Remove box and axes ticks
             ax.set_axis_off()

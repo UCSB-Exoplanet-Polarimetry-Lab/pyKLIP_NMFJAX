@@ -50,7 +50,8 @@ class ShapeOrMF(KPPSuperClass):
                  sky_aper_radius = None,
                  label = None,
                  add2prefix = None,
-                 keepPrefix = None):
+                 keepPrefix = None,
+                 GPI_TSpT_csv=None):
         """
         Define the general parameters of the metric.
 
@@ -148,6 +149,8 @@ class ShapeOrMF(KPPSuperClass):
             self.keepPrefix = keepPrefix
         else:
             self.keepPrefix = False
+
+        self.GPI_TSpT_csv=GPI_TSpT_csv
 
 
     def spectrum_iter_available(self):
@@ -360,7 +363,8 @@ class ShapeOrMF(KPPSuperClass):
             self.is3D = False
 
         # If the Kernel is a PSF build it here
-        if self.kernel_type == "PSF":
+        # if self.kernel_type == "PSF":
+        if 1: # Reading the PSF all the time to get access to the sat spot spectrum
             if PSF_cube_filename is not None:
                 self.PSF_cube_filename = PSF_cube_filename
 
@@ -487,8 +491,12 @@ class ShapeOrMF(KPPSuperClass):
         else:
             self.ny_PSF, self.nx_PSF = self.PSF_flat.shape
 
-        self.star_type = star_type
-        self.star_temperature = star_temperature
+        if star_type is None and  star_temperature is None:
+            self.star_type = spec.get_specType(self.star_name,self.GPI_TSpT_csv)
+            self.star_temperature = star_temperature
+        else:
+            self.star_type = star_type
+            self.star_temperature = star_temperature
 
         # Load the spectrum here if the data is 3D
         if self.is3D:

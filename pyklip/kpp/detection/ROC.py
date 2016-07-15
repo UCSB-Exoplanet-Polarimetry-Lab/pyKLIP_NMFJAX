@@ -25,7 +25,10 @@ class ROC(KPPSuperClass):
                  ignore_distance = None,
                  GOI_list_folder = None,
                  threshold_sampling = None,
-                 overwrite = False):
+                 overwrite = False,
+                 IWA = None,
+                 OWA = None,
+                 GOI_ROC = None):
         """
 
 
@@ -69,6 +72,12 @@ class ROC(KPPSuperClass):
 
         self.filename_detec = filename_detec
         self.GOI_list_folder = GOI_list_folder
+
+        self.IWA = IWA
+        self.OWA = OWA
+
+        if GOI_ROC is None:
+            self.GOI_ROC = False
 
 
     def initialize(self,inputDir = None,
@@ -136,9 +145,9 @@ class ROC(KPPSuperClass):
 
 
         # Check file existence and define filename_path
-        if self.inputDir is None:
+        if self.inputDir is None or os.path.isabs(self.filename_detec):
             try:
-                self.filename_detec = os.path.abspath(glob(self.filename_detec)[self.id_matching_file])
+                self.filename_detec_path = os.path.abspath(glob(self.filename_detec)[self.id_matching_file])
                 self.N_matching_files = len(glob(self.filename_detec))
             except:
                 raise Exception("File "+self.filename_detec+"doesn't exist.")
@@ -195,10 +204,11 @@ class ROC(KPPSuperClass):
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         if self.GOI_list_folder is not None:
-            x_real_object_list,y_real_object_list = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,xy = True)
+            x_real_object_list,y_real_object_list = get_pos_known_objects(self.prihdr,self.exthdr,self.GOI_list_folder,xy = True,ignore_fakes=True,IWA=self.IWA,OWA=self.OWA)
+            row_object_list,col_object_list = get_pos_known_objects(self.prihdr,self.exthdr,IWA=self.IWA,OWA=self.OWA)
 
         self.false_detec_proba_vec = []
-        self.true_detec_proba_vec = []
+        # self.true_detec_proba_vec = []
         # print(x_real_object_list,y_real_object_list)
         # Loop over all the local maxima stored in the detec csv file
         for k in range(self.N_detec):
@@ -208,25 +218,44 @@ class ROC(KPPSuperClass):
 
             #remove the detection if it is a real object
             if self.GOI_list_folder is not None:
-                too_close = False
+                reject = False
                 for x_real_object,y_real_object  in zip(x_real_object_list,y_real_object_list):
                     #print(np.sqrt((x_pos-x_real_object)**2+(y_pos-y_real_object)**2 ),self.detec_distance**2,self.ignore_distance**2)
-                    if (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.detec_distance**2:
-                        too_close = True
-                        self.true_detec_proba_vec.append(val_criter)
-                        if not self.mute:
-                            print("Real object detected.")
+                    if (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.ignore_distance**2:
+                        reject = True
                         break
-                    elif (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.ignore_distance**2:
-                        too_close = True
-                        if not self.mute:
-                            print("Local maxima ignored. Too close to known object")
-                        break
-                if too_close:
+
+                # too_close = False
+                # for x_real_object,y_real_object  in zip(x_real_object_list,y_real_object_list):
+                #     #print(np.sqrt((x_pos-x_real_object)**2+(y_pos-y_real_object)**2 ),self.detec_distance**2,self.ignore_distance**2)
+                #     if (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.detec_distance**2:
+                #         too_close = True
+                #         # self.true_detec_proba_vec.append(val_criter)
+                #         if not self.mute:
+                #             print("Real object detected.")
+                #         break
+                #     elif (x_pos-x_real_object)**2+(y_pos-y_real_object)**2 < self.ignore_distance**2:
+                #         too_close = True
+                #         if not self.mute:
+                #             print("Local maxima ignored. Too close to known object")
+                #         break
+            if reject:
+                continue
+
+            if self.IWA is not None:
+                if np.sqrt( (x_pos)**2+(y_pos)**2) < self.IWA:
+                    continue
+            if self.OWA is not None:
+                if np.sqrt( (x_pos)**2+(y_pos)**2) > self.OWA:
                     continue
 
             self.false_detec_proba_vec.append(val_criter)
 
+        if self.GOI_list_folder is not None:
+            # print(row_object_list,col_object_list)
+            self.true_detec_proba_vec = [self.image[np.round(row_real_object),np.round(col_real_object)] \
+                                         for row_real_object,col_real_object in zip(row_object_list,col_object_list)]
+        self.true_detec_proba_vec = np.array(self.true_detec_proba_vec)[np.where(~np.isnan(self.true_detec_proba_vec))]
         # print(self.false_detec_proba_vec)
         # print(self.true_detec_proba_vec)
 
@@ -311,7 +340,7 @@ def gather_ROC(filename_filter,mute = False):
     return threshold_sampling,master_N_false_pos,master_N_true_detec
 
 
-def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False):
+def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False,epoch_suffix=None):
     """
     Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
     If the folders are organized following the convention below then it will make sure there is a ROC file for each
@@ -341,13 +370,16 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False):
     master_N_false_pos_list = [[]]*N_ROC
     master_N_true_detec_list = [[]]*N_ROC
 
+    if epoch_suffix is None:
+        epoch_suffix = ""
+
     dirs_to_reduce = os.listdir(base_dir)
     N=0
     for object in dirs_to_reduce:
         if not object.startswith('.'):
             #print(object)
 
-            epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced"+os.path.sep+"*_Spec"+os.path.sep)
+            epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
@@ -356,11 +388,16 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False):
                 for filename_filter in filename_filter_list:
                     try:
                         file_list.append(glob(inputDir+os.path.sep+filename_filter)[0])
+                        # if not mute:
+                        #     print("ROC: {0} in {1}. Adding.".format(filename_filter,inputDir))
                     except:
-                        if not mute:
-                            print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
+                        pass
+                        # if not mute:
+                        #     print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
 
                 if len(file_list) == N_ROC:
+                    print(file_list)
+                    N=N+1
                     for index,filename in enumerate(file_list):
                         with open(filename, 'rb') as csvfile:
                             reader = csv.reader(csvfile, delimiter=';')
@@ -376,6 +413,6 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False):
                             master_N_false_pos_list[index] = detec_table[:,1]
                             master_N_true_detec_list[index] = detec_table[:,2]
 
-
+    print("N files = {0}".format(N))
 
     return threshold_sampling_list,master_N_false_pos_list,master_N_true_detec_list
