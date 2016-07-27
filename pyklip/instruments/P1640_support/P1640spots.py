@@ -134,13 +134,25 @@ def make_mask_bar(img_shape, center, angle, width):
     
     return mask
 
-def make_mask_grid_spots(img_shape, centers, nchan=P1640params.nchan):
+def make_mask_grid_spots(img_shape, centers, nchan=P1640params.nchan, rotated=False):
     """
     Make a mask that shows only the grid spots
+    Input:
+        img_shape: the shape of the image to mask in (row, col)
+        centers: (Nchan x 2) array of centers of the mask in (row, col)
+        nchan: number of spectral channels in the cube
+        rotated: [False] make mask for normal (False) or rotated (True) grid spots
+    Returns:
+        masks: Nspot x Nchan cube of masks
     """
-    angles = units.Quantity([-25, 63, 155, 243], unit=units.degree)
+    if rotated is True:
+        angles = units.Quantity([21, 108, 194, 290], unit=units.degree)
+        center_region = np.linspace(45, 85, 32) # centers mask regions
+
+    else: # default values
+        angles = units.Quantity([-25, 63, 155, 243], unit=units.degree)
+        center_region = np.linspace(65, 110, 32) # centers mask regions
     ang_width = 40
-    center_region = np.linspace(65,110,32) # centers mask regions
     region_width = 20*P1640params.scale_factors
     inner_radii = center_region - region_width
     outer_radii = center_region + region_width
@@ -555,7 +567,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
     channels = np.arange(nchan, dtype=np.int)
     img_shape = cube.shape[1:]
     init_centers = img_shape*np.ones((nchan, 2))/2
-    spot_masks = make_mask_grid_spots(img_shape, init_centers)
+    spot_masks = make_mask_grid_spots(img_shape, init_centers, rotated=rotated_spots)
     masked_cubes =  ma.masked_array([ma.masked_array(cube, mask=i) 
                                      for i in spot_masks])
     #################################
