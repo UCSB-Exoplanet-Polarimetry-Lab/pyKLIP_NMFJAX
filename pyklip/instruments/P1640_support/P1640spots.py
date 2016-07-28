@@ -107,6 +107,7 @@ def make_mask_half_img(img_shape, center, angle):
     mask[dx>=0] = 1
     return ~ma.make_mask(mask)
 
+
 def make_mask_bar(img_shape, center, angle, width):
     """
     Make a bar mask where all the pixels inside a bar through the center of
@@ -134,18 +135,18 @@ def make_mask_bar(img_shape, center, angle, width):
     
     return mask
 
-def make_mask_grid_spots(img_shape, centers, nchan=P1640params.nchan, rotated=False):
+def make_mask_grid_spots(img_shape, centers, rotated_spots=False, nchan=P1640params.nchan):
     """
     Make a mask that shows only the grid spots
     Input:
         img_shape: the shape of the image to mask in (row, col)
         centers: (Nchan x 2) array of centers of the mask in (row, col)
+        rotated_spots: [False] make mask for normal (False) or rotated (True) grid spots
         nchan: number of spectral channels in the cube
-        rotated: [False] make mask for normal (False) or rotated (True) grid spots
     Returns:
         masks: Nspot x Nchan cube of masks
     """
-    if rotated is True:
+    if rotated_spots is True:
         angles = units.Quantity([21, 108, 194, 290], unit=units.degree)
         center_region = np.linspace(45, 85, 32) # centers mask regions
 
@@ -495,15 +496,19 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
 # Complete spot extraction
 ##################################################
 
-def get_initial_spot_guesses(cube):
+def get_initial_spot_guesses2(cube, rotated_spots=False):
+    pass
+
+def get_initial_spot_guesses(cube, rotated_spots=False):
     """
     """
     nchan = cube.shape[0]
     channels = np.arange(nchan, dtype=np.int)
     img_shape = cube.shape[1:]
     init_centers = img_shape*np.ones((nchan, 2))/2
-    
-    spot_masks = make_mask_grid_spots(img_shape, init_centers)
+
+    spot_masks = make_mask_grid_spots(img_shape, init_centers, rotated_spots=rotated_spots)
+
     spot_locs = np.zeros((P1640params.num_spots, nchan, 2))
     masked_cubes =  ma.masked_array([ma.masked_array(cube, mask=i) 
                                      for i in spot_masks])
@@ -567,7 +572,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
     channels = np.arange(nchan, dtype=np.int)
     img_shape = cube.shape[1:]
     init_centers = img_shape*np.ones((nchan, 2))/2
-    spot_masks = make_mask_grid_spots(img_shape, init_centers, rotated=rotated_spots)
+    spot_masks = make_mask_grid_spots(img_shape, init_centers, rotated_spots=rotated_spots)
     masked_cubes =  ma.masked_array([ma.masked_array(cube, mask=i) 
                                      for i in spot_masks])
     #################################
@@ -575,7 +580,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
 
     #################################
     # Initial pass
-    init_spots = get_initial_spot_guesses(cube)
+    init_spots = get_initial_spot_guesses(cube, rotated_spots)
 
     # now, fit rest of spots using initial guesses
     spot_fits, spot_locs = fit_grid_spots(masked_cubes, init_centers, init_spots)
