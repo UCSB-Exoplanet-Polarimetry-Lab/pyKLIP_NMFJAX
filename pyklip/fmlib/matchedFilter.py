@@ -33,7 +33,8 @@ class MatchedFilter(NoFM):
                  save_per_sector = None,
                  datatype="float",
                  fakes_sepPa_list = None,
-                 disable_FM = None):
+                 disable_FM = None,
+                 true_fakes_pos = None):
         '''
 
         :param inputs_shape:
@@ -52,6 +53,11 @@ class MatchedFilter(NoFM):
         '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
+
+        if true_fakes_pos is None:
+            self.true_fakes_pos = False
+        else:
+            self.true_fakes_pos = true_fakes_pos
 
         if datatype=="double":
             self.mp_data_type = ctypes.c_double
@@ -374,8 +380,12 @@ class MatchedFilter(NoFM):
                 min_id = np.nanargmin(dist_list)
                 min_dist = dist_list[min_id]
                 if min_dist < np.sqrt(2)/2:
-                    r_list_tmp.append(r_list[min_id])
-                    pa_list_tmp.append(pa_list[min_id])
+                    if self.true_fakes_pos:
+                        r_list_tmp.append(sep_it)
+                        pa_list_tmp.append(np.radians(pa_it))
+                    else:
+                        r_list_tmp.append(r_list[min_id])
+                        pa_list_tmp.append(pa_list[min_id])
                     row_id_list_tmp.append(row_id_list[min_id])
                     col_id_list_tmp.append(col_id_list[min_id])
             r_list = r_list_tmp

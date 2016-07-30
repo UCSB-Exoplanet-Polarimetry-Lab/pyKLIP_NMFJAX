@@ -188,7 +188,7 @@ class ShapeOrMF(KPPSuperClass):
         if isinstance(spectrum, str):
             if spectrum != "":
                 pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
-                self.spectrum_filename = os.path.abspath(os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spectrum))
+                self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
                 spectrum_name = self.spectrum_filename.split(os.path.sep)
                 self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
             else:
@@ -365,8 +365,7 @@ class ShapeOrMF(KPPSuperClass):
         # If the Kernel is a PSF build it here
         # if self.kernel_type == "PSF":
         if 1: # Reading the PSF all the time to get access to the sat spot spectrum
-            if PSF_cube_filename is not None:
-                self.PSF_cube_filename = PSF_cube_filename
+            self.PSF_cube_filename = PSF_cube_filename
 
             if self.PSF_cube_filename is None:
                 self.PSF_cube_filename = "*-original_radial_PSF_cube.fits"
@@ -503,7 +502,7 @@ class ShapeOrMF(KPPSuperClass):
             if isinstance(spectrum, str):
                 if spectrum != "":
                     pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
-                    self.spectrum_filename = os.path.abspath(os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spectrum))
+                    self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
                     spectrum_name = self.spectrum_filename.split(os.path.sep)
                     self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
                 else:

@@ -50,7 +50,8 @@ class FMMF(KPPSuperClass):
                  fakes_only = None,
                  disable_FM = None,
                  high_pass_filter = None,
-                 mvt_noTemplate = None):
+                 mvt_noTemplate = None,
+                 true_fakes_pos = None):
         """
         Define the general parameters of the metric.
 
@@ -134,6 +135,7 @@ class FMMF(KPPSuperClass):
         self.save_per_sector = None
         self.padding = 10
         self.save_klipped = True
+        self.true_fakes_pos = true_fakes_pos
 
         if numbasis is None:
             self.numbasis = np.array([30])
@@ -231,11 +233,12 @@ class FMMF(KPPSuperClass):
         """
 
         if spectrum is None:
-            self.spectrum_name = "t600g32nc"
-            spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
+            self.spectrum_name = "t600g100nc"
+            # spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
         else:
-            self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
-            spec_path = spectrum
+            self.spectrum_name = spectrum
+            # self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
+            # spec_path = spectrum
 
         self.folderName = self.spectrum_name+os.path.sep
 
@@ -246,7 +249,7 @@ class FMMF(KPPSuperClass):
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",self.spectrum_name+".flx"))[0])
         if self.mvt_noTemplate:
             self.spectra_template = None
         else:
@@ -267,7 +270,8 @@ class FMMF(KPPSuperClass):
                                      filter = self.filter,
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
-                                     disable_FM=self.disable_FM)
+                                     disable_FM=self.disable_FM,
+                                         true_fakes_pos = self.true_fakes_pos)
         return None
 
     def initialize(self, inputDir = None,
@@ -423,11 +427,12 @@ class FMMF(KPPSuperClass):
 
 
         if spectrum is None:
-            self.spectrum_name = "t600g32nc"
-            spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
+            self.spectrum_name = "t600g100nc"
+            # spec_path = "g32ncflx"+os.path.sep+self.spectrum_name+".flx"
         else:
-            self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
-            spec_path = spectrum
+            self.spectrum_name = spectrum
+            # self.spectrum_name = spectrum.split(os.path.sep)[-1].split(".")[0]
+            # spec_path = spectrum
 
         self.folderName = self.spectrum_name+os.path.sep
 
@@ -440,14 +445,14 @@ class FMMF(KPPSuperClass):
         # read fakes from headers and give sepPa list to MatchedFilter
         # else give None
         if self.fakes_only:
-            sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True)
+            sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True,fakes_only=True)
             self.fakes_sepPa_list = [(sep/0.01413,pa) for sep,pa in zip(sep_list, pa_list)]
         else:
             self.fakes_sepPa_list = None
 
         # methane spectral template
         pykliproot = os.path.dirname(os.path.realpath(klip.__file__))
-        self.spectrum_filename = os.path.join(pykliproot,"."+os.path.sep+"spectra"+os.path.sep+spec_path)
+        self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",self.spectrum_name+".flx"))[0])
 
         if self.mvt_noTemplate:
             self.spectra_template = None
@@ -469,7 +474,8 @@ class FMMF(KPPSuperClass):
                                      filter = self.filter,
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
-                                     disable_FM=self.disable_FM)
+                                     disable_FM=self.disable_FM,
+                                         true_fakes_pos= self.true_fakes_pos)
 
 
 

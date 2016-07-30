@@ -165,9 +165,7 @@ class KPPSuperClass(object):
             self.label = label
 
         # Define a default folderName is the one given is None.
-        if folderName is None:
-            self.folderName = os.path.sep+"default_out" +os.path.sep
-        else:
+        if folderName is not None:
             self.folderName = folderName+os.path.sep
 
         # Define the actual filename path

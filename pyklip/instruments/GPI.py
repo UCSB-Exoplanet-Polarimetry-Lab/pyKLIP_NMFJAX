@@ -1535,6 +1535,10 @@ def generate_spdc_with_fakes(dataset,
         sep_pa_iter_list = fake_position_dict["pa_sep_list"]
 
     if fake_position_dict["mode"] == "spirals":
+        try:
+            pa_shift = fake_position_dict["pa_shift"]
+        except:
+            pa_shift = 0.0
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
         annuli = 8
@@ -1544,7 +1548,7 @@ def generate_spdc_with_fakes(dataset,
         # Get parallactic angle of where to put fake planets
         # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
         # delta_pa = 180/np.pi*PSF_dist/radius
-        pa_list = np.arange(-180.,180.-0.01,delta_th)
+        pa_list = np.arange(-180.,180.-0.01,delta_th) + pa_shift
         radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         # for row_id in range(pa_grid.shape[0]):
@@ -1720,8 +1724,9 @@ def generate_spdc_with_fakes(dataset,
             exthdr_it["FKSEP{0:02d}".format(fake_id)] = radius
             if (fake_flux_dict["mode"] == "satSpot"):
                 exthdr_it["FKCONT{0:02d}".format(fake_id)] = contrast*spot_ratio
-            if (fake_flux_dict["mode"] == "contrast"):
+            else :#(fake_flux_dict["mode"] == "contrast")
                 exthdr_it["FKCONT{0:02d}".format(fake_id)] = contrast
+                # print(contrast)
             exthdr_it["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
             exthdr_it["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
             try:

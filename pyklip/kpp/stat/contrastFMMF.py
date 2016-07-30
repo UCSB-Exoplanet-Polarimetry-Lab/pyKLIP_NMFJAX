@@ -203,15 +203,16 @@ class ContrastFMMF(KPPSuperClass):
 
         # Evaluate the throughput of the metric
         if self.filename_fakes is not None:
-            row_real_object_list,col_real_object_list = get_pos_known_objects(self.prihdr_fakes,self.exthdr_fakes)
-            sep_list,pa_real_object_list = get_pos_known_objects(self.prihdr_fakes,self.exthdr_fakes,pa_sep=True)
+            row_real_object_list,col_real_object_list = get_pos_known_objects(self.prihdr_fakes,self.exthdr_fakes,fakes_only=True)
+            sep_list,pa_real_object_list = get_pos_known_objects(self.prihdr_fakes,self.exthdr_fakes,pa_sep=True,fakes_only=True)
+            print(sep_list)
             real_contrast_list = []
             for fake_id in range(100):
                 try:
                     real_contrast_list.append(self.exthdr_fakes["FKCONT{0:02d}".format(fake_id)])
                 except:
                     continue
-
+            print(real_contrast_list)
             # flux_list = []
             # metric_list = []
             self.metric_list = [self.image_fakes[np.round(row_real_object),np.round(col_real_object)] \
@@ -225,14 +226,14 @@ class ContrastFMMF(KPPSuperClass):
             print("THROUGHPUT = {0}".format(self.throughput))
             self.throughput = 2.1
 
-            # print(self.metric_list)
-            # print(sep_list)
-            # print(real_contrast_list)
-            # import matplotlib.pyplot as plt
-            # plt.plot(sep_list,np.array(self.metric_list)/np.array(real_contrast_list))
-            # plt.show()
-            # print(np.array(self.metric_list)/3.e-6)
-            # exit()
+            print(self.metric_list)
+            print(sep_list)
+            print(real_contrast_list)
+            import matplotlib.pyplot as plt
+            plt.plot(sep_list,np.array(self.metric_list)/np.array(real_contrast_list))
+            plt.show()
+            print(np.array(self.metric_list)/3.e-6)
+            exit()
 
         else:
             self.throughput = 1

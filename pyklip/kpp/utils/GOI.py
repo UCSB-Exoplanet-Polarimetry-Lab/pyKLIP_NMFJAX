@@ -111,7 +111,7 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
     return np.squeeze(cube_cpy)
 
 
-def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,
+def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
                           include_speckles = False,IWA=None,OWA=None):
 
 
@@ -140,52 +140,53 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
     pa_vec = []
     sep_vec = []
 
-    if GOI_list_folder is not None:
-        object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
-        if len(glob(object_GOI_filename)) != 0:
-            with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
-                GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
-                GOI_csv_as_list = list(GOI_list_reader)
-                attrib_name = GOI_csv_as_list[0]
-                GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
+    if not fakes_only:
+        if GOI_list_folder is not None:
+            object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
+            if len(glob(object_GOI_filename)) != 0:
+                with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+                    GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+                    GOI_csv_as_list = list(GOI_list_reader)
+                    attrib_name = GOI_csv_as_list[0]
+                    GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
 
-                pa_id = attrib_name.index("PA")
-                sep_id = attrib_name.index("SEP")
-                MJDOBS_id = attrib_name.index("MJDOBS")
-                STATUS_id = attrib_name.index("STATUS")
+                    pa_id = attrib_name.index("PA")
+                    sep_id = attrib_name.index("SEP")
+                    MJDOBS_id = attrib_name.index("MJDOBS")
+                    STATUS_id = attrib_name.index("STATUS")
 
-                MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
-                MJDOBS_unique = np.unique(MJDOBS_arr)
-                MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
-                MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
-                #Check that the closest MJDOBS is closer than 2 hours
-                if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
-                    # Skip if we couldn't find a matching date.
-                    return [],[]
+                    MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
+                    MJDOBS_unique = np.unique(MJDOBS_arr)
+                    MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
+                    MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
+                    #Check that the closest MJDOBS is closer than 2 hours
+                    if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
+                        # Skip if we couldn't find a matching date.
+                        return [],[]
 
-                for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-                    try:
-                        pa = float(GOI_list[obj_id,pa_id])
-                        radius = float(GOI_list[obj_id,sep_id])
-                        if IWA is not None:
-                            if radius/0.01413 < IWA:
-                                continue
-                        if OWA is not None:
-                            if radius/0.01413 > OWA:
-                                continue
-                        status = str(GOI_list[obj_id,STATUS_id])
-                        # print(status, include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]))
-                        if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
-                            pa_vec.append(pa)
-                            sep_vec.append(radius)
-                            x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
-                            y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
-                            x_vec.append(x_max_pos)
-                            y_vec.append(y_max_pos)
-                            row_vec.append(y_max_pos+center[1])
-                            col_vec.append(x_max_pos+center[0])
-                    except:
-                        print("Missing data in GOI database for {0}".format(object_name))
+                    for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
+                        try:
+                            pa = float(GOI_list[obj_id,pa_id])
+                            radius = float(GOI_list[obj_id,sep_id])
+                            if IWA is not None:
+                                if radius/0.01413 < IWA:
+                                    continue
+                            if OWA is not None:
+                                if radius/0.01413 > OWA:
+                                    continue
+                            status = str(GOI_list[obj_id,STATUS_id])
+                            # print(status, include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]))
+                            if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
+                                pa_vec.append(pa)
+                                sep_vec.append(radius)
+                                x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
+                                y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
+                                x_vec.append(x_max_pos)
+                                y_vec.append(y_max_pos)
+                                row_vec.append(y_max_pos+center[1])
+                                col_vec.append(x_max_pos+center[0])
+                        except:
+                            print("Missing data in GOI database for {0}".format(object_name))
 
     if not ignore_fakes:
         for fake_id in range(100):
