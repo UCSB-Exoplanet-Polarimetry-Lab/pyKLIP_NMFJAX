@@ -53,6 +53,7 @@ Contents
 
    install
    klip_gpi
+   contrast_curves
    release_notes
 
 
