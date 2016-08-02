@@ -510,7 +510,7 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
-def meas_contrast(dat, iwa, owa, resolution):
+def meas_contrast(dat, iwa, owa, resolution, center=None):
     """
     Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
     thoughput.
@@ -520,11 +520,18 @@ def meas_contrast(dat, iwa, owa, resolution):
         iwa: inner working angle
         owa: outer working angle
         resolution: size of resolution element in pixels (FWHM or lambda/D)
+        center: location of star (x,y). If None, defaults the image size // 2.
 
     Returns:
         (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
 
     """
+
+    if center is None:
+        starx = dat.shape[1]//2
+        stary = dat.shape[0]//2
+    else:
+        starx, stary = center
 
     #figure out how finely to sample the radial profile
     numseps = int((owa-iwa)/resolution)
@@ -534,8 +541,8 @@ def meas_contrast(dat, iwa, owa, resolution):
     contrast = []
     #create a coordinate grid
     x,y = np.meshgrid(np.arange(float(dat.shape[1])), np.arange(float(dat.shape[0])))
-    r = np.sqrt((x-140.)**2 + (y-140.)**2)
-    theta = np.arctan2(y-140, x-140) % 2*np.pi
+    r = np.sqrt((x-starx)**2 + (y-stary)**2)
+    theta = np.arctan2(y-stary, x-starx) % 2*np.pi
     for sep in seps:
         #make a bunch of circular aperatures at this separation
         dtheta = dsep/float(sep)
@@ -545,8 +552,8 @@ def meas_contrast(dat, iwa, owa, resolution):
         for thistheta in thetabins:
             #measure the flux in this resolution element
             #first get the position of the center of the element
-            xphot = np.cos(np.radians(thistheta)) * sep + 140.
-            yphot = np.sin(np.radians(thistheta)) * sep + 140.
+            xphot = np.cos(np.radians(thistheta)) * sep + starx
+            yphot = np.sin(np.radians(thistheta)) * sep + stary
             #coordinate system around this resolution element
             rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
             sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
