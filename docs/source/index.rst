@@ -50,11 +50,20 @@ Contents
 
 .. toctree::
    :maxdepth: 2
+   :caption: Setup
 
    install
+   release_notes
+   
+.. toctree::
+   :maxdepth: 2
+   :caption: Tutorials
+
    klip_gpi
    contrast_curves
-   release_notes
+
+
+ 
 
 
 

@@ -2,11 +2,16 @@
 *.out
 *.pyc
 *.fits
+
+#ignore fits files
 !pyklip/pickles/*.fits
 !pyklip/filters/*.fits
 version.py
+
+#ignore auxiliary directories
 pyklip.egg-info/
 gitstats/
 .idea/
 testing_scripts/
+docs/build/
 
