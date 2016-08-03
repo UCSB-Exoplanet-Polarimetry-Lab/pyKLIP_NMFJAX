@@ -1,4 +1,6 @@
-Basic KLIP Tutorial
+.. _basic-tutorial-label:
+
+Basic KLIP Tutorial with GPI
 ==============
 Here, we will explain how to run a simple PSF subtraciton using the KLIP algorithm in pyKLIP. If you are not familiar
 with KLIP, we suggest you first read `the KLIP paper <http://arxiv.org/abs/1207.4197>`_ which describes the algorithm
