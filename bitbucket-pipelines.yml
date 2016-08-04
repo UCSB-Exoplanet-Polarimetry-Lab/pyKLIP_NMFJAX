@@ -2,7 +2,7 @@
 # Only use spaces to indent your .yml configuration.
 # -----
 # You can specify a custom docker image from Dockerhub as your build environment
-image: python:3.5.1
+image: continuumio/anaconda
 
 pipelines:
   default:
@@ -11,3 +11,5 @@ pipelines:
           - pip install -U tox
           - pip --version
           - tox --version
+          - python setup.py install
+          
