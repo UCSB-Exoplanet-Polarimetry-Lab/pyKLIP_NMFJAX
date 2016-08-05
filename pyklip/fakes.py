@@ -279,11 +279,10 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     # a least squares gaussian fit. Apparently my least squares fit relatively underestimates
     # the flux so it's not consistent.
     # grab a radial profile of the fit
-    rs = np.arange(searchrad)
+    rs = np.arange(searchrad+1)
     thetas = np.arange(0,2*np.pi, 1./searchrad) #divide maximum circumfrence into equal parts
     radprof = [np.mean(ndimage.map_coordinates(fitbox, [thisr*np.sin(thetas)+yfit, thisr*np.cos(thetas)+xfit])) for thisr in rs]
     #now interpolate this radial profile to get fwhm
-    print(radprof[0:10])
     try:
         radprof_interp = interp.interp1d(radprof, rs)
         fwhm = 2*radprof_interp(np.max(radprof[0])/2)
