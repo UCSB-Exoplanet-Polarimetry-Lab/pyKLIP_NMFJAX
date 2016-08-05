@@ -329,7 +329,7 @@ def get_image_stddev(image,
         data = image[where_ring]
         sigma = np.nanstd(data)
 
-        if resolution is not None:
+        if resolution is not None and np.size(data) != 0:
             N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
             sigma = sigma*np.sqrt(1+1/N_res_elt)
         stddev_list.append(sigma)

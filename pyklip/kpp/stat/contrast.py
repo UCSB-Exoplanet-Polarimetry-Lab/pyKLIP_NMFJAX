@@ -403,7 +403,7 @@ class Contrast(KPPSuperClass):
                                GOI_list_folder=self.GOI_list_folder,
                                mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
                                save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
-                               suffix="pyklip_crossCorr",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list)
+                               suffix="pyklip_crossCorr",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
 
             #############################
@@ -450,7 +450,7 @@ class Contrast(KPPSuperClass):
                                GOI_list_folder=self.GOI_list_folder,
                                mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
                                save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
-                               suffix="pyklip_MFgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list)
+                               suffix="pyklip_MFgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
 
 
@@ -499,7 +499,7 @@ class Contrast(KPPSuperClass):
                                GOI_list_folder=self.GOI_list_folder,
                                mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
                                save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
-                               suffix="pyklip_SHgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list)
+                               suffix="pyklip_SHgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
 
             #############################
@@ -558,7 +558,7 @@ class Contrast(KPPSuperClass):
                                    GOI_list_folder=self.GOI_list_folder,
                                    mask_radius=self.mask_radius,IOWA=contrast_range,Dr=self.Dr,
                                    save_dir = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name),
-                                   suffix=FMMF_metric,spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list)
+                                   suffix=FMMF_metric,spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
         # Removing fakes
         spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA*.fits")

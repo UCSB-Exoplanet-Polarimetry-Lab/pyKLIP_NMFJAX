@@ -302,12 +302,12 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 stat_map[id] = 1-cdf_fit(image[k,l])
             elif type == "SNR":
                 stat_map[id] = image[k,l]/np.nanstd(data)
-                if resolution is not None:
+                if resolution is not None and np.size(data) != 0:
                     N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
                     stat_map[id] = stat_map[id]/np.sqrt(1+1/N_res_elt)
             elif type == "stddev":
                 stat_map[id] = np.nanstd(data)
-                if resolution is not None:
+                if resolution is not None and np.size(data) != 0:
                     N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
                     stat_map[id] = stat_map[id]*np.sqrt(1+1/N_res_elt)
             #print(probability_map[proba_map_k,l])
