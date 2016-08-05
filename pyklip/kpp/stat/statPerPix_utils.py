@@ -29,7 +29,8 @@ def get_image_stat_map_perPixMasking(image,
                                      N_threads = None,
                                      Dr = None,
                                      Dth = None,
-                                     type = "SNR"):
+                                     type = "SNR",
+                                     resolution = None):
     """
     Calculate the SNR or probability (tail distribution) of a given image on a per pixel basis.
 
@@ -129,7 +130,8 @@ def get_image_stat_map_perPixMasking(image,
                        itertools.repeat((None,None,None)),# itertools.repeat((r_limit_lastZone,r_min_lastZone,r_max_lastZone)),
                        itertools.repeat(Dr),
                        itertools.repeat(Dth),
-                       itertools.repeat(type)))
+                       itertools.repeat(type),
+                       itertools.repeat(resolution)))
 
         for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
             stat_map[(row_indices,col_indices)] = out
@@ -148,7 +150,8 @@ def get_image_stat_map_perPixMasking(image,
                                                                (None,None,None),#(r_limit_lastZone,r_min_lastZone,r_max_lastZone),
                                                                Dr = Dr,
                                                                Dth = Dth,
-                                                               type = type)
+                                                               type = type,
+                                                                resolution=resolution)
     if type == "proba":
         return -np.log10(stat_map)
     else:
@@ -173,7 +176,8 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                                                lastZone_radii,
                                                Dr = None,
                                                Dth = None,
-                                               type = "SNR"):
+                                               type = "SNR",
+                                               resolution = None):
     """
     Calculate the SNR or probability (tail distribution) for some pixels in image on a per pixel basis.
     The pixels are defined by row_indices and col_indices.
@@ -262,19 +266,21 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                     delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
                     where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask * \
                                         (abs(delta_th_grid)<Dth_rad))
-                    # import matplotlib.pyplot as plt
-                    # im_cpy = copy(image)
-                    # im_cpy[where_ring] = 1000
-                    # plt.figure(1)
-                    # plt.imshow(im_cpy)
-                    # plt.show()
-                    # print(where_ring)
             else:
                 delta_th_grid = np.mod(th_grid - th +np.pi,2.*np.pi)-np.pi
                 where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_without_planet_mask * \
                                     (abs(delta_th_grid)<(Dth_rad*50./r)))
 
             where_ring_masked = np.where((((x_grid[where_ring]-x)**2 +(y_grid[where_ring]-y)**2) > mask_radius*mask_radius))
+
+            # if k==100 and l==100:
+            #     import matplotlib.pyplot as plt
+            #     im_cpy = copy(image)
+            #     im_cpy[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])] = 1000
+            #     plt.figure(1)
+            #     plt.imshow(im_cpy)
+            #     plt.show()
+            # # print(where_ring)
 
             # print(where_ring_masked)
             data = image_without_planet[(where_ring[0][where_ring_masked],where_ring[1][where_ring_masked])]
@@ -296,8 +302,14 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 stat_map[id] = 1-cdf_fit(image[k,l])
             elif type == "SNR":
                 stat_map[id] = image[k,l]/np.nanstd(data)
+                if resolution is not None:
+                    N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
+                    stat_map[id] = stat_map[id]/np.sqrt(1+1/N_res_elt)
             elif type == "stddev":
                 stat_map[id] = np.nanstd(data)
+                if resolution is not None:
+                    N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
+                    stat_map[id] = stat_map[id]*np.sqrt(1+1/N_res_elt)
             #print(probability_map[proba_map_k,l])
 
 

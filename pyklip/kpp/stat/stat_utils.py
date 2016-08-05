@@ -267,7 +267,8 @@ def get_image_stddev(image,
                      centroid = None,
                      r_step = None,
                      Dr=None,
-                     image_wide = None):
+                     image_wide = None,
+                     resolution = None):
     if image_wide is None:
         image_wide = False
 
@@ -326,8 +327,12 @@ def get_image_stddev(image,
         where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
 
         data = image[where_ring]
+        sigma = np.nanstd(data)
 
-        stddev_list.append(np.nanstd(data))
+        if resolution is not None:
+            N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
+            sigma = sigma*np.sqrt(1+1/N_res_elt)
+        stddev_list.append(sigma)
         annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
 
     return stddev_list, annulus_radii_list

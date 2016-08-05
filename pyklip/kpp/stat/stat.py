@@ -4,7 +4,7 @@ import astropy.io.fits as pyfits
 from glob import glob
 import multiprocessing as mp
 import numpy as np
-from scipy.signal import convolve2d
+from scipy.signal import correlate2d
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp.stat.stat_utils import *
@@ -241,7 +241,10 @@ class Stat(KPPSuperClass):
         try:
             self.folderName = self.exthdr["METFOLDN"]+os.path.sep
         except:
-            pass
+            try:
+                self.folderName = self.exthdr["STAFOLDN"]+os.path.sep
+            except:
+                pass
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
@@ -334,7 +337,7 @@ class Stat(KPPSuperClass):
             # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
             IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center)
             conv_kernel = np.ones((self.rm_edge,self.rm_edge))
-            wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
+            wider_mask = correlate2d(outer_mask,conv_kernel,mode="same")
             self.image[np.where(np.isnan(wider_mask))] = np.nan
 
         # If GOI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
@@ -369,11 +372,11 @@ class Stat(KPPSuperClass):
             # Check if the input file is 2D or 3D
             if np.size(self.image.shape) == 3: # If the file is a 3D cube
                 for l_id in np.arange(self.nl):
-                    self.image[l_id,:,:] = convolve2d(self.image[l_id,:,:],self.PSF,mode="same")
-                    self.image_without_planet[l_id,:,:] = convolve2d(self.image_without_planet[l_id,:,:],self.PSF,mode="same")
+                    self.image[l_id,:,:] = correlate2d(self.image[l_id,:,:],self.PSF,mode="same")
+                    self.image_without_planet[l_id,:,:] = correlate2d(self.image_without_planet[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
-                self.image = convolve2d(self.image,self.PSF,mode="same")
-                self.image_without_planet = convolve2d(self.image_without_planet,self.PSF,mode="same")
+                self.image = correlate2d(self.image,self.PSF,mode="same")
+                self.image_without_planet = correlate2d(self.image_without_planet,self.PSF,mode="same")
 
 
         if np.size(self.image.shape) == 3:

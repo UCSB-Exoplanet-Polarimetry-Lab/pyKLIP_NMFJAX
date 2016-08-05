@@ -58,7 +58,7 @@ class ContrastFMMF(KPPSuperClass):
 
         self.IOWA = IOWA
         self.N = 400
-        self.Dr = 4
+        self.Dr = 2
         self.type = "stddev"
         self.suffix = "2Dcontrast"
         self.GOI_list_folder = GOI_list_folder
@@ -252,7 +252,7 @@ class ContrastFMMF(KPPSuperClass):
                                                                      self.IOWA,
                                                                      N = None,
                                                                      centroid = self.center,
-                                                                     r_step = self.Dr/2,
+                                                                     r_step = self.Dr,
                                                                      Dr=self.Dr)
         self.flux_stddev_rSamp = np.array([r_tuple[0] for r_tuple in self.flux_stddev_rSamp])
         self.flux_1Dstddev = np.array(self.flux_1Dstddev)
