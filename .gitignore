@@ -1,12 +1,14 @@
 #ignore file extensions
 *.out
 *.pyc
-*.fits
+*.zip
 
 #ignore fits files
 !pyklip/pickles/*.fits
 !pyklip/filters/*.fits
 version.py
+tests/*.fits
+examples/*.fits
 
 #ignore auxiliary directories
 pyklip.egg-info/
@@ -15,4 +17,5 @@ gitstats/
 testing_scripts/
 docs/build/
 .cache/
+examples/.ipynb_checkpoints/
 
