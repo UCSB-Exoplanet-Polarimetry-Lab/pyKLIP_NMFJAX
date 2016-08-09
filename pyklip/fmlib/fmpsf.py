@@ -11,13 +11,12 @@ import pyklip.fm as fm
 from scipy import interpolate
 from copy import copy
 
-#import matplotlib.pyplot as plt
 debug = False
 
 
-class PlanetChar(NoFM):
+class FMPlanetPSF(NoFM):
     """
-    Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
+    Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
     def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_psfs_wvs, flux_conversion, wavelengths='H', spectrallib=None, star_spt=None, refine_fit=False):
         """
@@ -38,7 +37,7 @@ class PlanetChar(NoFM):
             refine_fit: refine the separation and pa supplied
         """
         # allocate super class
-        super(PlanetChar, self).__init__(inputs_shape, numbasis)
+        super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
 
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
@@ -233,35 +232,6 @@ class PlanetChar(NoFM):
 
             models.append(segment_with_model)
 
-            # create a canvas to place the new PSF in the sector on
-            if debug:
-                print(x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0])
-                canvas = np.zeros(input_img_shape)
-                canvas.shape = [input_img_shape[0] * input_img_shape[1]]
-                canvas[section_ind] = segment_with_model
-                canvas.shape = [input_img_shape[0], input_img_shape[1]]
-                canvases.append(canvas)
-                import matplotlib.pyplot as plt
-                plt.figure(1)
-                plt.subplot(2,2,1)
-                im = plt.imshow(canvas)
-                plt.colorbar(im)
-                plt.subplot(2,2,2)
-                im = plt.imshow(whiteboard)
-                plt.colorbar(im)
-                plt.subplot(2,2,3)
-                plt.imshow(psfs_interp_model_list[wv_index[0]](np.arange(-20,20,1.),np.arange(-20,20,1.)),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
-                plt.subplot(2,2,4)
-                plt.imshow(psfs_interp_model_list[wv_index[0]](x_grid_stamp_centered[0,:],y_grid_stamp_centered[:,0]),interpolation="nearest")#x_psf_grid[0,:],y_psf_grid[:,0]
-                plt.show()
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
-
-        if debug:
-            #import matplotlib.pylab as plt
-            for canvas in canvases:
-                im = plt.imshow(canvas)
-                plt.colorbar(im)
-                plt.show()
 
         return np.array(models)
 
