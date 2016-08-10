@@ -249,8 +249,8 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
         xfit: x position (only chagned if refinefit is True)
         yfit: y position (only chagned if refinefit is True)
     """
-    x0 = np.round(xguess)
-    y0 = np.round(yguess)
+    x0 = np.rint(xguess).astype(int)
+    y0 = np.rint(yguess).astype(int)
     #construct our searchbox
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 

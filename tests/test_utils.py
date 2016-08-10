@@ -33,7 +33,7 @@ def _verify_planet_location(data, true_location, true_flux=None, true_fwhm=None,
         else:
             searchrad = 7
     
-    rounded_true_location = np.round(true_location)
+    rounded_true_location = np.rint(true_location)
     retrieved_noshift = fakes.gaussfit2d(data, rounded_true_location[0], rounded_true_location[1], searchrad=searchrad)
     output_noshift_pos = np.array(retrieved_noshift[2:4]) + (rounded_true_location - searchrad) # [x, y]
     output_noshift_flux = retrieved_noshift[0]
