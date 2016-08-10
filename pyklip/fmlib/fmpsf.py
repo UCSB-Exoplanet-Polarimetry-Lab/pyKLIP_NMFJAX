@@ -335,6 +335,52 @@ class FMPlanetPSF(NoFM):
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
+    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
+                   spectrum=None):
+        """
+        Saves the FM planet PSFs to disk. Saves both a KL mode cube and spectral cubes
+
+        Args:
+            dataset: Instruments.Data instance. Will use its dataset.savedata() function to save data
+            fmout: the fmout data passed from fm.klip_parallelized which is passed as the output of cleanup_fmout
+            outputdir: output directory
+            fileprefix: the fileprefix to prepend the file name
+            numbasis: KL mode cutoffs used
+            klipparams: string with KLIP-FM parameters
+            calibrate_flux: if True, flux calibrate the data in the same way as the klipped data
+            spectrum: if not None, spectrum to weight the data by. Length same as dataset.wvs
+        """
+        # collapse in time and wavelength to examine KL modes
+        if spectrum is None:
+            KLmode_cube = np.nanmean(fmout, axis=1)
+        else:
+            #do the mean combine by weighting by the spectrum
+            KLmode_cube = np.nanmean(fmout * spectrum[None,:,None,None], axis=1)\
+                          / np.mean(spectrum)
+
+        # broadband flux calibration for KL mode cube
+        if calibrate_flux:
+            KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+        dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
+                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         zaxis=numbasis)
+
+        # if there is more than one wavelength, save spectral cubes
+        if np.size(np.unique(dataset.wvs)) > 1:
+            numwvs = np.size(np.unique(dataset.wvs))
+            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]/numwvs, numwvs,
+                                            fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
+
+            # for each KL mode, collapse in time to examine spectra
+            KLmode_spectral_cubes = np.nanmean(klipped_spec, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
+
 
 
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):

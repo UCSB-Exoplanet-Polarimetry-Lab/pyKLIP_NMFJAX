@@ -1,15 +1,18 @@
 #KLIP Forward Modelling
-import pyklip.klip as klip
-import numpy as np
-import scipy.linalg as la
-from scipy.stats import norm
-import scipy.ndimage as ndimage
-
+import os
 from time import time
 import ctypes
 import itertools
 import multiprocessing as mp
-from pyklip.parallelized import _arraytonumpy
+
+import numpy as np
+import scipy.linalg as la
+from scipy.stats import norm
+import scipy.ndimage as ndimage
+import scipy.interpolate as sinterp
+
+import pyklip.klip as klip
+from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs
 
 from sys import stdout
 
@@ -1324,7 +1327,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #print(np.shape(section_ind))
         #print(radstart, radend, phistart, phiend)
 
-        if fm_class.skipSection(radstart, radend, phistart, phiend):
+        if fm_class.skip_section(radstart, radend, phistart, phiend):
             continue
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
@@ -1620,3 +1623,168 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                            fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped, covar_files=covar_files)
 
     return sector_index
+
+
+def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
+                 OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=3,
+                 numbasis=None, maxnumbasis=None, numthreads=None, calibrate_flux=False, aligned_center=None,
+                 spectrum=None, highpass=False, save_klipped=True, mute_progression=False):
+    """
+    Run KLIP-FM on a dataset object
+
+    Args:
+        dataset: an instance of Instrument.Data (see instruments/ subfolder)
+        fm_class: class that implements the the forward modelling functionality
+        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        anuuli: Annuli to use for KLIP. Can be a number, or a list of 2-element tuples (a, b) specifying
+                the pixel bondaries (a <= r < b) for each annulus
+        subsections: Sections to break each annuli into. Can be a number [integer], or a list of 2-element tuples (a, b)
+                     specifying the positon angle boundaries (a <= PA < b) for each section [radians]
+        OWA: if defined, the outer working angle for pyklip. Otherwise, it will pick it as the cloest distance to a
+            nan in the first frame
+        N_pix_sector: Rough number of pixels in a sector. Overwriting subsections and making it sepration dependent.
+                  The number of subsections is defined such that the number of pixel is just higher than N_pix_sector.
+                  I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
+                  Warning: There is a bug if N_pix_sector is too big for the first annulus. The annulus is defined from
+                            0 to 2pi which create a bug later on. It is probably in the way pa_start and pa_end are
+                            defined in fm_from_eigen(). (I am taking about matched filter by the way)
+        movement: minimum amount of movement (in pixels) of an astrophysical source
+                  to consider using that image for a refernece PSF
+        flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
+                    covariance matrix. Flux_overlap should be used instead of "movement" when a template spectrum is used.
+                    However if movement is not None then the old code is used and flux_overlap is ignored.
+                    The overlap is estimated for 1D gaussians with FWHM defined by PSF_FWHM. So note that the overlap is
+                    not exactly the overlap of two real 2D PSF for a given instrument but it will behave similarly.
+        PSF_FWHM: FWHM of the PSF used to calculate the overlap (cf flux_overlap). Default is FWHM = 3.5 corresponding
+                to sigma ~ 1.5.
+        minrot: minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+        padding: for each sector, how many extra pixels of padding should we have around the sides.
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
+        maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
+
+        numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
+        calibrate_flux: if true, flux calibrates the regular KLIP subtracted data. DOES NOT CALIBRATE THE FM
+        aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+                        registration
+        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
+                    minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quanitity)
+                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+                    if smaller than 10%, (hard coded quantity), then use it for reference PSF
+        highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                            can also be a number specifying FWHM of box in pixel units
+        save_klipped: if True, will save the regular klipped image. If false, it wil not and sub_imgs will return None
+        mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
+                        doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
+                        idea.
+
+    """
+
+    ########### Sanitize input arguments ###########
+
+    # numbasis default, needs to be array
+    if numbasis is None:
+        totalimgs = dataset.input.shape[0]
+        maxbasis = np.min([totalimgs, 100]) # only going up to 100 KL modes by default
+        numbasis = np.arange(1, maxbasis + 5, 5)
+        print("KL basis not specified. Using default.", numbasis)
+    else:
+        if hasattr(numbasis, "__len__"):
+            numbasis = np.array(numbasis)
+        else:
+            numbasis = np.array([numbasis])
+
+    # high pass filter?
+    if isinstance(highpass, bool):
+        if highpass:
+            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads)
+    else:
+        # should be a number
+        if isinstance(highpass, (float, int)):
+            fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+            dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
+
+    # output dir edge case
+    if outputdir == "":
+        outputdir = "."
+
+    # spectral template
+    if spectrum is not None:
+        if spectrum.lower() == "methane":
+            pykliproot = os.path.dirname(os.path.realpath(__file__))
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_wvs = spectrum_dat[:,1]
+            spectrum_fluxes = spectrum_dat[:,3]
+            spectrum_interpolation = sinterp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+
+            spectra_template = spectrum_interpolation(dataset.wvs)
+        else:
+            raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
+                             .format(spectrum))
+    else:
+        spectra_template = None
+
+    # save klip parameters as a string
+    klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_Npix={sector_N_pix}," \
+                 "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}" \
+                 "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
+                 "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
+                                              numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
+                                              calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
+                                              sector_N_Pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
+                                              fmclass=fm_class)
+    dataset.klipparams = klipparams
+
+    klip_outputs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, fm_class,
+                                     OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, movement=movement,
+                                     flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
+                                     maxnumbasis=maxnumbasis, aligned_center=aligned_center, numthreads=numthreads,
+                                     minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
+                                     N_pix_sector=N_pix_sector, mute_progression=mute_progression)
+
+    klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
+
+    # if we want to save the klipped image
+    if save_klipped:
+        # store it in the dataset object
+        dataset.output = klipped
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
+
+        # write to disk. Filepath
+        outputdirpath = os.path.realpath(outputdir)
+        print("Writing KLIPed Images to directory {0}".format(outputdirpath))
+
+        # collapse in time and wavelength to examine KL modes
+        if spectrum is None:
+            KLmode_cube = np.nanmean(dataset.output, axis=1)
+        else:
+            #do the mean combine by weighting by the spectrum
+            KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,None,None], axis=1)\
+                          / np.mean(spectra_template)
+
+        # broadband flux calibration for KL mode cube
+        if calibrate_flux:
+            KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+        dataset.savedata(outputdirpath + '/' + fileprefix + "-klipped-KLmodes-all.fits", KLmode_cube,
+                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         zaxis=numbasis)
+
+        # if there is more than one wavelength, save spectral cubes
+        if np.size(np.unique(dataset.wvs)) > 1:
+            numwvs = np.size(np.unique(dataset.wvs))
+            klipped_spec = klipped.reshape([klipped.shape[0], klipped.shape[1]/numwvs, numwvs,
+                                            klipped.shape[2], klipped.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
+
+            # for each KL mode, collapse in time to examine spectra
+            KLmode_spectral_cubes = np.nanmean(klipped_spec, axis=1)
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
+                dataset.savedata(outputdirpath + '/' + fileprefix + "-klipped-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
+
+

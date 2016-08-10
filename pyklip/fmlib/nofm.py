@@ -144,3 +144,20 @@ class NoFM(object):
             Boolean: False so by default it never skips.
         """
         return False
+
+    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
+                   spectrum=None):
+        """
+        Saves the fmout data to disk following the instrument's savedata function
+
+        Args:
+            dataset: Instruments.Data instance. Will use its dataset.savedata() function to save data
+            fmout: the fmout data passed from fm.klip_parallelized which is passed as the output of cleanup_fmout
+            outputdir: output directory
+            fileprefix: the fileprefix to prepend the file name
+            numbasis: KL mode cutoffs used
+            klipparams: string with KLIP-FM parameters
+            calibrate_flux: if True, flux calibrate the data (if applicable)
+            spectrum: if not None, the spectrum to weight the data by. Length same as dataset.wvs
+        """
+        return
