@@ -240,7 +240,7 @@ class MatchedFilter(NoFM):
 
         return fmout, fmout_shape
 
-    def skipSection(self,radstart, radend, phistart, phiend):
+    def skip_section(self, radstart, radend, phistart, phiend):
         """
         Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
         When True is returned the current section in the loop in klip_parallelized() is skipped.
