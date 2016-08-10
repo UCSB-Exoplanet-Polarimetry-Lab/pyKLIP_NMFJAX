@@ -1257,7 +1257,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
     Args:
-        dataset:        an implementation of Instrument.Data (see instruments/ subfolder)
+        dataset:        an instance of Instrument.Data (see instruments/ subfolder)
         mode:           one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         outputdir:      directory to save output files
         fileprefix:     filename prefix for saved files
