@@ -63,7 +63,7 @@ def get_total_exposure_time(fitsfiles, unit=units.minute):
     Output:
       tot_exp_time: the sum of the exposure times for each cube, in minutes
     """
-    exptimes = np.array([fits.getval(f, 'EXPTIME') for f in fitsfiles]) * units.second
+    exptimes = np.array([fits.getval(f, 'EXP_TIME') for f in fitsfiles]) * units.second
     return np.sum(exptimes).to(unit)
 
 
