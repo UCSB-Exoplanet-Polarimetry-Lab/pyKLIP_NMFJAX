@@ -8,11 +8,11 @@ from copy import copy
 
 def covert_pa_to_image_polar(pa, astr_hdr):
     """
-    Given a parallactic angle (angle from N to Zenith rotating in the Eastward direction), calculate what
+    Given a position angle (angle to North through East), calculate what
     polar angle theta (angle from +X CCW towards +Y) it corresponds to
 
     Args:
-        pa: parallactic angle in degrees
+        pa: position angle in degrees
         astr_hdr: wcs astrometry header (astropy.wcs)
 
     Returns:
@@ -23,11 +23,12 @@ def covert_pa_to_image_polar(pa, astr_hdr):
         rot_sgn = -1.
     else:
         rot_sgn = 1.
-    #calculate CCW rotation from +Y to North in radians
+    # calculate CCW rotation from +Y to North in radians
     rot_YN = np.arctan2(rot_sgn * astr_hdr.wcs.cd[0,1],rot_sgn * astr_hdr.wcs.cd[0,0])
-    #now that we know where north it, find the CCW rotation from +Y to find location of planet
+    # now that we know where north it,
+    # find the CCW rotation from +Y to find location of planet
     rot_YPA = rot_YN - rot_sgn*pa*np.pi/180. #radians
-    #rot_YPA = rot_YN + pa*np.pi/180. #radians
+    # rot_YPA = rot_YN + pa*np.pi/180. #radians
 
     theta = rot_YPA * 180./np.pi + 90.0 #degrees
     return theta
@@ -176,9 +177,12 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
     Args:
         frames: array of (N,y,x) for N is the total number of frames
         centers: array of size (N,2) of [x,y] coordiantes of the image center
-        peakflxes: array of size N of the peak flux of the fake disk in each frame
+        intputfluxes: array of size N of the peak flux of the fake disk in each frame OR
+                      array of 2-D models (North up East left) to inject into the data.
+                            (Disk is assumed to be centered at center of image)
         astr_hdrs: array of size N of the WCS headers
-        pa: parallactic angle (in degrees) of disk plane (if that is a quantity that makes any sense)
+        pa: position angles angle (in degrees) of disk plane
+        fwhm: if injecting a Gaussian disk (i.e inputfluxes is an array of floats), fwhm of Gaussian
 
     Returns:
         saves result in input "frames" variable
@@ -307,7 +311,9 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
         # if it's infinite, it is bad
         corrflux = np.nan
 
-    #print("Fitparams", xfit, yfit, corrflux, fwhm)
+    # convert xfit, yfit back to image coordinates
+    xfit = xfit - searchrad + x0
+    yfit = yfit - searchrad + y0
 
     return corrflux, fwhm, xfit, yfit
 
@@ -475,15 +481,15 @@ def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5,fit_centroid = False,residu
             return returned_flux
 
 
-
-def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False, thetas=None):
+def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False,
+                         thetas=None):
     """
-    Retrives the peak flux of the planet from a series of frames given a separation and PA
+    Retrives the planet flux from a series of frames given a separation and PA
 
     Args:
-        frames: N frames of data - Array of size (N,y,x)
-        centers: array of size (N,2) of [x,y] coordiantes of the image center
-        astr_hdrs: array of N astr_hdrs
+        frames: frames of data to retrieve planet. Can be a single 2-D image ([y,x]) for a series/cube ([N,y,x])
+        centers: coordiantes of the image center. Can be [2]-element lst or an array that matches array of frames [N,2]
+        astr_hdrs: astr_hdrs, can be a single one or an array of N of them
         sep: radial distance in pixels
         PA: parallactic angle in degrees
         searchrad: 1/2 the length of the box used for the fit
@@ -491,27 +497,95 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         guesspeak: approximate flux
         refinefit: whether or not to refine the positioning of the planet
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
-                array of size N
+                single number or array of size N
 
     Returns:
-        peakfluxes: array of N peak planet fluxes
+        peakflux: either a single peak flux or an array depending on whether a single frame or multiple frames
+                    where passed in
     """
-    peakfluxes = []
+    measured = retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad, guessfwhm, guesspeak, refinefit, thetas)
 
+    if np.ndim(measured) == 1:
+        # just one frame, return one number
+        return measured[0]
+    else:
+        # return an array of fluxes
+        return measured[:,0]
+
+
+
+def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False,
+                         thetas=None):
+    """
+    Retrives the planet properties from a series of frames given a separation and PA
+
+    Args:
+        frames: frames of data to retrieve planet. Can be a single 2-D image ([y,x]) for a series/cube ([N,y,x])
+        centers: coordiantes of the image center. Can be [2]-element lst or an array that matches array of frames [N,2]
+        astr_hdrs: astr_hdrs, can be a single one or an array of N of them
+        sep: radial distance in pixels
+        PA: parallactic angle in degrees
+        searchrad: 1/2 the length of the box used for the fit
+        guessfwhm: approximate fwhm to fit to
+        guesspeak: approximate flux
+        refinefit: whether or not to refine the positioning of the planet
+        thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
+                single number or array of size N
+
+    Returns:
+        measured: (peakflux, x, y, fwhm). A single tuple if one frame passed in. Otherwise an array of tuples
+    """
+
+    # check to make sure all arguments are the right/consistent dimensions
+    # get the number of dimensions of frames as reference for all the other variables
+    frames_ndim = np.ndim(frames)
+    if frames_ndim == 2:
+        # make sure all other arguments are consistent in dimensions
+        if np.ndim(centers) != 1:
+            raise IndexError("centers needs to be a 2-element list")
+        if np.ndim(astr_hdrs) != 0:
+            raise IndexError("astr_hdrs cannot be a list because you only passed in one frame")
+        if thetas is not None:
+            if np.ndim(thetas) != 0:
+                raise IndexError("thetas cannot be a list because you only passed in one frame")
+                thetas = [thetas]
+        # turn them into lists so we can reuse the same code
+        frames = [frames]
+        centers = [centers]
+        astr_hdrs = [astr_hdrs]
+    elif frames_ndim == 3:
+        # make sure all other arguments are consistent in dimensions
+        if np.ndim(centers) != 2:
+            raise IndexError("centers needs to an array of [x,y] coordinates")
+        if np.ndim(astr_hdrs) != 1:
+            raise IndexError("astr_hdrs must be a list because you only passed in multiple frames")
+        if thetas is not None:
+            if np.ndim(thetas) != 1:
+                raise IndexError("thetas must be a list because you only passed in multiple frames")
+                thetas = [thetas]
+    else:
+        raise IndexError("frames is either 2-D or 3-D, not {0)-D".format(frames_ndim))
+
+    measured = []
    
     if thetas is None:
-        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])        
+        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
-    #loop over all of them
+    # loop over all of them
     for frame, center, theta in zip(frames, centers, thetas):
-        #find the pixel location on this image
-        #theta = covert_pa_to_image_polar(pa, astr_hdr)
+        # find the pixel location on this image
+        # theta = covert_pa_to_image_polar(pa, astr_hdr)
         x = sep*np.cos(np.radians(theta)) + center[0]
         y = sep*np.sin(np.radians(theta)) + center[1]
         print(x,y)
-        #calculate the flux
+        # calculate the flux
         flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
-        #flux= gaussfit2dLSQ(frame, x, y, searchrad=searchrad)
-        peakfluxes.append(flux)
+        measured.append(flux, xfit, yfit, flux)
 
-    return np.array(peakfluxes)
+    # return a single number if onyl one frame passed in
+    if frames_ndim == 2:
+        measured = measured[0]
+    else:
+        measured = np.array(measured)
+
+    return measured
