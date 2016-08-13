@@ -1695,6 +1695,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         else:
             numbasis = np.array([numbasis])
 
+    # default aligned_center if none:
+    if aligned_center is None:
+        aligned_center = [np.mean(dataset.centers[:,0]), np.mean(dataset.centers[:,1])]
+
     # high pass filter?
     if isinstance(highpass, bool):
         if highpass:
@@ -1726,13 +1730,13 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         spectra_template = None
 
     # save klip parameters as a string
-    klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_Npix={sector_N_pix}," \
+    klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \
                  "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}" \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
-                                              sector_N_Pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
+                                              sector_N_pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
 
