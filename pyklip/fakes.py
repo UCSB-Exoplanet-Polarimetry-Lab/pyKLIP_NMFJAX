@@ -268,8 +268,11 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
    
         #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
         #(2searchrad+1,2searchrad+1)
-        p, success = optimize.leastsq(errorfunction, (searchrad, searchrad, guesspeak, guessfwhm/(2 * np.sqrt(2*np.log(2)))))
-        
+
+        guess = (searchrad, searchrad, guesspeak, guessfwhm/(2 * np.sqrt(2*np.log(2))))
+
+        p, success = optimize.leastsq(errorfunction, guess)
+
         xfit = p[0]
         yfit = p[1]
         peakflux = p[2]
@@ -277,13 +280,14 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     else:
         xfit = xguess-x0 + searchrad
         yfit = yguess-y0 + searchrad
+        fwhm = guessfwhm
    
     #ok now, to really calculate fwhm and flux, because we really need that right, we're going
     # to use what's in the GPI DRP pipeline to measure satellite spot fluxes instead of
     # a least squares gaussian fit. Apparently my least squares fit relatively underestimates
     # the flux so it's not consistent.
     # grab a radial profile of the fit
-    rs = np.arange(searchrad+1)
+    rs = np.linspace(0, searchrad+1, np.max([15, searchrad+1])) # should always have at least pixel resolution
     thetas = np.arange(0,2*np.pi, 1./searchrad) #divide maximum circumfrence into equal parts
     radprof = [np.mean(ndimage.map_coordinates(fitbox, [thisr*np.sin(thetas)+yfit, thisr*np.cos(thetas)+xfit])) for thisr in rs]
     #now interpolate this radial profile to get fwhm
@@ -291,7 +295,9 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
         radprof_interp = interp.interp1d(radprof, rs)
         fwhm = 2*radprof_interp(np.max(radprof[0])/2)
     except ValueError:
-        fwhm = searchrad
+        # use old FWHM
+        pass
+
 
     #now calculate flux
     xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xfit, np.arange(0, 2*searchrad+1, 1.0)-yfit)
@@ -510,11 +516,11 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         return measured[0]
     else:
         # return an array of fluxes
-        return measured[:,0]
+        return measured[:, 0]
 
 
 
-def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=False,
+def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=True,
                          thetas=None):
     """
     Retrives the planet properties from a series of frames given a separation and PA
@@ -580,7 +586,7 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         print(x,y)
         # calculate the flux
         flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
-        measured.append(flux, xfit, yfit, flux)
+        measured.append((flux, xfit, yfit, fwhm))
 
     # return a single number if onyl one frame passed in
     if frames_ndim == 2:
