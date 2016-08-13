@@ -16,5 +16,5 @@ pipelines:
           - pip install -U scipy
           - pip install -U astropy
           - pip install -U pytest
-          - python setup.py install
+          - python setup.py develop
           - py.test
