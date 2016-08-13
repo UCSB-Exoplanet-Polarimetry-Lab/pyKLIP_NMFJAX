@@ -10,6 +10,7 @@ pipelines:
         script: # Modify the commands below to build your repository.
           - ls 
           - ls pyklip
+          - ls pyklip/instruments
           - pip install -U tox
           - pip install -U numpy
           - pip install -U scipy

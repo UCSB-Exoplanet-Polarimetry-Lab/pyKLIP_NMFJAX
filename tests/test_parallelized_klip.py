@@ -6,6 +6,8 @@ from time import time
 import numpy as np
 import astropy.io.fits as fits
 
+import pyklip
+import pyklip.instruments
 import pyklip.parallelized as parallelized
 import pyklip.instruments.GPI as GPI
 import pyklip.fakes as fakes
