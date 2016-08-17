@@ -413,7 +413,7 @@ class ContrastFMMF(KPPSuperClass):
 
 
 
-def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=None):
+def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=None, cont_name_list = None):
     """
     Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
     If the folders are organized following the convention below then it will make sure there is a ROC file for each
@@ -438,14 +438,18 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
         master_N_true_detec: Number of true positives as a function of threshold_sampling
     """
 
-    N_CONT = len(filename_filter_list)
-    sep_samp_list = [[]]*N_CONT
-    cont_list = [[]]*N_CONT
+    N_cont = len(filename_filter_list)
+    sep_samp_list = [[]]*N_cont
+    cont_list = [[]]*N_cont
 
     if epoch_suffix is None:
         epoch_suffix = ""
 
+    if cont_name_list is None:
+        cont_name_list = ["T-Type",]*N_cont
+
     dirs_to_reduce = os.listdir(base_dir)
+    # dirs_to_reduce = ["HD_90885_B"]
     N=0
     for object in dirs_to_reduce:
         if not object.startswith('.'):
@@ -459,8 +463,8 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
                 file_list = []
                 for filename_filter in filename_filter_list:
                     try:
-                        print(inputDir+os.path.sep+filename_filter)
-                        print(glob(inputDir+os.path.sep+filename_filter)[0])
+                        # print(inputDir+os.path.sep+filename_filter)
+                        # print(glob(inputDir+os.path.sep+filename_filter)[0])
                         file_list.append(glob(inputDir+os.path.sep+filename_filter)[0])
                         # if not mute:
                         #     print("ROC: {0} in {1}. Adding.".format(filename_filter,inputDir))
@@ -469,10 +473,10 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
                         # if not mute:
                         #     print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
 
-                if len(file_list) == N_CONT:
-                    print(file_list)
+                if len(file_list) == N_cont:
+                    # print(file_list)
                     N=N+1
-                    for index,filename in enumerate(file_list):
+                    for index,(filename,cont_name) in enumerate(zip(file_list,cont_name_list)):
                         with open(filename, 'rb') as csvfile:
                             # reader = csv.reader(csvfile, delimiter=' ')
                             # csv_as_list = list(reader)
@@ -488,16 +492,42 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
                             contrast_arr = contrast_str_arr[1::].astype(np.float)
                             sep_samples = contrast_arr[:,0]
 
-                            methane_idx = np.where("T-Type"==col_names)[0]
+                            methane_idx = np.where(cont_name==col_names)[0]
 
                             methane_contrast = np.squeeze(contrast_arr[:,methane_idx])
 
-                        try:
-                            cont_list[index] = cont_list[index]+methane_contrast
-                        except:
-                            sep_samp_list[index] = sep_samples
-                            cont_list[index] = methane_contrast
+                        if N == 1:
+                            cont_list[index] = [methane_contrast]
+                            sep_samp_list[index] = [sep_samples]
+                        else:
+                            cont_list[index].append(methane_contrast)
+                            sep_samp_list[index].append(sep_samples)
+
+
+                        # try:
+                        #     cont_list[index] = cont_list[index]+methane_contrast
+                        # except:
+                        #     sep_samp_list[index] = sep_samples
+                        #     cont_list[index] = methane_contrast
 
     print("N files = {0}".format(N))
 
-    return sep_samp_list,np.array(cont_list)/N
+
+    final_sep_samp_list = []
+    for k in range(N_cont):
+        sep_samp_big_vector = np.concatenate(sep_samp_list[k])
+        final_sep_samp_list.append(np.unique(sep_samp_big_vector))
+
+
+    N_curves = len(cont_list[0])
+    final_cont_list = []
+    for k in range(N_cont):
+        final_sep_samp = final_sep_samp_list[k]
+        curr_cont_list = np.zeros((N_curves,np.size(final_sep_samp)))+np.nan
+        for l,(sep_samp,cont) in enumerate(zip(sep_samp_list[k],cont_list[k])):
+            ind = np.where(final_sep_samp==sep_samp[0])[0]
+            curr_cont_list[l,ind:(ind+np.size(cont))] = cont
+        final_cont_list.append(curr_cont_list)
+
+    # return sep_samp_list,np.array(cont_list)/N
+    return final_sep_samp_list,final_cont_list

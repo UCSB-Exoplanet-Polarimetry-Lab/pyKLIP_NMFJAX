@@ -44,7 +44,6 @@ class Contrast(KPPSuperClass):
                  save_contrast=None):
         """
 
-
         :param filename: Filename of the file on which to calculate the metric. It should be the complete path unless
                         inputDir is defined.
                         It can include wild characters. The file will be selected using the first output of glob.glob().
@@ -263,7 +262,7 @@ class Contrast(KPPSuperClass):
             os.makedirs(self.dir_fakes)
 
         if not self.plot_only:
-            if 0:
+            if len(glob(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux","pyklip_k150a9s4m1methane-KL50-speccube.fits"))) == 0:
                 if not self.mute:
                     print("~~ Reducing pyklip no fakes ~~")
                 spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
@@ -302,8 +301,8 @@ class Contrast(KPPSuperClass):
                 fake_position_dict = dict(mode = "spirals",pa_shift=pa_shift)
 
                 # Inject the fakes
-                if 0:
-                    spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
+                spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
+                if len(glob(os.path.join(self.dir_fakes,"S*_spdc_distorcorr_{0}_PA*.fits").format(self.fakes_spectrum))) != 3*len(spdc_glob):
                     if not self.mute:
                         print("~~ Reading dataset ~~")
                     dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
@@ -320,7 +319,7 @@ class Contrast(KPPSuperClass):
                                              SpT_file_csv = self.GPI_TSpT_csv)
 
                 # Run pyklip on the fakes
-                if 0:
+                if len(glob(os.path.join(self.dir_fakes,"fakes_PA*_k150a9s4m1methane-KL50-speccube.fits"))) != 3:
                     # spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA{0:02d}.fits".format(pa_shift))
                     # dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
                     parallelized.klip_dataset(dataset,
@@ -341,7 +340,7 @@ class Contrast(KPPSuperClass):
             inputDir_tasks = []
             fakesDir_tasks = []
 
-            overwrite_tmp = True
+            overwrite_tmp = False
             resolution = 3.5
 
             #############################
