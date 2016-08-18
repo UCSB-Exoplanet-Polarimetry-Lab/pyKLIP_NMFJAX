@@ -1,0 +1,11 @@
+.. _p1640-label:
+
+
+Using pyKLIP with Project 1640 data
+==============================
+
+Usage instructions for Project 1640 are similar to those for GPI with the exception that the grid spot positions must
+be found before KLIP can be run. Import the P1640 instrument class instead of the GPI instrument class.
+
+The grid spots locations only need to be found once, after which they can be read from a file.
+Instructions for how to find the grid spots are located in pyklip/Instruments/P1640_support/README.md.
