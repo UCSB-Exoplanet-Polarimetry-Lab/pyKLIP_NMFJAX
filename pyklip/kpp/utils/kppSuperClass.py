@@ -4,6 +4,7 @@ import os
 import astropy.io.fits as pyfits
 from glob import glob
 import multiprocessing as mp
+import numpy as np
 
 class KPPSuperClass(object):
     """
@@ -13,6 +14,8 @@ class KPPSuperClass(object):
     It is not a completely empty function and includes features that are probably useful to most inherited class though
     one might decide to overwrite them.
     Here it simply returns the input fits file as read.
+
+    I should remove the option to set output dir in the class definition
     """
     def __init__(self,filename,
                  inputDir = None,
@@ -81,6 +84,7 @@ class KPPSuperClass(object):
         if outputDir is None: # If None outputDir will be defined in initalize()
             self.outputDir = None
         else:
+            print("DON'T SET OUTPUTDIR WHEN DEFINING THE CLASS. JB SHOULD REMOVE THIS FEATURE")
             self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
 
         # Number of threads to be used in case of parallelization.
@@ -174,15 +178,6 @@ class KPPSuperClass(object):
         else:
             self.inputDir = os.path.abspath(inputDir)
 
-        # If outputDir is None define it as the project directory.
-        if outputDir is not None:
-            self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
-
-        if self.outputDir is None:
-            if self.inputDir is None:
-                self.outputDir = os.path.abspath("."+os.path.sep+"planet_detec_"+self.label)
-            else:
-                self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"planet_detec_"+self.label)
 
         if read:
             # Check file existence and define filename_path
@@ -221,6 +216,7 @@ class KPPSuperClass(object):
                     raise Exception("Couldn't read "+self.filename_path+". Is it a fits?")
 
             # Get input cube dimensions
+            self.image = np.squeeze(self.image)
             if len(self.image.shape) == 3:
                 self.nl,self.ny,self.nx = self.image.shape
                 # # Checking that the cube has the 37 spectral slices of a normal GPI cube.
@@ -231,6 +227,17 @@ class KPPSuperClass(object):
             else:
                 raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
 
+            # If outputDir is None define it as the project directory.
+            if outputDir is not None:
+                self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+            else: # if self.outputDir is None:
+                if "planet_detec" in self.filename_path:
+                    split_path = os.path.dirname(self.filename_path).split(os.path.sep)
+                    planet_detec_label = split_path[np.where(["planet_detec" in mystr for mystr in split_path])[0]]
+                    self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
+                else:
+                    self.outputDir = os.path.join(os.path.dirname(self.filename_path),"planet_detec_"+self.label)
+
             if self.process_all_files:
                 if self.id_matching_file < self.N_matching_files:
                     return True
@@ -240,6 +247,16 @@ class KPPSuperClass(object):
             else:
                 return False
         else:
+            # If outputDir is None define it as the project directory.
+            if outputDir is not None:
+                self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+
+            if self.outputDir is None:
+                if self.inputDir is None:
+                    self.outputDir = os.path.abspath("."+os.path.sep+"planet_detec_"+self.label)
+                else:
+                    self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"planet_detec_"+self.label)
+
             return False
 
 
