@@ -132,9 +132,12 @@ class Detection(KPPSuperClass):
             self.center = [140,140]
 
         try:
-            self.folderName = self.exthdr["METFOLDN"]
+            self.folderName = self.exthdr["METFOLDN"]+os.path.sep
         except:
-            pass
+            try:
+                self.folderName = self.exthdr["STAFOLDN"]+os.path.sep
+            except:
+                pass
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]

@@ -34,6 +34,11 @@ Features
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
 * Version 1.1 - see :ref:`release-notes` for update notes
 
+Bugs/Feature Requests
+------------------------
+
+Please use the `Issue Tracker <https://bitbucket.org/pyKLIP/pyklip/issues?status=new&status=open>`_ on Bitbucket to
+submit bugs and new feature requests. Anyone is able to open issues.
 
 Attribution
 -----------------------
@@ -61,6 +66,7 @@ Contents
 
    klip_gpi
    contrast_curves
+   p1640
 
 
  

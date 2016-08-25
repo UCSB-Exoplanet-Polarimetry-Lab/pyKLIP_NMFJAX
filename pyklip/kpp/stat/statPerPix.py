@@ -249,6 +249,7 @@ class StatPerPix(KPPSuperClass):
         :return: False
         """
 
+        print(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
         file_exist = (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')) >= 1)
 
         if file_exist and not self.mute:

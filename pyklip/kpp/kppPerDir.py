@@ -10,10 +10,10 @@ def kppPerDir(inputDir,obj_list,spec_path_list = None,outputDir = None, mute_err
     if compact_date_convention == "GPIDATA":
         compact_date=inputDir.split(os.path.sep)[-1].split("_")[0]
 
-    if outputDir is None:
-        outputDir = inputDir
-    else:
-        outputDir = os.path.abspath(outputDir)
+    # if outputDir is None:
+    #     outputDir = inputDir
+    # else:
+    #     outputDir = os.path.abspath(outputDir)
 
     err_list = []
     for obj in obj_list:
