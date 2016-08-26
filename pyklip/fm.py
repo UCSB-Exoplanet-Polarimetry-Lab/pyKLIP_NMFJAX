@@ -1760,6 +1760,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         outputdirpath = os.path.realpath(outputdir)
         print("Writing KLIPed Images to directory {0}".format(outputdirpath))
 
+        # write fmout
+        fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams, 
+                            calibrate_flux=calibrate_flux, spectrum=spectra_template)
+
         # collapse in time and wavelength to examine KL modes
         if spectrum is None:
             KLmode_cube = np.nanmean(dataset.output, axis=1)
