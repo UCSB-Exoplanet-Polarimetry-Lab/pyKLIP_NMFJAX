@@ -66,7 +66,8 @@ class GPIData(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         spot_flux: Array of N of average satellite spot flux for each frame
-        contrast_scaling: Flux calibration factors (multiply by image to "calibrate" flux)
+        dn_per_contrast: Flux calibration factor in units of DN/contrast (divide by image to "calibrate" flux)
+                Can also be thought of as the DN of the unocculted star
         flux_units: units of output data [DN, contrast]
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
@@ -134,7 +135,7 @@ class GPIData(Data):
             self._wcs = None
             self._IWA = None
             self.spot_flux = None
-            self.contrast_scaling = None
+            self.dn_per_contrast = None
             self.prihdrs = None
             self.exthdrs = None
             self.flux_units = None
@@ -326,7 +327,7 @@ class GPIData(Data):
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -417,13 +418,13 @@ class GPIData(Data):
             if "spectral" in filetype.lower():
                 # individual contrast scalings for spectral cube
                 for wv_i in range(data.shape[0]):
-                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.contrast_scaling[wv_i], "Contrast/DN for slice {0}".format(wv_i))
+                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.dn_per_contrast[wv_i], "DN/Contrast for slice {0}".format(wv_i))
                 hdulist[0].header.add_history("Converted to contrast units using CON2DN scaling for each wv slice")
             else:
                 # broadband cube so only have one scaling
-                broadband_contrast_scaling = np.nanmean(self.contrast_scaling)
-                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
-                hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
+                broadband_contrast_scaling = np.nanmean(self.dn_per_contrast)
+                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband DN/Contrast")
+                hdulist[0].header.add_history("Converted to contrast units using {0} DN/Contrast".format(broadband_contrast_scaling))
 
         if extra_prihdr_keywords is not None:
             for name,value in extra_prihdr_keywords:
@@ -503,10 +504,10 @@ class GPIData(Data):
             if spectral:
                 # spectral cube, each slice needs it's own calibration
                 numwvs = img.shape[0]
-                img *= self.contrast_scaling[:numwvs, None, None]
+                img /= self.dn_per_contrast[:numwvs, None, None]
             else:
                 # broadband image
-                img *= np.nanmean(self.contrast_scaling)
+                img /= np.nanmean(self.dn_per_contrast)
             self.flux_units = "contrast"
 
         return img
