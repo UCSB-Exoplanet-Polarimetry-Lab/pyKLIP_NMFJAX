@@ -335,8 +335,9 @@ class GPIData(Data):
 
 
 
-    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
+    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
+                 center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -346,6 +347,8 @@ class GPIData(Data):
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                                         written into the primary header
             astr_hdr: wcs astrometry header
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
@@ -426,6 +429,12 @@ class GPIData(Data):
                 hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband DN/Contrast")
                 hdulist[0].header.add_history("Converted to contrast units using {0} DN/Contrast".format(broadband_contrast_scaling))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key, hdr_val in more_keywords:
+                hdulist[0].header[hdr_key] = hdr_val
+
+        # JB's code to store keywords
         if extra_prihdr_keywords is not None:
             for name,value in extra_prihdr_keywords:
                  hdulist[0].header[name] = value

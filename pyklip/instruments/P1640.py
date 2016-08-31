@@ -388,7 +388,7 @@ class P1640Data(Data):
         self.exthdrs = exthdrs
 
     def savedata(self, filepath, data, klipparams = None, filetype = 'PSF Subtracted Spectral Cube', zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,):
+                 fakePlparams = None, more_keywords=None):
         """
         Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
         For now, the Primary HDU contains the KLIP parameters, scaling, and centering. This may later change 
@@ -473,6 +473,11 @@ class P1640Data(Data):
                 #write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
+
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key, hdr_val in more_keywords:
+                hdulist[0].header[hdr_key] = hdr_val
 
         # Not used by P1640
         '''
