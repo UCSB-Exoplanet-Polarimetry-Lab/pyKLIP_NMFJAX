@@ -76,21 +76,21 @@ class DiskFM(NoFM):
             klmodes = self.klmodes_all[input_img_num]
             evals = self.evals_all[input_img_num]
             evecs = self.evecs_all[input_img_num]
-            ref_psfs_indices = self.ref_psfs_indices_all[input_img_num]
+            ref_psfs_indicies = self.ref_psfs_indicies_all[input_img_num]
             section_ind = self.section_ind_all[input_img_num]
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
-        refs = refs[ref_psfs_indices, :]
+#        refs = refs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
 
         model_sci = self.model_disks[input_img_num, section_ind[0]]
-        model_ref = self.model_disks[ref_psfs_indices, :]
+        model_ref = self.model_disks[ref_psfs_indicies, :]
         model_ref = model_ref[:, section_ind[0]]
         
         refs_mean_sub = model_ref - np.nanmean(model_ref, axis = 1)[:, None]
         refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
         models_mean_sub = model_ref - np.nanmean(model_ref, axis = 1)[:, None]
-        model_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
+        models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
         delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs_mean_sub, models_mean_sub, return_perturb_covar = False)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
@@ -177,3 +177,4 @@ class DiskFM(NoFM):
             model_copy = rotate(model_copy, pa, self.centers[i], flipx = True)
             model_copy[np.where(np.isnan(model_copy))] = 0.
             self.model_disks[i] = model_copy
+        self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
