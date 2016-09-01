@@ -476,8 +476,8 @@ class P1640Data(Data):
 
         # store extra keywords in header
         if more_keywords is not None:
-            for hdr_key, hdr_val in more_keywords:
-                hdulist[0].header[hdr_key] = hdr_val
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # Not used by P1640
         '''

@@ -431,8 +431,8 @@ class GPIData(Data):
 
         # store extra keywords in header
         if more_keywords is not None:
-            for hdr_key, hdr_val in more_keywords:
-                hdulist[0].header[hdr_key] = hdr_val
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # JB's code to store keywords
         if extra_prihdr_keywords is not None:
