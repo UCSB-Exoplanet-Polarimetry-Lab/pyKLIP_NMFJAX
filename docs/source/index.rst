@@ -66,7 +66,9 @@ Contents
 
    klip_gpi
    contrast_curves
+   bka
    p1640
+   pyklip
 
 
  
