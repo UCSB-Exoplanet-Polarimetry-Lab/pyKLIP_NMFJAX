@@ -110,7 +110,7 @@ class CubeChecker:
         #self.ax_cube.xaxis.set_ticks_position("bottom")
         #self.ax_cube.set_xticklabels(self.ax_cube.get_xticklabels(), va='bottom')
         self.s_cube = Tk.Scale(frame_cube,
-                               from_=0,to=len(self.current_cube),
+                               from_=0,to=len(self.current_cube)-1,
                                label='Channel',
                                orient='horizontal',
                                troughcolor='blue',
