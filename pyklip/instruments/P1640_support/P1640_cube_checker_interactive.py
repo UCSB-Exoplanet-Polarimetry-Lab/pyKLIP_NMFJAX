@@ -69,7 +69,11 @@ class CubeChecker:
         frame_cube = Tk.Toplevel()
         frame_cube.title("Current cube")
         frame_cube.grid()
-        
+        # good cubes window
+        self.frame_good_cubes = Tk.Toplevel()
+        self.frame_good_cubes.title("Good cubes")
+        self.frame_good_cubes.grid()
+
         self.spot_mode = spot_mode
         self.spot_path = spot_path
         self.fitsfiles = sorted([os.path.abspath(i) for i in fitsfiles])
@@ -152,6 +156,9 @@ class CubeChecker:
                                                          font=self.customFont,
                                                          variable=self.current_cube_path,
                                                          value=ff,
+                                                         indicatoron=0,
+                                                         justify=Tk.LEFT,
+                                                         offrelief=Tk.RIDGE,
                                                          command=self.load_selected_cube))
             gf_var = Tk.StringVar()
             self.file_select_check.append(Tk.Checkbutton(self.good_file_group,
@@ -169,19 +176,9 @@ class CubeChecker:
                                      command=self.prev_cube)
 
         # bindings
-        master.bind("n", self.next_button_pushed)
-        master.bind("p", self.prev_button_pushed)
-        master.bind("k", self.keep_button_pushed)
-        master.bind("q", self.quit_button_pushed)
-        master.bind("<Left>", self.scroll_cube_left) 
-        master.bind("<Right>", self.scroll_cube_right)
-        frame_cube.bind("n", self.next_button_pushed)
-        frame_cube.bind("p", self.prev_button_pushed)
-        frame_cube.bind("k", self.keep_button_pushed)
-        frame_cube.bind("q", self.quit_button_pushed)
-        frame_cube.bind("<Left>", self.scroll_cube_left) 
-        frame_cube.bind("<Right>", self.scroll_cube_right)
-       
+        self.bind_buttons_to_frame(master)
+        self.bind_buttons_to_frame(frame_cube)
+
         # cube data fields
         self.cube_info_group = Tk.LabelFrame(frame_cube, text="Exposure Info", font=self.customFont)
         self.curr_exptime = Tk.StringVar()
@@ -205,14 +202,20 @@ class CubeChecker:
         # print good files button
         self.print_good_button = Tk.Button(frame, text="Print good files", font=self.customFont,
                                            fg='black', command=self.print_good_cubes)
-
+        self.wiki_format_flag = Tk.IntVar()
+        self.wiki_format_flag.set(1)
+        self.print_wiki_format = Tk.Checkbutton(frame, text="Output as wiki-pasteable list",
+                                                font=self.customFont, variable=self.wiki_format_flag,
+                                                fg='black')
+        
         
 
         # File list window
         self.data_dir.grid(row=0,column=0, columnspan=4, padx=20)
         self.quit_button.grid(row=0, column=4, columnspan=2,  padx=20,pady=5, sticky=Tk.E)
         self.print_good_button.grid(row=1, column=0, columnspan=2, padx=20,pady=5, sticky=Tk.W)
-        self.file_lists.grid(row=2,column=0,columnspan=2, rowspan=8, padx=20, sticky=Tk.NW)
+        self.print_wiki_format.grid(row=2,column=0, padx=20, pady=2, sticky=Tk.NW)
+        self.file_lists.grid(row=3,column=0,columnspan=2, rowspan=8, padx=20, sticky=Tk.NW)
 
 
         self.canvas_seeing.get_tk_widget().grid(row=1, column=3, rowspan=3, padx=20, pady=20)
@@ -266,8 +269,22 @@ class CubeChecker:
         self.s_cube.set(np.max([self.s_cube.get()-1,0]))
     def scroll_cube_right(self, event):
         self.s_cube.set(np.min([self.s_cube.get()+1, len(self.current_cube)-1]))
+    def activate_printing(self, event):
+        self.print_good_button.invoke()
         
+    def bind_buttons_to_frame(self, frame_ref):
+        """
+        These are the buttons you want to be recognized by all the frames
+        """
+        frame_ref.bind("n", self.next_button_pushed)
+        frame_ref.bind("p", self.prev_button_pushed)
+        frame_ref.bind("k", self.keep_button_pushed)
+        frame_ref.bind("q", self.quit_button_pushed)
+        frame_ref.bind("<Left>", self.scroll_cube_left) 
+        frame_ref.bind("<Right>", self.scroll_cube_right)
+        frame_ref.bind("<Shift-p>", self.activate_printing)
 
+        
     @property
     def current_cube(self):
         return self._current_cube
@@ -397,22 +414,52 @@ class CubeChecker:
     ## Printing ##
     def print_good_cubes(self):
         good_cubes = [os.path.abspath(i.get()) for i in self.good_files if i.get()]
-        print("\n")
+        # clear the good_cubes frame
+        children = self.frame_good_cubes.winfo_children()
+        if len(children) > 0:
+            for child in children:
+                child.destroy()
+        
+        try:
+            max_length = max([len(i) for i in good_cubes])
+        except ValueError:
+            max_length=0
+        width = max([max_length, 20])
+        exptimevar = Tk.StringVar()
+        exptimevar.set("0 min")
+        exptime_label = Tk.Label(self.frame_good_cubes,
+                                 textvariable=exptimevar,
+                                 font=self.customFont)
+        good_cubes_listbox = Tk.Listbox(self.frame_good_cubes,
+                                        exportselection=1,
+                                        height=len(good_cubes)+2,
+                                        selectmode=Tk.EXTENDED,
+                                        font=self.customFont,
+                                        width=width + 5)
+        
         if len(good_cubes) > 0:
-            print("Printing good cubes:")
-            for i in good_cubes: print i
+            #print("Printing good cubes:")
+            for i in good_cubes:
+                #print i
+                if self.wiki_format_flag.get() == 1:
+                    i = "  * " + i
+                good_cubes_listbox.insert(Tk.END, i)
             exptime = get_total_exposure_time(good_cubes)
             expmin = np.int(np.floor(exptime.value))
             expsec = exptime.decompose().value % 60
-            print("Total exposure time: {0} min {1:0.0f} sec".format(expmin, expsec))
+            exptimevar.set("Total exposure time: {0} min {1:0.0f} sec".format(expmin, expsec))
+            #print(exptimestr)
         else:
-            print("No good cubes")
-        print("\n")
-        
-
+            #print("No good cubes")
+            good_cubes_listbox.insert(Tk.END, "No good cubes")
+        exptime_label.grid(row=0,column=0)
+        good_cubes_listbox.grid(row=1,column=0,rowspan=len(good_cubes)+3)
+        self.bind_buttons_to_frame(self.frame_good_cubes)
 
 
 #### Helper functions ####
+
+
 
 def get_total_exposure_time(fitsfiles, unit=units.minute):
     """
