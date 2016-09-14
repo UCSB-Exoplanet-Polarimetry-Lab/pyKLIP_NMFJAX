@@ -377,6 +377,7 @@ class CubeChecker:
             img_norm = LogNorm
         self.ax_cube.clear()
         self.ax_cube.matshow(self.current_cube[self.s_cube.get()], origin='lower', norm=img_norm())
+        self.ax_cube.xaxis.set_ticks_position("bottom")
         self.ax_cube.set_title(os.path.basename(self.current_cube_path.get()))
         if self.spot_mode is True:
             self.draw_spots_on_cube()
