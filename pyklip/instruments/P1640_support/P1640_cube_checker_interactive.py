@@ -282,7 +282,9 @@ class CubeChecker:
         frame_ref.bind("q", self.quit_button_pushed)
         frame_ref.bind("<Left>", self.scroll_cube_left) 
         frame_ref.bind("<Right>", self.scroll_cube_right)
-        frame_ref.bind("<Shift-p>", self.activate_printing)
+        frame_ref.bind("<Up>", self.prev_button_pushed) 
+        frame_ref.bind("<Down>", self.next_button_pushed)
+        frame_ref.bind("<Shift-P>", self.activate_printing)
 
         
     @property
@@ -377,6 +379,7 @@ class CubeChecker:
             img_norm = LogNorm
         self.ax_cube.clear()
         self.ax_cube.matshow(self.current_cube[self.s_cube.get()], origin='lower', norm=img_norm())
+        self.ax_cube.xaxis.set_ticks_position("bottom")
         self.ax_cube.set_title(os.path.basename(self.current_cube_path.get()))
         if self.spot_mode is True:
             self.draw_spots_on_cube()
@@ -455,7 +458,8 @@ class CubeChecker:
         exptime_label.grid(row=0,column=0)
         good_cubes_listbox.grid(row=1,column=0,rowspan=len(good_cubes)+3)
         self.bind_buttons_to_frame(self.frame_good_cubes)
-
+        # after you push this button, raise the window
+        self.frame_good_cubes.lift()
 
 #### Helper functions ####
 
