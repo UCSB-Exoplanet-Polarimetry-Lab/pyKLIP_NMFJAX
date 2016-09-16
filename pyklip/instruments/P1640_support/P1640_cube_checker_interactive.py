@@ -178,7 +178,8 @@ class CubeChecker:
         # bindings
         self.bind_buttons_to_frame(master)
         self.bind_buttons_to_frame(frame_cube)
-
+        self.bind_buttons_to_frame(self.frame_good_cubes)
+        
         # cube data fields
         self.cube_info_group = Tk.LabelFrame(frame_cube, text="Exposure Info", font=self.customFont)
         self.curr_exptime = Tk.StringVar()
