@@ -581,6 +581,35 @@ class FMMF(KPPSuperClass):
         metric_shape[np.where(metric_shape==0)]=np.nan
         metric_shape = np.squeeze(metric_shape)
 
+        # fmout0 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
+        # fmout1 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
+        # fmout2 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
+        # for k in range(self.N_cubes): #JUST RETHINK IT
+        #     fmout0 = fmout0+fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]
+        #     fmout1 = fmout1+fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
+        #     fmout2 = fmout0+fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:]
+        # fmout0 = fmout0/37
+        # fmout1 = fmout1/37
+        # fmout2 = fmout2/37
+        # sat_spot_flux_for_calib = 0
+        # for k in range(self.N_cubes):
+        #     sat_spot_flux_for_calib = sat_spot_flux_for_calib+np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+        # sat_spot_flux_for_calib = sat_spot_flux_for_calib/self.N_cubes
+        # metric_pFlux = np.nansum(fmout0,axis=2) \
+        #                 / np.nansum(fmout1,axis=2) \
+        #                 / sat_spot_flux_for_calib * sat_spot_ratio
+        # metric_MF = np.sum(fmout0,axis=2) / np.sqrt(np.sum(fmout1,axis=2))
+        # metric_shape = np.sum(fmout0,axis=2) \
+        #                 / (  np.sqrt(np.sum(fmout1,axis=2)) \
+        #                    * np.sqrt(np.sum(fmout2,axis=2)) )
+        #
+        # metric_pFlux[np.where(metric_pFlux==0)]=np.nan
+        # metric_pFlux = np.squeeze(metric_pFlux)
+        # metric_MF[np.where(metric_MF==0)]=np.nan
+        # metric_MF = np.squeeze(metric_MF)
+        # metric_shape[np.where(metric_shape==0)]=np.nan
+        # metric_shape = np.squeeze(metric_shape)
+
         #self.dataset.psfs
 
 

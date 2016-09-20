@@ -64,8 +64,8 @@ specified. The FITS files contain two different kinds of outputs. The first is a
 different KL mode cutoffs used to model the stellar PSF. The second is a series of spectral datacubes with the z-axis is wavelength and each datacube
 uses a different KL mode cutoff as specified by its filename.
 
-Picking KLIP Parameters
-------------------------
+Picking KLIP Parameters for Point Sources
+-----------------------------------------
 There are a lot of ways to tune the reduction, so check out the docstring of :py:meth:`pyklip.parallelized.klip_dataset` for
 all the keywords you can use.
 Here, we have provided the keywords which we use the most and should be sufficient for most
@@ -76,14 +76,18 @@ Geometry
 We have divided the image into 9 annuli and each annuli into 4
 sectors (which do not rotate with the sky) and run KLIP independently on each sector.
 Picking the geometry depends on the structure of the PSF, but we have
-found this to be pretty good for GPI data. For disks, we find setting ``subsections=1`` to be effective.
+found this to be pretty good for GPI data. 
 
 "Aggressiveness"
 ^^^^^^^^^^^^^^^^
 "Aggressiveness" is a key parameter to tune in the PSF subtraction. Increasing the aggressiveness of the PSF
-subtraciton typically allows you to better model and subtract the stellar PSF. However, doing so also typically
+subtraction typically allows you to better model and subtract the stellar PSF. However, doing so also typically
 causes any astrophysical flux (e.g. planets, disks) to also be subtracted to a higher degree. Typically, there
-is a sweet spot that balances subtracting the stellar PSF and maintaining the signal of planets and disks.
+is a sweet spot that balances subtracting the stellar PSF and
+maintaining the signal of planets and disks. The aggressiveness of the
+subtraction is tuned via a combination of the  
+"movement" or "minrot" parameters and "numbasis" keywords, as
+described below. 
 
 ``movement``
 """""""""""""
@@ -103,8 +107,7 @@ of searching to find the optimal configuration.
 
 ``mode``
 """"""""
-The ``mode`` keyword specifies whether to use ADI, SDI, or both. For disks, it is typically suggested to use only
-ADI as SDI can severly distort the disk signal.
+The ``mode`` keyword specifies whether to use ADI, SDI, or both. 
 
 ``spectrum``
 """"""""""""
@@ -117,6 +120,61 @@ signal is weak). The aggressiveness of this is tuned with the ``movement`` keywo
 we will allow into the reference PSFs images at wavelengths where the ratio of "no methane abospriton"/"some methane
 absorption" is smaller). When this keyword is set, we also do a weighted mean collapse in wavelength for the outputted
 KL-mode cubes.
+
+
+Picking KLIP Parameters for Disks
+---------------------------------
+
+Using KLIP for disks can be difficult since the optimal parameters
+will depend on the geometry of the disk and the amount of field
+rotation in the sequence. Below, we describe some starting
+points for tuning the subtraction. Note that for disks it is suggested
+to only use mode="ADI" as SDI can severely distort the disk signal.
+
+
+Geometry 
+^^^^^^^^^
+PyKLIP splits divides the image into a number of annuli centered
+around the center of the image as defined by the PSFCENTX and PSFCENTY
+FITS headers, and splits each of those annuli into a number of
+subsections, set by the "annuli" and "subsection" keywords,
+respectively. For disks, we find "subsections=1" to be effective. The
+number of annuli can also depend on the geometry of the disk, but we
+find that "annuli=1" is sufficient for most cases and produces
+smoother looking reductions.
+
+Aggressiveness
+^^^^^^^^^^^^^^^^
+The aggressiveness of a PSF subtraction is influenced by a number of
+parameters described below. There is often
+no one optimal aggressiveness, and there is much to be gained from
+both more aggressive and less aggressive reductions. A more aggressive
+reduction will allows you to probe features at closer inner working
+angles at the cost of killing fainter or more extended features. The
+aggressiveness and the parameters you choose can also be affected by
+the geometry and strength of the detection. Edge-on disks are more
+resilient to more aggressive reductions while face-on disks will need less aggressive
+reductions due to the self-subtraction associated with ADI.
+
+Numbasis
+^^^^^^^^
+Changing the number of basis vectors subtracted will show different
+sets of features. More basis vectors will self-subtract more of the
+extended PSF structure, showing features in closer inner working
+angles while subtracting fewer basis vectors will show more extended
+features of the disk.
+
+Minrot
+^^^^^^
+Given the structure of debris disks, it is preferable to use the
+minrot criterion to select basis vectors rather than the movement
+parameters as is used in psf subtraction. The choise for this paraeter
+will depend on the geometry. For thin disks, a smaller minrot is
+desireable as it will allow for a cleaner subtraction while thicker
+disks will require a larger minrot to avoid self-subtraction.
+
+
+
 
 Other
 ^^^^^

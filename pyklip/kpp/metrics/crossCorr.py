@@ -217,6 +217,19 @@ class CrossCorr(KPPSuperClass):
         if self.nans2zero:
             self.image = np.nan_to_num(self.image)
 
+        # We have to make sure the PSF dimensions are odd because correlate2d shifts the image otherwise...
+        if (self.nx_PSF % 2 ==0):
+            PSF_tmp = np.zeros((self.ny_PSF,self.nx_PSF+1))
+            PSF_tmp[0:self.ny_PSF,0:self.nx_PSF] = self.PSF
+            self.PSF = PSF_tmp
+            self.nx_PSF = self.nx_PSF +1
+        if (self.ny_PSF % 2 ==0):
+            PSF_tmp = np.zeros((self.ny_PSF+1,self.nx_PSF))
+            PSF_tmp[0:self.ny_PSF,0:self.nx_PSF] = self.PSF
+            self.PSF = PSF_tmp
+            self.ny_PSF = self.ny_PSF +1
+
+
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D
             if np.size(self.image.shape) == 3: # If the file is a 3D cube
@@ -224,6 +237,17 @@ class CrossCorr(KPPSuperClass):
                     self.image[l_id,:,:] = correlate2d(self.image[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 self.image_convo = correlate2d(self.image,self.PSF,mode="same")
+
+        # import matplotlib.pyplot as plt
+        # print(self.PSF.shape)
+        # plt.figure(1)
+        # plt.subplot(2,1,1)
+        # plt.title("image")
+        # plt.imshow(self.image[102:112,130:140],interpolation="nearest")
+        # plt.subplot(2,1,2)
+        # plt.title("convo")
+        # plt.imshow(self.image_convo[102:112,130:140],interpolation="nearest")
+        # plt.show()
 
         return self.image_convo
 
@@ -239,15 +263,14 @@ class CrossCorr(KPPSuperClass):
 
         if hasattr(self,"prihdr") and hasattr(self,"exthdr"):
             # Save the parameters as fits keywords
-            # STA##### stands for STAtistic
+            # MET##### stands for METtistic
 
-            self.exthdr["STAFILEN"] = self.filename_path
-            self.exthdr["STAINDIR"] = self.inputDir
-            self.exthdr["STAOUTDI"] = self.outputDir
-            self.exthdr["STAFOLDN"] = self.folderName
-
-            self.exthdr["STAKERTY"] = str(self.kernel_type)
-            self.exthdr["STAKERWI"] = str(self.kernel_width)
+            self.exthdr["METFILEN"] = self.filename_path
+            self.exthdr["METINDIR"] = self.inputDir
+            self.exthdr["METOUTDI"] = self.outputDir
+            self.exthdr["METFOLDN"] = self.folderName
+            self.exthdr["METKERTY"] = str(self.kernel_type)
+            self.exthdr["METKERWI"] = str(self.kernel_width)
 
 
             if not self.mute:
@@ -261,13 +284,13 @@ class CrossCorr(KPPSuperClass):
             hdulist.append(pyfits.ImageHDU(data=self.image_convo, name=self.suffix))
             hdulist.append(pyfits.ImageHDU(name=self.suffix))
 
-            hdulist[1].header["STAFILEN"] = self.filename_path
-            hdulist[1].header["STAINDIR"] = self.inputDir
-            hdulist[1].header["STAOUTDI"] = self.outputDir
-            hdulist[1].header["STAFOLDN"] = self.folderName
+            hdulist[1].header["METFILEN"] = self.filename_path
+            hdulist[1].header["METINDIR"] = self.inputDir
+            hdulist[1].header["METOUTDI"] = self.outputDir
+            hdulist[1].header["METFOLDN"] = self.folderName
 
-            hdulist[1].header["STAKERTY"] = str(self.kernel_type)
-            hdulist[1].header["STAKERWI"] = str(self.kernel_width)
+            hdulist[1].header["METKERTY"] = str(self.kernel_type)
+            hdulist[1].header["METKERWI"] = str(self.kernel_width)
 
             if not self.mute:
                 print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')

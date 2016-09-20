@@ -15,10 +15,6 @@ from astropy.io import fits
 from astropy import units
 from astropy.modeling import models, fitting
 
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
-from matplotlib import animation
-
 from photutils import aperture_photometry, CircularAperture
 
 import ConfigParser
@@ -390,27 +386,6 @@ def fix_bad_channels(spot, centers, bad_chans):
         fixed_spot[worse,1] = newyx[1][worse]   
 
     return fixed_spot
-    
-##################################################
-# Plotting
-##################################################
-
-def animate(nframe, images, centers, spot_locs):
-    plt.cla()
-    imax = plt.imshow(images[nframe], origin='lower', norm=LogNorm())
-    plt.title('{0}'.format(nframe))
-    aps = [CircAp(positions=spot[nframe][::-1], r=10) for spot in spot_locs]
-    for ap in aps: ap.plot(linewidth=3.0, edgecolor='k')
-    ax = imax.get_axes()
-    ax.plot(spot_locs[[0,2],nframe,1], spot_locs[[0,2],nframe,0], 'k-')
-    ax.plot(spot_locs[[1,3],nframe,1], spot_locs[[1,3],nframe,0], 'k-')
-    plt.plot(centers[nframe][1], centers[nframe][0], '*', 
-             ms=20, fillstyle='none')
-    plt.plot(centers[nframe][1], centers[nframe][0], 'k.')
-    ax.set_xlim(0,250)
-    ax.set_ylim(0,250)
-
-
 
 ##################################################
 # Write spots to memory or disk
@@ -1004,9 +979,4 @@ if __name__ == "__main__":
     # remake the masks with the new centers
     #spot_masks = make_mask_grid_spots(img_shape, centers)
 
-
-    images = cube#*spot_masks.sum(axis=0)
-    fig = plt.figure()
-    anim = animation.FuncAnimation(fig, animate, frames=nchan, interval=500,
-                                   fargs=[images, centers, spot_locs])
 

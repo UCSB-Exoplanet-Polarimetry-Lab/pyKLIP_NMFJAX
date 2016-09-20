@@ -257,12 +257,20 @@ class Contrast(KPPSuperClass):
         # Inject fakes
         print(self.inputDir)
 
+        throughput_break = 1.1
+        contrast_range = [0.2,1.5]
+
+        inputDir_tasks = []
+        fakesDir_tasks = []
+
+        overwrite_tmp = False
+        resolution = 3.5
 
         if not os.path.exists(self.dir_fakes):
             os.makedirs(self.dir_fakes)
 
         if not self.plot_only:
-            if len(glob(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux","pyklip_k150a9s4m1methane-KL50-speccube.fits"))) == 0:
+            if overwrite_tmp or len(glob(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux","pyklip_k150a9s4m1methane-KL50-speccube.fits"))) == 0:
                 if not self.mute:
                     print("~~ Reducing pyklip no fakes ~~")
                 spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
@@ -302,7 +310,7 @@ class Contrast(KPPSuperClass):
 
                 # Inject the fakes
                 spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
-                if len(glob(os.path.join(self.dir_fakes,"S*_spdc_distorcorr_{0}_PA*.fits").format(self.fakes_spectrum))) != 3*len(spdc_glob):
+                if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"S*_spdc_distorcorr_{0}_PA*.fits").format(self.fakes_spectrum))) != 3*len(spdc_glob):
                     if not self.mute:
                         print("~~ Reading dataset ~~")
                     dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
@@ -319,7 +327,7 @@ class Contrast(KPPSuperClass):
                                              SpT_file_csv = self.GPI_TSpT_csv)
 
                 # Run pyklip on the fakes
-                if len(glob(os.path.join(self.dir_fakes,"fakes_PA*_k150a9s4m1methane-KL50-speccube.fits"))) != 3:
+                if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"fakes_PA*_k150a9s4m1methane-KL50-speccube.fits"))) != 3:
                     # spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA{0:02d}.fits".format(pa_shift))
                     # dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
                     parallelized.klip_dataset(dataset,
@@ -334,14 +342,6 @@ class Contrast(KPPSuperClass):
                                               numthreads=self.N_threads,
                                               calibrate_flux=True)
 
-            throughput_break = 1.1
-            contrast_range = [0.2,1.5]
-
-            inputDir_tasks = []
-            fakesDir_tasks = []
-
-            overwrite_tmp = False
-            resolution = 3.5
 
             #############################
             ###### PYKLIP without sky sub MF

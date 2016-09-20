@@ -27,8 +27,7 @@ class ROC(KPPSuperClass):
                  threshold_sampling = None,
                  overwrite = False,
                  IWA = None,
-                 OWA = None,
-                 GOI_ROC = None):
+                 OWA = None):
         """
 
 
@@ -76,8 +75,6 @@ class ROC(KPPSuperClass):
         self.IWA = IWA
         self.OWA = OWA
 
-        if GOI_ROC is None:
-            self.GOI_ROC = False
 
 
     def initialize(self,inputDir = None,
@@ -396,7 +393,7 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False,epoch_suffix
                         #     print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
 
                 if len(file_list) == N_ROC:
-                    print(file_list)
+                    # print(file_list)
                     N=N+1
                     for index,filename in enumerate(file_list):
                         with open(filename, 'rb') as csvfile:
@@ -416,3 +413,90 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False,epoch_suffix
     print("N files = {0}".format(N))
 
     return threshold_sampling_list,master_N_false_pos_list,master_N_true_detec_list
+
+
+def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch_suffix=None):
+    """
+    Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
+    If the folders are organized following the convention below then it will make sure there is a ROC file for each
+    filename_filter in each epoch. Otherwise it skips the epoch.
+
+    The folders need to be organized as:
+     base_dir/TARGET/autoreduced/EPOCH_Spec/filename_filter
+
+    In the function TARGET and EPOCH are wild characters.
+
+    It looks for all the file matching filename_filter using glob.glob and then add each individual ROC to build the
+    master ROC.
+
+    Plot master_N_false_pos vs master_N_true_detec to get a ROC curve.
+
+    :param base_dir: Base directory from which the file search go.
+    :param filename_filter: Filename filter with wild characters indicating which files to pick.
+    :param mute: If True, mute prints. Default is False.
+    :return: threshold_sampling,master_N_false_pos,master_N_true_detec:
+        threshold_sampling: The metric sampling. It is the curve parametrization.
+        master_N_false_pos: Number of false positives as a function of threshold_sampling
+        master_N_true_detec: Number of true positives as a function of threshold_sampling
+    """
+
+    N_ROC = len(filename_filter_list)
+    metric_list = [[]]*N_ROC
+    pa_list = [[]]*N_ROC
+    sep_list = [[]]*N_ROC
+
+    if epoch_suffix is None:
+        epoch_suffix = ""
+
+    dirs_to_reduce = os.listdir(base_dir)
+    # dirs_to_reduce = ["HD_202917","c_Eri"]
+    N=0
+    for object in dirs_to_reduce:
+        if not object.startswith('.'):
+            #print(object)
+
+            epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
+
+            for epochDir in epochDir_glob:
+                inputDir = os.path.abspath(epochDir)
+
+                file_list = []
+                for filename_filter in filename_filter_list:
+                    try:
+                        file_list.append(glob(inputDir+os.path.sep+filename_filter)[0])
+                        # if not mute:
+                        #     print("ROC: {0} in {1}. Adding.".format(filename_filter,inputDir))
+                    except:
+                        pass
+                        # if not mute:
+                        #     print("ROC: {0} unvailable in {1}. Skipping".format(filename_filter,inputDir))
+
+                if len(file_list) == N_ROC:
+                    # print(file_list)
+                    N=N+1
+                    for index,filename in enumerate(file_list):
+                        with open(filename, 'rb') as csvfile:
+                            reader = csv.reader(csvfile, delimiter=';')
+                            csv_as_list = list(reader)
+                            detec_table_labels = csv_as_list[0]
+                            detec_table = np.array(csv_as_list[1::], dtype='string').astype(np.float)
+
+                        metric_id = detec_table_labels.index("value")
+                        pa_id = detec_table_labels.index("PA")
+                        sep_id = detec_table_labels.index("Sep (as)")
+
+                        above_thres = np.where(detec_table[:,metric_id]>threshold)
+
+                        try:
+                            metric_list[index] = metric_list[index]+detec_table[above_thres[0],metric_id].tolist()
+                            pa_list[index] = pa_list[index]+detec_table[above_thres[0],pa_id].tolist()
+                            sep_list[index] = sep_list[index]+detec_table[above_thres[0],sep_id].tolist()
+                        except:
+                            metric_list[index] = detec_table[above_thres[0],metric_id].tolist()
+                            pa_list[index] = pa_list[above_thres[0],pa_id].tolist()
+                            sep_list[index] = sep_list[above_thres[0],sep_id].tolist()
+
+
+    print("N files = {0}".format(N))
+
+    return metric_list,pa_list,sep_list
