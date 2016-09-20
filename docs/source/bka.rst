@@ -122,13 +122,13 @@ KL mode cubes, and select the KL mode cutoff we want to use. For the example, we
     fm_hdu = fits.open(output_prefix + "-fmpsf-KLmodes-all.fits")
     data_hdu = fits.open(output_prefix + "-klipped-KLmodes-all.fits")
 
-    # get FM frame
-    fm_frame = np.nanmean(fm_hdu[1].data, axis=0)
+    # get FM frame, use KL=7
+    fm_frame = fm_hdu[1].data[1]
     fm_centx = fm_hdu[1].header['PSFCENTX']
     fm_centy = fm_hdu[1].header['PSFCENTY']
 
-    # get data_stamp frame
-    data_frame = np.nanmean(data_hdu[1].data, axis=0)
+    # get data_stamp frame, use KL=7
+    data_frame = data_hdu[1].data[1]
     data_centx = data_hdu[1].header["PSFCENTX"]
     data_centy = data_hdu[1].header["PSFCENTY"]
 
@@ -190,7 +190,75 @@ parallelizes the likelihood calculation, and trying to parallelize on top of tha
     # run MCMC fit
     fma.fit_astrometry(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
 
-When the MCMC finishes running, we have our answer for the location of the planet in the data. Some possibly useful
-pieces of information 
+
+When the MCMC finishes running, we have our answer for the location of the planet in the data.
+Here are some fields to access this information:
+
+* ``fma.RA_offset``: RA offset of the planet from the star as determined by the median of the marginalized posterior
+* ``fma.Dec_offset``: Dec offset of the plnaet from the star as determined by the median of the marginalized posterior
+* ``fma.RA_offset_1sigma``: 16th and 84th percentile values for the RA offset of the planet
+* ``fma.Dec_offset_1sigma``: 16th and 84th percentile values for the Dec offset of the planet
+* ``fma.flux``, ``fma.flux_1sigma``: same thing except for the flux of the planet
+* ``fma.covar_param_bestfits``, ``fma.covar_param_1sigma``: same thing for the hyperparameters on the Gaussian process kernel. These are both kept in a list with length equal to the number of hyperparameters.
+* ``fma.sampler``: this is the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information
+
+The RA offset and Dec offset are what we are interested in for the purposes of astrometry. First,
+we want to check to make sure all of our chains have converged by plotting them. As long as they have
+settled down (no large scale movements), then the chains have probably converged::
+
+
+    import matplotlib.pylab as plt
+    fig = plt.figure(figsize=(10,8))
+
+    # grab the chains from the sampler
+    chain = fma.sampler.chain
+
+    # plot RA offset
+    ax1 = fig.add_subplot(411)
+    ax1.plot(chain[:,:,0].T, '-', color='k', alpha=0.3)
+    ax1.set_xlabel("Steps")
+    ax1.set_ylabel(r"$\Delta$ RA")
+
+    # plot Dec offset
+    ax2 = fig.add_subplot(412)
+    ax2.plot(chain[:,:,1].T, '-', color='k', alpha=0.3)
+    ax2.set_xlabel("Steps")
+    ax2.set_ylabel(r"$\Delta$ Dec")
+
+    # plot flux scaling
+    ax3 = fig.add_subplot(413)
+    ax3.plot(chain[:,:,2].T, '-', color='k', alpha=0.3)
+    ax3.set_xlabel("Steps")
+    ax3.set_ylabel("f")
+
+    # plot hyperparameters.. we only have one for this example: the correlation length
+    ax4 = fig.add_subplot(414)
+    ax4.plot(chain[:,:,3].T, '-', color='k', alpha=0.3)
+    ax4.set_xlabel("Steps")
+    ax4.set_ylabel(r"$l$")
+
+
+We can also plot the corner plot to look at our posterior distribution and correlation between parameters::
+
+    fig = plt.figure()
+    fig = fma.make_corner_plot(fig=fig)
+
+Hopefully the corner plot does not contain too much structure (the posteriors should be roughly Gaussian).
+And finally, we can plot the visual comparison of our data, best fitting model, and residuals to the fit::
+
+    fig = plt.figure()
+    fig = fma.best_fit_and_residuals(fig=fig)
+
+The data and best fit model should look pretty close, and the residuals hopefully do not show any obvious strcuture that
+was missed in the fit. The residual ampltidue should also be consistent with noise. If that is the case, we can use the
+best fit values for the astrometry of this epoch. Remember that the 1-sigma values given here are just the statistical
+uncertainity on the location of the planet. You will need to include more uncertainties such as the location of the
+star and astrometric calibration uncertainties to obtain your full astrometric error bar. The flux values should in
+theory measure the flux of the planet, but that is out of the scope of this tutorial.::
+
+    print("Planet RA offset is at {0} with a 1-sigma range of {1}".format(fma.RA_offset, fma.RA_offset_1sigma))
+    print("Planet Dec offset is at {0} with a 1-sigma range of {1}".format(fma.Dec_offset, fma.Dec_offset_1sigma))
+
+
 
 
