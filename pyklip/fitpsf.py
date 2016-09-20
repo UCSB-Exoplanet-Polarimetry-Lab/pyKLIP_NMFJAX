@@ -15,6 +15,7 @@ import pyklip.covars as covars
 import emcee
 
 # plotting tools
+import matplotlib
 import matplotlib.pylab as plt
 import corner
 
@@ -352,7 +353,7 @@ class FMAstrometry(object):
 
         # burn in
         print("Running burn in")
-        pos, lnprob, rstate = sampler.run_mcmc(pos, nburn)
+        pos, _, _ = sampler.run_mcmc(pos, nburn)
         # reset sampler
         sampler.reset()
 
@@ -384,7 +385,7 @@ class FMAstrometry(object):
             pickle.dump(sampler.chain, pickle_file)
             pickle.dump(sampler.lnprobability, pickle_file)
             pickle.dump(sampler.acceptance_fraction, pickle_file)
-            pickle.dump(sampler.acor, pickle_file)
+            #pickle.dump(sampler.acor, pickle_file)
             pickle_file.close()
 
 
@@ -430,24 +431,37 @@ class FMAstrometry(object):
         # make residual map
         residual_map = self.data_stamp - fm_bestfit
 
+        # normalize all images to same scale
+        colornorm = matplotlib.colors.Normalize(vmin=np.percentile(self.data_stamp, 0.03),
+                                                vmax=np.percentile(self.data_stamp, 99.7))
+
         # plot the data_stamp
         ax1 = fig.add_subplot(131)
-        im1 = ax1.imshow(self.data_stamp, interpolation='nearest', cmap='cubehelix')
-        plt.colorbar(im1)
+        im1 = ax1.imshow(self.data_stamp, interpolation='nearest', cmap='cubehelix', norm=colornorm)
         ax1.invert_yaxis()
         ax1.set_title("Data")
+        ax1.set_xlabel("X (pixels)")
+        ax1.set_ylabel("Y (pixels)")
 
         ax2 = fig.add_subplot(132)
-        im2 = ax2.imshow(fm_bestfit, interpolation='nearest', cmap='cubehelix')
-        plt.colorbar(im2)
+        im2 = ax2.imshow(fm_bestfit, interpolation='nearest', cmap='cubehelix', norm=colornorm)
         ax2.invert_yaxis()
         ax2.set_title("Best-fit Model")
+        ax2.set_xlabel("X (pixels)")
 
         ax3 = fig.add_subplot(133)
-        im3 = ax3.imshow(residual_map, interpolation='nearest', cmap='cubehelix')
-        plt.colorbar(im3)
+        im3 = ax3.imshow(residual_map, interpolation='nearest', cmap='cubehelix', norm=colornorm)
         ax3.invert_yaxis()
-        ax3.set_title("Data - Model")
+        ax3.set_title("Residuals")
+        ax3.set_xlabel("X (pixels)")
+
+        fig.subplots_adjust(right=0.82)
+        fig.subplots_adjust(hspace=0.4)
+        ax_pos = ax3.get_position()
+
+        cbar_ax = fig.add_axes([0.84, ax_pos.y0, 0.02, ax_pos.height])
+        cb = fig.colorbar(im1, cax=cbar_ax)
+        cb.set_label("Counts (DN)")
 
 
 def lnprior(fitparams, bounds):
