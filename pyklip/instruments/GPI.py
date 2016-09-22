@@ -241,6 +241,7 @@ class GPIData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        inttimes = []
         prihdrs = []
         exthdrs = []
 
@@ -257,7 +258,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,psfs_func_list=psfs_func_list)
 
 
@@ -273,6 +274,7 @@ class GPIData(Data):
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
             wcs_hdrs.append(astr_hdrs)
+            inttimes.append(inttime)
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
 
@@ -294,6 +296,14 @@ class GPIData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
+        inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
+
+        # if there is more than 1 integration time, normalize all data to the first integration time
+        if np.size(np.unique(inttimes)) > 1:
+            inttime0 = inttime[0]
+            # normalize integration times
+            data = data * inttime0/inttimes[:, None, None]
+            spot_fluxes *= inttime0/inttimes
 
         #only do the wavelength solution and center recalculation if it isn't broadband imaging
         if np.size(np.unique(wvs)) > 1:
@@ -833,6 +843,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         fpm_band: which coronagrpah was used (string)
         ppm_band: which apodizer was used (string)
         spot_fluxes: array of z containing average satellite spot fluxes for each image
+        inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         prihdr: primary header of the FITS file
         exthdr: 1st extention header of the FITS file
     """
@@ -862,6 +873,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
+
+        # get number of co-adds
+        coadds = exthdr['COADDS0']
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -898,6 +912,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
@@ -906,6 +921,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, 1)
             astr_hdrs = np.repeat(w, 1)
             try:
                 polspot_fluxes = []
@@ -922,6 +938,14 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
+
+    # normalize data to be for a single co-add (e.g. add co-adds together)
+    if coadds > 1:
+        # multiply each frame and sat spot fluxes by number of coadds
+        cube *= coadds
+        spot_fluxes *= coadds
+        # also multiply integration time by coadds
+        inttime *= coadds
 
     #remove undesirable slices of the datacube if necessary
     if skipslices is not None:
@@ -981,7 +1005,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 tpool.close()
         #print(spot_fluxes)
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
