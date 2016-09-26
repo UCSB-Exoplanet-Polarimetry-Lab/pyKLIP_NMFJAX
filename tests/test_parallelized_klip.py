@@ -109,7 +109,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     fake_seps = [20, 50, 40, 30] # pixels
     fake_pas = [-50, -165, 130, 10] # degrees
     fake_contrasts = np.array([1.e-4, 3.e-5, 5.e-5, 1.e-4]) # bright planet
-    fake_injected_fluxes = fake_contrasts/np.mean(dataset.contrast_scaling)
+    fake_injected_fluxes = fake_contrasts * np.mean(dataset.dn_per_contrast)
     for fake_sep, fake_pa, fake_flux in zip(fake_seps, fake_pas, fake_injected_fluxes):
         fakes.inject_planet(dataset.input, dataset.centers, fake_flux, dataset.wcs, fake_sep, fake_pa)
 
@@ -128,8 +128,15 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     # check to make sure it's the right shape
     assert(speccube_kl20.shape == (37, 281, 281))
 
+    # look at the output data. Validate the KL mode cube
+    spec_hdulist = fits.open("{out}/{pre}-KLmodes-all.fits".format(out=outputdir, pre=prefix))
+    klcube = spec_hdulist[1].data
+
+    # check to make sure it's the right shape
+    assert(klcube.shape == (4, 281, 281))
+
     # collapse data
-    collapsed_kl20 = np.nanmean(speccube_kl20, axis=0)
+    collapsed_kl20 = klcube[1]
 
     # try to retrieve fake planet
     for fake_sep, fake_pa, fake_contrast in zip(fake_seps, fake_pas, fake_contrasts):

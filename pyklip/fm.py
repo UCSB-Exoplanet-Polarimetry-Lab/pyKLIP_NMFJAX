@@ -1750,9 +1750,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
 
     # write fmout
-    fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams, 
+    fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
                         calibrate_flux=calibrate_flux, spectrum=spectra_template)
-    
 
     # if we want to save the klipped image
     if save_klipped:

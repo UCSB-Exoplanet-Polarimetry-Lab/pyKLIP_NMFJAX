@@ -146,7 +146,7 @@ class Data(object):
 
     @staticmethod
     @abc.abstractmethod
-    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None):
+    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None, more_keywords=None):
         """
         Saves data for this instrument
 
@@ -156,6 +156,8 @@ class Data(object):
             klipparams: a string of KLIP parameters. Write it to the 'PSFPARAM' keyword
             filtype: type of file (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube"). Wrriten to 'FILETYPE' keyword
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                                         written into the primary header
         """
         return NotImplementedError("Subclass needs to implement this!")
 

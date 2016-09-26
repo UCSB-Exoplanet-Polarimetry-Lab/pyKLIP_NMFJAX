@@ -66,7 +66,8 @@ class GPIData(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         spot_flux: Array of N of average satellite spot flux for each frame
-        contrast_scaling: Flux calibration factors (multiply by image to "calibrate" flux)
+        dn_per_contrast: Flux calibration factor in units of DN/contrast (divide by image to "calibrate" flux)
+                Can also be thought of as the DN of the unocculted star
         flux_units: units of output data [DN, contrast]
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
@@ -134,7 +135,7 @@ class GPIData(Data):
             self._wcs = None
             self._IWA = None
             self.spot_flux = None
-            self.contrast_scaling = None
+            self.dn_per_contrast = None
             self.prihdrs = None
             self.exthdrs = None
             self.flux_units = None
@@ -240,6 +241,7 @@ class GPIData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        inttimes = []
         prihdrs = []
         exthdrs = []
 
@@ -256,7 +258,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,psfs_func_list=psfs_func_list)
 
 
@@ -272,6 +274,7 @@ class GPIData(Data):
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
             wcs_hdrs.append(astr_hdrs)
+            inttimes.append(inttime)
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
 
@@ -293,6 +296,14 @@ class GPIData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
+        inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
+
+        # if there is more than 1 integration time, normalize all data to the first integration time
+        if np.size(np.unique(inttimes)) > 1:
+            inttime0 = inttime[0]
+            # normalize integration times
+            data = data * inttime0/inttimes[:, None, None]
+            spot_fluxes *= inttime0/inttimes
 
         #only do the wavelength solution and center recalculation if it isn't broadband imaging
         if np.size(np.unique(wvs)) > 1:
@@ -326,7 +337,7 @@ class GPIData(Data):
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -334,8 +345,9 @@ class GPIData(Data):
 
 
 
-    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
+    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
+                 center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -345,6 +357,8 @@ class GPIData(Data):
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                                         written into the primary header
             astr_hdr: wcs astrometry header
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
@@ -417,14 +431,20 @@ class GPIData(Data):
             if "spectral" in filetype.lower():
                 # individual contrast scalings for spectral cube
                 for wv_i in range(data.shape[0]):
-                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.contrast_scaling[wv_i], "Contrast/DN for slice {0}".format(wv_i))
+                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.dn_per_contrast[wv_i], "DN/Contrast for slice {0}".format(wv_i))
                 hdulist[0].header.add_history("Converted to contrast units using CON2DN scaling for each wv slice")
             else:
                 # broadband cube so only have one scaling
-                broadband_contrast_scaling = np.nanmean(self.contrast_scaling)
-                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
-                hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
+                broadband_contrast_scaling = np.nanmean(self.dn_per_contrast)
+                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband DN/Contrast")
+                hdulist[0].header.add_history("Converted to contrast units using {0} DN/Contrast".format(broadband_contrast_scaling))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
+
+        # JB's code to store keywords
         if extra_prihdr_keywords is not None:
             for name,value in extra_prihdr_keywords:
                  hdulist[0].header[name] = value
@@ -503,10 +523,10 @@ class GPIData(Data):
             if spectral:
                 # spectral cube, each slice needs it's own calibration
                 numwvs = img.shape[0]
-                img *= self.contrast_scaling[:numwvs, None, None]
+                img /= self.dn_per_contrast[:numwvs, None, None]
             else:
                 # broadband image
-                img *= np.nanmean(self.contrast_scaling)
+                img /= np.nanmean(self.dn_per_contrast)
             self.flux_units = "contrast"
 
         return img
@@ -823,6 +843,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         fpm_band: which coronagrpah was used (string)
         ppm_band: which apodizer was used (string)
         spot_fluxes: array of z containing average satellite spot fluxes for each image
+        inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         prihdr: primary header of the FITS file
         exthdr: 1st extention header of the FITS file
     """
@@ -852,6 +873,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
+
+        # get number of co-adds
+        coadds = exthdr['COADDS0']
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -888,6 +912,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
@@ -896,6 +921,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, 1)
             astr_hdrs = np.repeat(w, 1)
             try:
                 polspot_fluxes = []
@@ -912,6 +938,14 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
+
+    # normalize data to be for a single co-add (e.g. add co-adds together)
+    if coadds > 1:
+        # multiply each frame and sat spot fluxes by number of coadds
+        cube *= coadds
+        spot_fluxes *= coadds
+        # also multiply integration time by coadds
+        inttime *= coadds
 
     #remove undesirable slices of the datacube if necessary
     if skipslices is not None:
@@ -971,7 +1005,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 tpool.close()
         #print(spot_fluxes)
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):

@@ -328,7 +328,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
-def get_planet_spectrum(filename,filter_name):
+def get_planet_spectrum(filename,wavelength):
     """
     Get the spectrum of a planet from a given file. Files are Mark Marleys'.
     The sampling is the one of pipeline reduced cubes.
@@ -337,7 +337,7 @@ def get_planet_spectrum(filename,filter_name):
 
     Inputs:
         filename: Directory of the gpi pipeline.
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'
+        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns
 
     Output:
         (wavelengths, spectrum) where
@@ -372,9 +372,12 @@ def get_planet_spectrum(filename,filter_name):
     #     plt.show()
 
     # todo: check that it matches the actual sampling
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
+    if isinstance(wavelength, str):
+        w_start, w_end, N_sample = band_sampling[wavelength]
+        dw = (w_end-w_start)/N_sample
+        sampling_pip = np.arange(w_start,w_end,dw)
+    else:
+        sampling_pip = wavelength
 
     # I think this isn't rigorous. The spectrum is not well binned maybe
     #counts_per_bin, bin_edges = np.histogram(wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spec)
