@@ -942,10 +942,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     # normalize data to be for a single co-add (e.g. add co-adds together)
     if coadds > 1:
         # multiply each frame and sat spot fluxes by number of coadds
-        cube *= coadds
-        spot_fluxes *= coadds
+        cube *= float(coadds)
+        spot_fluxes = [x * float(coadds) for x in spot_fluxes]
         # also multiply integration time by coadds
-        inttime *= coadds
+        inttime *= float(coadds)
 
     #remove undesirable slices of the datacube if necessary
     if skipslices is not None:
