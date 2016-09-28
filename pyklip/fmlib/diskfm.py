@@ -13,7 +13,7 @@ from pyklip.klip import rotate
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_file_pattern = 'klip-basis-', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_file_pattern = 'klip-basis-', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -51,7 +51,8 @@ class DiskFM(NoFM):
         self.basis_file_pattern = basis_file_pattern
         self.load_from_basis = load_from_basis
 
-
+        if numthreads == None:
+            self.numthreads = mp.cpu_count()
 
         if self.save_basis == True or load_from_basis == True:
             assert annuli is not None, "need annuli keyword to save basis"
@@ -69,7 +70,7 @@ class DiskFM(NoFM):
 
     def alloc_fmout(self, output_img_shape):
         '''
-        Allocates shared memory for output image and, if desired, evals and evecs    
+        Allocates shared memory for output image 
         '''
         fmout_size = np.prod(output_img_shape)
         fmout_shape = output_img_shape
@@ -111,6 +112,8 @@ class DiskFM(NoFM):
             if len(curr_im) < 2:
                 curr_im = '0' + curr_im
 
+            # FIXME save per wavelength
+
             f = open(self.basis_file_pattern + 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im + '.p', 'wb')
             pickle.dump(klmodes, f)
             pickle.dump(evals, f)
@@ -130,27 +133,59 @@ class DiskFM(NoFM):
         assert self.section_ind_all is not None, "No evals or evecs defined"
 
         # Define phi bounds and rad bounds
-        rad_bounds = [(self.dr * rad + self.IWA, self.dr * (rad + 1) + self.IWA) for rad in annuli_list]
-        phi_bounds = [[self.dphi * phi_i, self.dphi_i  * (phi_i + 1)] for phi_i in range(subsections)]
+        rad_bounds = [(self.dr * rad + self.IWA, self.dr * (rad + 1) + self.IWA) for rad in self.annuli_list]
+        phi_bounds = [[self.dphi * phi_i, self.dphi_i  * (phi_i + 1)] for phi_i in self.subs_list]
         phi_bounds[-1][1] = 2. * np.pi - 0.0001
 
-        iterator_sectors = itertoos.product(rad_bounds, phi_bounds)
+        iterator_sectors = itertools.product(rad_bounds, phi_bounds)
         tot_sectors = len(rad_bounds) * len(phi_bounds)
 
-        
-        
 
-        # FIXME output_imgs_shape
-        fmout_data, fmout_shape = self.alloc_fmout(None)
 
-        # tpool to fm_from_eigen
+        fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
+        # FIXME make numpy arrays
 
-        # fm_from_eigen not parallel
 
-        if not parallel:
-            self.fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
-                     wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, **kwargs)
+        # FIXME 
+
+        # fm_from_eigen 
+        for sector_index, ((radstart,radend), (phistart, phiend)) in enumerate(iterator_sectors):
+            t_start_sector = time()
+            print("Starting KLIP for sector {0}/{1}".format(sector_index+1,tot_sectors))
+            if len(time_spent_per_sector_list)==0:
+                print("Time spent on last sector: {0:.0f}s".format(0))
+                print("Time spent since beginning: {0:.0f}s".format(0))
+                print("First sector: Can't predict remaining time")
+            else:
+                print("Time spent on last sector: {0:.0f}s".format(time_spent_last_sector))
+                print("Time spent since beginning: {0:.0f}s".format(np.sum(time_spent_per_sector_list)))
+                print("Estimated remaining time: {0:.0f}s".format((tot_sectors-sector_index)*np.mean(time_spent_per_sector_list)))
+            # calculate sector size                                             
+ 
+            section_ind = self.section_ind_all[sector_index]
+            sector_size = np.size(section_ind)
+            original_KL = self.klmodes_all[sector_index]
+            evals = self.evals_all[sector_index]
+            evecs = self.evecs_all[sector_index]
+
+            ref_psfs_indicies = self.ref_psfs_indices_all[sector_index]
+
+
+            # iterate over image number
+            # global variables defined in tpool init:
+            #original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
+            # original_KL
+
+            # FIXME iteratte over image number
+            fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
+                                   input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
+                                   ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs,
+                                   pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
+                                   radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
+                                   parang=parang, ref_wv=wavelength, numbasis=self.numbasis,maxnumbasis=self.maxnumbasis,
+                                   fmout=fmout_np,perturbmag = None, klipped=klipped, covar_files=covar_files)
+
+
 
         # cleanup fmout
 
@@ -168,7 +203,8 @@ class DiskFM(NoFM):
         rads = [n[1] for n in nums]
         subs = [n[3] for n in nums]
         imnum = [n[5:7] for n in nums]
-        
+
+        # FIXME wavelengths?
         self.annuli_list = rads
         self.subs_list = subs
         self.imnum_list = imnum
@@ -187,58 +223,56 @@ class DiskFM(NoFM):
             self.section_ind_all.append(pickle.load(basis_file))
         
         # Make flattened images for running paralellized
-        self.original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
-        self.original_imgs_shape = self.images.shape
-        self.original_imgs_np = fm._arraytonumpy(self.original_imgs, self.original_imgs_shape,dtype=self.np_data_type)
-        self.original_imgs_np[:] = self.images
+        original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
+        original_imgs_shape = self.images.shape
+        original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
+        original_imgs_np[:] = self.images
 
 
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
-        self.recentered_imgs = mp.Array(self.mp_data_type, np.size(self.images)*np.size(unique_wvs))
-        self.recentered_imgs_shape = (np.size(unique_wvs),) + self.images.shape
+        recentered_imgs = mp.Array(self.mp_data_type, np.size(self.images)*np.size(unique_wvs))
+        recentered_imgs_shape = (np.size(unique_wvs),) + self.images.shape
 
         # remake the PA, wv, and center arrays as shared arrays                                            
-        self.pa_imgs = mp.Array(self.mp_data_type, np.size(self.pas))
-        self.pa_imgs_np = fm._arraytonumpy(self.pa_imgs,dtype=self.np_data_type)
-        self.pa_imgs_np[:] = self.pas
-        self.wvs_imgs = mp.Array(self.mp_data_type, np.size(self.wvs))
-        self.wvs_imgs_np = fm._arraytonumpy(self.wvs_imgs,dtype=self.np_data_type)
-        self.wvs_imgs_np[:] = self.wvs
-        self.centers_imgs = mp.Array(self.mp_data_type, np.size(self.centers))
-        self.centers_imgs_np = fm._arraytonumpy(self.centers_imgs, self.centers.shape,dtype=self.np_data_type)
-        self.centers_imgs_np[:] = self.centers
+        pa_imgs = mp.Array(self.mp_data_type, np.size(self.pas))
+        pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.np_data_type)
+        pa_imgs_np[:] = self.pas
+        wvs_imgs = mp.Array(self.mp_data_type, np.size(self.wvs))
+        wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.np_data_type)
+        wvs_imgs_np[:] = self.wvs
+        centers_imgs = mp.Array(self.mp_data_type, np.size(self.centers))
+        centers_imgs_np = fm._arraytonumpy(centers_imgs, self.centers.shape,dtype=self.np_data_type)
+        centers_imgs_np[:] = self.centers
         output_imgs = None
         output_imgs_numstacked = None
-        output_imgs_shape = self.images.shape + self.numbasis.shape
+        self.output_imgs_shape = self.images.shape + self.numbasis.shape
 
-
-        perturbmag, perturbmag_shape = self.alloc_perturbmag(output_imgs_shape, self.numbasis)
+        perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
         
         fmout_data = None
         fmout_shape = None
-
-        tpool = mp.Pool(processes=numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
-
-
-
-        fm._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
+        
+        #FIXME
+#        if aligned_center is None:
+        aligned_center = [int(self.images.shape[2]//2),int(self.images.shape[1]//2)]
 
 
+
+
+        tpool = mp.Pool(processes=self.numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
+
+        fm._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
-        for threadnum in range(numthreads):
+        for threadnum in range(self.numthreads):
             #multitask this                                                                    
-            aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.np_data_type))]
+            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, aligned_center,self.numthreads,self.np_data_type))]
 
-            #save it to shared memory                                                          
+            #save it to shared memory                                           
         for aligned_output in aligned_outputs:
             aligned_output.wait()
-
-        print("Align and scale finished")
-
-        print aligned
 
 
 
@@ -251,6 +285,7 @@ class DiskFM(NoFM):
         dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                          zaxis=numbasis)
+
 
     def cleanup_fmout(self, fmout):
         # will need to fix later
@@ -268,8 +303,11 @@ class DiskFM(NoFM):
         return fmout
 
     def update_disk(self, model_disk):
+
         self.model_disk = model_disk
         self.model_disks = np.zeros(self.inputs_shape)
+
+        # FIXME align and scale
         for i, pa in enumerate(self.pas):
             model_copy = copy.deepcopy(model_disk)
             model_copy = rotate(model_copy, pa, self.centers[i], flipx = True)
