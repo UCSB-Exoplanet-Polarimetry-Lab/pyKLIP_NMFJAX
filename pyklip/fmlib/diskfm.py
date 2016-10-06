@@ -5,10 +5,13 @@ import os
 import copy
 import pickle
 import glob
+import scipy.ndimage as ndimage
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
+import ctypes
+import itertools
 
 
 
@@ -30,6 +33,7 @@ class DiskFM(NoFM):
 
 
         self.dataset = dataset
+        self.IWA = dataset.IWA
         self.images = dataset.input
         self.pas = dataset.PAs
         self.centers = dataset.centers
@@ -54,6 +58,7 @@ class DiskFM(NoFM):
         if numthreads == None:
             self.numthreads = mp.cpu_count()
 
+        # FIXME, move this down somewhere else
         if self.save_basis == True or load_from_basis == True:
             assert annuli is not None, "need annuli keyword to save basis"
             assert subsections is not None, "need annuli keyword to save basis"
@@ -61,6 +66,7 @@ class DiskFM(NoFM):
             nanpix = np.where(np.isnan(dataset.input[0]))
             if OWA is None:
                 OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
+            self.OWA = OWA
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
 
@@ -83,7 +89,6 @@ class DiskFM(NoFM):
         '''
         FIXME
         '''
-
         sci = aligned_imgs[input_img_num, section_ind[0]]
 
         refs = aligned_imgs[ref_psfs_indicies, :]
@@ -139,65 +144,73 @@ class DiskFM(NoFM):
         assert self.ref_psfs_indices_all is not None, "No evals or evecs defined"
         assert self.section_ind_all is not None, "No evals or evecs defined"
 
-        # Define phi bounds and rad bounds
+        # Define phi bounds and rad bounds. There is one rad and phi bound per sector
         rad_bounds = [(self.dr * rad + self.IWA, self.dr * (rad + 1) + self.IWA) for rad in self.annuli_list]
-        phi_bounds = [[self.dphi * phi_i, self.dphi_i  * (phi_i + 1)] for phi_i in self.subs_list]
+        phi_bounds = [[self.dphi * phi_i, self.dphi  * (phi_i + 1)] for phi_i in self.subs_list]
         phi_bounds[-1][1] = 2. * np.pi - 0.0001
 
-        iterator_sectors = itertools.product(rad_bounds, phi_bounds)
-        tot_sectors = len(rad_bounds) * len(phi_bounds)
-
-
+#        iterator_sectors = itertools.product(rad_bounds, phi_bounds)
+        # this isn't total sectors this is total processes
+#        tot_sectors = len(rad_bounds) * len(phi_bounds)
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
-        # FIXME make numpy arrays
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+
+#        tpool = mp.Pool(processes = self.numthreads)
 
 
         # FIXME 
 
         # fm_from_eigen 
-        for sector_index, ((radstart,radend), (phistart, phiend)) in enumerate(iterator_sectors):
-            t_start_sector = time()
-            print("Starting KLIP for sector {0}/{1}".format(sector_index+1,tot_sectors))
-            if len(time_spent_per_sector_list)==0:
-                print("Time spent on last sector: {0:.0f}s".format(0))
-                print("Time spent since beginning: {0:.0f}s".format(0))
-                print("First sector: Can't predict remaining time")
-            else:
-                print("Time spent on last sector: {0:.0f}s".format(time_spent_last_sector))
-                print("Time spent since beginning: {0:.0f}s".format(np.sum(time_spent_per_sector_list)))
-                print("Estimated remaining time: {0:.0f}s".format((tot_sectors-sector_index)*np.mean(time_spent_per_sector_list)))
+#        for sector_index, ((radstart,radend), (phistart, phiend)) in enumerate(iterator_sectors):
+        for sector_index in range(len(self.section_ind_all)):
+
+
+            radstart, radend = rad_bounds[sector_index]
+            phistart, phiend = phi_bounds[sector_index]
             # calculate sector size                                             
  
+            # sector index chooses both the 
+
             section_ind = self.section_ind_all[sector_index]
             sector_size = np.size(section_ind)
             original_KL = self.klmodes_all[sector_index]
             evals = self.evals_all[sector_index]
             evecs = self.evecs_all[sector_index]
-
             ref_psfs_indicies = self.ref_psfs_indices_all[sector_index]
+            img_num = self.imnum_list[sector_index]
 
 
-            # iterate over image number
-            # global variables defined in tpool init:
-            #original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
-            # original_KL
+# No wavelength dependence yet
+#            for wv_index, wv_value in enumerate(self.unique_wvs):
+#                scidata_indicies = np.where(self.wvs == wv_value)[0]
+#                
+#                sector_job_queued[sector_index] += scidata_indicies.shape[0]
+                
+            parallel = False 
+                
 
-            # FIXME iteratte over image number
-            fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
+                # iterate over image number
+                # global variables defined in tpool init:
+                #original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
+                # original_KL
+            
+            if not parallel:
+                self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                                    input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
-                                   ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs,
-                                   pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
-                                   radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
-                                   parang=parang, ref_wv=wavelength, numbasis=self.numbasis,maxnumbasis=self.maxnumbasis,
-                                   fmout=fmout_np,perturbmag = None, klipped=klipped, covar_files=covar_files)
+                                   ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=self.aligned_imgs_np,
+
+                                   pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], radstart=radstart,
+                                   radend=radend, phistart=phistart, phiend=phiend, padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
+                                   parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,maxnumbasis=self.maxnumbasis,
+                                   fmout=fmout_np,perturbmag = None, klipped=None, covar_files=None)
 
 
 
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+        fmout_np = self.cleanup_fmout(fmout_np)
         # cleanup fmout
 
-        # fmout to numpy array
-        fmout_np = None # FIXME
 
         return fmout_np
             
@@ -205,11 +218,12 @@ class DiskFM(NoFM):
 
     def load_basis_files(self, basis_file_pattern):
         filenames = glob.glob(basis_file_pattern + '*.p')
+        assert len(filenames) > 0, "No files found"
 
         nums = [f[len(basis_file_pattern):] for f in filenames]
-        rads = [n[1] for n in nums]
-        subs = [n[3] for n in nums]
-        imnum = [n[5:7] for n in nums]
+        rads = [float(n[1]) for n in nums]
+        subs = [float(n[3]) for n in nums]
+        imnum = [int(n[5:7]) for n in nums]
 
         # FIXME wavelengths?
         self.annuli_list = rads
@@ -253,34 +267,63 @@ class DiskFM(NoFM):
         centers_imgs_np[:] = self.centers
         output_imgs = None
         output_imgs_numstacked = None
-        self.output_imgs_shape = self.images.shape + self.numbasis.shape
+        output_imgs_shape = self.images.shape + self.numbasis.shape
+        self.output_imgs_shape = output_imgs_shape
 
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
-        
+
+
+        # FIXME
         fmout_data = None
         fmout_shape = None
         
         #FIXME
 #        if aligned_center is None:
         aligned_center = [int(self.images.shape[2]//2),int(self.images.shape[1]//2)]
-
-
-
+        self.aligned_center = aligned_center
 
         tpool = mp.Pool(processes=self.numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
 
-        fm._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
+        
+        # probably okay if these are global variables right now, can make them local later
+        self._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
+
+
 
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
         for threadnum in range(self.numthreads):
-            #multitask this                                                                    
+            #multitask this                                                                
+
+            # write own align and scale subset (?)
             aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, aligned_center,self.numthreads,self.np_data_type))]
 
             #save it to shared memory                                           
         for aligned_output in aligned_outputs:
             aligned_output.wait()
 
+
+        self.original = original_imgs
+        self.original_shape = original_imgs_shape
+        # someone who actually does spec data should make sure that this is actually aligned and scale right
+        self.aligned_imgs = aligned
+        self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
+#        self.aligned_shape = original_imgs_shape
+#        self.aligned_shape = aligned_shape
+
+        # this looks stupid and probably is
+        self.outputs = output_imgs
+        self.outputs_shape = output_imgs_shape
+        self.outputs_numstacked = output_imgs_numstacked
+        self.img_pa = pa_imgs
+        self.img_wv = wvs_imgs
+        self.img_center =  centers_imgs
+        self.fmout = fmout
+        self.fmout_shape = fmout_shape
+        self.pa_imgs = pa_imgs
+        self.wvs_imgs = wvs_imgs
+        self.wvs_imgs_np = wvs_imgs_np
+        self.pa_imgs_np = pa_imgs_np
 
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False, spectrum=None):
@@ -321,3 +364,180 @@ class DiskFM(NoFM):
             model_copy[np.where(np.isnan(model_copy))] = 0.
             self.model_disks[i] = model_copy
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
+
+    def _tpool_init(self, original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
+                    output_imgs_numstacked,
+                    pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape,
+                    perturbmag_imgs, perturbmag_imgs_shape):
+        """
+        Initializer function for the thread pool that initializes various shared variables. Main things to note that all
+        except the shapes are shared arrays (mp.Array) - output_imgs does not need to be mp.Array and can be anything. Need another version of this for load_image because global variables made in fm.py won't work in here. 
+        
+        Args:
+        original_imgs: original images from files to read and align&scale.
+        original_imgs_shape: (N,y,x), N = number of frames = num files * num wavelengths
+        aligned: aligned and scaled images for processing.
+        aligned_imgs_shape: (wv, N, y, x), wv = number of wavelengths per datacube
+        output_imgs: PSF subtraceted images
+        output_imgs_shape: (N, y, x, b)
+        output_imgs_numstacked: number of images stacked together for each pixel due to geometry overlap. Shape of
+        (N, y x). Output without the b dimension
+        pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
+        centers_img: array of shape (N,2) with [x,y] image center for image frame
+        interm_imgs: intermediate data product shape - what is saved on a sector to sector basis before combining to
+        form the output of that sector. The first dimention should be N (i.e. same thing for each science
+        image)
+        interm_imgs_shape: shape of interm_imgs. The first dimention should be N.
+        fmout_imgs: array for output of forward modelling. What's stored in here depends on the class
+        fmout_imgs_shape: shape of fmout
+        perturbmag_imgs: array for output of size of linear perturbation to assess validity
+        perturbmag_imgs_shape: shape of perturbmag_imgs
+        """
+        global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
+        # original images from files to read and align&scale. Shape of (N,y,x)
+        original = original_imgs
+        original_shape = original_imgs_shape
+        # aligned and scaled images for processing. Shape of (wv, N, y, x)
+        aligned = aligned_imgs
+        aligned_shape = aligned_imgs_shape
+        # output images after KLIP processing
+        outputs = output_imgs
+        outputs_shape = output_imgs_shape
+        outputs_numstacked = output_imgs_numstacked
+        # parameters for each image (PA, wavelegnth, image center)
+        img_pa = pa_imgs
+        img_wv = wvs_imgs
+        img_center = centers_imgs
+        
+        #intermediate and FM arrays
+        interm = interm_imgs
+        interm_shape = interm_imgs_shape
+        fmout = fmout_imgs
+        fmout_shape = fmout_imgs_shape
+        perturbmag = perturbmag_imgs
+        perturbmag_shape = perturbmag_imgs_shape
+
+    def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
+                         new_center=None):
+        """
+        Rotate and save sector in output image at desired ranges
+        
+        Args:
+        input_shape: shape of input_image
+        sector: data in the sector to save to output_img
+        sector_ind: index into input img (corresponding to input_shape) for the original sector
+        output_img: the array to save the data to
+        output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
+        skipping bookkeeping
+        angle: angle that the sector needs to rotate (I forget the convention right now)
+        
+        The next 6 parameters define the sector geometry in input image coordinates
+        radstart: radius from img_center of start of sector
+        radend: radius from img_center of end of sector
+        phistart: azimuthal start of sector
+        phiend: azimuthal end of sector
+        padding: amount of padding around each sector
+        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+        It defines the separation interva in which klip will be run.
+        img_center: center of image in input image coordinate
+        
+        flipx: if true, flip the x coordinate to switch coordinate handiness
+        new_center: if not none, center of output_img. If none, center stays the same
+        """
+        # convert angle to radians
+        angle_rad = np.radians(angle)
+        
+        #wrap phi
+        phistart %= 2 * np.pi
+        phiend %= 2 * np.pi
+        
+        #incorporate padding
+        IWA,OWA = IOWA
+        radstart_padded = np.max([radstart-padding,IWA])
+        if OWA is not None:
+            radend_padded = np.min([radend+padding,OWA])
+        else:
+            radend_padded = radend+padding
+        phistart_padded = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
+        phiend_padded = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
+
+        # create the coordinate system of the image to manipulate for the transform
+        dims = input_shape
+        x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+
+        # if necessary, move coordinates to new center
+        if new_center is not None:
+            dx = new_center[0] - img_center[0]
+            dy = new_center[1] - img_center[1]
+            x -= dx
+            y -= dy
+
+        # flip x if needed to get East left of North
+        if flipx is True:
+            x = img_center[0] - (x - img_center[0])
+
+        # do rotation. CW rotation formula to get a CCW of the image
+        xp = (x-img_center[0])*np.cos(angle_rad) + (y-img_center[1])*np.sin(angle_rad) + img_center[0]
+        yp = -(x-img_center[0])*np.sin(angle_rad) + (y-img_center[1])*np.cos(angle_rad) + img_center[1]
+
+        if new_center is None:
+            new_center = img_center
+
+        rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
+        phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
+
+        # grab sectors based on whether the phi coordinate wraps
+        # padded sector
+        # check to see if with padding, the phi coordinate wraps
+        if phiend_padded >=  phistart_padded:
+            # doesn't wrap
+            in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+                                (phip >= phistart_padded) & (phip < phiend_padded))
+        else:
+            # wraps
+            in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+                                ((phip >= phistart_padded) | (phip < phiend_padded)))
+        rot_sector_pix = np.where(in_padded_sector)
+
+        # only padding
+        # check to see if without padding, the phi coordinate wraps
+        if phiend >=  phistart:
+            # no wrap
+            in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
+                                       & in_padded_sector)
+        else:
+            # wrap
+            in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
+                                    | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
+        rot_sector_pix_onlypadding = np.where(in_only_padding)
+        
+        blank_input = np.zeros(dims[1] * dims[0])
+        blank_input[sector_ind] = sector
+        blank_input.shape = [dims[0], dims[1]]
+
+        # resample image based on new coordinates
+        # scipy uses y,x convention when meshgrid uses x,y
+        # stupid scipy functions can't work with masked arrays (NANs)
+        # and trying to use interp2d with sparse arrays is way to slow
+        # hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
+        # then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
+        minval = np.min([np.nanmin(blank_input), 0.0])
+        nanpix = np.where(np.isnan(blank_input))
+        medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
+        input_copy = np.copy(blank_input)
+        input_copy[nanpix] = minval * 5.0
+        rot_sector_mask = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=minval * 5.0)
+        input_copy[nanpix] = medval
+        rot_sector = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
+        rot_sector[np.where(rot_sector_mask < minval)] = np.nan
+
+        # save output sector. We need to reshape the array into 2d arrays to save it
+        output_img.shape = [self.outputs_shape[1], self.outputs_shape[2]]
+        output_img[rot_sector_pix] = np.nansum([output_img[rot_sector_pix], rot_sector], axis=0)
+        output_img.shape = [self.outputs_shape[1] * self.outputs_shape[2]]
+
+        # Increment the numstack counter if it is not None
+        if output_img_numstacked is not None:
+            output_img_numstacked.shape = [self.outputs_shape[1], self.outputs_shape[2]]
+            output_img_numstacked[rot_sector_pix] += 1
+            output_img_numstacked.shape = [self.outputs_shape[1] *  self.outputs_shape[2]]
