@@ -8,11 +8,11 @@ pipelines:
   default:
     - step:
         script: # Modify the commands below to build your repository.
-          - git clone https://semaphoreP@bitbucket.org/pyKLIP/pyklip.git pyklip
+          # - git clone https://semaphoreP@bitbucket.org/pyKLIP/pyklip.git pyklip
           - ls 
           - ls pyklip
-          - cd pyklip # move into repo base dir
-          - ls pyklip
+          # - cd pyklip # move into repo base dir
+          # - ls pyklip
           - ls pyklip/instruments
           - python setup.py develop
           - py.test
