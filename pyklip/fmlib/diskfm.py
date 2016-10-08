@@ -58,7 +58,6 @@ class DiskFM(NoFM):
         if numthreads == None:
             self.numthreads = mp.cpu_count()
 
-        # FIXME, move this down somewhere else
         if self.save_basis == True or load_from_basis == True:
             assert annuli is not None, "need annuli keyword to save basis"
             assert subsections is not None, "need annuli keyword to save basis"
@@ -102,12 +101,6 @@ class DiskFM(NoFM):
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        
-#        refs_mean_sub = refs# - np.nanmean(model_ref, axis = 1)[:, None]
-#        refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
-#        models__sub = model_ref# - np.nanmean(model_ref, axis = 1)[:, None]
-#        models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
-
         delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
@@ -125,7 +118,7 @@ class DiskFM(NoFM):
                 curr_im = '0' + curr_im
 
             # FIXME save per wavelength
-
+            # FIXME make it so that it doesn't save one per
             f = open(self.basis_file_pattern + 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im + '.p', 'wb')
             pickle.dump(klmodes, f)
             pickle.dump(evals, f)
@@ -149,9 +142,6 @@ class DiskFM(NoFM):
         phi_bounds = [[self.dphi * phi_i, self.dphi  * (phi_i + 1)] for phi_i in self.subs_list]
         phi_bounds[-1][1] = 2. * np.pi - 0.0001
 
-#        iterator_sectors = itertools.product(rad_bounds, phi_bounds)
-        # this isn't total sectors this is total processes
-#        tot_sectors = len(rad_bounds) * len(phi_bounds)
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
@@ -190,10 +180,6 @@ class DiskFM(NoFM):
             parallel = False 
                 
 
-                # iterate over image number
-                # global variables defined in tpool init:
-                #original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape
-                # original_KL
             
             if not parallel:
                 self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
@@ -205,18 +191,19 @@ class DiskFM(NoFM):
                                    parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,maxnumbasis=self.maxnumbasis,
                                    fmout=fmout_np,perturbmag = None, klipped=None, covar_files=None)
 
-
+            else:
+                pass
 
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
-        # cleanup fmout
-
 
         return fmout_np
             
 
 
     def load_basis_files(self, basis_file_pattern):
+        # Need dr and dphi def
+        
         filenames = glob.glob(basis_file_pattern + '*.p')
         assert len(filenames) > 0, "No files found"
 
