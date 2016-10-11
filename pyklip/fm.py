@@ -1187,8 +1187,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
         x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(imgs[0]))
+        # need to define OWA if one wasn't passed. Try to use NaNs to figure out where it should be
         if OWA is None:
-            OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+            if np.size(nanpix) == 0:
+                OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+            else:
+                # grab the NaN from the 1st percentile (this way we drop outliers)
+                OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
         dr = float(OWA - IWA) / (annuli)
         # calculate the annuli
         rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
@@ -1728,6 +1733,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                              .format(spectrum))
     else:
         spectra_template = None
+
+    # default to instrument specific OWA?
+    if OWA is None:
+        OWA = dataset.OWA
 
     # save klip parameters as a string
     klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \

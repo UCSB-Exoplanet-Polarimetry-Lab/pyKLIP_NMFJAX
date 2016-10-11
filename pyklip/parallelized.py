@@ -582,7 +582,7 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
     return filtered
 
 
-def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4,
+def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
                            PSFs = None, out_PSFs=None, spectrum=None,
                            onesegment=False, companion_rho = 50.0, companion_theta = 0.0, segment_dr = 10.0,
@@ -596,6 +596,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
         IWA: inner working angle (in pixels)
+        OWA: outer working angle (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
@@ -626,11 +627,11 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
 
     ################## Interpret input arguments ####################
 
-    #defaullt numbasis if none
+    # default numbasis if none
     if numbasis is None:
         totalimgs = imgs.shape[0]
-        maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
-        numbasis = np.arange(1, maxbasis + 5, 5)
+        maxbasis = np.min([totalimgs, 100]) # only going up to 100 KL modes by default
+        numbasis = np.arange(1, maxbasis + 10, 10)
         print("KL basis not specified. Using default.", numbasis)
     else:
         if hasattr(numbasis, "__len__"):
@@ -638,28 +639,32 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         else:
             numbasis = np.array([numbasis])
 
-    #default aligned_center if none:
+    # default aligned_center if none:
     if aligned_center is None:
-        #aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
         aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
 
-    #save all bad pixels
+    # save all bad pixels
     allnans = np.where(np.isnan(imgs))
     if PSFs is not None:
         allnans_PSFs = np.where(np.isnan(PSFs))
 
-    #use first image to figure out how to divide the annuli
-    #TODO: what to do with OWA
-    #need to make the next 10 lines or so much smarter
+    # use first image to figure out how to divide the annuli
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
-    if np.size(nanpix) == 0: OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
-    if np.size(nanpix) != 0: OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-#    OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+
+    # if user didn't supply how to define NaNs
+    if OWA is None:
+        # define OWA as either the closest NaN pixel or edge of image if no NaNs exist
+        if np.size(nanpix) == 0:
+            OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+        else:
+            # grab the NaN from the 1st percentile (this way we drop outliers)
+            OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
+
     dr = float(OWA - IWA) / (annuli)
 
-    #error checking for too small of annuli go here
+    # error checking for too small of annuli go here
 
     if onesegment == False:
         #calculate the annuli
@@ -880,7 +885,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', ann
         return sub_imgs, seg_basis_np, seg_index_np
 
 
-def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       PSFs=None, out_PSFs=None, spectrum=None,
                       onesegment=False, companion_rho=50.0, companion_theta=0.0, segment_dr=10.0, segment_dt=90.0,
@@ -965,9 +970,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, mode='ADI+SDI', annuli=5
     dims = imgs.shape
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
-    if np.size(nanpix) == 0: OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
-    if np.size(nanpix) != 0: OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
-    #OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+    # if user didn't supply how to define NaNs
+    if OWA is None:
+        # define OWA as either the closest NaN pixel or edge of image if no NaNs exist
+        if np.size(nanpix) == 0:
+            OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+        else:
+            # grab the NaN from the 1st percentile (this way we drop outliers)
+            OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
+
     dr = float(OWA - IWA) / (annuli)
 
     #error checking for too small of annuli go here
@@ -1539,7 +1550,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             fakePlparams = None
 
         # Actually run the PSF Subtraction with all the arguments
-        klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, mode=mode,
+        klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA,
+                                     OWA=dataset.OWA, mode=mode,
                                      annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
                                      numthreads=numthreads, minrot=minrot, aligned_center=aligned_center,
                                      PSFs = PSFs,out_PSFs=out_PSFs,
@@ -1697,14 +1709,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
             if restored_aligned is not None:
                 klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
-                                        dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                        dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                         aligned_center=aligned_center,
                                         save_aligned = save_aligned, restored_aligned = restored_aligned[np.where(unique_wv == unique_wvs)],
                                         dtype=dtype)
             else:
                 klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
-                                        dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                        dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                         aligned_center=aligned_center,
                                         save_aligned = save_aligned,dtype=dtype)
@@ -1783,7 +1795,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
     elif mode == 'SDI':
         klip_output = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs,
-                                         dataset.IWA, mode=mode, annuli=annuli, subsections=subsections,
+                                         dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                          movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                          aligned_center=aligned_center, spectrum=spectra_template,
                                          save_aligned = save_aligned, restored_aligned = restored_aligned,dtype=dtype)
