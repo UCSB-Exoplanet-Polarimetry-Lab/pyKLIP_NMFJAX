@@ -67,7 +67,7 @@ class CrossCorr(KPPSuperClass):
             self.collapse = collapse
         self.weights = weights
         if nans2zero is None:
-            self.nans2zero = False
+            self.nans2zero = True
         else:
             self.nans2zero = nans2zero
 
@@ -215,6 +215,7 @@ class CrossCorr(KPPSuperClass):
                 self.image = np.nanmean(self.image,axis=0)
 
         if self.nans2zero:
+            where_nans = np.where(np.isnan(self.image))
             self.image = np.nan_to_num(self.image)
 
         # We have to make sure the PSF dimensions are odd because correlate2d shifts the image otherwise...
@@ -237,6 +238,9 @@ class CrossCorr(KPPSuperClass):
                     self.image[l_id,:,:] = correlate2d(self.image[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 self.image_convo = correlate2d(self.image,self.PSF,mode="same")
+
+        if self.nans2zero:
+            self.image_convo[where_nans] = np.nan
 
         # import matplotlib.pyplot as plt
         # print(self.PSF.shape)

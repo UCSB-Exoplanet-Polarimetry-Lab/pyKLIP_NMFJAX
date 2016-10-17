@@ -25,11 +25,11 @@ class MatchedFilter(NoFM):
     """
     Matched filter with forward modelling.
     """
-    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,# flux_conversion,
+    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,spot_flux,
                  spectrallib = None, # Input spectra should be in flux not in contrast. The transmission is accounted for.
                  mute = False,
                  star_type = None,
-                 filter = None,
+                 filter_name = None,
                  save_per_sector = None,
                  datatype="float",
                  fakes_sepPa_list = None,
@@ -45,7 +45,7 @@ class MatchedFilter(NoFM):
         :param mute:
         :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
                         If None, the spectrum is assumed to be in contrast units.
-        :param filter:
+        :param filter_name:
         :param save_per_sector:
         :param datatype:
         :param fakes_sepPa_list:
@@ -77,8 +77,8 @@ class MatchedFilter(NoFM):
         self.nx = self.inputs_shape[2]
         self.N_frames = self.inputs_shape[0]
 
-        if filter is None:
-            filter = "H"
+        if filter_name is None:
+            filter_name = "H"
 
         self.fakes_sepPa_list = fakes_sepPa_list
         if disable_FM is None:
@@ -92,7 +92,7 @@ class MatchedFilter(NoFM):
         else:
             spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
             spectra_files = [spectra_folder + "t650g18nc.flx"]
-            self.spectrallib = [specmanage.get_planet_spectrum(filename, filter)[1] for filename in spectra_files]
+            self.spectrallib = [specmanage.get_planet_spectrum(filename, filter_name)[1] for filename in spectra_files]
 
         self.N_spectra = len(self.spectrallib)
 
@@ -125,16 +125,32 @@ class MatchedFilter(NoFM):
             # Spectrum is in contrast units
             self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum for spectrum in self.spectrallib]
         else:
-            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
+            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]) for spectrum in self.spectrallib]
         # Normalize the spectra to unit broadband flux
         self.spectrallib = [spectrum/np.sum(spectrum) for spectrum in self.spectrallib]
         # import matplotlib.pyplot as plt
         # plt.plot(self.spectrallib[0]/np.sum(self.spectrallib[0]))
-        # plt.plot(specmanage.get_star_spectrum(filter, star_type=star_type)[1]/np.sum(specmanage.get_star_spectrum(filter, star_type=star_type)[1]))
+        # plt.plot(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]/np.sum(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]))
         # #plt.plot(spectrum/np.sum(spectrum))
         # plt.plot(self.sat_spot_spec/np.sum(self.sat_spot_spec))
         # plt.show()
-        self.fake_contrast = 1.0#10**-5 # ratio of flux of the planet/flux of the star (broad band flux)
+        self.fake_contrast = 1. # ratio of flux of the planet/flux of the star (broad band flux)
+        self.N_cubes = self.N_frames/self.nl
+        self.tiled_spectrallib = []
+        # import matplotlib.pyplot as plt
+        from pyklip.instruments.GPI import GPIData
+        for spectrum in self.spectrallib:
+            tiled_spectrum = []
+            for k in range(self.N_cubes):
+                tiled_spectrum.extend(spectrum*np.sum(spot_flux[37*k:(37*(k+1))]*self.aper_over_peak_ratio)*self.fake_contrast/GPIData.spot_ratio[filter_name])
+                # plt.plot(spot_flux[37*k:(37*(k+1))])
+            self.tiled_spectrallib.append(np.array(tiled_spectrum))
+            # plt.show()
+        # import matplotlib.pyplot as plt
+        # plt.plot(self.tiled_spectrallib[0])
+        # plt.plot(spot_flux)
+        # plt.plot(spot_flux[37*k:(37*(k+1))]*self.aper_over_peak_ratio)
+        # plt.show()
 
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
@@ -287,7 +303,7 @@ class MatchedFilter(NoFM):
         return skipSectionBool
 
 
-    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
+    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
                      parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, **kwargs):
         """
@@ -433,9 +449,10 @@ class MatchedFilter(NoFM):
                 # self.spectrallib[spec_id] is one of the input template spectrum
                 #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)  in DN space.
                 # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
-                model_sci = model_sci*self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
-                where_fk = np.where(mask>=1)[0]
-                where_background = np.where(mask==2)[0]
+                # model_sci = model_sci*self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
+                model_sci = model_sci*self.tiled_spectrallib[spec_id][input_img_num]
+                where_fk = np.where(mask==2)[0]
+                where_background = np.where(mask>=1)[0]
 
                 # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
                 # references rotate.
@@ -449,9 +466,10 @@ class MatchedFilter(NoFM):
                     # self.spectrallib[spec_id] is one of the input template spectrum
                     #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)
                     # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
-                    input_spectrum =  self.spectrallib[spec_id]
-                    input_spectrum = np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
-                    input_spectrum = input_spectrum[ref_psfs_indicies]
+                    # input_spectrum =  self.spectrallib[spec_id]
+                    # input_spectrum = np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
+                    # input_spectrum = input_spectrum[ref_psfs_indicies]
+                    input_spectrum = self.tiled_spectrallib[spec_id][ref_psfs_indicies]
                     models_ref = models_ref * input_spectrum[:, None]
 
                     # 3/ Calculate the perturbation of the KL modes
@@ -478,12 +496,13 @@ class MatchedFilter(NoFM):
                 # 1: square of the norm of the model
                 # 2: square of the norm of the image
                 sky = np.mean(klipped[where_background,N_KL_id])
+                # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 #print(sky)
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
                 fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
-                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
+                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id])#np.var(klipped[where_background,N_KL_id]) #np.sum(klipped_sub*klipped_sub)
                 #print(fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id])
 
                 # Plot for debug only
@@ -639,26 +658,39 @@ class MatchedFilter(NoFM):
         whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
 
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 1
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isfinite(self.stamp_PSF_mask))]=2
+        #x_grid, y_grid
+        r_grid = abs(x_grid +y_grid*1j)
+        pa_grid = (np.arctan2( x_grid,y_grid))% (2.0 * np.pi)
+        pastart = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) - float(padding)/sep_fk) % (2.0 * np.pi)
+        paend = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) + float(padding)/sep_fk) % (2.0 * np.pi)
+        if pastart < paend:
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & (pa_grid >= pastart) & (pa_grid < paend))
+        else:
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & ((pa_grid >= pastart) | (pa_grid < paend)))
+        whiteboard[where_mask] = 1
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
         mask = whiteboard[section_ind]
 
         # create a canvas to place the new PSF in the sector on
-        if 0:#np.size(np.where(mask==2)[0])==0:
+        if 0:#np.size(np.where(mask==2)[0])==0: 296
             whiteboard.shape = (input_img_shape[0], input_img_shape[1])
-            print(whiteboard.shape)
-            print(section_ind)
+            # print(whiteboard.shape)
+            # print(section_ind)
+            # print(np.size(section_ind))
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
             blackboard[section_ind] = 1#segment_with_model
             blackboard.shape = [input_img_shape[0],input_img_shape[1]]
             plt.figure(1)
-            plt.subplot(1,2,1)
+            plt.subplot(1,3,1)
             im = plt.imshow(whiteboard)
             plt.colorbar(im)
-            plt.subplot(1,2,2)
-            im = plt.imshow(blackboard)
+            plt.subplot(1,3,2)
+            im = plt.imshow(blackboard+whiteboard)
+            plt.colorbar(im)
+            plt.subplot(1,3,3)
+            im = plt.imshow(np.degrees(pa_grid))
             plt.colorbar(im)
             plt.show()
 

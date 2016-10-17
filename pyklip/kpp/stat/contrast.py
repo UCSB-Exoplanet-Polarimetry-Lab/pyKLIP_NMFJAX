@@ -265,82 +265,83 @@ class Contrast(KPPSuperClass):
 
         overwrite_tmp = False
         resolution = 3.5
+        pa_shift_list = [0,30,60]
 
         if not os.path.exists(self.dir_fakes):
             os.makedirs(self.dir_fakes)
 
         if not self.plot_only:
-            if overwrite_tmp or len(glob(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux","pyklip_k150a9s4m1methane-KL50-speccube.fits"))) == 0:
-                if not self.mute:
-                    print("~~ Reducing pyklip no fakes ~~")
-                spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
-                dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
-                if not os.path.exists(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux")):
-                    os.makedirs(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux"))
-                parallelized.klip_dataset(dataset,
-                                          outputdir=os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux"),
-                                          mode="ADI+SDI",
-                                          annuli=9,
-                                          subsections=4,
-                                          movement=1,
-                                          numbasis=[20,30,50,150],
-                                          spectrum="methane",
-                                          fileprefix="pyklip_k150a9s4m1methane",
-                                          numthreads=self.N_threads,
-                                          calibrate_flux=True)
-
-
-            with open(self.contrast_filename_path, 'rt') as cvs_contrast:
-                cvs_contrast_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_contrast),delimiter=' ')
-                list_contrast = list(cvs_contrast_reader)
-                contrast_str_arr = np.array(list_contrast, dtype='string')
-                col_names = contrast_str_arr[0]
-                contrast_arr = contrast_str_arr[1::].astype(np.float)
-                sep_samples = contrast_arr[:,0]
-                Ttype_contrast = np.squeeze(contrast_arr[:,np.where("T-Type"==col_names)])
-                Ltype_contrast = np.squeeze(contrast_arr[:,np.where("L-Type"==col_names)])
-
-
-            if not self.mute:
-                print("~~ Injecting fakes ~~")
-            pa_shift_list = [0,30,60]
-            for pa_shift in pa_shift_list:
-                fake_flux_dict = dict(mode = "SNR",SNR=self.fakes_SNR,sep_arr = sep_samples, contrast_arr=Ttype_contrast)
-                fake_position_dict = dict(mode = "spirals",pa_shift=pa_shift)
-
-                # Inject the fakes
-                spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
-                if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"S*_spdc_distorcorr_{0}_PA*.fits").format(self.fakes_spectrum))) != 3*len(spdc_glob):
+            if 0:
+                if overwrite_tmp or len(glob(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux","pyklip_k150a9s4m1methane-KL50-speccube.fits"))) == 0:
                     if not self.mute:
-                        print("~~ Reading dataset ~~")
+                        print("~~ Reducing pyklip no fakes ~~")
+                    spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
                     dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
-                    GPI.generate_spdc_with_fakes(dataset,
-                                             fake_position_dict,
-                                             fake_flux_dict,
-                                             outputdir = self.dir_fakes,
-                                             planet_spectrum = self.fakes_spectrum,
-                                             PSF_cube = self.PSF_cube_path,
-                                             star_type = None,
-                                             GOI_list_folder = self.GOI_list_folder,
-                                             mute = False,
-                                             suffix = self.fakes_spectrum+"_PA{0:02d}".format(pa_shift),
-                                             SpT_file_csv = self.GPI_TSpT_csv)
-
-                # Run pyklip on the fakes
-                if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"fakes_PA*_k150a9s4m1methane-KL50-speccube.fits"))) != 3:
-                    # spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA{0:02d}.fits".format(pa_shift))
-                    # dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
+                    if not os.path.exists(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux")):
+                        os.makedirs(os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux"))
                     parallelized.klip_dataset(dataset,
-                                              outputdir=self.dir_fakes,
+                                              outputdir=os.path.join(self.inputDir,"pyklip_k150a9s4m1methane_PSFsatSpotFlux"),
                                               mode="ADI+SDI",
                                               annuli=9,
                                               subsections=4,
                                               movement=1,
-                                              numbasis=[20,50,150],
+                                              numbasis=[20,30,50,150],
                                               spectrum="methane",
-                                              fileprefix="fakes_PA{0:02d}_k150a9s4m1methane".format(pa_shift),
+                                              fileprefix="pyklip_k150a9s4m1methane",
                                               numthreads=self.N_threads,
                                               calibrate_flux=True)
+
+
+                with open(self.contrast_filename_path, 'rt') as cvs_contrast:
+                    cvs_contrast_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_contrast),delimiter=' ')
+                    list_contrast = list(cvs_contrast_reader)
+                    contrast_str_arr = np.array(list_contrast, dtype='string')
+                    col_names = contrast_str_arr[0]
+                    contrast_arr = contrast_str_arr[1::].astype(np.float)
+                    sep_samples = contrast_arr[:,0]
+                    Ttype_contrast = np.squeeze(contrast_arr[:,np.where("T-Type"==col_names)])
+                    Ltype_contrast = np.squeeze(contrast_arr[:,np.where("L-Type"==col_names)])
+
+
+                if not self.mute:
+                    print("~~ Injecting fakes ~~")
+                for pa_shift in pa_shift_list:
+                    fake_flux_dict = dict(mode = "SNR",SNR=self.fakes_SNR,sep_arr = sep_samples, contrast_arr=Ttype_contrast)
+                    fake_position_dict = dict(mode = "spirals",pa_shift=pa_shift)
+
+                    # Inject the fakes
+                    spdc_glob = glob(self.inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
+                    if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"S*_spdc_distorcorr_{0}_PA*.fits").format(self.fakes_spectrum))) != 3*len(spdc_glob):
+                        if not self.mute:
+                            print("~~ Reading dataset ~~")
+                        dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
+                        GPI.generate_spdc_with_fakes(dataset,
+                                                 fake_position_dict,
+                                                 fake_flux_dict,
+                                                 outputdir = self.dir_fakes,
+                                                 planet_spectrum = self.fakes_spectrum,
+                                                 PSF_cube = self.PSF_cube_path,
+                                                 star_type = None,
+                                                 GOI_list_folder = self.GOI_list_folder,
+                                                 mute = False,
+                                                 suffix = self.fakes_spectrum+"_PA{0:02d}".format(pa_shift),
+                                                 SpT_file_csv = self.GPI_TSpT_csv)
+
+                    # Run pyklip on the fakes
+                    if overwrite_tmp or len(glob(os.path.join(self.dir_fakes,"fakes_PA*_k150a9s4m1methane-KL50-speccube.fits"))) != 3:
+                        # spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA{0:02d}.fits".format(pa_shift))
+                        # dataset = GPI.GPIData(spdc_glob,highpass=True,meas_satspot_flux=True,numthreads=self.N_threads,PSF_cube = self.PSF_cube)
+                        parallelized.klip_dataset(dataset,
+                                                  outputdir=self.dir_fakes,
+                                                  mode="ADI+SDI",
+                                                  annuli=9,
+                                                  subsections=4,
+                                                  movement=1,
+                                                  numbasis=[20,50,150],
+                                                  spectrum="methane",
+                                                  fileprefix="fakes_PA{0:02d}_k150a9s4m1methane".format(pa_shift),
+                                                  numthreads=self.N_threads,
+                                                  calibrate_flux=True)
 
 
             #############################
@@ -354,144 +355,146 @@ class Contrast(KPPSuperClass):
             spectrum = spec.get_planet_spectrum(planet_spectrum_dir,"H")[1]
 
 
-            filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
-                                               "*_k150a9s4m1methane-KL50-speccube.fits")
-            inputDir_tasks.append(CrossCorr(filename,"MF",kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                       label="k150a9s4m1methane-KL50",mute=self.mute,kernel_width=1.0,
-                                       collapse=True,weights=spectrum,folderName=self.spectrum_name))
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
-            inputDir_tasks.append(StatPerPix(filename,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
-
-
-            err_list = kppPerDir(self.inputDir,
-                                  inputDir_tasks,
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-
-            filename = "*_k150a9s4m1methane-KL50-speccube.fits"
-            fakesDir_tasks.append(CrossCorr(filename,"MF",kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                           label="k150a9s4m1methane-KL50",mute=self.mute,kernel_width=1.0,
-                                           collapse=True,weights=spectrum,folderName=self.spectrum_name))
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
-            filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
-            fakesDir_tasks.append(StatPerPix(filename,filename_noPlanets=filename_noPlanets,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
-
-
-            err_list = kppPerDir(self.dir_fakes,
-                                  fakesDir_tasks,
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-
-
-            nofakes_filename = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                               "pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
-            fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                   "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits".format(pa_shift)) for pa_shift in pa_shift_list]
-            fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                   "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-crossCorrgaussian-SNRPerPixDr2.fits".format(pa_shift)) for pa_shift in pa_shift_list]
-            separation0,contrast_curve0,throughput_tuple0 = calculate_constrat(nofakes_filename,
-                               fakes_filename_list,
-                               GOI_list_folder=self.GOI_list_folder,
-                               mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
-                               save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
-                               suffix="pyklip_crossCorr",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
+            #############################
+            ###### PYKLIP with cross correlation            #
+            # filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
+            #                                    "*_k150a9s4m1methane-KL50-speccube.fits")
+            # inputDir_tasks.append(CrossCorr(filename,kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="k150a9s4m1methane-KL50",mute=self.mute,kernel_width=1.0,
+            #                            collapse=True,weights=spectrum,folderName=self.spectrum_name))
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
+            # inputDir_tasks.append(StatPerPix(filename,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
+            #
+            #
+            # err_list = kppPerDir(self.inputDir,
+            #                       inputDir_tasks,
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False,outputDir=self.inputDir)
+            # for err in err_list:
+            #     print(err)
+            #
+            #
+            # filename = "*_k150a9s4m1methane-KL50-speccube.fits"
+            # fakesDir_tasks.append(CrossCorr(filename,kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                                label="k150a9s4m1methane-KL50",mute=self.mute,kernel_width=1.0,
+            #                                collapse=True,weights=spectrum,folderName=self.spectrum_name))
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
+            # filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
+            # fakesDir_tasks.append(StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
+            #
+            #
+            # err_list = kppPerDir(self.dir_fakes,
+            #                       fakesDir_tasks,
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            #
+            #
+            # nofakes_filename = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                                    "pyklip_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits")
+            # fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                        "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-crossCorrgaussian.fits".format(pa_shift)) for pa_shift in pa_shift_list]
+            # fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                        "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-crossCorrgaussian-SNRPerPixDr2.fits".format(pa_shift)) for pa_shift in pa_shift_list]
+            # separation0,contrast_curve0,throughput_tuple0 = calculate_constrat(nofakes_filename,
+            #                    fakes_filename_list,
+            #                    GOI_list_folder=self.GOI_list_folder,
+            #                    mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
+            #                    save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
+            #                    suffix="pyklip_crossCorr",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
 
             #############################
-            ###### PYKLIP with sky sub MF
+            ###### PYKLIP with sky sub cross correlation
 
-            filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
-                                               "*_k150a9s4m1methane-KL50-speccube.fits")
-            pyklip_MFgauss = ShapeOrMF(filename,"MF","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                       label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
-                                       GPI_TSpT_csv=self.GPI_TSpT_csv)
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
-            pyklip_SNR = StatPerPix(filename,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-            err_list = kppPerDir(self.inputDir,
-                                  [pyklip_MFgauss,pyklip_SNR],
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-            filename = "*_k150a9s4m1methane-KL50-speccube.fits"
-            pyklip_MFgauss = ShapeOrMF(filename,"MF","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                       label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
-                                       GPI_TSpT_csv=self.GPI_TSpT_csv)
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
-            filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
-            pyklip_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-            err_list = kppPerDir(self.dir_fakes,
-                                  [pyklip_MFgauss,pyklip_SNR],
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-            nofakes_filename = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                               "pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
-            fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                   "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits".format(pa_shift)) for pa_shift in pa_shift_list]
-            fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
-                                   "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-MF3Dgaussian-SNRPerPixDr2.fits".format(pa_shift)) for pa_shift in pa_shift_list]
-            separation1,contrast_curve1,throughput_tuple1 = calculate_constrat(nofakes_filename,
-                               fakes_filename_list,
-                               GOI_list_folder=self.GOI_list_folder,
-                               mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
-                               save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
-                               suffix="pyklip_MFgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
+            # filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
+            #                                    "*_k150a9s4m1methane-KL50-speccube.fits")
+            # pyklip_MFgauss = ShapeOrMF(filename,"MF","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.inputDir,
+            #                       [pyklip_MFgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False,outputDir=self.inputDir)
+            # for err in err_list:
+            #     print(err)
+            #
+            # filename = "*_k150a9s4m1methane-KL50-speccube.fits"
+            # pyklip_MFgauss = ShapeOrMF(filename,"MF","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
+            # filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.dir_fakes,
+            #                       [pyklip_MFgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            # nofakes_filename = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                                    "pyklip_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits")
+            # fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                        "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-MF3Dgaussian.fits".format(pa_shift)) for pa_shift in pa_shift_list]
+            # fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
+            #                        "fakes_PA{0:02d}_k150a9s4m1methane-KL50-speccube-MF3Dgaussian-SNRPerPixDr2.fits".format(pa_shift)) for pa_shift in pa_shift_list]
+            # separation1,contrast_curve1,throughput_tuple1 = calculate_constrat(nofakes_filename,
+            #                    fakes_filename_list,
+            #                    GOI_list_folder=self.GOI_list_folder,
+            #                    mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=throughput_break,Dr=self.Dr,
+            #                    save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
+            #                    suffix="pyklip_MFgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
 
 
             #############################
-            ###### PYKLIP with sky sub shape
-            filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
-                                               "pyklip_k150a9s4m1methane-KL50-speccube.fits")
-            pyklip_MFgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                       label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
-                                       GPI_TSpT_csv=self.GPI_TSpT_csv)
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
-            pyklip_SNR = StatPerPix(filename,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-            err_list = kppPerDir(self.inputDir,
-                                  [pyklip_MFgauss,pyklip_SNR],
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-            filename = "*_k150a9s4m1methane-KL50-speccube.fits"
-            pyklip_SHgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
-                                       label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
-                                       GPI_TSpT_csv=self.GPI_TSpT_csv)
-            filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
-            filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
-            pyklip_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
-                                     N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
-                                     type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-            err_list = kppPerDir(self.dir_fakes,
-                                  [pyklip_SHgauss,pyklip_SNR],
-                                  spec_path_list=[self.spectrum_name],
-                                  mute_error = False)
-            for err in err_list:
-                print(err)
-
-
+            ###### PYKLIP with MF
+            # filename = os.path.join("pyklip_k150a9s4m1methane_PSFsatSpotFlux",
+            #                                    "pyklip_k150a9s4m1methane-KL50-speccube.fits")
+            # pyklip_MFgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.inputDir,
+            #                       [pyklip_MFgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False,outputDir=self.inputDir)
+            # for err in err_list:
+            #     print(err)
+            #
+            # filename = "*_k150a9s4m1methane-KL50-speccube.fits"
+            # pyklip_SHgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="k150a9s4m1methane-KL50",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"fakes_PA*_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
+            # filename_noPlanets = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,"pyklip_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            #                          N_threads=self.N_threads,label="k150a9s4m1methane-KL50",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.dir_fakes,
+            #                       [pyklip_SHgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            #
             nofakes_filename = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
                                                "pyklip_k150a9s4m1methane-KL50-speccube-shape3Dgaussian.fits")
             fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name,
@@ -505,10 +508,9 @@ class Contrast(KPPSuperClass):
                                save_dir = os.path.join(self.inputDir,"planet_detec_k150a9s4m1methane-KL50",self.spectrum_name),
                                suffix="pyklip_SHgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
-
             #############################
             ###### FMMF
-            if 1:
+            if 0:
                 for pa_shift in pa_shift_list:
                     FMMFObj = FMMF(filename = "S*_spdc_distorcorr*_PA{0:02d}.fits".format(pa_shift),
                                     outputDir=None,
@@ -527,42 +529,160 @@ class Contrast(KPPSuperClass):
                     kppPerDir(inputDir,[FMMFObj],spec_path_list=[self.spectrum_name],mute_error=False)
 
             FMMF_metric_list = ["FMMF","FMSH","FMpF"]
-            for FMMF_metric in FMMF_metric_list:
-                filename = os.path.join("planet_detec_FMMF",self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
-                FMMF_SNR = StatPerPix(filename,
-                                         N_threads=self.N_threads,label="FMMF",IOWA = None,
-                                         type="SNR",overwrite=False,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-                err_list = kppPerDir(self.inputDir,
-                                      [FMMF_SNR],
-                                      spec_path_list=[self.spectrum_name],
-                                      mute_error = False)
-                for err in err_list:
-                    print(err)
-                for pa_shift in pa_shift_list:
-                    filename = os.path.join("planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
-                    filename_noPlanets = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
-                    FMMF_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
-                                             N_threads=-1,label="FMMF_PA{0:02d}".format(pa_shift),IOWA = None,
-                                             type="SNR",overwrite=False,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
-                    err_list = kppPerDir(self.dir_fakes,
-                                          [FMMF_SNR],
-                                          spec_path_list=[self.spectrum_name],
-                                          mute_error = False)
-                    for err in err_list:
-                        print(err)
+            # for FMMF_metric in FMMF_metric_list:
+            # #     filename = os.path.join("planet_detec_FMMF",self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
+            # #     FMMF_SNR = StatPerPix(filename,
+            # #                              N_threads=self.N_threads,label="FMMF",IOWA = None,
+            # #                              type="SNR",overwrite=False,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # #     err_list = kppPerDir(self.inputDir,
+            # #                           [FMMF_SNR],
+            # #                           spec_path_list=[self.spectrum_name],
+            # #                           mute_error = False)
+            # #     for err in err_list:
+            # #         print(err)
+            # #     for pa_shift in pa_shift_list:
+            # #         filename = os.path.join("planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
+            # #         filename_noPlanets = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,"*0.50-{0}.fits".format(FMMF_metric))
+            # #         FMMF_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            # #                                  N_threads=-1,label="FMMF_PA{0:02d}".format(pa_shift),IOWA = None,
+            # #                                  type="SNR",overwrite=False,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # #         err_list = kppPerDir(self.dir_fakes,
+            # #                               [FMMF_SNR],
+            # #                               spec_path_list=[self.spectrum_name],
+            # #                               mute_error = False)
+            # #         for err in err_list:
+            # #             print(err)
+            # #
+            #     nofakes_filename = os.path.join(os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,
+            #                                        "*_0.50-{0}.fits".format(FMMF_metric)))
+            #     fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                                            "*_0.50-{0}.fits".format(FMMF_metric).format(pa_shift)) for pa_shift in pa_shift_list]
+            #     fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                                            "*_0.50-{0}-SNRPerPixDr2.fits".format(FMMF_metric).format(pa_shift)) for pa_shift in pa_shift_list]
+            #     separation3,contrast_curve3,throughput_tuple3 = calculate_constrat(nofakes_filename,
+            #                        fakes_filename_list,
+            #                        GOI_list_folder=self.GOI_list_folder,
+            #                        mask_radius=self.mask_radius,IOWA=contrast_range,Dr=self.Dr,
+            #                        save_dir = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name),
+            #                        suffix=FMMF_metric,spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
 
-                nofakes_filename = os.path.join(os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,
-                                                   "*_0.50-{0}.fits".format(FMMF_metric).format(pa_shift)))
-                fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
-                                                       "*_0.50-{0}.fits".format(FMMF_metric).format(pa_shift)) for pa_shift in pa_shift_list]
-                fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
-                                                       "*_0.50-{0}-SNRPerPixDr2.fits".format(FMMF_metric).format(pa_shift)) for pa_shift in pa_shift_list]
-                separation3,contrast_curve3,throughput_tuple3 = calculate_constrat(nofakes_filename,
-                                   fakes_filename_list,
-                                   GOI_list_folder=self.GOI_list_folder,
-                                   mask_radius=self.mask_radius,IOWA=contrast_range,Dr=self.Dr,
-                                   save_dir = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name),
-                                   suffix=FMMF_metric,spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
+
+            #############################
+            ###### PYKLIP (fm.py) with cross correlation
+            # # Define the cross correlation kernel
+            # pykliproot = os.path.dirname(os.path.realpath(parallelized.__file__))
+            # planet_spectrum_dir = glob(os.path.join(pykliproot,"spectra","*",self.spectrum_name+".flx"))[0]
+            # import pyklip.spectra_management as spec
+            # spectrum = spec.get_planet_spectrum(planet_spectrum_dir,"H")[1]
+            #
+            # filename = os.path.join("planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30.fits")
+            # inputDir_tasks.append(CrossCorr(filename,kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="FMMF",mute=self.mute,kernel_width=1.0,
+            #                            collapse=True,weights=spectrum,folderName=self.spectrum_name))
+            # filename = os.path.join("planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian.fits")
+            # inputDir_tasks.append(StatPerPix(filename,
+            #                          N_threads=self.N_threads,label="FMMF",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
+            #
+            #
+            # err_list = kppPerDir(self.inputDir,
+            #                       inputDir_tasks,
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            #
+            # for pa_shift in pa_shift_list:
+            #     fakesDir_tasks = []
+            #     filename = os.path.join("planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                                        "*_t600g100nc_0.50-speccube-KL30.fits")
+            #     fakesDir_tasks.append(CrossCorr(filename,kernel_type="gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                                    label="FMMF_PA{0:02d}".format(pa_shift),mute=self.mute,kernel_width=1.0,
+            #                                    collapse=True,weights=spectrum,folderName=self.spectrum_name))
+            #     filename = os.path.join("planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                                        "*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian.fits")
+            #     filename_noPlanets = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,"*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian.fits")
+            #     fakesDir_tasks.append(StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            #                              N_threads=self.N_threads,label="FMMF_PA{0:02d}".format(pa_shift),IOWA = None,
+            #                              type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution))
+            #
+            #
+            #     err_list = kppPerDir(self.dir_fakes,
+            #                           fakesDir_tasks,
+            #                           spec_path_list=[self.spectrum_name],
+            #                           mute_error = False)
+            #     for err in err_list:
+            #         print(err)
+            #
+            #
+            #
+            # nofakes_filename = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian.fits")
+            # fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                        "*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian.fits") for pa_shift in pa_shift_list]
+            # fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                        "*_t600g100nc_0.50-speccube-KL30-crossCorrgaussian-SNRPerPixDr2.fits") for pa_shift in pa_shift_list]
+            # separation0,contrast_curve0,throughput_tuple0 = calculate_constrat(nofakes_filename,
+            #                    fakes_filename_list,
+            #                    GOI_list_folder=self.GOI_list_folder,
+            #                    mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=None,Dr=self.Dr,
+            #                    save_dir = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name),
+            #                    suffix="fmpyklip_crossCorr",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
+
+
+            #############################
+            ###### PYKLIP (fm.py) with MF
+            # filename = os.path.join("planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30.fits")
+            # pyklip_MFgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="FMMF",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,
+            #                          N_threads=self.N_threads,label="FMMF",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.inputDir,
+            #                       [pyklip_MFgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            # filename = os.path.join("planet_detec_FMMF_PA??",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30.fits")
+            # pyklip_SHgauss = ShapeOrMF(filename,"shape","gaussian",N_threads=self.N_threads,overwrite=overwrite_tmp,
+            #                            label="FMMF",mute=self.mute,keepPrefix=True,kernel_width=1.0,
+            #                            GPI_TSpT_csv=self.GPI_TSpT_csv)
+            # filename = os.path.join("planet_detec_FMMF_PA??",self.spectrum_name,"*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian.fits")
+            # filename_noPlanets = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,"*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian.fits")
+            # pyklip_SNR = StatPerPix(filename,filename_noPlanets=filename_noPlanets,
+            #                          N_threads=self.N_threads,label="FMMF",IOWA = None,
+            #                          type="SNR",overwrite=overwrite_tmp,GOI_list_folder=self.GOI_list_folder,mute=self.mute,resolution=resolution)
+            # err_list = kppPerDir(self.dir_fakes,
+            #                       [pyklip_SHgauss,pyklip_SNR],
+            #                       spec_path_list=[self.spectrum_name],
+            #                       mute_error = False)
+            # for err in err_list:
+            #     print(err)
+            #
+            #
+            # nofakes_filename = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name,
+            #                                    "*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian.fits")
+            # fakes_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                        "*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian.fits") for pa_shift in pa_shift_list]
+            # fakes_SNR_filename_list = [os.path.join(self.dir_fakes,"planet_detec_FMMF_PA{0:02d}".format(pa_shift),self.spectrum_name,
+            #                        "*_t600g100nc_0.50-speccube-KL30-shape3Dgaussian-SNRPerPixDr2.fits") for pa_shift in pa_shift_list]
+            # separation2,contrast_curve2,throughput_tuple2 = calculate_constrat(nofakes_filename,
+            #                    fakes_filename_list,
+            #                    GOI_list_folder=self.GOI_list_folder,
+            #                    mask_radius=self.mask_radius,IOWA=contrast_range,throughput_break=None,Dr=self.Dr,
+            #                    save_dir = os.path.join(self.inputDir,"planet_detec_FMMF",self.spectrum_name),
+            #                    suffix="fmpyklip_SHgauss",spec_type=self.spectrum_name,fakes_SNR_filename_list=fakes_SNR_filename_list,resolution=resolution)
+
 
         # Removing fakes
         spdc_glob = glob(self.dir_fakes+os.path.sep+"S*_spdc_distorcorr*_PA*.fits")
@@ -594,10 +714,10 @@ class Contrast(KPPSuperClass):
             # plt.plot(self.pyklip_noSky_stddev_rSamp*0.01413,5*self.pyklip_noSky_1Dstddev/pyklip_noSky_throughput_func(self.pyklip_noSky_stddev_rSamp*0.01413),":", color='b', linewidth=3.0)
             # legend_str_list.append("JB's T-Type pyklip no sky sub")
 
-            suffix_list = ["pyklip_crossCorr","pyklip_MFgauss","pyklip_SHgauss","FMSH","FMMF","FMpF"]
-            planet_detec_list = ["planet_detec_k150a9s4m1methane-KL50","planet_detec_k150a9s4m1methane-KL50","planet_detec_k150a9s4m1methane-KL50","planet_detec_FMMF","planet_detec_FMMF","planet_detec_FMMF"]
-            linestyle_list = [":","-","-","-.","-.","-."]
-            color_list = ["blue","purple","cyan","yellow","orange","red"]
+            suffix_list = ["pyklip_crossCorr","pyklip_MFgauss","pyklip_SHgauss","FMSH","FMMF","FMpF","fmpyklip_crossCorr","fmpyklip_SHgauss"]
+            planet_detec_list = ["planet_detec_k150a9s4m1methane-KL50","planet_detec_k150a9s4m1methane-KL50","planet_detec_k150a9s4m1methane-KL50","planet_detec_FMMF","planet_detec_FMMF","planet_detec_FMMF","planet_detec_FMMF","planet_detec_FMMF"]
+            linestyle_list = [":","-","-","-.","-.","-.","-.","-."]
+            color_list = ["blue","purple","cyan","yellow","orange","red","blue","cyan"]
             for suffix,linestyle,color,planet_detec in zip(suffix_list,linestyle_list,color_list,planet_detec_list):
                 with open(os.path.join(self.inputDir,planet_detec,self.spectrum_name,"contrast-"+suffix+'.csv'), 'rt') as cvs_contrast:
                     cvs_contrast_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_contrast),delimiter=' ')
@@ -631,13 +751,19 @@ class Contrast(KPPSuperClass):
             plt.savefig(os.path.join(self.save_contrast,self.star_name+"_"+self.compact_date+"_"+self.filter+"_contrast-all.png"), bbox_inches='tight')
 
 
-            plt.figure(2,figsize=(15,10))
-
-            suffix_list = ["pyklip_crossCorr","pyklip_MFgauss","pyklip_SHgauss","FMSH","FMMF","FMpF"]
-            linestyle_list = [":","-","-","-.","-.","-."]
-            color_list = ["blue","purple","cyan","yellow","orange","red"]
-            for k,(suffix,linestyle,color,planet_detec) in enumerate(zip(suffix_list,linestyle_list,color_list,planet_detec_list)):
-                plt.subplot(2,3,k+1)
+            plt.figure(2,figsize=(20,10))
+            # suffix_list = ["pyklip_crossCorr","pyklip_MFgauss","pyklip_SHgauss","FMSH","FMMF","FMpF"]
+            # linestyle_list = [":","-","-","-.","-.","-."]
+            # color_list = ["blue","purple","cyan","yellow","orange","red"]
+            title_list = suffix_list
+            # suffix_list = ["FMSH","fmpyklip_SHgauss","fmpyklip_crossCorr"]
+            # title_list = ["Forward Model Matched Filter","Gaussian Matched Filter","Gaussian Cross Correlation"]
+            # planet_detec_list = ["planet_detec_FMMF","planet_detec_FMMF","planet_detec_FMMF"]
+            # linestyle_list = ["-","--",":"]
+            # color_list = ["#ff9900","#006699","grey"]
+            for k,(suffix,linestyle,color,planet_detec,title_str) in enumerate(zip(suffix_list,linestyle_list,color_list,planet_detec_list,title_list)):
+                # plt.subplot(2,4,k+1)
+                plt.subplot(2,4,k+1)
                 with open(os.path.join(self.inputDir,planet_detec,self.spectrum_name,"throughput-"+suffix+'.csv'), 'rt') as cvs_throughput:
                     cvs_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_throughput),delimiter=' ')
                     list_contrast = list(cvs_reader)
@@ -649,15 +775,26 @@ class Contrast(KPPSuperClass):
                     Ttype_throughput_fit = np.squeeze(contrast_arr[:,np.where("fit"==col_names)])
 
 
-                plt.title(suffix)
-                plt.scatter(sep_samples,Ttype_throughput)
+                ax = plt.gca()
+                plt.title(title_str,fontsize=20)
+                # plt.text(0.5,1.1,title_str,horizontalalignment='center',fontsize=20,transform=ax.transAxes)
+                plt.scatter(sep_samples,Ttype_throughput,c=color)
                 sep_samples_unique,sep_indices = np.unique(sep_samples,return_index=True)
-                plt.plot(sep_samples_unique,Ttype_throughput_fit[sep_indices],"r-",linewidth=5)
-                plt.xlabel("Separation (arcsec)", fontsize=20)
-                plt.ylabel("Throughput (arbritrary units)", fontsize=20)
+                plt.plot(sep_samples_unique,Ttype_throughput_fit[sep_indices],linestyle="-",linewidth=5,color=color)
+                plt.xlabel("Separation (as)", fontsize=20)
+                plt.ylabel("Conversion Factor", fontsize=20)
+                plt.xlim([0,1.8])
+                plt.xticks([0,0.5,1.0,1.5])
+                # plt.xlim([0,1.])
+                # plt.ylim([0,None])
                 ax= plt.gca()
+                plt.grid(True)
                 ax.tick_params(axis='x', labelsize=20)
                 ax.tick_params(axis='y', labelsize=20)
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.xaxis.set_ticks_position('bottom')
+                ax.yaxis.set_ticks_position('left')
                 plt.ticklabel_format(style='sci',axis='y',scilimits=(0,1))
 
             plt.tight_layout()
@@ -668,7 +805,7 @@ class Contrast(KPPSuperClass):
 
             plt.figure(3,figsize=(15,10))
             for k,(suffix,linestyle,color,planet_detec) in enumerate(zip(suffix_list,linestyle_list,color_list,planet_detec_list)):
-                plt.subplot(2,3,k+1)
+                plt.subplot(2,4,k+1)
                 with open(os.path.join(self.inputDir,planet_detec,self.spectrum_name,"contrast-SNR-check-"+suffix+'.csv'), 'rt') as cvs_SNR:
                     cvs_reader = csv.reader(filter(lambda row: row[0]!="#",cvs_SNR),delimiter=' ')
                     list_contrast = list(cvs_reader)
@@ -696,7 +833,7 @@ class Contrast(KPPSuperClass):
                 print("Saving: "+os.path.join(self.save_contrast,self.star_name+"_"+self.compact_date+"_"+self.filter+"_contrast-SNR-check-all.png"))
             plt.savefig(os.path.join(self.save_contrast,self.star_name+"_"+self.compact_date+"_"+self.filter+"_contrast-SNR-check-all.png"), bbox_inches='tight')
 
-            plt.show()
+            # plt.show()
 
 
         # self.flux_1Dstddev_map = get_image_stat_map(self.image,
@@ -878,10 +1015,10 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         # print([(metric_image_fakes[np.round(row_real_object),np.round(col_real_object)],
         #         np.nanmax(metric_image_fakes[(np.round(row_real_object)-1):(np.round(row_real_object)+2),(np.round(col_real_object)-1):(np.round(col_real_object)+2)]))\
         #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
-        metric_fakes_val.extend([np.nanmax(metric_image_fakes[(np.round(row_real_object)-1):(np.round(row_real_object)+2),(np.round(col_real_object)-1):(np.round(col_real_object)+2)]) \
-                                     for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
-        # metric_fakes_val.extend([metric_image_fakes[np.round(row_real_object),np.round(col_real_object)] \
+        # metric_fakes_val.extend([np.nanmax(metric_image_fakes[(np.round(row_real_object)-1):(np.round(row_real_object)+2),(np.round(col_real_object)-1):(np.round(col_real_object)+2)]) \
         #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
+        metric_fakes_val.extend([metric_image_fakes[np.round(row_real_object),np.round(col_real_object)] \
+                                     for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
 
     whereNoNans = np.where(np.isfinite(metric_fakes_val))
     metric_fakes_val = np.array(metric_fakes_val)[whereNoNans]

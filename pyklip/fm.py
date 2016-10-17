@@ -568,6 +568,14 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         klipped_selfsub = np.dot(selfsubtraction_1_inner_products, original_KL) + \
                           np.dot(selfsubtraction_2_inner_products, delta_KL)
 
+        # secondorder_inner_products = np.dot(model_sci_mean_sub_rows, delta_KL.T)
+        # klipped_secondOrder = np.dot(selfsubtraction_1_inner_products, delta_KL) + \
+        #                      np.dot(oversubtraction_inner_products, delta_KL) + \
+        #                      np.dot(secondorder_inner_products, original_KL) + \
+        #                      np.dot(secondorder_inner_products, delta_KL)
+        # # print(oversubtraction_inner_products.shape,selfsubtraction_1_inner_products.shape,selfsubtraction_2_inner_products.shape,secondorder_inner_products.shape)
+        # # print(sci_mean_sub_rows.shape,model_sci_mean_sub_rows.shape,delta_KL.shape,original_KL.shape)
+        # return model_sci[None,:] - klipped_oversub - klipped_selfsub - klipped_secondOrder, klipped_oversub, klipped_selfsub
         return model_sci[None,:] - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
         #return model_sci[None,:], klipped_oversub, klipped_selfsub
     else:
@@ -1621,7 +1629,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # result is stored in fmout
     fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                           input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
-                          ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs,
+                          ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind,section_ind_nopadding=section_ind_nopadding, aligned_imgs=aligned_imgs,
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
