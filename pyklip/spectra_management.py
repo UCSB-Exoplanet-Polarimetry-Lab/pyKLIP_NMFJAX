@@ -385,7 +385,8 @@ def get_planet_spectrum(filename,wavelength):
     #spec_pip = dw * counts_per_bin/weights_per_bin
 
     f = interp1d(wave, spec)
-    spec_pip = f(sampling_pip)
+    # Interpolate the spectrum on GPI sampling and convert F_nu to F_lambda
+    spec_pip = f(sampling_pip)/(sampling_pip**2)
 
     # if 0:
     #     plt.figure(2)
