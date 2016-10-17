@@ -8,7 +8,7 @@ import scipy.ndimage as ndi
 import scipy.ndimage.interpolation as sinterp
 
 # cython imports
-import pyximport; pyximport.install()
+import pyximport; pyximport.install(setup_args={"include_dirs":np.get_include()})
 import pyklip.covars as covars
 
 # emcee more MCMC sampling
@@ -356,7 +356,7 @@ class FMAstrometry(object):
         pos, _, _ = sampler.run_mcmc(pos, nburn)
         # reset sampler
         sampler.reset()
-
+         
         # chains should hopefulyl have converged. Now run MCMC
         print("Burn in finished. Now sampling posterior")
         sampler.run_mcmc(pos, nsteps)
