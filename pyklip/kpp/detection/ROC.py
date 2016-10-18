@@ -10,6 +10,7 @@ from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp.stat.stat_utils import *
 from pyklip.kpp.utils.GOI import *
 import pyklip.kpp.utils.mathfunc as kppmath
+import pyklip.kpp.utils.GPIimage as gpiim
 
 class ROC(KPPSuperClass):
     """
@@ -598,7 +599,7 @@ def get_metrics_stat(base_dir,filename_filter_list,IOWA,bins,GOI_list_folder,mut
                         r_grid = abs(x_grid +y_grid*1j)
                         th_grid = np.arctan2(x_grid,y_grid)
 
-                        image_selec = np.where(np.isfinite(image)*(r_grid>IWA/0.01413)*(r_grid<OWA/0.01413))
+                        image_selec = np.where(np.isfinite(image)*(r_grid>gpiim.as2pix(IWA))*(r_grid<gpiim.as2pix(OWA)))
                         # print(bins)
                         # print(image[image_selec])
 
@@ -740,10 +741,10 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
 
 
                         if GOI_list_folder is not None:
-                            x_real_object_list,y_real_object_list = get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = True,ignore_fakes=True,IWA=IWA/0.01413,OWA=OWA/0.01413)
+                            x_real_object_list,y_real_object_list = get_pos_known_objects(prihdr,exthdr,GOI_list_folder,xy = True,ignore_fakes=True,IWA=gpiim.as2pix(IWA),OWA=gpiim.as2pix(OWA))
                             x_real_object_list = np.array(x_real_object_list)
                             y_real_object_list = np.array(y_real_object_list)
-                            sep_real_object_list,pa_real_object_list = get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep=True,ignore_fakes=True,IWA=IWA/0.01413,OWA=OWA/0.01413)
+                            sep_real_object_list,pa_real_object_list = get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep=True,ignore_fakes=True,IWA=gpiim.as2pix(IWA),OWA=gpiim.as2pix(OWA))
                             sep_real_object_list = np.array(sep_real_object_list)
                             pa_real_object_list = np.array(pa_real_object_list)
 

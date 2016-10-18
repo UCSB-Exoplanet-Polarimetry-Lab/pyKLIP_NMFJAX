@@ -14,6 +14,7 @@ import pyklip.fm as fm
 import pyklip.fmlib.matchedFilter as mf
 import pyklip.klip as klip
 import pyklip.kpp.utils.GOI as GOI
+import pyklip.kpp.utils.GPIimage as gpiim
 
 
 class FMMF(KPPSuperClass):
@@ -190,12 +191,12 @@ class FMMF(KPPSuperClass):
             # self.annuli = [(66,81)]
             # self.annuli = [(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
-            self.OWA = 0.6/0.01413
+            self.OWA = gpiim.as2pix(0.6)
             self.N_pix_sector = 300
             self.subsections = None
             self.annuli = [(8.698727015558699, 19.953433013911035), (19.953433013911035, 42.46284501061571)]
         if predefined_sectors == "avgSep":
-            self.OWA = 0.8/0.01413
+            self.OWA = gpiim.as2pix(0.8)
             self.N_pix_sector = 200
             self.subsections = None
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 41),(41, 56.5)]
@@ -448,7 +449,7 @@ class FMMF(KPPSuperClass):
         # else give None
         if self.fakes_only:
             sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True,fakes_only=True)
-            self.fakes_sepPa_list = [(sep/0.01413,pa) for sep,pa in zip(sep_list, pa_list)]
+            self.fakes_sepPa_list = [(gpiim.as2pix(sep),pa) for sep,pa in zip(sep_list, pa_list)]
         else:
             self.fakes_sepPa_list = None
 

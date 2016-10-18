@@ -1480,7 +1480,7 @@ def generate_spdc_with_fakes(dataset,
     :param pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
     :return:
     '''
-
+    import pyklip.kpp.utils.GPIimage as gpiim
 
     if suffix is None:
         suffix = "fakes"
@@ -1511,7 +1511,7 @@ def generate_spdc_with_fakes(dataset,
 
     if GOI_list_folder is not None:
         sep_real_object_list,pa_real_object_list = goi.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep = True,include_speckles=False)
-        sep_real_object_list = [sep/0.01413 for sep in sep_real_object_list]
+        sep_real_object_list = [gpiim.as2pix(sep) for sep in sep_real_object_list]
 
     # Retrieve the filter used from the fits headers.
     IFSfilter = prihdr['IFSFILT'].split('_')[1]
@@ -1595,70 +1595,6 @@ def generate_spdc_with_fakes(dataset,
 
         sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
 
-    # if fake_position_dict["mode"] == "ROC":
-    #     # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
-    #     # We want to inject one planet per section where klip is independently applied.
-    #     annuli = 8
-    #     dr = 15
-    #     delta_th = 90
-    #
-    #     # Get parallactic angle of where to put fake planets
-    #     # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
-    #     # delta_pa = 180/np.pi*PSF_dist/radius
-    #     pa_list = np.arange(-180.,180.-0.01,delta_th)
-    #     radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
-    #     pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
-    #     # for row_id in range(pa_grid.shape[0]):
-    #     #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
-    #     for col_id in range(radii_grid.shape[1]):
-    #         radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
-    #     pa_grid[range(1,annuli,3),:] += 30
-    #     pa_grid[range(2,annuli,3),:] += 60
-    #
-    #     sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
-    #
-    #     # Manage spectrum
-    #     pyklip_dir = os.path.dirname(os.path.realpath(spec.__file__))
-    #     planet_spectrum_dir_1 = pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx"
-    #     #planet_spectrum_dir_2 = pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g100ncflx"+os.path.sep+"t2000g100nc.flx"
-    #
-    #     # Define the peak value of the fake planet for each slice depending if a star and a planet type is given.
-    #     # Interpolate a spectrum of the star based on its spectral type/temperature
-    #     wv,star_sp = spec.get_star_spectrum(IFSfilter,star_type,None)
-    #     # Interpolate the spectrum of the planet based on the given filename
-    #     wv,planet_sp_meth = spec.get_planet_spectrum(planet_spectrum_dir_1,IFSfilter)
-    #     #wv,planet_sp2 = spec.get_planet_spectrum(planet_spectrum_dir_2,filter)
-    #     planet_sp_flat = [  64.,   69.,   74.,   78.,   83.,   87.,   89.,   95.,   98.,\
-    #     102.,  107.,  113.,  116.,  123.,  126.,  129.,  134.,  137.,\
-    #     142.,  147.,  150.,  154.,  161.,  161.,  159.,  159.,  161.,\
-    #     159.,  163.,  166.,  161.,  156.,  154.,  149.,  150.,  152.,  150.]
-    #     planet_sp_flat = planet_sp_flat/np.mean(planet_sp_flat)
-    #
-    #     # import matplotlib.pyplot as plt
-    #     # plt.plot(wv,star_sp/np.mean(star_sp),'r')
-    #     # plt.plot(wv,sat_spot_spec/np.mean(sat_spot_spec),'b')
-    #     # plt.show()
-    #     #addNoise2Spectrum(spectrum)
-    #
-    #
-    #     planets_contrasts = []
-    #     inputflux=[]
-    #     planet_spectra = []
-    #     for fake_id, (radius,pa) in enumerate(sep_pa_iter_list):
-    #         if rd.random() >= 0.5: # methane spec
-    #             planets_contrasts.append(1.*10**-6)
-    #             planet_sp = addNoise2Spectrum(planet_sp_meth,ampl=0.3, w_ker = 10,rand_slope = 0.2)
-    #             #planet_sp = planet_sp_meth
-    #         else: # flat spec
-    #             planets_contrasts.append(5.*10**-6)
-    #             planet_sp = addNoise2Spectrum(planet_sp_flat,ampl=0.3, w_ker = 10,rand_slope = 0.2)
-    #             #planet_sp = planet_sp_flat
-    #         planet_spectra.append(planet_sp)
-    #         inputflux.append(spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio))
-    #
-    #     fake_flux_dict = dict(mode = "contrast",contrast = planets_contrasts)
-    #     inputflux_is_def = True
-
     if fake_position_dict["mode"] == "sector":
         annuli = fake_position_dict["annuli"]
         subsections = fake_position_dict["subsections"]
@@ -1715,9 +1651,7 @@ def generate_spdc_with_fakes(dataset,
             planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
     elif (fake_flux_dict["mode"] == "SNR"):
         f = interp1d(fake_flux_dict["sep_arr"], fake_flux_dict["contrast_arr"],bounds_error=False,fill_value=fake_flux_dict["contrast_arr"][-1])
-        print([f(sep*0.01413) for (sep,pa) in sep_pa_iter_list])
-        planets_contrasts = [fake_flux_dict["SNR"]*f(sep*0.01413)/5. for (sep,pa) in sep_pa_iter_list]
-        print(planets_contrasts)
+        planets_contrasts = [fake_flux_dict["SNR"]*f(gpiim.pix2as(sep))/5. for (sep,pa) in sep_pa_iter_list]
 
     # Loop for injecting fake planets. One planet per section of the image.
     for fake_id, ((radius,pa),contrast) in enumerate(zip(sep_pa_iter_list,planets_contrasts)):
