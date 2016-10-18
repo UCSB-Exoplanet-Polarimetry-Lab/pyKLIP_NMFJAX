@@ -26,7 +26,7 @@ Features
 --------
 * Capable of running ADI, SDI, ADI+SDI with spectral templates to optimize the PSF subtraction
 * Library of KLIP-FM capabilties including forward-modelling a PSF, detection algorithms, and spectral extraction.
-* Post-processing planet detection algorithms included
+* A Forward Model Matched Filter of KLIP is available for GPI as well as post-processing planet detection algorithms.
 * Parallelized with both a quick memory-intensive mode and a slower memory-lite mode
 * Modularized to support data from multiple instruments. Currently there are interfaces to
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
@@ -68,6 +68,7 @@ Contents
    contrast_curves
    bka
    p1640
+   fmmf_gpi
    pyklip
 
 
