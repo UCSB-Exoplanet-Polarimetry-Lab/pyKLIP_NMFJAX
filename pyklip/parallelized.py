@@ -980,11 +980,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
-                 annuli_spacing="constant", maxnumbasis=None,
-                 sat_spot_psf = False,
-                 spectrum=None, highpass=False,
-                 lite=False,
-                 save_aligned = False, restored_aligned = None,dtype=np.float32):
+                 annuli_spacing="constant", maxnumbasis=None, spectrum=None, highpass=False,
+                 lite=False, save_aligned = False, restored_aligned = None, dtype=np.float32):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1006,19 +1003,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
                         log (logarithmical expansion with r), and linear (linearly expansion with r)
         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
-        sat_spot_psf:   Save an original psf and radial psf cube (invariant by rotation). These PSFs are not klipped.
 
         spectrum:       (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
                         spectrum shape. Currently only supports "methane" between 1 and 10 microns.
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units
-
-        onesegment:     False (default) - pefrom KLIP on entire image, True - perform KLIP on one segment defined
-                        by segment_dr, segment_dt, centered on (companion_rho, companion_theta). ONLY WORKS ON ADI+SDI
-        companion_rho:  Separation of known companion (pixels, used if onesegment==True)
-        companion_theta: PA of known companion (degrees, used if onesegment==True)
-        segment_dr:     Radial width of segment (pixels)
-        segment_dt:     Azimuthal width of segment (degrees)
 
         lite:           if True, run a low memory version of the alogirhtm
 
@@ -1115,10 +1104,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if mode == 'ADI+SDI':
         print("Beginning ADI+SDI KLIP")
 
-        if sat_spot_psf:
-            print("Calculating the planet PSF from the satellite spots...")
-            dataset.generate_psf_cube(20)
-
         # Actually run the PSF Subtraction with all the arguments
         klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA,
                                      OWA=dataset.OWA, mode=mode,
@@ -1170,13 +1155,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # valid output path and write iamges
         outputdirpath = os.path.realpath(outputdir)
         print("Writing Images to directory {0}".format(outputdirpath))
-
-        if sat_spot_psf:
-            # Save the original PSF calculated from combining the sat spots
-            dataset.savedata(outputdirpath + '/' + fileprefix+"-original_PSF_cube.fits", dataset.psfs,
-                                      astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube")
-            # Calculate and save the rotationally invariant psf (ie smeared out/averaged).
-            dataset.get_radial_psf(save = outputdirpath + '/' + fileprefix)
 
         # collapse in time and wavelength to examine KL modes
         if spectrum is None:
