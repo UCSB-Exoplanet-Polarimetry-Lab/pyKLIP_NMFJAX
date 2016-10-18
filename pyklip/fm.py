@@ -16,6 +16,14 @@ from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs
 
 from sys import stdout
 
+#Logic to test mkl exists
+try:
+    import mkl
+    mkl_exists = True
+except ImportError:
+    mkl_exists = False
+
+
 parallel = True
 
 
@@ -1757,6 +1765,11 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
 
+    # Set MLK parameters
+    if mkl_exists:
+        old_mkl = mkl.get_max_threads()
+        mkl.set_num_threads(1)
+
     klip_outputs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, fm_class,
                                      OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                      flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
@@ -1813,4 +1826,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                  spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                                  filetype="PSF Subtracted Spectral Cube")
 
-
+    #Restore old setting
+    if mkl_exists:
+        mkl.set_num_threads(old_mkl)
