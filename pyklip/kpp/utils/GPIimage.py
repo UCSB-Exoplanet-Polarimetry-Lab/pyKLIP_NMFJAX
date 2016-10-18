@@ -2,7 +2,6 @@ __author__ = 'JB'
 
 import numpy as np
 from copy import copy
-from pyklip.instruments.GPI import GPIData
 
 def get_occ(image, centroid = None):
     '''
@@ -87,7 +86,9 @@ def get_IOWA(image, centroid = None):
     return IWA,OWA
 
 def as2pix(sep_as):
+    from  pyklip.instruments.GPI import GPIData
     return sep_as/GPIData.lenslet_scale
 
 def pix2as(sep_pix):
+    from  pyklip.instruments.GPI import GPIData
     return sep_pix*GPIData.lenslet_scale
