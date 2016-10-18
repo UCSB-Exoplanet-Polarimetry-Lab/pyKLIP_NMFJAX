@@ -282,8 +282,6 @@ class FMMF(KPPSuperClass):
                          spectrum = None,
                          folderName = None,
                          PSF_cube_filename = None,
-                         prihdr = None,
-                         exthdr = None,
                          star_type = "auto",
                          compact_date = None,
                          label=None):
@@ -322,8 +320,6 @@ class FMMF(KPPSuperClass):
                         Useful only if kernel_type = "PSF"
                         If a PSF cube is not explicitly given and one is read automatically it assumes there is only
                         one PSF cube in this folder.
-        :param prihdr: User defined primary fits headers in case the file read has none.
-        :param exthdr: User defined extension fits headers in case the file read has none.
         :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
                         If "auto" (default), spec.get_specType(self.star_name,self.SpT_file_csv) is called.
                         If self.SpT_file_csv is defined then it reads the spectral type from the table otherwise try to
@@ -371,6 +367,8 @@ class FMMF(KPPSuperClass):
             self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
         else:
             self.star_type = star_type
+        if not self.mute:
+            print("The star spectral type is: {0}".format(self.star_type))
 
         # Get the list of spdc files
         filelist = glob(self.inputDir+os.path.sep+self.filename)
@@ -505,9 +503,7 @@ class FMMF(KPPSuperClass):
             presuffix = ""
 
         suffix1 = presuffix+"FMMF"+susuffix
-        suffix2 = presuffix+"FMSH"+susuffix
-        file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)\
-               and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix2+'.fits')) >= 1)
+        file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)
 
         if file_exist and not self.mute:
             print("Output already exist.")
