@@ -570,45 +570,28 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
     x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
     nanpix = np.where(np.isnan(imgs[0]))
 
-    # if user didn't supply how to define NaNs
+    # if user didn't supply how to define IWA
     if OWA is None:
+        full_image = True # reduce the full image
         # define OWA as either the closest NaN pixel or edge of image if no NaNs exist
         if np.size(nanpix) == 0:
             OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
         else:
             # grab the NaN from the 1st percentile (this way we drop outliers)
             OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
+    else:
+        full_image = False # don't reduce the full image, only up the the IWA
 
-    dr = float(OWA - IWA) / (annuli)
+    #error checking for too small of annuli go here
 
-    # error checking for too small of annuli go here
 
     #calculate the annuli ranges
-    if annuli_spacing.lower() == "constant":
-        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
-    elif annuli_spacing.lower() == "log":
-        # calculate normalization of log scaling
-        unnormalized_log_scaling = np.log(np.arange(annuli) + 1) + 1
-        log_coeff = float(OWA - IWA)/np.sum(unnormalized_log_scaling)
-        # construct the radial spacing
-        rad_bounds = []
-        for i in range(annuli):
-            # lower bound is either mask or end of previous annulus
-            if i == 0:
-                lower_bound = IWA
-            else:
-                lower_bound = rad_bounds[-1][1]
-            upper_bound = lower_bound + log_coeff * unnormalized_log_scaling
-            rad_bounds.append((lower_bound, upper_bound))
-    elif annuli_spacing == "linear":
-        # scale linaer scaling to OWA-IWA
-        linear_coeff = float(OWA - IWA)/np.sum(np.arange(annuli) + 1)
-        rad_bounds = [(IWA + linear_coeff * rad, IWA + linear_coeff * (rad + 1)) for rad in range(annuli)]
-    else:
-        raise ValueError("annuli_spacing currently only supports 'constant', 'log', or 'linear'")
+    rad_bounds = klip.define_annuli_bounds(annuli, IWA, OWA, annuli_spacing)
 
-    #last annulus should mostly emcompass everything
-    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    # if OWA wasn't passed in, we're going to assume we reduce the full image, so last sector emcompasses everything
+    if full_image:
+        # last annulus should mostly emcompass everything
+        rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections
@@ -806,44 +789,26 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     nanpix = np.where(np.isnan(imgs[0]))
     # if user didn't supply how to define NaNs
     if OWA is None:
+        full_image = True # reduce the full image
         # define OWA as either the closest NaN pixel or edge of image if no NaNs exist
         if np.size(nanpix) == 0:
             OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
         else:
             # grab the NaN from the 1st percentile (this way we drop outliers)
             OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
-
-    dr = float(OWA - IWA) / (annuli)
+    else:
+        full_image = False # don't reduce the full image, only up the the IWA
 
     #error checking for too small of annuli go here
 
 
     #calculate the annuli ranges
-    if annuli_spacing.lower() == "constant":
-        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
-    elif annuli_spacing.lower() == "log":
-        # calculate normalization of log scaling
-        unnormalized_log_scaling = np.log(np.arange(annuli) + 1) + 1
-        log_coeff = float(OWA - IWA)/np.sum(unnormalized_log_scaling)
-        # construct the radial spacing
-        rad_bounds = []
-        for i in range(annuli):
-            # lower bound is either mask or end of previous annulus
-            if i == 0:
-                lower_bound = IWA
-            else:
-                lower_bound = rad_bounds[-1][1]
-            upper_bound = lower_bound + log_coeff * unnormalized_log_scaling[i]
-            rad_bounds.append((lower_bound, upper_bound))
-    elif annuli_spacing == "linear":
-        # scale linaer scaling to OWA-IWA
-        linear_coeff = float(OWA - IWA)/np.sum(np.arange(annuli) + 1)
-        rad_bounds = [(IWA + linear_coeff * rad, IWA + linear_coeff * (rad + 1)) for rad in range(annuli)]
-    else:
-        raise ValueError("annuli_spacing currently only supports 'constant', 'log', or 'linear'")
+    rad_bounds = klip.define_annuli_bounds(annuli, IWA, OWA, annuli_spacing)
 
-    #last annulus should mostly emcompass everything
-    rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
+    # if OWA wasn't passed in, we're going to assume we reduce the full image, so last sector emcompasses everything
+    if full_image:
+        # last annulus should mostly emcompass everything
+        rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
 
     #divide annuli into subsections
     dphi = 2 * np.pi / subsections

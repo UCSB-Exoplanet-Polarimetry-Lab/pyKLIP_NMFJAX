@@ -143,6 +143,7 @@ def test_rotate_with_centroiding():
     # measure to make sure it's in the right position again
     _verify_planet_location(rotated2, rot2_pos, input_flux, input_fwhm, thresholds)
 
+
 def test_estimate_movement():
     """
     This is essentially a unit test for estimate_movement
@@ -163,3 +164,34 @@ def test_estimate_movement():
     calc_moves = klip.estimate_movement(radius, wavelength0=wv0, wavelengths=wvs)
     
     assert np.any(np.abs(true_moves - calc_moves) < 0.001)
+
+def test_annuli_bounds():
+    """
+    This tests the annuli bound selection code
+    """
+    annuli = 9
+    iwa = 8
+    owa = 100
+    constant_bounds = klip.define_annuli_bounds(annuli, iwa, owa, "constant")
+
+    # for constant spacing, we should get some sanity
+    assert np.shape(constant_bounds) == (annuli, 2)
+    assert constant_bounds[0][1]-constant_bounds[0][0] == float(owa-iwa)/annuli
+
+    # test too many annuli exception
+    e = None
+    try:
+        bounds = klip.define_annuli_bounds(owa+iwa+1, iwa, owa, "linear")
+    except ValueError as e:
+        pass
+    # check to make sure we got an exceptoin
+    assert e is not None
+
+
+    # test log spacing works
+    log_bounds = klip.define_annuli_bounds(annuli, iwa, owa, "log")
+    log_bound_widths = np.diff(log_bounds, axis=1)
+    # log bounds should be strictly increasing
+    assert np.all(np.diff(log_bound_widths) > 0)
+
+

@@ -564,6 +564,54 @@ def high_pass_filter(img, filtersize=10):
     return filtered
 
 
+def define_annuli_bounds(annuli, IWA, OWA, annuli_spacing='constant'):
+    """
+    Defines the annuli boundaries radially
+
+    Args:
+        annuli: number of annuli
+        IWA: inner working angle (pixels)
+        OWA: outer working anglue (pixels)
+        annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced),
+                        log (logarithmical expansion with r), and linear (linearly expansion with r)
+
+    Returns:
+        rad_bounds: array of 2-element tuples that specify the beginning and end radius of that annulus
+
+    """
+    #calculate the annuli ranges
+    if annuli_spacing.lower() == "constant":
+        dr = float(OWA - IWA) / annuli
+        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+    elif annuli_spacing.lower() == "log":
+        # calculate normalization of log scaling
+        unnormalized_log_scaling = np.log(np.arange(annuli) + 1) + 1
+        log_coeff = float(OWA - IWA)/np.sum(unnormalized_log_scaling)
+        # construct the radial spacing
+        rad_bounds = []
+        for i in range(annuli):
+            # lower bound is either mask or end of previous annulus
+            if i == 0:
+                lower_bound = IWA
+            else:
+                lower_bound = rad_bounds[-1][1]
+            upper_bound = lower_bound + log_coeff * unnormalized_log_scaling[i]
+            rad_bounds.append((lower_bound, upper_bound))
+    elif annuli_spacing.lower() == "linear":
+        # scale linaer scaling to OWA-IWA
+        linear_coeff = float(OWA - IWA)/np.sum(np.arange(annuli) + 1)
+        rad_bounds = [(IWA + linear_coeff * rad, IWA + linear_coeff * (rad + 1)) for rad in range(annuli)]
+    else:
+        raise ValueError("annuli_spacing currently only supports 'constant', 'log', or 'linear'")
+
+    # check to make sure the annuli are all greater than 1 pixel
+    min_width = np.min(np.diff(rad_bounds, axis=1))
+    if min_width < 1:
+        raise ValueError("Too many annuli, some annuli are less than 1 pixel")
+
+    return rad_bounds
+
+
 def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,
              minrot=0):
     """
