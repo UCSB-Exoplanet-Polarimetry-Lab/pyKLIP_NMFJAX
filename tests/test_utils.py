@@ -179,13 +179,13 @@ def test_annuli_bounds():
     assert constant_bounds[0][1]-constant_bounds[0][0] == float(owa-iwa)/annuli
 
     # test too many annuli exception
-    e = None
+    caught_exception = False
     try:
         bounds = klip.define_annuli_bounds(owa+iwa+1, iwa, owa, "linear")
     except ValueError as e:
-        pass
+        caught_exception = True
     # check to make sure we got an exceptoin
-    assert e is not None
+    assert caught_exception
 
 
     # test log spacing works
