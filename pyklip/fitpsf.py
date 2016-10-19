@@ -463,6 +463,8 @@ class FMAstrometry(object):
         cb = fig.colorbar(im1, cax=cbar_ax)
         cb.set_label("Counts (DN)")
 
+        return fig
+        
 
 def lnprior(fitparams, bounds):
     """
