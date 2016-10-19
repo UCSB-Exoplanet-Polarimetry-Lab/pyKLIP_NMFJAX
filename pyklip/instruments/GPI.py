@@ -931,9 +931,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     spot2flux = float(exthdr['SATF{wave}_2'.format(wave=i)])
                     spot3flux = float(exthdr['SATF{wave}_3'.format(wave=i)])
                     polspot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
-                spot_fluxes = [[np.sum(polspot_fluxes)]]
+                spot_fluxes = [np.sum(polspot_fluxes)]
             except KeyError:
-                spot_fluxes = [[1]]
+                spot_fluxes = [1]
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
