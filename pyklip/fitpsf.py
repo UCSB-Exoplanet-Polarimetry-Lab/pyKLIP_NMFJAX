@@ -418,7 +418,7 @@ class FMAstrometry(object):
 
         """
         if fig is None:
-            fig = plt.Figure(figsize=(12, 4))
+            fig = plt.figure(figsize=(12, 4))
 
         # create best fit FM
         dx = -(self.RA_offset - self.data_stamp_RA_offset_center)
@@ -464,7 +464,7 @@ class FMAstrometry(object):
         cb.set_label("Counts (DN)")
 
         return fig
-        
+
 
 def lnprior(fitparams, bounds):
     """
