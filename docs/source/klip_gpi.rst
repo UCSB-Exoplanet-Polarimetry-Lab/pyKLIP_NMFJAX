@@ -121,6 +121,17 @@ we will allow into the reference PSFs images at wavelengths where the ratio of "
 absorption" is smaller). When this keyword is set, we also do a weighted mean collapse in wavelength for the outputted
 KL-mode cubes.
 
+Other
+^^^^^
+We have also choosen to flux calibrate the data to convert it into contrast units to work in more physical units.
+
+.. note::
+   The ``calibrate_flux`` keyword does **not** correct for algorithm throughput, which is a loss of
+   flux due to the PSF subtraction process. It merely provides the calibration to convert to contrast units. You
+   will then need to correct for algorithm throughput by methods such as fake planet injection.
+   See :ref:`contrast-label` which explains how to do this in the context of contrast curves.
+
+
 
 Picking KLIP Parameters for Disks
 ---------------------------------
@@ -135,12 +146,12 @@ to only use mode="ADI" as SDI can severely distort the disk signal.
 Geometry 
 ^^^^^^^^^
 PyKLIP splits divides the image into a number of annuli centered
-around the center of the image as defined by the PSFCENTX and PSFCENTY
-FITS headers, and splits each of those annuli into a number of
-subsections, set by the "annuli" and "subsection" keywords,
-respectively. For disks, we find "subsections=1" to be effective. The
+around the center of the image as defined by the ``dataset.centers``
+attribute, and splits each of those annuli into a number of
+subsections, set by the ``annuli`` and ``subsection`` keywords,
+respectively. For disks, we find ``subsections=1`` to be effective. The
 number of annuli can also depend on the geometry of the disk, but we
-find that "annuli=1" is sufficient for most cases and produces
+find that ``annuli=1`` is sufficient for most cases and produces
 smoother looking reductions.
 
 Aggressiveness
@@ -172,19 +183,5 @@ parameters as is used in psf subtraction. The choise for this paraeter
 will depend on the geometry. For thin disks, a smaller minrot is
 desireable as it will allow for a cleaner subtraction while thicker
 disks will require a larger minrot to avoid self-subtraction.
-
-
-
-
-Other
-^^^^^
-We have also choosen to flux calibrate the data to convert it into contrast units to work in more physical units.
-
-.. note::
-   The ``calibrate_flux`` keyword does **not** correct for algorithm throughput, which is a loss of
-   flux due to the PSF subtraction process. It merely provides the calibration to convert to contrast units. You
-   will then need to correct for algorithm throughput by methods such as fake planet injection.
-   See :ref:`contrast-label` which explains how to do this in the context of contrast curves.
-
 
 
