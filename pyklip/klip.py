@@ -491,38 +491,44 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
     else:
         starx, stary = center
 
-    #figure out how finely to sample the radial profile
+    # figure out how finely to sample the radial profile
     numseps = int((owa-iwa)/resolution)
-    seps = np.arange(numseps)*resolution + iwa + resolution/2.0 #don't want to start right at the edge of the occulting mask
+    # don't want to start right at the edge of the occulting mask
+    # but also want to well sample the contrast curve so go at twice the resolution
+    seps = np.arange(numseps) * resolution/2.0 + iwa + resolution/2.0
     dsep = resolution
 
     contrast = []
-    #create a coordinate grid
+    # create a coordinate grid
     x,y = np.meshgrid(np.arange(float(dat.shape[1])), np.arange(float(dat.shape[0])))
     r = np.sqrt((x-starx)**2 + (y-stary)**2)
     theta = np.arctan2(y-stary, x-starx) % 2*np.pi
     for sep in seps:
-        #make a bunch of circular aperatures at this separation
+        # make a bunch of circular aperatures at this separation
         dtheta = dsep/float(sep)
         thetabins = np.arange(0, 360-np.degrees(dtheta)/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
         specklethetas = []
         specklefluxes = []
         for thistheta in thetabins:
-            #measure the flux in this resolution element
-            #first get the position of the center of the element
+            # measure the flux in this resolution element
+            # first get the position of the center of the element
             xphot = np.cos(np.radians(thistheta)) * sep + starx
             yphot = np.sin(np.radians(thistheta)) * sep + stary
-            #coordinate system around this resolution element
+            # coordinate system around this resolution element
             rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
             sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
             gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
             validphotpix = np.where(rphot <= dsep/2)
-            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.sum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
+            # mask nan's in the gaussian template too, so it is normalized correctly
+            nanvals = np.isnan(dat)
+            if np.size(nanvals) > 0:
+                gmask[nanvals] = np.nan
+            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.nansum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
 
             specklethetas.append(thistheta)
             specklefluxes.append(speckleflux)
 
-        #find 5 sigma flux using student-t statistics
+        # find 5 sigma flux using student-t statistics
         fpf_flux = t.ppf(0.99999971334, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes, ddof=1))
         contrast.append(fpf_flux)
 
