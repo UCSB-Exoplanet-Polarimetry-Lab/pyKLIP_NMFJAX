@@ -1541,6 +1541,8 @@ def generate_spdc_with_fakes(dataset,
     prefix = object_name+"_"+compact_date+"_"+IFSfilter
     # Save the original PSF calculated from combining the sat spots
     if outputdir is not None:
+        if not os.path.exists(outputdir):
+            os.makedirs(outputdir)
         dataset.savedata(outputdir + os.path.sep + prefix+"-original_PSF_cube.fits", PSF_cube,
                                   astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
 
@@ -1650,7 +1652,10 @@ def generate_spdc_with_fakes(dataset,
         else:
             planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
     elif (fake_flux_dict["mode"] == "SNR"):
-        f = interp1d(fake_flux_dict["sep_arr"], fake_flux_dict["contrast_arr"],bounds_error=False,fill_value=fake_flux_dict["contrast_arr"][-1])
+        sep_arr = np.array(fake_flux_dict["sep_arr"])
+        cont_arr = np.array(fake_flux_dict["contrast_arr"])
+        f = interp1d(sep_arr[np.where(np.isfinite(cont_arr))], cont_arr[np.where(np.isfinite(cont_arr))],
+                     bounds_error=False,fill_value=np.nanmin(fake_flux_dict["contrast_arr"]))
         planets_contrasts = [fake_flux_dict["SNR"]*f(gpiim.pix2as(sep))/5. for (sep,pa) in sep_pa_iter_list]
 
     # Loop for injecting fake planets. One planet per section of the image.
