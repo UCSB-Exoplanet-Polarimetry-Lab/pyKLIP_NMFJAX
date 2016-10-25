@@ -601,10 +601,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -638,8 +638,8 @@ class MatchedFilter(NoFM):
 
         # create a coordinate system for the image that is with respect to the model PSF
         # round to nearest pixel and add offset for center
-        l = round(psf_centx + ref_center[0])
-        k = round(psf_centy + ref_center[1])
+        l = int(round(psf_centx + ref_center[0]))
+        k = int(round(psf_centy + ref_center[1]))
         # recenter coordinate system about the location of the planet
         x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
         y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
@@ -723,10 +723,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -840,10 +840,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -879,8 +879,8 @@ class MatchedFilter(NoFM):
 
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
-            l = round(psf_centx + ref_center[0])
-            k = round(psf_centy + ref_center[1])
+            l = int(round(psf_centx + ref_center[0]))
+            k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
             x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
             y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy

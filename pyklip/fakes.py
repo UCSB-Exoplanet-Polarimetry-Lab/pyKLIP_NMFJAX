@@ -367,8 +367,8 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
         returned_flux: scalar, Estimation of the peak flux of the satellite spot.
             ie Amplitude of the fitted gaussian.
     """
-    x0 = np.round(xguess)
-    y0 = np.round(yguess)
+    x0 = int(np.round(xguess))
+    y0 = int(np.round(yguess))
     #construct our searchbox
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 
@@ -401,21 +401,15 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
         b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
         fitbox = fitbox - (a*(xfitbox)+b*(yfitbox) + background_med)
 
-    model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)-xguess_box,np.arange(0, 2*searchrad+1, 1.0)-yguess_box).transpose()
+    if isinstance(wave_index,(np.ndarray)):
+        # Get a deprecation warning when wave_index = [5] instead of an integer. So this picks the integer...
+        new_wave_index = wave_index[0]
+    else:
+        new_wave_index = wave_index
+    model = psfs_func_list[new_wave_index](np.arange(0,2* searchrad+1, 1.0)-xguess_box,np.arange(0, 2*searchrad+1, 1.0)-yguess_box).transpose()
     # model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)+(xguess-x0) - searchrad,np.arange(0, 2*searchrad+1, 1.0)+(yguess-y0) - searchrad)#.transpose()
 
     returned_flux = np.sum(model[small_aper_indices]*fitbox[small_aper_indices])/np.sum(model[small_aper_indices]**2)*model[searchrad,searchrad]
-
-    # import matplotlib.pyplot as plt
-    # plt.figure(1)
-    # plt.subplot(2,1,1)
-    # plt.imshow(model,interpolation="nearest")
-    # plt.colorbar()
-    # plt.subplot(2,1,2)
-    # plt.imshow(fitbox,interpolation="nearest")
-    # plt.colorbar()
-    # plt.show()
-
 
     if residuals:
         residuals_map = fitbox - returned_flux*model/model[searchrad,searchrad]
