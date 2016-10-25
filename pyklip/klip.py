@@ -492,10 +492,11 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
         starx, stary = center
 
     # figure out how finely to sample the radial profile
-    numseps = int((owa-iwa)/resolution)
+    dr = resolution/2.0
+    numseps = int((owa-iwa)/dr)
     # don't want to start right at the edge of the occulting mask
     # but also want to well sample the contrast curve so go at twice the resolution
-    seps = np.arange(numseps) * resolution/2.0 + iwa + resolution/2.0
+    seps = np.arange(numseps) * dr + iwa + resolution/2.0
     dsep = resolution
 
     contrast = []
@@ -518,11 +519,14 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
             rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
             sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
             gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
-            validphotpix = np.where(rphot <= dsep/2)
+            # only apply in a circular region
             # mask nan's in the gaussian template too, so it is normalized correctly
-            nanvals = np.isnan(dat)
-            if np.size(nanvals) > 0:
-                gmask[nanvals] = np.nan
+            validphotpix = np.where((rphot <= dsep/2) & ~(np.isnan(dat)))
+            if np.size(validphotpix) < 1:
+                continue
+            #nanvals = np.isnan(dat)
+            #if np.size(nanvals) > 0:
+            #    gmask[nanvals] = np.nan
             speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.nansum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
 
             specklethetas.append(thistheta)
