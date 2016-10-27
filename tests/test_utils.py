@@ -96,7 +96,7 @@ def test_transform_and_centroding_with_custom_PSF():
     input_sigma = input_fwhm/(2.*np.sqrt(2*np.log(2)))
     # create a gaussian PSF stamp
     stampsize = 21
-    y, x = np.indices([20, 20], dtype=float)
+    y, x = np.indices([stampsize, stampsize], dtype=float)
     x -= stampsize//2
     y -= stampsize//2
     stamp = input_flux * np.exp(-(x**2 + y**2)/(2 * input_sigma**2))
