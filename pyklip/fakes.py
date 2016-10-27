@@ -6,7 +6,8 @@ import scipy.interpolate as interp
 from scipy.optimize import minimize
 from copy import copy
 
-def covert_pa_to_image_polar(pa, astr_hdr):
+
+def convert_pa_to_image_polar(pa, astr_hdr):
     """
     Given a position angle (angle to North through East), calculate what
     polar angle theta (angle from +X CCW towards +Y) it corresponds to
@@ -33,7 +34,8 @@ def covert_pa_to_image_polar(pa, astr_hdr):
     theta = rot_YPA * 180./np.pi + 90.0 #degrees
     return theta
 
-def covert_polar_to_image_pa(theta, astr_hdr):
+
+def convert_polar_to_image_pa(theta, astr_hdr):
     """
     Reversed engineer from covert_pa_to_image_polar by JB. Actually JB doesn't quite understand how it works...
 
@@ -58,7 +60,8 @@ def covert_polar_to_image_pa(theta, astr_hdr):
 
     return pa
 
-def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
+
+def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=None):
     """
     Injects a fake planet with a Gaussian PSF into a dataframe
 
@@ -67,25 +70,41 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5):
         xpos,ypos: x,y location (in pixels) where the planet should be
         amplitude: peak of the Gaussian PSf (in appropriate units not dictacted here)
         fwhm: fwhm of gaussian
+        stampsize: integer specfying the width of the stamp box in which the planet is defined
 
     Returns:
         frame: the frame with the injected planet
     """
+    if stampsize is None:
+        stampsize = 3 * fwhm
+    # convert boxsize to an integer
+    stampsize = int(np.ceil(stampsize))
 
-    #figure out sigma when given FWHM
+    # figure out sigma when given FWHM
     sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
 
-    #create a meshgrid for the psf
-    x,y = np.meshgrid(np.arange(1.0*frame.shape[1]), np.arange(1.0*frame.shape[0]))
-    x -= xpos
-    y -= ypos
+    # create a coordinate system for the PSF centered about the closest pixel to the planet
+    y, x = np.indices([stampsize, stampsize])
+    y -= stampsize // 2 # center about 0
+    x -= stampsize // 2  # center about 0
+    # find nearest pixel to center coordinate around
+    x_int = int(round(xpos))
+    y_int = int(round(ypos))
+    x += x_int
+    y += y_int
 
-    psf = amplitude * np.exp(-(x**2. + y**2.)/(2.*sigma**2))
+    xmin = x[0][0]
+    xmax = x[-1][-1]
+    ymin = y[0][0]
+    ymax = y[-1][-1]
 
-    frame += psf
+    psf = amplitude * np.exp(-((x - xpos)**2. + (y - ypos)**2.) / (2. * sigma**2))
+
+    frame[ymin:ymax+1, xmin:xmax+1] += psf
     return frame
 
-def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None):
+
+def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None, stampsize=None):
     """
     Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
@@ -101,13 +120,19 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         fwhm: fwhm (in pixels) of gaussian
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
                 array of size N
+        stampsize: in pixels, the width of the square stamp to inject the image into. Defaults to 3*fwhm if None
 
     Returns:
         saves result in input "frames" variable
     """
 
     if thetas is None:
-        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
+        thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
+
+    if stampsize is None:
+        stampsize = 3 * fwhm
+    # convert boxsize to an integer
+    stampsize = int(np.ceil(stampsize))
 
     if (np.size(inputflux) == 1):
         #input is probably a number and we want an array
@@ -122,6 +147,12 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         #now that we found the planet location, inject it
         #check whether we are injecting a gaussian of a template PSF
         if type(inputpsf) == np.ndarray:
+            # stampsize should defautl to minimum dimension of PSF
+            if stampsize is None:
+                stampsize = int(np.min(inputpsf.shape))
+            # convert boxsize to an integer
+            stampsize = int(np.ceil(stampsize))
+
             #shift psf so that center is aligned
             #calculate center of box
             boxsize = inputpsf.shape[0]
@@ -132,10 +163,36 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             xpsf,ypsf = np.meshgrid(np.arange(frame.shape[1]), np.arange(frame.shape[0]))
             xpsf = xpsf - x_pl + boxcent
             ypsf = ypsf - y_pl + boxcent
+
+            # create a coordinate system for the PSF centered about the closest pixel to the planet
+            ystamp, xstamp = np.indices([stampsize, stampsize])
+            ystamp -= stampsize // 2  # center about 0
+            xstamp -= stampsize // 2  # center about 0
+            # find nearest pixel to center coordinate around
+            x_int = int(round(x_pl))
+            y_int = int(round(y_pl))
+            xstamp += x_int
+            ystamp += y_int
+            # index bounds
+            xmin = xstamp[0][0]
+            xmax = xstamp[-1][-1]
+            ymin = ystamp[0][0]
+            ymax = ystamp[-1][-1]
+
+            # find corresponding pixels in the PSF
+            xpsf = xstamp - x_pl + boxcent
+            ypsf = ystamp - y_pl + boxcent
+
             #inject into frame
-            frame += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
+            frame[ymin:ymax + 1, xmin:xmax + 1] += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
         else:
-            frame = _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm)
+            if stampsize is None:
+                stampsize = 3 * fwhm
+            # convert boxsize to an integer
+            stampsize = int(np.ceil(stampsize))
+
+            _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm, stampsize=stampsize)
+
 
 def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
     """
@@ -170,6 +227,7 @@ def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):
 
     return disk_img
 
+
 def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
     """
     Injects a fake disk into a dataset
@@ -190,7 +248,7 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
 
     for frame, center, inputpsf, astr_hdr in zip(frames, centers, inputfluxes, astr_hdrs):
         #calculate the rotation angle in the pixel plane
-        theta = covert_pa_to_image_polar(pa, astr_hdr)
+        theta = convert_pa_to_image_polar(pa, astr_hdr)
 
         if type(inputpsf) == np.ndarray:
             # inject real data
@@ -213,27 +271,18 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
             frame += _construct_gaussian_disk(center[0], center[1], frame.shape[1], frame.shape[0], inputpsf, theta, fwhm=fwhm)
 
 
-# def gauss2d(x, y, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0, theta = 0, offset = 0):
-#     xo = float(xo)
-#     yo = float(yo)
-#     a = (np.cos(theta)**2)/(2*sigma_x**2) + (np.sin(theta)**2)/(2*sigma_y**2)
-#     b = -(np.sin(2*theta))/(4*sigma_x**2) + (np.sin(2*theta))/(4*sigma_y**2)
-#     c = (np.sin(theta)**2)/(2*sigma_x**2) + (np.cos(theta)**2)/(2*sigma_y**2)
-#     g = offset + amplitude*np.exp( - (a*((x-xo)**2) + 2*b*(x-xo)*(y-yo)
-#                             + c*((y-yo)**2)))
-#     return g
-
 def gauss2d(x0, y0, peak, sigma):
-    '''
+    """
     2d symmetric guassian function for guassfit2d
 
     Args:
         x0,y0: center of gaussian
         peak: peak amplitude of guassian
         sigma: stddev in both x and y directions
-    '''
+    """
     sigma *= 1.0
     return lambda y,x: peak*np.exp( -(((x-x0)/sigma)**2+((y-y0)/sigma)**2)/2)
+
 
 def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, refinefit=True):
     """
@@ -253,6 +302,9 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
         xfit: x position (only chagned if refinefit is True)
         yfit: y position (only chagned if refinefit is True)
     """
+    if not isinstance(searchrad, int):
+        raise ValueError("searchrad needs to be an integer")
+
     x0 = np.rint(xguess).astype(int)
     y0 = np.rint(yguess).astype(int)
     #construct our searchbox
@@ -322,7 +374,6 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     yfit = yfit - searchrad + y0
 
     return corrflux, fwhm, xfit, yfit
-
 
 
 def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):
@@ -423,6 +474,7 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     else:
         return returned_flux
 
+
 def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5,fit_centroid = False,residuals=False):
     """
     Estimate satellite spot amplitude (peak value) by fitting a symmetric 2d gaussian.
@@ -519,7 +571,6 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
         return measured[:, 0]
 
 
-
 def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=True,
                          thetas=None):
     """
@@ -575,7 +626,7 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
     measured = []
    
     if thetas is None:
-        thetas = np.array([covert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
+        thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
     # loop over all of them
     for frame, center, theta in zip(frames, centers, thetas):

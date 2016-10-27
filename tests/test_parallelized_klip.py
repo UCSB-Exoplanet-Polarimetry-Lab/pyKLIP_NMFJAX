@@ -71,7 +71,7 @@ def test_exmaple_gpi_klip_dataset():
     # flux error
     assert np.abs((flux_meas - true_flux)/true_flux) < 0.4
     # positonal error
-    theta = fakes.covert_pa_to_image_polar(true_pa, dataset.wcs[0])
+    theta = fakes.convert_pa_to_image_polar(true_pa, dataset.wcs[0])
     true_x = true_sep * np.cos(np.radians(theta)) + dataset.centers[0,0]
     true_y = true_sep * np.sin(np.radians(theta)) + dataset.centers[0,1]
     assert np.abs(true_x - x_meas) < 0.4
