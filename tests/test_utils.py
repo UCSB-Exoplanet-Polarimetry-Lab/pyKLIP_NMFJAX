@@ -97,8 +97,8 @@ def test_transform_and_centroding_with_custom_PSF():
     # create a gaussian PSF stamp
     stampsize = 21
     y, x = np.indices([20, 20], dtype=float)
-    x -= stampsize/2
-    y -= stampsize/2
+    x -= stampsize//2
+    y -= stampsize//2
     stamp = input_flux * np.exp(-(x**2 + y**2)/(2 * input_sigma**2))
     # hack it to inject planet at 0 separation at the center of the image
     fakes.inject_planet([dat], [input_pos], [stamp], [None], 0, 0, thetas=[0])
