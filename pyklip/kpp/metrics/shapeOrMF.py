@@ -51,7 +51,7 @@ class ShapeOrMF(KPPSuperClass):
                  label = None,
                  add2prefix = None,
                  keepPrefix = None,
-                 GPI_TSpT_csv=None):
+                 SpT_file_csv=None):
         """
         Define the general parameters of the metric.
 
@@ -150,7 +150,7 @@ class ShapeOrMF(KPPSuperClass):
         else:
             self.keepPrefix = False
 
-        self.GPI_TSpT_csv=GPI_TSpT_csv
+        self.SpT_file_csv=SpT_file_csv
 
 
     def spectrum_iter_available(self):
@@ -491,7 +491,7 @@ class ShapeOrMF(KPPSuperClass):
             self.ny_PSF, self.nx_PSF = self.PSF_flat.shape
 
         if star_type is None and  star_temperature is None:
-            self.star_type = spec.get_specType(self.star_name,self.GPI_TSpT_csv)
+            self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
             self.star_temperature = star_temperature
         else:
             self.star_type = star_type
@@ -947,10 +947,10 @@ def calculate_shape3D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
     nl,ny_PSF,nx_PSF = PSF_cube.shape
 
     # Number of rows and columns to add around a given pixel in order to extract a stamp.
-    row_m = np.floor(ny_PSF/2.0)    # row_minus
-    row_p = np.ceil(ny_PSF/2.0)     # row_plus
-    col_m = np.floor(nx_PSF/2.0)    # col_minus
-    col_p = np.ceil(nx_PSF/2.0)     # col_plus
+    row_m = int(np.floor(ny_PSF/2.0))    # row_minus
+    row_p = int(np.ceil(ny_PSF/2.0))     # row_plus
+    col_m = int(np.floor(nx_PSF/2.0))    # col_minus
+    col_p = int(np.ceil(nx_PSF/2.0))     # col_plus
 
     # Number of pixels on which the metric has to be computed
     N_it = row_indices.size

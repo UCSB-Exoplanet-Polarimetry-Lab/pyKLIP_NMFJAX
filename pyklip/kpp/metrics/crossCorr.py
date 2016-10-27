@@ -125,8 +125,8 @@ class CrossCorr(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
-        if self.label == "CADI":
-            self.center = [140,140]
+        # if self.label == "CADI":
+        #     self.center = [140,140]
 
         try:
             self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -241,17 +241,6 @@ class CrossCorr(KPPSuperClass):
 
         if self.nans2zero:
             self.image_convo[where_nans] = np.nan
-
-        # import matplotlib.pyplot as plt
-        # print(self.PSF.shape)
-        # plt.figure(1)
-        # plt.subplot(2,1,1)
-        # plt.title("image")
-        # plt.imshow(self.image[102:112,130:140],interpolation="nearest")
-        # plt.subplot(2,1,2)
-        # plt.title("convo")
-        # plt.imshow(self.image_convo[102:112,130:140],interpolation="nearest")
-        # plt.show()
 
         return self.image_convo
 

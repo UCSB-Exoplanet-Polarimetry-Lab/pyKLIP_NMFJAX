@@ -263,10 +263,10 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
 
 def get_image_stddev(image,
                      IOWA = None,
-                     N = 2000,
+                     N = None,
                      centroid = None,
-                     r_step = None,
-                     Dr=None,
+                     r_step = 2,
+                     Dr=2,
                      image_wide = None,
                      resolution = None):
     if image_wide is None:

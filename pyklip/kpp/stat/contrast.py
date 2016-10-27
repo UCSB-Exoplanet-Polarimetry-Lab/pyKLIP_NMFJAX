@@ -1017,8 +1017,17 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
         # metric_fakes_val.extend([np.nanmax(metric_image_fakes[(np.round(row_real_object)-1):(np.round(row_real_object)+2),(np.round(col_real_object)-1):(np.round(col_real_object)+2)]) \
         #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
-        metric_fakes_val.extend([metric_image_fakes[np.round(row_real_object),np.round(col_real_object)] \
+        metric_fakes_val.extend([metric_image_fakes[int(np.round(row_real_object)),int(np.round(col_real_object))] \
                                      for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
+
+    hdulist = pyfits.open(glob(nofakes_filename)[0])
+    metric_image = hdulist[1].data
+    exthdr = hdulist[1].header
+    prihdr = hdulist[0].header
+    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    if IOWA is None:
+        IWA,OWA,inner_mask,outer_mask = get_occ(metric_image, centroid = center)
+        IOWA = (IWA,OWA)
 
     whereNoNans = np.where(np.isfinite(metric_fakes_val))
     metric_fakes_val = np.array(metric_fakes_val)[whereNoNans]
@@ -1056,11 +1065,6 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         ax.tick_params(axis='y', labelsize=20)
         plt.show()
 
-    hdulist = pyfits.open(glob(nofakes_filename)[0])
-    metric_image = hdulist[1].data
-    exthdr = hdulist[1].header
-    prihdr = hdulist[0].header
-    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
     if GOI_list_folder is not None:
         metric_image_without_planet = mask_known_objects(metric_image,prihdr,exthdr,GOI_list_folder, mask_radius = mask_radius)
         # metric_image_without_planet = mask_known_objects(metric_image_fakes,prihdr_fakes,exthdr_fakes,GOI_list_folder, mask_radius = mask_radius)
@@ -1099,7 +1103,7 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
                     SNR_real_contrast_list.append(exthdr_fakes_SNR["FKCONT{0:02d}".format(fake_id)])
                 except:
                     continue
-            SNR_fakes.extend([np.nanmax(SNR_map_fakes[(np.round(row_real_object)-1):(np.round(row_real_object)+2),(np.round(col_real_object)-1):(np.round(col_real_object)+2)]) \
+            SNR_fakes.extend([np.nanmax(SNR_map_fakes[(int(np.round(row_real_object))-1):(int(np.round(row_real_object))+2),(int(np.round(col_real_object))-1):(int(np.round(col_real_object))+2)]) \
                                          for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
             # SNR_fakes.extend([SNR_map_fakes[np.round(row_real_object),np.round(col_real_object)] \
             #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
