@@ -156,9 +156,8 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             #shift psf so that center is aligned
             #calculate center of box
             boxsize = inputpsf.shape[0]
-            #boxcent = (boxsize-1)/2
             #Using JB's array convention instead.
-            boxcent = boxsize/2
+            boxcent = boxsize // 2
 
             # create a coordinate system for the PSF centered about the closest pixel to the planet
             ystamp, xstamp = np.indices([stampsize, stampsize])
