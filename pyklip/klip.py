@@ -492,10 +492,11 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
         starx, stary = center
 
     # figure out how finely to sample the radial profile
-    numseps = int((owa-iwa)/resolution)
+    dr = resolution/2.0
+    numseps = int((owa-iwa)/dr)
     # don't want to start right at the edge of the occulting mask
     # but also want to well sample the contrast curve so go at twice the resolution
-    seps = np.arange(numseps) * resolution/2.0 + iwa + resolution/2.0
+    seps = np.arange(numseps) * dr + iwa + resolution/2.0
     dsep = resolution
 
     contrast = []
