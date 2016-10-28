@@ -39,6 +39,8 @@ class DiskFM(NoFM):
         self.centers = dataset.centers
         self.wvs = dataset.wvs
 
+        # Coords where align_and_scale places model center (default is inputs center).
+        self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
 
         self.update_disk(model_disk)
 
@@ -105,7 +107,7 @@ class DiskFM(NoFM):
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
         for thisnumbasisindex in range(np.size(numbasis)):
-            fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
+            self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                      fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
                                      radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
@@ -264,10 +266,6 @@ class DiskFM(NoFM):
         fmout_data = None
         fmout_shape = None
         
-        #FIXME
-#        if aligned_center is None:
-        aligned_center = [int(self.images.shape[2]//2),int(self.images.shape[1]//2)]
-        self.aligned_center = aligned_center
 
         tpool = mp.Pool(processes=self.numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
 
@@ -283,7 +281,7 @@ class DiskFM(NoFM):
             #multitask this                                                                
 
             # write own align and scale subset (?)
-            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, aligned_center,self.numthreads,self.np_data_type))]
+            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]
 
             #save it to shared memory                                           
         for aligned_output in aligned_outputs:
@@ -476,7 +474,7 @@ class DiskFM(NoFM):
         # grab sectors based on whether the phi coordinate wraps
         # padded sector
         # check to see if with padding, the phi coordinate wraps
-        if phiend_padded >=  phistart_padded:
+        if phiend_padded > phistart_padded:
             # doesn't wrap
             in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
                                 (phip >= phistart_padded) & (phip < phiend_padded))
