@@ -975,13 +975,14 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
                        GOI_list_folder=None,
                        mask_radius=None,
                        IOWA=None,
-                       throughput_break = None,
                        Dr=None,
                        save_dir = None,
                        suffix=None,
                        spec_type=None,
                        fakes_SNR_filename_list=None,
-                       resolution=None):
+                       resolution=None,
+                       conversion_break = None,
+                       linfit = False):
     '''
 
     :param nofakes_filename:
@@ -998,7 +999,7 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     metric_fakes_val = []
 
     for fakes_filename in fakes_filename_list:
-        # get throughput for pyklip images
+        # get conversion for pyklip images
         hdulist = pyfits.open(glob(fakes_filename)[0])
         metric_image_fakes = hdulist[1].data
         exthdr_fakes = hdulist[1].header
@@ -1028,6 +1029,7 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     if IOWA is None:
         IWA,OWA,inner_mask,outer_mask = get_occ(metric_image, centroid = center)
         IOWA = (IWA,OWA)
+        IOWA_as = (pix2as(IWA),pix2as(OWA))
 
     whereNoNans = np.where(np.isfinite(metric_fakes_val))
     metric_fakes_val = np.array(metric_fakes_val)[whereNoNans]
@@ -1035,29 +1037,48 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     real_contrast_list =  np.array(real_contrast_list)[whereNoNans]
 
     sep_list,metric_fakes_val,real_contrast_list = zip(*sorted(zip(sep_list,metric_fakes_val,real_contrast_list)))
-    if throughput_break is not None:
-        whereInRange = np.where((np.array(sep_list)>IOWA[0])*(np.array(sep_list)<throughput_break))
-        z1 = np.polyfit(np.array(sep_list)[whereInRange],np.array(metric_fakes_val)[whereInRange]/np.array(real_contrast_list)[whereInRange],1)
+    metric_fakes_val = np.array(metric_fakes_val)
+    sep_list =  np.array(sep_list)
+    real_contrast_list =  np.array(real_contrast_list)
+    if linfit:
+        if conversion_break is not None:
+            whereInRange = np.where((np.array(sep_list)>IOWA_as[0])*(np.array(sep_list)<conversion_break))
+            z1 = np.polyfit(np.array(sep_list)[whereInRange],np.array(real_contrast_list)[whereInRange]/np.array(metric_fakes_val)[whereInRange],1)
 
-        whereInRange = np.where((np.array(sep_list)>throughput_break)*(np.array(sep_list)<IOWA[1]))
-        z2 = np.polyfit(np.array(sep_list)[whereInRange],np.array(metric_fakes_val)[whereInRange]/np.array(real_contrast_list)[whereInRange],1)
+            whereInRange = np.where((np.array(sep_list)>conversion_break)*(np.array(sep_list)<IOWA_as[1]))
+            z2 = np.polyfit(np.array(sep_list)[whereInRange],np.array(real_contrast_list)[whereInRange]/np.array(metric_fakes_val)[whereInRange],1)
 
-        linfit1 = np.poly1d(z1)
-        linfit2 = np.poly1d(z2)
-        metric_throughput_func = lambda sep: np.concatenate((linfit1(np.array(sep)[np.where(np.array(sep)<throughput_break)]),
-                                                             linfit2(np.array(sep)[np.where(throughput_break<np.array(sep))])))
+            linfit1 = np.poly1d(z1)
+            linfit2 = np.poly1d(z2)
+            metric_conversion_func = lambda sep: np.concatenate((linfit1(np.array(sep)[np.where(np.array(sep)<conversion_break)]),
+                                                                 linfit2(np.array(sep)[np.where(conversion_break<np.array(sep))])))
 
+        else:
+            whereInRange = np.where((np.array(sep_list)>IOWA_as[0])*(np.array(sep_list)<IOWA_as[1]))
+            z = np.polyfit(np.array(sep_list)[whereInRange],np.array(real_contrast_list)[whereInRange]/np.array(metric_fakes_val)[whereInRange],1)
+            metric_conversion_func = np.poly1d(z)
     else:
-        whereInRange = np.where((np.array(sep_list)>IOWA[0])*(np.array(sep_list)<IOWA[1]))
-        z = np.polyfit(np.array(sep_list)[whereInRange],np.array(metric_fakes_val)[whereInRange]/np.array(real_contrast_list)[whereInRange],1)
-        metric_throughput_func = np.poly1d(z)
+        whereInRange = np.where((sep_list>IOWA_as[0])*(sep_list<IOWA_as[1]))
+        metric_in_range = metric_fakes_val[whereInRange]
+        cont_in_range = real_contrast_list[whereInRange]
+        unique_sep = np.unique(sep_list[whereInRange])
+        med_conversion = np.zeros(len(unique_sep))
+        MAD_conversion = np.zeros(len(unique_sep))
+        for k,sep_it in enumerate(unique_sep):
+            where_sep = np.where(sep_list==sep_it)
+            med_conversion[k] = np.nanmedian(cont_in_range[where_sep]) / np.nanmedian(metric_in_range[where_sep])
+            MAD_conversion[k] = np.nanmedian(np.abs(cont_in_range[where_sep]/metric_in_range[where_sep] - med_conversion[k]))
+        from  scipy.interpolate import interp1d
+        metric_conversion_func = interp1d(unique_sep,med_conversion,bounds_error=False, fill_value=np.nan)
+        kMAD_conversion_func = interp1d(unique_sep,1.4826*MAD_conversion,bounds_error=False, fill_value=np.nan)
+
 
     if 0:
         import matplotlib.pyplot as plt
         plt.figure(2)
         plt.title(suffix)
         plt.plot(sep_list,np.array(metric_fakes_val)/np.array(real_contrast_list),"*")
-        plt.plot(sep_list,metric_throughput_func(sep_list),"-")
+        plt.plot(sep_list,metric_conversion_func(sep_list),"-")
         plt.xlabel("Separation (arcsec)", fontsize=20)
         plt.ylabel("Throughput (arbritrary units)", fontsize=20)
         ax= plt.gca()
@@ -1081,7 +1102,8 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     metric_stddev_rSamp = np.array([r_tuple[0] for r_tuple in metric_stddev_rSamp])
     metric_1Dstddev = np.array(metric_1Dstddev)
 
-    contrast_curve = 5*metric_1Dstddev/metric_throughput_func(metric_stddev_rSamp*0.01413)
+    contrast_curve = 5*metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
+    contrast_curve_kMAD = metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)) + metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp))
 
     if fakes_SNR_filename_list is not None:
         SNR_real_contrast_list = []
@@ -1089,7 +1111,7 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         SNR_fakes=[]
 
         for fakes_SNR_filename in fakes_SNR_filename_list:
-            # get throughput for pyklip images
+            # get conversion for pyklip images
             hdulist = pyfits.open(glob(fakes_SNR_filename)[0])
             SNR_map_fakes = hdulist[1].data
             exthdr_fakes_SNR = hdulist[1].header
@@ -1109,7 +1131,7 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
             #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
 
         from scipy.interpolate import interp1d
-        contrast_curve_interp = interp1d(metric_stddev_rSamp*0.01413,contrast_curve,kind="linear",bounds_error=False)
+        contrast_curve_interp = interp1d(pix2as(metric_stddev_rSamp),contrast_curve,kind="linear",bounds_error=False)
         SNR_from_contrast = np.array(SNR_real_contrast_list)/(contrast_curve_interp(SNR_sep_list)/5.0)
 
         with open(os.path.join(save_dir,"contrast-SNR-check-"+suffix+'.csv'), 'w+') as csvfile:
@@ -1125,20 +1147,27 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
 
         with open(os.path.join(save_dir,"contrast-"+suffix+'.csv'), 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
-            csvwriter.writerows([["Seps",spec_type]])
-            csvwriter.writerows(zip(metric_stddev_rSamp[np.where(contrast_curve>0)]*0.01413,
-                                    contrast_curve[np.where(contrast_curve>0)]))
+            csvwriter.writerows([["Seps",spec_type,spec_type+"_kMAD",spec_type+"_1sig",spec_type+"_conv",spec_type+"_conv_kMAD"]])
+            contrast_curve[np.where(np.isnan(contrast_curve))] = -1.
+            not_neg = np.where(contrast_curve>0)
+            csvwriter.writerows(zip(pix2as(metric_stddev_rSamp[not_neg]),
+                                    contrast_curve[not_neg],
+                                    contrast_curve_kMAD[not_neg],
+                                    metric_1Dstddev[not_neg],
+                                    metric_conversion_func(pix2as(metric_stddev_rSamp[not_neg])),
+                                    kMAD_conversion_func(pix2as(metric_stddev_rSamp[not_neg]))))
 
-        with open(os.path.join(save_dir,"throughput-"+suffix+'.csv'), 'w+') as csvfile:
+        with open(os.path.join(save_dir,"conversion-"+suffix+'.csv'), 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
-            csvwriter.writerows([["Seps","throughput","fit","metric","contrast"]])
+            csvwriter.writerows([["Seps","conversion","fit","metric","contrast","kMAD"]])
             csvwriter.writerows(zip(sep_list,
-                                    np.array(metric_fakes_val)/np.array(real_contrast_list),
-                                    metric_throughput_func(sep_list),
+                                    np.array(real_contrast_list)/np.array(metric_fakes_val),
+                                    metric_conversion_func(sep_list),
                                     np.array(metric_fakes_val),
-                                    np.array(real_contrast_list)))
+                                    np.array(real_contrast_list),
+                                    kMAD_conversion_func(sep_list)))
 
-    throughput_tuple = (sep_list,np.array(metric_fakes_val)/np.array(real_contrast_list),np.array(metric_fakes_val),np.array(real_contrast_list))
+    conversion_tuple = (sep_list,np.array(metric_fakes_val)/np.array(real_contrast_list),np.array(metric_fakes_val),np.array(real_contrast_list))
 
-    return metric_stddev_rSamp*0.01413,contrast_curve,throughput_tuple
+    return pix2as(metric_stddev_rSamp),contrast_curve,conversion_tuple
 
