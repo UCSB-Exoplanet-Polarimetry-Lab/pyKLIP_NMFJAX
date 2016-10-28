@@ -965,15 +965,18 @@ def calculate_shape3D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
 
         # Extract stamp cube around the current pixel from the whoel cube
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        var_per_wv = np.zeros(nl)
         # Remove average value of the surrounding pixels in each slice of the stamp cube
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+            var_per_wv[slice_id] = np.nanvar(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
         # Dot product of the PSF with stamp cube.
-        ampl = np.nansum(PSF_cube*stamp_cube)
+        ampl = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None])
         # Normalize the dot product square by the squared norm-2 of the stamp cube.
         # Because we keep the sign shape value is then found in [-1.,1.]
         try:
-            shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+            # shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+            shape_map[id] = np.sign(ampl)*ampl**2
         except:
             # In case ones divide by zero...
             shape_map[id] =  np.nan
