@@ -44,10 +44,10 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
     #Julian Day OBServation
     MJDOBS_fits = prihdr['MJD-OBS']
 
-    row_m = np.floor(width/2.0)
-    row_p = np.ceil(width/2.0)
-    col_m = np.floor(width/2.0)
-    col_p = np.ceil(width/2.0)
+    row_m = int(np.floor(width/2.0))
+    row_p = int(np.ceil(width/2.0))
+    col_m = int(np.floor(width/2.0))
+    col_p = int(np.ceil(width/2.0))
 
     if GOI_list_folder is not None:
         object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
@@ -84,8 +84,8 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
                             y_max_pos = float(radius)*np.sin(np.radians(90+pa))
                             col_centroid = x_max_pos+center[0]
                             row_centroid = y_max_pos+center[1]
-                            k = round(row_centroid)
-                            l = round(col_centroid)
+                            k = int(round(row_centroid))
+                            l = int(round(col_centroid))
 
                             cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
@@ -103,8 +103,8 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
         y_max_pos = float(radius)*np.sin(np.radians(90+pa))
         col_centroid = x_max_pos+center[0]
         row_centroid = y_max_pos+center[1]
-        k = round(row_centroid)
-        l = round(col_centroid)
+        k = int(round(row_centroid))
+        l = int(round(col_centroid))
 
         cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 

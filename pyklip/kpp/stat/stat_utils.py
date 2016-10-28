@@ -311,8 +311,8 @@ def get_image_stddev(image,
             annuli_radii.append((r0,np.max([ny,nx])))
         else:
             annuli_radii = []
-            for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
-            #for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+            # for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
+            for r in np.arange(IWA+Dr,OWA,Dr):
                 annuli_radii.append((r-Dr,r+Dr))
     else:
         annuli_radii = [(IWA,OWA)]
