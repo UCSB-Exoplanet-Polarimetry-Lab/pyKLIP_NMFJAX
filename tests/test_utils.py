@@ -29,7 +29,7 @@ def _verify_planet_location(data, true_location, true_flux=None, true_fwhm=None,
         raise ValueError("thresholds should be a 4 element array but got {0} elements".format(np.size(thresholds)))
     if searchrad is None:
         if true_fwhm is not None:
-            searchrad = true_fwhm
+            searchrad = int(round(true_fwhm))
         else:
             searchrad = 7
     
@@ -63,7 +63,7 @@ def test_transform_and_centroding():
     # inject a point source into it
     input_pos = [140, 140] # [x, y]
     input_flux = 1
-    input_fwhm = 4
+    input_fwhm = 3.5
     injected = fakes._inject_gaussian_planet(dat, input_pos[0], input_pos[1], input_flux, input_fwhm)
 
     # make usre something is injected
@@ -78,6 +78,43 @@ def test_transform_and_centroding():
     scale_factor = 2 # magnify image by a factor of 2
     new_pos = np.array(input_pos) + shift
     shifted = klip.align_and_scale(injected, new_pos, input_pos, scale_factor)
+
+    # measure it to make sure it's in the right position
+    _verify_planet_location(shifted, new_pos, input_flux, input_fwhm*scale_factor, thresholds)
+
+def test_transform_and_centroding_with_custom_PSF():
+    """
+    Like test_transform_and_centroding, but with a custom PSF stamp
+    """
+    # make a blank 281 x 281 canvas
+    dat = np.zeros([281, 281])
+
+    # inject a point source into it
+    input_pos = [140, 140] # [x, y]
+    input_flux = 1
+    input_fwhm = 3.5
+    input_sigma = input_fwhm/(2.*np.sqrt(2*np.log(2)))
+    # create a gaussian PSF stamp
+    stampsize = 21
+    y, x = np.indices([stampsize, stampsize], dtype=float)
+    x -= stampsize//2
+    y -= stampsize//2
+    stamp = input_flux * np.exp(-(x**2 + y**2)/(2 * input_sigma**2))
+    # hack it to inject planet at 0 separation at the center of the image
+    fakes.inject_planet([dat], [input_pos], [stamp], [None], 0, 0, thetas=[0])
+
+    # make usre something is injected
+    assert np.mean(dat) > 0
+
+    # measure it to make sure it's in the right position
+    thresholds = [0.001, 0.001, 0.005, 0.05]
+    _verify_planet_location(dat, input_pos, input_flux, input_fwhm, thresholds)
+
+    # now let's shift the image
+    shift = 19.6 # in both x and y
+    scale_factor = 2 # magnify image by a factor of 2
+    new_pos = np.array(input_pos) + shift
+    shifted = klip.align_and_scale(dat, new_pos, input_pos, scale_factor)
 
     # measure it to make sure it's in the right position
     _verify_planet_location(shifted, new_pos, input_flux, input_fwhm*scale_factor, thresholds)
@@ -195,3 +232,6 @@ def test_annuli_bounds():
     assert np.all(np.diff(log_bound_widths) > 0)
 
 
+if __name__ == "__main__":
+    test_transform_and_centroding()
+    test_transform_and_centroding_with_custom_PSF()

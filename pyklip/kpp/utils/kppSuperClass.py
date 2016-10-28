@@ -231,13 +231,13 @@ class KPPSuperClass(object):
             if outputDir is not None:
                 self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
             else: # if self.outputDir is None:
-                if "planet_detec" in self.filename_path:
-                    split_path = os.path.dirname(self.filename_path).split(os.path.sep)
-                    planet_detec_label = split_path[np.where(["planet_detec" in mystr for mystr in split_path])[0]]
+                split_path = np.array(os.path.dirname(self.filename_path).split(os.path.sep))
+                if np.sum(word.startswith("planet_detec_") for word in split_path):
+                    planet_detec_label = split_path[np.where(["planet_detec" in mystr for mystr in split_path])][-1]
                     self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
-                elif "kpop" in self.filename_path:
-                    split_path = os.path.dirname(self.filename_path).split(os.path.sep)
-                    planet_detec_label = split_path[np.where(["kpop" in mystr for mystr in split_path])[0]]
+                elif np.sum(word.startswith("kpop_") for word in split_path):
+                    split_path = np.array(os.path.dirname(self.filename_path).split(os.path.sep))
+                    planet_detec_label = split_path[np.where(["kpop" in mystr for mystr in split_path])][-1]
                     self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
                 else:
                     self.outputDir = os.path.join(os.path.dirname(self.filename_path),"kpop_"+self.label)

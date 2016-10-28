@@ -353,7 +353,10 @@ def get_planet_spectrum(filename,wavelength):
             # splitted_line[2]: T_brt
             # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
 
-            spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            try:
+                spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            except:
+                break
 
     spec_data = np.array(spec_data)
     N_samp = spec_data.shape[0]
