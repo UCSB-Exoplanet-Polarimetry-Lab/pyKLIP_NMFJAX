@@ -257,13 +257,14 @@ class FMMF(KPPSuperClass):
         if self.mvt_noTemplate:
             self.spectra_template = None
         else:
-            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-            # This should however be the same. I know it's weird but the two codes are seperate
-            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            # spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            # spectrum_wvs = spectrum_dat[:,1]
+            # spectrum_fluxes = spectrum_dat[:,3]
+            # spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # # This should however be the same. I know it's weird but the two codes are seperate
+            # self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            self.spectra_template = spec.get_planet_spectrum(self.spectrum_filename,self.dataset.wvs)[1]
 
 
         # Build the FM class to do matched filter
@@ -460,18 +461,19 @@ class FMMF(KPPSuperClass):
         if self.mvt_noTemplate:
             self.spectra_template = None
         else:
-            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-            # This should however be the same. I know it's weird but the two codes are seperate
-            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            # spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            # spectrum_wvs = spectrum_dat[:,1]
+            # spectrum_fluxes = spectrum_dat[:,3]
+            # spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # # This should however be the same. I know it's weird but the two codes are seperate
+            # self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            self.spectra_template = spec.get_planet_spectrum(self.spectrum_filename,self.dataset.wvs)[1]
 
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),self.dataset.spot_flux,
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
+                                     spectrallib = [spec.get_planet_spectrum(self.spectrum_filename, self.filter)[1]],
                                      mute = False,
                                      star_type = self.star_type,
                                      filter_name = self.filter,
