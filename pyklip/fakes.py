@@ -144,6 +144,8 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         x_pl = radius * np.cos(theta*np.pi/180.) + center[0]
         y_pl = radius * np.sin(theta*np.pi/180.) + center[1]
 
+        ny,nx = frame.shape
+
         #now that we found the planet location, inject it
         #check whether we are injecting a gaussian of a template PSF
         if type(inputpsf) == np.ndarray:
@@ -177,6 +179,24 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             # find corresponding pixels in the PSF
             xpsf = xstamp - x_pl + boxcent
             ypsf = ystamp - y_pl + boxcent
+
+            # Crop the edge if injection at the edge of the image
+            if xmin < 0:
+                dx = np.min([0,xmin])
+                ypsf = ypsf[:,dx::]
+                xpsf = xpsf[:,dx::]
+            if ymin < 0:
+                dy = np.min([0,ymin])
+                ypsf = ypsf[dy::,:]
+                xpsf = xpsf[dy::,:]
+            if xmax >= 281:
+                dx = np.max([0,xmax-nx + 1])
+                ypsf = ypsf[:,:-dx]
+                xpsf = xpsf[:,:-dx]
+            if ymax >= 281:
+                dy = np.max([0,ymax-ny + 1])
+                ypsf = ypsf[:-dy,:]
+                xpsf = xpsf[:-dy,:]
 
             #inject into frame
             frame[ymin:ymax + 1, xmin:xmax + 1] += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
