@@ -62,6 +62,8 @@ Easy-peasy.
 ### Vet the datacubes
 This uses the cube checker, a separate command-line tool that lets you quickly decide whether or not you should include a particular cube in your reduction.
 
+Note: there is a new version called `P1640_cube_checker_interactive` that is way easier to use, replace `P1640_cube_checker` with this in the lines below if you want to use it. We have noticed that it can take a long time to load over ssh on Macs (for some reason this doesn't affect Linux). A workaround is to enable ssh compression with ssh -C.
+
 From an IPython terminal, do: (the syntax here is weird because telling python to evaluate python variables)
 
     :::python
