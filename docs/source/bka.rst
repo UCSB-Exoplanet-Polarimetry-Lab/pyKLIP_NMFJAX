@@ -54,6 +54,12 @@ A quick aside for GPI spectral mode data, here is how to generate the instrument
                              axis=0)[:, None, None])
 
 
+Here is an exmaple using three datacubes from the publicly available GPI data on beta Pic.
+Note that the wings of the PSF are somewhat noisy, due to the fact the speckle noise
+in J-band is high near the satellite spots. However, this should still give us an acceptable instrumental PSF.
+
+.. image:: imgs/betpic_j_instrumental_psf.png
+
 Forward Modelling the PSF with KLIP-FM
 ---------------------------------------
 With an estimate of the planet position, the instrumental PSF, and, if applicable, an estimate of the spectrum,
@@ -202,10 +208,10 @@ Here are some fields to access this information:
 * ``fma.covar_param_bestfits``, ``fma.covar_param_1sigma``: same thing for the hyperparameters on the Gaussian process kernel. These are both kept in a list with length equal to the number of hyperparameters.
 * ``fma.sampler``: this is the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information
 
-The RA offset and Dec offset are what we are interested in for the purposes of astrometry. First,
+The RA offset and Dec offset are what we are interested in for the purposes of astrometry. The flux scaling
+paramter (α) and the correlation length (l) are hyperparameters we marginalize over. First,
 we want to check to make sure all of our chains have converged by plotting them. As long as they have
 settled down (no large scale movements), then the chains have probably converged::
-
 
     import matplotlib.pylab as plt
     fig = plt.figure(figsize=(10,8))
@@ -229,7 +235,7 @@ settled down (no large scale movements), then the chains have probably converged
     ax3 = fig.add_subplot(413)
     ax3.plot(chain[:,:,2].T, '-', color='k', alpha=0.3)
     ax3.set_xlabel("Steps")
-    ax3.set_ylabel("f")
+    ax3.set_ylabel(r"$\alpha$")
 
     # plot hyperparameters.. we only have one for this example: the correlation length
     ax4 = fig.add_subplot(414)
@@ -237,24 +243,37 @@ settled down (no large scale movements), then the chains have probably converged
     ax4.set_xlabel("Steps")
     ax4.set_ylabel(r"$l$")
 
+Here is an example using three cubes of public GPI data on beta Pic.
+
+.. image:: imgs/betpic_j_bka_chains.png
 
 We can also plot the corner plot to look at our posterior distribution and correlation between parameters::
 
     fig = plt.figure()
     fig = fma.make_corner_plot(fig=fig)
 
+.. image:: imgs/betpic_j_bka_corner.png
+
 Hopefully the corner plot does not contain too much structure (the posteriors should be roughly Gaussian).
+In the example figure from three cubes of GPI data on beta Pic, the residual speckle noise has not been
+very whitened, so there is some asymmetry in the posterior, which represents the local strucutre of
+the speckle noise. These posteriors should become more Gaussian as we add more data and whiten the speckle noise.
 And finally, we can plot the visual comparison of our data, best fitting model, and residuals to the fit::
 
     fig = plt.figure()
     fig = fma.best_fit_and_residuals(fig=fig)
+
+And here is the example from the three frames of beta Pic b J-band GPI data:
+
+.. image:: imgs/betpic_j_bka_comparison.png
 
 The data and best fit model should look pretty close, and the residuals hopefully do not show any obvious strcuture that
 was missed in the fit. The residual ampltidue should also be consistent with noise. If that is the case, we can use the
 best fit values for the astrometry of this epoch. Remember that the 1-sigma values given here are just the statistical
 uncertainity on the location of the planet. You will need to include more uncertainties such as the location of the
 star and astrometric calibration uncertainties to obtain your full astrometric error bar. The flux values should in
-theory measure the flux of the planet, but that is out of the scope of this tutorial.::
+theory measure the flux of the planet, but that is out of the scope of this tutorial. Here, we print out our confidence
+on just the location of the planet in the image::
 
     print("Planet RA offset is at {0} with a 1-sigma range of {1}".format(fma.RA_offset, fma.RA_offset_1sigma))
     print("Planet Dec offset is at {0} with a 1-sigma range of {1}".format(fma.Dec_offset, fma.Dec_offset_1sigma))
