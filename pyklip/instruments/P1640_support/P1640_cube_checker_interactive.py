@@ -21,6 +21,8 @@ try:
 except UserWarning:
     pass
 
+import time
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -80,7 +82,8 @@ class CubeChecker:
         self.seeing = [fits.getval(ff,'SEEING') for ff in self.fitsfiles]
         self.airmass = [fits.getval(ff,'INIT_AM') for ff in self.fitsfiles]
         
-        self.quit_button = Tk.Button(frame, text="Quit", font=self.customFont, fg='black', command=frame.quit)
+        self.quit_button = Tk.Button(frame, text="Quit", font=self.customFont, fg='black', underline=0,
+                                     command=frame.quit)
 
         # initialize the cube
         self.current_file_index = 0
@@ -122,8 +125,20 @@ class CubeChecker:
                                length=400,
                                resolution=1,
                                command=self.update_cubeax_display,
+                               repeatdelay=300,
+                               repeatinterval=250,
                                tickinterval=5)
         self.s_cube.set(25)
+        self.play_cube_var = Tk.IntVar()
+        self.play_cube_var.set(0)
+        self.play_cube_button = Tk.Checkbutton(frame_cube,
+                                               text="Auto scroll",
+                                               font=self.customFont,
+                                               variable=self.play_cube_var,
+                                               onvalue=1,
+                                               offvalue=0,
+                                               command=self.toggle_autoscroll)
+                                          
         # plot seeing and airmass
         self.f_seeing = mpl.figure.Figure(figsize=(4,3))
         self.f_airmass = mpl.figure.Figure(figsize=(4,3))
@@ -168,11 +183,11 @@ class CubeChecker:
                                                          onvalue=self.fitsfiles[i],
                                                          offvalue=""))
             self.good_files.append(gf_var)
-        self.keep_button = Tk.Button(frame_cube, text="Keep?", font=self.customFont, fg="black",
+        self.keep_button = Tk.Button(frame_cube, text="Keep?", font=self.customFont, fg="black", underline=0,
                                      command=self.toggle_check)
-        self.next_button = Tk.Button(frame_cube, text="Next", font=self.customFont, fg="black",
+        self.next_button = Tk.Button(frame_cube, text="Next", font=self.customFont, fg="black", underline=0,
                                      command=self.next_cube)
-        self.prev_button = Tk.Button(frame_cube, text="Prev", font=self.customFont, fg="black",
+        self.prev_button = Tk.Button(frame_cube, text="Prev", font=self.customFont, fg="black", underline=0,
                                      command=self.prev_cube)
 
         # bindings
@@ -201,7 +216,7 @@ class CubeChecker:
 
        
         # print good files button
-        self.print_good_button = Tk.Button(frame, text="Print good files", font=self.customFont,
+        self.print_good_button = Tk.Button(frame, text="Print good files", font=self.customFont, underline=0,
                                            fg='black', command=self.print_good_cubes)
         self.wiki_format_flag = Tk.IntVar()
         self.wiki_format_flag.set(1)
@@ -237,6 +252,7 @@ class CubeChecker:
 
         self.scaling_group.grid(row=5,column=7)
 
+        # self.play_cube_button.grid(row=7,column=0) # disabled for now because it doesn't work
         self.prev_button.grid(row=8,column=2)        
         self.keep_button.grid(row=8,column=3)
         self.next_button.grid(row=8,column=4)
@@ -267,9 +283,12 @@ class CubeChecker:
     def keep_button_pushed(self, event):
         self.keep_button.invoke()
     def scroll_cube_left(self, event):
-        self.s_cube.set(np.max([self.s_cube.get()-1,0]))
+        if self.s_cube.get() == 0:
+            self.s_cube.set(len(self.current_cube)-1)
+        else:
+            self.s_cube.set(np.max([self.s_cube.get()-1,0]))
     def scroll_cube_right(self, event):
-        self.s_cube.set(np.min([self.s_cube.get()+1, len(self.current_cube)-1]))
+        self.s_cube.set((self.s_cube.get()+1)%len(self.current_cube))
     def activate_printing(self, event):
         self.print_good_button.invoke()
         
@@ -379,13 +398,21 @@ class CubeChecker:
         if self.image_scaling.get() == "log":
             img_norm = LogNorm
         self.ax_cube.clear()
-        self.ax_cube.matshow(self.current_cube[self.s_cube.get()], origin='lower', norm=img_norm())
+        self.ax_cube.matshow(self.current_cube[self.s_cube.get()], origin='lower', norm=img_norm(),
+                             cmap='cubehelix')
         self.ax_cube.xaxis.set_ticks_position("bottom")
         self.ax_cube.set_title(os.path.basename(self.current_cube_path.get()))
         if self.spot_mode is True:
             self.draw_spots_on_cube()
         self.f_cube.canvas.draw_idle()
 
+    def toggle_autoscroll(self):
+        len_cube = len(self.current_cube)
+        while self.play_cube_var.get() == 1:
+            self.s_cube.set((self.s_cube.get()+1)%len_cube)
+            time.sleep(0.3) # maybe this needs to be longer
+
+        
     def update_seeing_and_airmass(self):
         self.ax_seeing.clear()
         self.ax_airmass.clear()

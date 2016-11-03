@@ -864,7 +864,8 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions,
                                    spot_filepostfix, spot_fileext)
     return
 
-def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
+def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass=True,
+                        meas_satspot_flux=False, numthreads=-1, psfs_func_list=None):
     """
     Method to open and parse a P1640 file
 
@@ -873,7 +874,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None):
         spot_directory: path to folder were spot positions are stored (defaults to P1640.ini)
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
 
-    Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
+    Returns: (using z as size of 3rd dimension, z=32 for spec including all wavelengths)
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
         parang: array of z of the parallactic angle of the target (same value just repeated z times)
