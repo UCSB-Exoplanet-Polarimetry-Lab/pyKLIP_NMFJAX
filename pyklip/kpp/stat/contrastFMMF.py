@@ -413,7 +413,7 @@ class ContrastFMMF(KPPSuperClass):
 
 
 
-def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=None, cont_name_list = None):
+def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=None, cont_name_list = None,band=None,stars2ignore=None):
     """
     Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
     If the folders are organized following the convention below then it will make sure there is a ROC file for each
@@ -441,6 +441,7 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
     N_cont = len(filename_filter_list)
     sep_samp_list = [[]]*N_cont
     cont_list = [[]]*N_cont
+    star_name_list = [[]]*N_cont
 
     if epoch_suffix is None:
         epoch_suffix = ""
@@ -448,17 +449,30 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
     if cont_name_list is None:
         cont_name_list = ["T-Type",]*N_cont
 
+    if band is None:
+        band = "H"
+
+    if stars2ignore is None:
+        stars2ignore=[]
+
     dirs_to_reduce = os.listdir(base_dir)
     # dirs_to_reduce = ["HD_90885_B"]
+    # dirs_to_reduce = ["c_Eri"]
     N=0
     for object in dirs_to_reduce:
-        if not object.startswith('.'):
-            #print(object)
+        if not object.startswith('.') and object not in stars2ignore:
+            print(object)
 
             epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
+                epoch_folder_splitted = inputDir.split(os.path.sep)[-1].split("_")
+                compact_date = epoch_folder_splitted[0]
+                filter_name = epoch_folder_splitted[1]
+
+                if filter_name != band:
+                    continue
 
                 file_list = []
                 for filename_filter in filename_filter_list:
@@ -492,6 +506,7 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
                             contrast_arr = contrast_str_arr[1::].astype(np.float)
                             sep_samples = contrast_arr[:,0]
 
+
                             methane_idx = np.where(cont_name==col_names)[0]
 
                             methane_contrast = np.squeeze(contrast_arr[:,methane_idx])
@@ -499,9 +514,11 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
                         if N == 1:
                             cont_list[index] = [methane_contrast]
                             sep_samp_list[index] = [sep_samples]
+                            star_name_list[index] = [object]
                         else:
                             cont_list[index].append(methane_contrast)
                             sep_samp_list[index].append(sep_samples)
+                            star_name_list[index].append(object)
 
 
                         # try:
@@ -527,7 +544,10 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
         for l,(sep_samp,cont) in enumerate(zip(sep_samp_list[k],cont_list[k])):
             ind = np.where(final_sep_samp==sep_samp[0])[0]
             curr_cont_list[l,ind:(ind+np.size(cont))] = cont
+            # print(l,ind,(ind+np.size(cont)))
+            # print(cont)
+            # print(curr_cont_list[l,:])
         final_cont_list.append(curr_cont_list)
 
     # return sep_samp_list,np.array(cont_list)/N
-    return final_sep_samp_list,final_cont_list
+    return final_sep_samp_list,final_cont_list,star_name_list

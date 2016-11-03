@@ -398,6 +398,7 @@ class CubeChecker:
         if self.image_scaling.get() == "log":
             img_norm = LogNorm
         self.ax_cube.clear()
+
         self.ax_cube.matshow(self.current_cube[self.s_cube.get()], origin='lower', norm=img_norm(),
                              cmap='cubehelix')
         self.ax_cube.xaxis.set_ticks_position("bottom")

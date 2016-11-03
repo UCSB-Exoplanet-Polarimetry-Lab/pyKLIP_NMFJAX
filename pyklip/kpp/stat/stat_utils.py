@@ -263,10 +263,10 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
 
 def get_image_stddev(image,
                      IOWA = None,
-                     N = 2000,
+                     N = None,
                      centroid = None,
-                     r_step = None,
-                     Dr=None,
+                     r_step = 2,
+                     Dr=2,
                      image_wide = None,
                      resolution = None):
     if image_wide is None:
@@ -311,8 +311,8 @@ def get_image_stddev(image,
             annuli_radii.append((r0,np.max([ny,nx])))
         else:
             annuli_radii = []
-            for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
-            #for r in np.arange(IWA+Dr,OWA-Dr,Dr):
+            # for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
+            for r in np.arange(IWA+Dr,OWA,Dr):
                 annuli_radii.append((r-Dr,r+Dr))
     else:
         annuli_radii = [(IWA,OWA)]

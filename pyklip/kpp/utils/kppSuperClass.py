@@ -8,7 +8,7 @@ import numpy as np
 
 class KPPSuperClass(object):
     """
-    Super class for all metric calculation classes (ie matched filter, shape, weighted collapse...).
+    Super class for all kpop classes (ie FMMF, matched filter, shape, weighted collapse...).
     Has fall-back functions for all metric dependent calls so that each metric class does not need to implement
     functions it doesn't want to.
     It is not a completely empty function and includes features that are probably useful to most inherited class though
@@ -85,7 +85,7 @@ class KPPSuperClass(object):
             self.outputDir = None
         else:
             print("DON'T SET OUTPUTDIR WHEN DEFINING THE CLASS. JB SHOULD REMOVE THIS FEATURE")
-            self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+            self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
 
         # Number of threads to be used in case of parallelization.
         if N_threads is None:
@@ -229,14 +229,18 @@ class KPPSuperClass(object):
 
             # If outputDir is None define it as the project directory.
             if outputDir is not None:
-                self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+                self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
             else: # if self.outputDir is None:
-                if "planet_detec" in self.filename_path:
-                    split_path = os.path.dirname(self.filename_path).split(os.path.sep)
-                    planet_detec_label = split_path[np.where(["planet_detec" in mystr for mystr in split_path])[0]]
+                split_path = np.array(os.path.dirname(self.filename_path).split(os.path.sep))
+                if np.sum(word.startswith("planet_detec_") for word in split_path):
+                    planet_detec_label = split_path[np.where(["planet_detec" in mystr for mystr in split_path])][-1]
+                    self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
+                elif np.sum(word.startswith("kpop_") for word in split_path):
+                    split_path = np.array(os.path.dirname(self.filename_path).split(os.path.sep))
+                    planet_detec_label = split_path[np.where(["kpop" in mystr for mystr in split_path])][-1]
                     self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
                 else:
-                    self.outputDir = os.path.join(os.path.dirname(self.filename_path),"planet_detec_"+self.label)
+                    self.outputDir = os.path.join(os.path.dirname(self.filename_path),"kpop_"+self.label)
 
             if self.process_all_files:
                 if self.id_matching_file < self.N_matching_files:
@@ -249,13 +253,13 @@ class KPPSuperClass(object):
         else:
             # If outputDir is None define it as the project directory.
             if outputDir is not None:
-                self.outputDir = os.path.abspath(outputDir+os.path.sep+"planet_detec_"+self.label)
+                self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
 
             if self.outputDir is None:
                 if self.inputDir is None:
-                    self.outputDir = os.path.abspath("."+os.path.sep+"planet_detec_"+self.label)
+                    self.outputDir = os.path.abspath("."+os.path.sep+"kpop_"+self.label)
                 else:
-                    self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"planet_detec_"+self.label)
+                    self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"kpop_"+self.label)
 
             return False
 

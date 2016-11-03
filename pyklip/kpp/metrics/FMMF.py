@@ -14,6 +14,7 @@ import pyklip.fm as fm
 import pyklip.fmlib.matchedFilter as mf
 import pyklip.klip as klip
 import pyklip.kpp.utils.GOI as GOI
+import pyklip.kpp.utils.GPIimage as gpiim
 
 
 class FMMF(KPPSuperClass):
@@ -177,33 +178,36 @@ class FMMF(KPPSuperClass):
             self.subsections = None
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202)]
         if predefined_sectors == "smallSep":
-            self.OWA = 0.6/0.01413
             self.N_pix_sector = 100
             self.subsections = None
             # Define 3 thin annuli (each ~5pix wide) and a big one (~20pix) to cover up to 0.6''
-            self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]
+            self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 42.46284501061571)]#
+            # self.annuli = [(25.580786013087202, 42.46284501061571)]#
+            # self.annuli = [(35, 50)]
         if predefined_sectors == "oneAc":
             self.N_pix_sector = 100
             self.subsections = None
             self.annuli = [(8.7, 14.3), (14.3, 20), (20, 25.6),(25.6, 40.5),(40.5,55.5),(55.5,70.8)]
+            # self.annuli = [(66,81)]
             # self.annuli = [(55.5,70.8)]
         if predefined_sectors == "smallSepBigSec":
-            self.OWA = 0.6/0.01413
+            self.OWA = gpiim.as2pix(0.6)
             self.N_pix_sector = 300
             self.subsections = None
             self.annuli = [(8.698727015558699, 19.953433013911035), (19.953433013911035, 42.46284501061571)]
         if predefined_sectors == "avgSep":
-            self.OWA = 0.8/0.01413
+            self.OWA = gpiim.as2pix(0.8)
             self.N_pix_sector = 200
             self.subsections = None
             self.annuli = [(8.698727015558699, 14.326080014734867), (14.326080014734867, 19.953433013911035), (19.953433013911035, 25.580786013087202),(25.580786013087202, 41),(41, 56.5)]
         elif predefined_sectors == "c_Eri":
-            self.subsections = [[150./180.*np.pi,190./180.*np.pi]]
+            self.subsections = [[150./180.*np.pi,190./180.*np.pi]]#None#[[150./180.*np.pi,190./180.*np.pi]]
             self.annuli = [[23,41]]
+            # self.N_pix_sector = 100
         elif predefined_sectors == "fluxTest":
             self.subsections = [[(46-10)/180.*np.pi,(46+10)/180.*np.pi]]
             self.annuli = [[36-5,36+5]]
-
+            self.N_pix_sector = None
 
 
     def spectrum_iter_available(self):
@@ -253,21 +257,22 @@ class FMMF(KPPSuperClass):
         if self.mvt_noTemplate:
             self.spectra_template = None
         else:
-            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-            # This should however be the same. I know it's weird but the two codes are seperate
-            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            # spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            # spectrum_wvs = spectrum_dat[:,1]
+            # spectrum_fluxes = spectrum_dat[:,3]
+            # spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # # This should however be the same. I know it's weird but the two codes are seperate
+            # self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            self.spectra_template = spec.get_planet_spectrum(self.spectrum_filename,self.dataset.wvs)[1]
 
 
         # Build the FM class to do matched filter
-        self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
+        self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),self.dataset.spot_flux,
                                      spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
                                      mute = False,
                                      star_type = self.star_type,
-                                     filter = self.filter,
+                                     filter_name = self.filter,
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
                                      disable_FM=self.disable_FM,
@@ -279,8 +284,6 @@ class FMMF(KPPSuperClass):
                          spectrum = None,
                          folderName = None,
                          PSF_cube_filename = None,
-                         prihdr = None,
-                         exthdr = None,
                          star_type = "auto",
                          compact_date = None,
                          label=None):
@@ -319,8 +322,6 @@ class FMMF(KPPSuperClass):
                         Useful only if kernel_type = "PSF"
                         If a PSF cube is not explicitly given and one is read automatically it assumes there is only
                         one PSF cube in this folder.
-        :param prihdr: User defined primary fits headers in case the file read has none.
-        :param exthdr: User defined extension fits headers in case the file read has none.
         :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
                         If "auto" (default), spec.get_specType(self.star_name,self.SpT_file_csv) is called.
                         If self.SpT_file_csv is defined then it reads the spectral type from the table otherwise try to
@@ -368,9 +369,12 @@ class FMMF(KPPSuperClass):
             self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
         else:
             self.star_type = star_type
+        if not self.mute:
+            print("The star spectral type is: {0}".format(self.star_type))
 
         # Get the list of spdc files
         filelist = glob(self.inputDir+os.path.sep+self.filename)
+        filelist.sort()
         if self.quickTest:
             filelist = [filelist[0],filelist[-1]]
 
@@ -446,7 +450,7 @@ class FMMF(KPPSuperClass):
         # else give None
         if self.fakes_only:
             sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True,fakes_only=True)
-            self.fakes_sepPa_list = [(sep/0.01413,pa) for sep,pa in zip(sep_list, pa_list)]
+            self.fakes_sepPa_list = [(gpiim.as2pix(sep),pa) for sep,pa in zip(sep_list, pa_list)]
         else:
             self.fakes_sepPa_list = None
 
@@ -457,21 +461,22 @@ class FMMF(KPPSuperClass):
         if self.mvt_noTemplate:
             self.spectra_template = None
         else:
-            spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
-            # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
-            # This should however be the same. I know it's weird but the two codes are seperate
-            self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            # spectrum_dat = np.loadtxt(self.spectrum_filename )[:160] #skip wavelegnths longer of 10 microns
+            # spectrum_wvs = spectrum_dat[:,1]
+            # spectrum_fluxes = spectrum_dat[:,3]
+            # spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+            # # This spectrum is the one used by klip itself while the matched filter uses the one defined in fm_class.
+            # # This should however be the same. I know it's weird but the two codes are seperate
+            # self.spectra_template = spectrum_interpolation(self.dataset.wvs)
+            self.spectra_template = spec.get_planet_spectrum(self.spectrum_filename,self.dataset.wvs)[1]
 
 
         # Build the FM class to do matched filter
-        self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),
-                                     spectrallib = [spec.get_planet_spectrum(filename, self.filter)[1] for filename in [self.spectrum_filename ]],
+        self.fm_class = mf.MatchedFilter(self.dataset.input.shape,self.numbasis, self.dataset.psfs, np.unique(self.dataset.wvs),self.dataset.spot_flux,
+                                     spectrallib = [spec.get_planet_spectrum(self.spectrum_filename, self.filter)[1]],
                                      mute = False,
                                      star_type = self.star_type,
-                                     filter = self.filter,
+                                     filter_name = self.filter,
                                      save_per_sector = self.save_per_sector,
                                      fakes_sepPa_list = self.fakes_sepPa_list,
                                      disable_FM=self.disable_FM,
@@ -501,9 +506,7 @@ class FMMF(KPPSuperClass):
             presuffix = ""
 
         suffix1 = presuffix+"FMMF"+susuffix
-        suffix2 = presuffix+"FMSH"+susuffix
-        file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)\
-               and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix2+'.fits')) >= 1)
+        file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)
 
         if file_exist and not self.mute:
             print("Output already exist.")
@@ -549,31 +552,76 @@ class FMMF(KPPSuperClass):
 
         fmout[np.where(fmout==0)] = np.nan
 
-        metric_MF_uncollapsed = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.nl,self.ny,self.nx))
-        for k in range(self.N_cubes):
-            metric_MF_uncollapsed = metric_MF_uncollapsed + fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]#/fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]
-        self.metric_MF_uncollapsed = np.squeeze(metric_MF_uncollapsed)/self.N_cubes
-
         # Retrieve the flux map, mathced filter map and shape map
         # Note: the injected model had a unit broadband flux in DN space.
-        ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
-        sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
-        metric_pFlux = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+
+        #######################
+        ## Assuming the noise is constant for all slices of a cube
+        metric_shape_nume = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        metric_shape_deno = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+
+        for k in range(self.N_cubes):
+            var_per_cube = np.sum(fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)/self.nl
+            metric_shape_nume = metric_shape_nume+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/var_per_cube[:,:,None,:,:],axis=2)
+            metric_shape_deno = metric_shape_deno+np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]/var_per_cube[:,:,None,:,:],axis=2)
+
+
+        metric_shape = metric_shape_nume/np.sqrt(metric_shape_deno)
+        metric_shape[np.where(metric_shape==0)]=np.nan
+        metric_shape = np.squeeze(metric_shape)
+
+
+        # self.metric_pFlux3 = metric_pFlux
+        self.metric_shape3 = metric_shape
+
+        #######################
+        ## matched filter for each cube and then averaged
+        # ppm_band = self.prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+        # sat_spot_ratio = self.dataset.spot_ratio[ppm_band]
+        # metric_pFlux_nume = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+        # metric_pFlux_deno = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
+
+
+        metric_CC = np.sum(fmout[0,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.sum(fmout[1,:,:,:,:,:],axis=2))
+        metric_CC[np.where(metric_shape==0)]=np.nan
+        metric_CC = np.squeeze(metric_CC)
+        self.metric_CC2 = metric_CC
+
+        metric_shape = np.sum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.sum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2))
+        metric_shape[np.where(metric_shape==0)]=np.nan
+        metric_shape = np.squeeze(metric_shape)
+        self.metric_shape2 = metric_shape
+
+        metric_pFlux = np.sum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.sum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2)
+        metric_pFlux[np.where(metric_pFlux==0)]=np.nan
+        metric_pFlux = np.squeeze(metric_pFlux)
+        self.metric_pFlux2 = metric_pFlux
+
+        # for k in range(self.N_cubes):
+        #     sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
+        #     metric_pFlux_nume = metric_pFlux_nume + np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) / sat_spot_flux_for_calib * sat_spot_ratio
+        #     metric_pFlux_deno = metric_pFlux_deno + np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:]/fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)
+        # metric_pFlux = metric_pFlux_nume/metric_pFlux_deno
+        # # metric_pFlux = metric_pFlux/self.N_cubes
+        # metric_pFlux[np.where(metric_pFlux==0)]=np.nan
+        # metric_pFlux = np.squeeze(metric_pFlux)
+        #
+        # # self.metric_MF2 = metric_MF
+        # self.metric_pFlux2 = metric_pFlux
+
+        #######################
+        ## matched filter for each cube and then averaged
         metric_MF = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
         metric_shape = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,self.ny,self.nx))
         for k in range(self.N_cubes):
-            sat_spot_flux_for_calib = np.nansum(self.dataset.spot_flux[k*self.nl:(k+1)*self.nl]*self.fm_class.aper_over_peak_ratio)
-            metric_pFlux = metric_pFlux+np.nansum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
-                            / np.nansum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
-                            / sat_spot_flux_for_calib * sat_spot_ratio
             metric_MF = metric_MF+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / np.sqrt(np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2))
             metric_shape = metric_shape+np.sum(fmout[0,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2) \
                             / (  np.sqrt(np.sum(fmout[1,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)) \
                                * np.sqrt(np.sum(fmout[2,:,:,k*self.nl:(k+1)*self.nl,:,:],axis=2)) )
-        metric_pFlux = metric_pFlux/self.N_cubes
-        metric_pFlux[np.where(metric_pFlux==0)]=np.nan
-        metric_pFlux = np.squeeze(metric_pFlux)
         metric_MF = metric_MF/self.N_cubes
         metric_MF[np.where(metric_MF==0)]=np.nan
         metric_MF = np.squeeze(metric_MF)
@@ -581,6 +629,11 @@ class FMMF(KPPSuperClass):
         metric_shape[np.where(metric_shape==0)]=np.nan
         metric_shape = np.squeeze(metric_shape)
 
+        self.metric_MF = metric_MF
+        self.metric_shape = metric_shape
+
+        #######################
+        ## cubes are coadded and then matched filter is applied
         # fmout0 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
         # fmout1 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
         # fmout2 = np.zeros((self.fm_class.N_spectra,self.fm_class.N_numbasis,37,self.ny,self.nx))
@@ -629,9 +682,6 @@ class FMMF(KPPSuperClass):
         # Update the wcs headers to indicate North up
         [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.dataset.PAs, self.dataset.wcs)]
 
-        self.metric_MF = metric_MF
-        self.metric_pFlux = metric_pFlux
-        self.metric_shape = metric_shape
         self.sub_imgs = sub_imgs
         self.metricMap = [self.metric_MF,self.metric_shape,self.sub_imgs]
 
@@ -685,21 +735,7 @@ class FMMF(KPPSuperClass):
         if hasattr(self,"star_type"):
             extra_exthdr_keywords.append(("METSTTYP",self.star_type))
 
-
-        # suffix = "FMMFmeth"
-        # extra_exthdr_keywords.append(("METSUFFI",suffix))
-        # self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-        #                  self.matched_filter_maps_methane,
-        #                  filetype="FMMFmeth",
-        #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
-        #                  extra_exthdr_keywords = extra_exthdr_keywords)
-        # suffix = "FMMFother"
-        # extra_exthdr_keywords.append(("METSUFFI",suffix))
-        # self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-        #                  self.matched_filter_maps_other,
-        #                  filetype="FMMFother",
-        #                  astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
-        #                  extra_exthdr_keywords = extra_exthdr_keywords)
+        extra_exthdr_keywords.append(("FMMFVERS",2.0))
 
         if self.quickTest:
             susuffix = "QT"
@@ -711,33 +747,25 @@ class FMMF(KPPSuperClass):
         else:
             presuffix = ""
 
-        suffix = presuffix+"FMMFcube"+susuffix
-        extra_exthdr_keywords.append(("METSUFFI",suffix))
-        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-                         self.metric_MF_uncollapsed,
-                         filetype=suffix,
-                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
-                         extra_exthdr_keywords = extra_exthdr_keywords)
-
         # Save the outputs (matched filter, shape map and klipped image) as fits files
         suffix = presuffix+"FMMF"+susuffix
         extra_exthdr_keywords.append(("METSUFFI",suffix))
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-                         self.metric_MF,
+                         self.metric_shape2,
                          filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = presuffix+"FMpF"+susuffix
-        extra_exthdr_keywords.append(("METSUFFI",suffix))
-        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-                         self.metric_pFlux,
-                         filetype=suffix,
-                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
-                         extra_exthdr_keywords = extra_exthdr_keywords)
-        suffix = presuffix+"FMSH"+susuffix
+        suffix = presuffix+"FMCont"+susuffix
         extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
         self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
-                         self.metric_shape,
+                         self.metric_pFlux2,
+                         filetype=suffix,
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
+        suffix = presuffix+"FMCC"+susuffix
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_CC2,
                          filetype=suffix,
                          astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                          extra_exthdr_keywords = extra_exthdr_keywords)
@@ -750,6 +778,28 @@ class FMMF(KPPSuperClass):
                              astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
                              extra_exthdr_keywords = extra_exthdr_keywords)
 
+        suffix = presuffix+"FMMFv1"+susuffix
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_shape,
+                         filetype=suffix,
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
+        suffix = presuffix+"FMCCv1"+susuffix
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_MF,
+                         filetype=suffix,
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
+
+        suffix = presuffix+"FMMF2"+susuffix
+        extra_exthdr_keywords[-1] = ("METSUFFI",suffix)
+        self.dataset.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                         self.metric_shape3,
+                         filetype=suffix,
+                         astr_hdr=self.dataset.wcs[0], center=self.dataset.centers[0],
+                         extra_exthdr_keywords = extra_exthdr_keywords)
         return None
 
 

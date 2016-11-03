@@ -330,19 +330,17 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
 
 def get_planet_spectrum(filename,wavelength):
     """
-    Get the spectrum of a planet from a given file. Files are Mark Marleys'.
-    The sampling is the one of pipeline reduced cubes.
-    The spectrum is normalized to unit mean.
-    I should check that I actually do the right operation on the spectra.
+    Get the normalized spectrum of a planet for a GPI spectral band or any wavelengths array.
+    Spectra are extraced from .flx files from Mark Marley et al's models.
 
-    Inputs:
-        filename: Directory of the gpi pipeline.
-        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns
+    Args:
+        filename: Path of the .flx file containing the spectrum.
+        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns. When using GPI spectral band,
+                wavelength samples are linearly spaced between the first and the last wavelength of the band.
 
-    Output:
-        (wavelengths, spectrum) where
-            wavelengths: is the gpi sampling of the considered band in mum.
-            spectrum: is the spectrum of the planet for the given band.
+    Return:
+        wavelengths: is the gpi sampling of the considered band in micrometer.
+        spectrum: is the spectrum of the planet for the given band or wavelength array and normalized to unit mean.
     """
 
 
@@ -355,52 +353,53 @@ def get_planet_spectrum(filename,wavelength):
             # splitted_line[2]: T_brt
             # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
 
-            spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            try:
+                spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            except:
+                break
 
     spec_data = np.array(spec_data)
     N_samp = spec_data.shape[0]
     wave = spec_data[:,1]
-    #wave_intervals = np.zeros(N_samp)
-    #wave_intervals[1:N_samp-1] = wave[2::] - wave[0:(N_samp-2)]
-    #wave_intervals[0] = wave[1]-wave[0]
-    #wave_intervals[N_samp-1] = wave[N_samp-1]-wave[N_samp-2]
     spec = spec_data[:,3]
-
-    # if 0:
-    #     plt.figure(1)
-    #     plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
-    #     plt.show()
 
     # todo: check that it matches the actual sampling
     if isinstance(wavelength, str):
         w_start, w_end, N_sample = band_sampling[wavelength]
-        dw = (w_end-w_start)/N_sample
-        sampling_pip = np.arange(w_start,w_end,dw)
+        sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
     else:
         sampling_pip = wavelength
 
-    # I think this isn't rigorous. The spectrum is not well binned maybe
-    #counts_per_bin, bin_edges = np.histogram(wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spec)
-    #weights_per_bin, bin_edges = np.histogram(wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=wave_intervals)
-    #spec_pip = dw * counts_per_bin/weights_per_bin
-
     f = interp1d(wave, spec)
-    spec_pip = f(sampling_pip)
+    # Interpolate the spectrum on GPI sampling and convert F_nu to F_lambda
+    spec_pip = f(sampling_pip)/(sampling_pip**2)
 
-    # if 0:
-    #     plt.figure(2)
-    #     plt.plot(wave[50:100],spec[50:100],'r')
-    #     plt.plot(sampling_pip,spec_pip,'b.')
-    #     plt.show()
+    if 0:
+        import matplotlib.pyplot as plt
+        print()
+        plt.figure(2)
+        wave_range = np.where((wave<sampling_pip[-1]) & (wave>sampling_pip[0]))
+        plt.plot(wave[wave_range],spec[wave_range]/np.nanmean(spec[wave_range]),'r')
+        plt.plot(sampling_pip,spec_pip/np.nanmean(spec_pip),'b.')
+        plt.show()
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
 
 def get_gpi_wavelength_sampling(filter_name):
+    """
+    Return GPI wavelength sampling for a given band.
+
+    Args:
+        filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
+                    Wavelength samples are linearly spaced between the first and the last wavelength of the band.
+
+    Return:
+        wavelengths: is the gpi sampling of the considered band in micrometer.
+    """
 
     w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
+    sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
 
     return sampling_pip
 

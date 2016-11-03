@@ -9,7 +9,17 @@ data analysis situations anyways. The main pyKLIP code is cross-compatible with 
 * numpy
 * scipy
 * astropy
-* Optional: matplotlib
+* Optional: matplotlib, mkl-service
+
+For the optional packages, matplotlib is useful to actually plot the images. For mkl-service, pyKLIP autmoatically
+toggles off MKL parallelism during parallelized KLIP if the mkl-service package is installed. Otherwise, you
+will need to toggle them off yourself for optimal performance. See notes on parallelized performance below.
+
+For :ref:`bka-label` specifically, you'll also want to install the following packages:
+
+* cython
+* emcee
+* corner
 
 As pyKLIP is computationally expensive, we recommend a powerful computer to optimize the computation. As direct imaging
 data comes in many different forms, we cannot say

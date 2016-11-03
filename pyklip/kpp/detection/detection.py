@@ -10,6 +10,7 @@ from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp.stat.stat_utils import *
 from pyklip.kpp.utils.GOI import *
 import pyklip.kpp.utils.mathfunc as kppmath
+import pyklip.kpp.utils.GPIimage as gpiim
 
 class Detection(KPPSuperClass):
     """
@@ -69,7 +70,6 @@ class Detection(KPPSuperClass):
         else:
             self.maskout_edge = maskout_edge
 
-        self.platescale = 0.01417
         self.IWA = IWA
         self.OWA = OWA
 
@@ -230,7 +230,7 @@ class Detection(KPPSuperClass):
             row_id,col_id = max_ind[0][0],max_ind[1][0]
             x_max_pos, y_max_pos = x_grid[row_id,col_id],y_grid[row_id,col_id]
             sep_pix = np.sqrt(x_max_pos**2+y_max_pos**2)
-            sep_arcsec = sep_pix*self.platescale
+            sep_arcsec = gpiim.pix2as(sep_pix)
             pa = np.mod(np.rad2deg(np.arctan2(-x_max_pos,y_max_pos)),360)
 
 

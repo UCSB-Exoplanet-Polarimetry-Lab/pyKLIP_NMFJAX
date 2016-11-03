@@ -183,10 +183,10 @@ class FMPlanetPSF(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))   # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))    # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -211,8 +211,8 @@ class FMPlanetPSF(NoFM):
 
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
-            l = round(psf_centx + ref_center[0])
-            k = round(psf_centy + ref_center[1]) 
+            l = int(round(psf_centx + ref_center[0]))
+            k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
             x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
             y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
@@ -238,7 +238,7 @@ class FMPlanetPSF(NoFM):
 
 
 
-    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
+    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
                      parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, **kwargs):
         """
@@ -358,12 +358,15 @@ class FMPlanetPSF(NoFM):
             KLmode_cube = np.nanmean(fmout * spectrum[None,:,None,None], axis=1)\
                           / np.mean(spectrum)
 
+        # save FM location into header
+        more_keywords = {'fm_sep': self.sep, 'fm_pa': self.pa}
+
         # broadband flux calibration for KL mode cube
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
         dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
-                         zaxis=numbasis)
+                         zaxis=numbasis, more_keywords=more_keywords)
 
         # if there is more than one wavelength, save spectral cubes
         if np.size(np.unique(dataset.wvs)) > 1:
@@ -379,7 +382,7 @@ class FMPlanetPSF(NoFM):
                     spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
                 dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
                                  spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-                                 filetype="PSF Subtracted Spectral Cube")
+                                 filetype="PSF Subtracted Spectral Cube", more_keywords=more_keywords)
 
 
 

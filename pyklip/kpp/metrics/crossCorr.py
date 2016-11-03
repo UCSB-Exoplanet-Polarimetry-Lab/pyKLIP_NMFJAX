@@ -67,7 +67,7 @@ class CrossCorr(KPPSuperClass):
             self.collapse = collapse
         self.weights = weights
         if nans2zero is None:
-            self.nans2zero = False
+            self.nans2zero = True
         else:
             self.nans2zero = nans2zero
 
@@ -125,8 +125,8 @@ class CrossCorr(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
-        if self.label == "CADI":
-            self.center = [140,140]
+        # if self.label == "CADI":
+        #     self.center = [140,140]
 
         try:
             self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -215,6 +215,7 @@ class CrossCorr(KPPSuperClass):
                 self.image = np.nanmean(self.image,axis=0)
 
         if self.nans2zero:
+            where_nans = np.where(np.isnan(self.image))
             self.image = np.nan_to_num(self.image)
 
         # We have to make sure the PSF dimensions are odd because correlate2d shifts the image otherwise...
@@ -238,16 +239,8 @@ class CrossCorr(KPPSuperClass):
             else: # image is 2D
                 self.image_convo = correlate2d(self.image,self.PSF,mode="same")
 
-        # import matplotlib.pyplot as plt
-        # print(self.PSF.shape)
-        # plt.figure(1)
-        # plt.subplot(2,1,1)
-        # plt.title("image")
-        # plt.imshow(self.image[102:112,130:140],interpolation="nearest")
-        # plt.subplot(2,1,2)
-        # plt.title("convo")
-        # plt.imshow(self.image_convo[102:112,130:140],interpolation="nearest")
-        # plt.show()
+        if self.nans2zero:
+            self.image_convo[where_nans] = np.nan
 
         return self.image_convo
 

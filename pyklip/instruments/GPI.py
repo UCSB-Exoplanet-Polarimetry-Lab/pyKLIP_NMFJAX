@@ -66,7 +66,8 @@ class GPIData(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         spot_flux: Array of N of average satellite spot flux for each frame
-        contrast_scaling: Flux calibration factors (multiply by image to "calibrate" flux)
+        dn_per_contrast: Flux calibration factor in units of DN/contrast (divide by image to "calibrate" flux)
+                Can also be thought of as the DN of the unocculted star
         flux_units: units of output data [DN, contrast]
         prihdrs: Array of N primary GPI headers (these are written by Gemini Observatory + GPI DRP Pipeline)
         exthdrs: Array of N extension GPI headers (these are written by GPI DRP Pipeline)
@@ -134,7 +135,7 @@ class GPIData(Data):
             self._wcs = None
             self._IWA = None
             self.spot_flux = None
-            self.contrast_scaling = None
+            self.dn_per_contrast = None
             self.prihdrs = None
             self.exthdrs = None
             self.flux_units = None
@@ -240,6 +241,7 @@ class GPIData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        inttimes = []
         prihdrs = []
         exthdrs = []
 
@@ -256,7 +258,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass, meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,psfs_func_list=psfs_func_list)
 
 
@@ -272,6 +274,7 @@ class GPIData(Data):
             wvs.append(wv)
             filenums.append(np.ones(pa.shape[0]) * index)
             wcs_hdrs.append(astr_hdrs)
+            inttimes.append(inttime)
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
 
@@ -293,6 +296,14 @@ class GPIData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
+        inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
+
+        # if there is more than 1 integration time, normalize all data to the first integration time
+        if np.size(np.unique(inttimes)) > 1:
+            inttime0 = inttime[0]
+            # normalize integration times
+            data = data * inttime0/inttimes[:, None, None]
+            spot_fluxes *= inttime0/inttimes
 
         #only do the wavelength solution and center recalculation if it isn't broadband imaging
         if np.size(np.unique(wvs)) > 1:
@@ -326,7 +337,7 @@ class GPIData(Data):
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
-        self.contrast_scaling = GPIData.spot_ratio[ppm_band]/np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
+        self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -334,8 +345,9 @@ class GPIData(Data):
 
 
 
-    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
+    def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
+                 center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -345,6 +357,8 @@ class GPIData(Data):
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                                         written into the primary header
             astr_hdr: wcs astrometry header
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
@@ -417,14 +431,20 @@ class GPIData(Data):
             if "spectral" in filetype.lower():
                 # individual contrast scalings for spectral cube
                 for wv_i in range(data.shape[0]):
-                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.contrast_scaling[wv_i], "Contrast/DN for slice {0}".format(wv_i))
+                    hdulist[1].header['DN2CON{0}'.format(wv_i)] = (self.dn_per_contrast[wv_i], "DN/Contrast for slice {0}".format(wv_i))
                 hdulist[0].header.add_history("Converted to contrast units using CON2DN scaling for each wv slice")
             else:
                 # broadband cube so only have one scaling
-                broadband_contrast_scaling = np.nanmean(self.contrast_scaling)
-                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband Contrast/DN")
-                hdulist[0].header.add_history("Converted to contrast units using {0} Contrast/DN".format(broadband_contrast_scaling))
+                broadband_contrast_scaling = np.nanmean(self.dn_per_contrast)
+                hdulist[1].header['DN2CON'] = (broadband_contrast_scaling, "Broadband DN/Contrast")
+                hdulist[0].header.add_history("Converted to contrast units using {0} DN/Contrast".format(broadband_contrast_scaling))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
+
+        # JB's code to store keywords
         if extra_prihdr_keywords is not None:
             for name,value in extra_prihdr_keywords:
                  hdulist[0].header[name] = value
@@ -503,10 +523,10 @@ class GPIData(Data):
             if spectral:
                 # spectral cube, each slice needs it's own calibration
                 numwvs = img.shape[0]
-                img *= self.contrast_scaling[:numwvs, None, None]
+                img /= self.dn_per_contrast[:numwvs, None, None]
             else:
                 # broadband image
-                img *= np.nanmean(self.contrast_scaling)
+                img /= np.nanmean(self.dn_per_contrast)
             self.flux_units = "contrast"
 
         return img
@@ -823,6 +843,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         fpm_band: which coronagrpah was used (string)
         ppm_band: which apodizer was used (string)
         spot_fluxes: array of z containing average satellite spot fluxes for each image
+        inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         prihdr: primary header of the FITS file
         exthdr: 1st extention header of the FITS file
     """
@@ -852,6 +873,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
+
+        # get number of co-adds
+        coadds = exthdr['COADDS0']
 
         #for spectral mode we need to treat each wavelegnth slice separately
         if exthdr['CTYPE3'].strip() == 'WAVE':
@@ -888,6 +912,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
@@ -896,6 +921,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
             parang = exthdr['AVPARANG']*np.ones(1)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, 1)
             astr_hdrs = np.repeat(w, 1)
             try:
                 polspot_fluxes = []
@@ -905,13 +931,21 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     spot2flux = float(exthdr['SATF{wave}_2'.format(wave=i)])
                     spot3flux = float(exthdr['SATF{wave}_3'.format(wave=i)])
                     polspot_fluxes.append(np.nanmean([spot0flux, spot1flux, spot2flux, spot3flux]))
-                spot_fluxes = [[np.sum(polspot_fluxes)]]
+                spot_fluxes = [np.sum(polspot_fluxes)]
             except KeyError:
-                spot_fluxes = [[1]]
+                spot_fluxes = [1]
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
         hdulist.close()
+
+    # normalize data to be for a single co-add (e.g. add co-adds together)
+    if coadds > 1:
+        # multiply each frame and sat spot fluxes by number of coadds
+        cube *= float(coadds)
+        spot_fluxes = [x * float(coadds) for x in spot_fluxes]
+        # also multiply integration time by coadds
+        inttime *= float(coadds)
 
     #remove undesirable slices of the datacube if necessary
     if skipslices is not None:
@@ -971,7 +1005,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 tpool.close()
         #print(spot_fluxes)
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
@@ -1446,7 +1480,7 @@ def generate_spdc_with_fakes(dataset,
     :param pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
     :return:
     '''
-
+    import pyklip.kpp.utils.GPIimage as gpiim
 
     if suffix is None:
         suffix = "fakes"
@@ -1477,7 +1511,7 @@ def generate_spdc_with_fakes(dataset,
 
     if GOI_list_folder is not None:
         sep_real_object_list,pa_real_object_list = goi.get_pos_known_objects(prihdr,exthdr,GOI_list_folder,pa_sep = True,include_speckles=False)
-        sep_real_object_list = [sep/0.01413 for sep in sep_real_object_list]
+        sep_real_object_list = [gpiim.as2pix(sep) for sep in sep_real_object_list]
 
     # Retrieve the filter used from the fits headers.
     IFSfilter = prihdr['IFSFILT'].split('_')[1]
@@ -1507,6 +1541,8 @@ def generate_spdc_with_fakes(dataset,
     prefix = object_name+"_"+compact_date+"_"+IFSfilter
     # Save the original PSF calculated from combining the sat spots
     if outputdir is not None:
+        if not os.path.exists(outputdir):
+            os.makedirs(outputdir)
         dataset.savedata(outputdir + os.path.sep + prefix+"-original_PSF_cube.fits", PSF_cube,
                                   astr_hdr=dataset.wcs[0], filetype="PSF Spec Cube",user_prihdr=prihdr,user_exthdr=exthdr)
 
@@ -1549,7 +1585,7 @@ def generate_spdc_with_fakes(dataset,
         # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
         # delta_pa = 180/np.pi*PSF_dist/radius
         pa_list = np.arange(-180.,180.-0.01,delta_th) + pa_shift
-        radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
+        radii_list = np.array([dr * annuli_it + dataset.IWA + 3.5 for annuli_it in range(annuli)])
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         # for row_id in range(pa_grid.shape[0]):
         #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
@@ -1560,70 +1596,6 @@ def generate_spdc_with_fakes(dataset,
         pa_grid = pa_grid + 5
 
         sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
-
-    # if fake_position_dict["mode"] == "ROC":
-    #     # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
-    #     # We want to inject one planet per section where klip is independently applied.
-    #     annuli = 8
-    #     dr = 15
-    #     delta_th = 90
-    #
-    #     # Get parallactic angle of where to put fake planets
-    #     # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
-    #     # delta_pa = 180/np.pi*PSF_dist/radius
-    #     pa_list = np.arange(-180.,180.-0.01,delta_th)
-    #     radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli)])
-    #     pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
-    #     # for row_id in range(pa_grid.shape[0]):
-    #     #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
-    #     for col_id in range(radii_grid.shape[1]):
-    #         radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
-    #     pa_grid[range(1,annuli,3),:] += 30
-    #     pa_grid[range(2,annuli,3),:] += 60
-    #
-    #     sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
-    #
-    #     # Manage spectrum
-    #     pyklip_dir = os.path.dirname(os.path.realpath(spec.__file__))
-    #     planet_spectrum_dir_1 = pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g32ncflx"+os.path.sep+"t950g32nc.flx"
-    #     #planet_spectrum_dir_2 = pyklip_dir+os.path.sep+"spectra"+os.path.sep+"g100ncflx"+os.path.sep+"t2000g100nc.flx"
-    #
-    #     # Define the peak value of the fake planet for each slice depending if a star and a planet type is given.
-    #     # Interpolate a spectrum of the star based on its spectral type/temperature
-    #     wv,star_sp = spec.get_star_spectrum(IFSfilter,star_type,None)
-    #     # Interpolate the spectrum of the planet based on the given filename
-    #     wv,planet_sp_meth = spec.get_planet_spectrum(planet_spectrum_dir_1,IFSfilter)
-    #     #wv,planet_sp2 = spec.get_planet_spectrum(planet_spectrum_dir_2,filter)
-    #     planet_sp_flat = [  64.,   69.,   74.,   78.,   83.,   87.,   89.,   95.,   98.,\
-    #     102.,  107.,  113.,  116.,  123.,  126.,  129.,  134.,  137.,\
-    #     142.,  147.,  150.,  154.,  161.,  161.,  159.,  159.,  161.,\
-    #     159.,  163.,  166.,  161.,  156.,  154.,  149.,  150.,  152.,  150.]
-    #     planet_sp_flat = planet_sp_flat/np.mean(planet_sp_flat)
-    #
-    #     # import matplotlib.pyplot as plt
-    #     # plt.plot(wv,star_sp/np.mean(star_sp),'r')
-    #     # plt.plot(wv,sat_spot_spec/np.mean(sat_spot_spec),'b')
-    #     # plt.show()
-    #     #addNoise2Spectrum(spectrum)
-    #
-    #
-    #     planets_contrasts = []
-    #     inputflux=[]
-    #     planet_spectra = []
-    #     for fake_id, (radius,pa) in enumerate(sep_pa_iter_list):
-    #         if rd.random() >= 0.5: # methane spec
-    #             planets_contrasts.append(1.*10**-6)
-    #             planet_sp = addNoise2Spectrum(planet_sp_meth,ampl=0.3, w_ker = 10,rand_slope = 0.2)
-    #             #planet_sp = planet_sp_meth
-    #         else: # flat spec
-    #             planets_contrasts.append(5.*10**-6)
-    #             planet_sp = addNoise2Spectrum(planet_sp_flat,ampl=0.3, w_ker = 10,rand_slope = 0.2)
-    #             #planet_sp = planet_sp_flat
-    #         planet_spectra.append(planet_sp)
-    #         inputflux.append(spec2inputflux(planet_sp,star_sp,dataset.spot_flux,aper_over_peak_ratio,spot_ratio))
-    #
-    #     fake_flux_dict = dict(mode = "contrast",contrast = planets_contrasts)
-    #     inputflux_is_def = True
 
     if fake_position_dict["mode"] == "sector":
         annuli = fake_position_dict["annuli"]
@@ -1680,10 +1652,11 @@ def generate_spdc_with_fakes(dataset,
         else:
             planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
     elif (fake_flux_dict["mode"] == "SNR"):
-        f = interp1d(fake_flux_dict["sep_arr"], fake_flux_dict["contrast_arr"],bounds_error=False,fill_value=fake_flux_dict["contrast_arr"][-1])
-        print([f(sep*0.01413) for (sep,pa) in sep_pa_iter_list])
-        planets_contrasts = [fake_flux_dict["SNR"]*f(sep*0.01413)/5. for (sep,pa) in sep_pa_iter_list]
-        print(planets_contrasts)
+        sep_arr = np.array(fake_flux_dict["sep_arr"])
+        cont_arr = np.array(fake_flux_dict["contrast_arr"])
+        f = interp1d(sep_arr[np.where(np.isfinite(cont_arr))], cont_arr[np.where(np.isfinite(cont_arr))],
+                     bounds_error=False,fill_value=np.nanmin(fake_flux_dict["contrast_arr"]))
+        planets_contrasts = [fake_flux_dict["SNR"]*f(gpiim.pix2as(sep))/5. for (sep,pa) in sep_pa_iter_list]
 
     # Loop for injecting fake planets. One planet per section of the image.
     for fake_id, ((radius,pa),contrast) in enumerate(zip(sep_pa_iter_list,planets_contrasts)):

@@ -235,8 +235,8 @@ class Stat(KPPSuperClass):
                 print("Couldn't find PSFCENTX and PSFCENTY keywords.")
             self.center = [(self.nx-1)/2,(self.ny-1)/2]
 
-        if self.label == "CADI":
-            self.center = [140,140]
+        # if self.label == "CADI":
+        #     self.center = [140,140]
 
         try:
             self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -269,8 +269,8 @@ class Stat(KPPSuperClass):
 
 
         if self.kernel_type is not None:
-            self.ny_PSF = 20 # should be even
-            self.nx_PSF = 20 # should be even
+            self.ny_PSF = 21 # should be even
+            self.nx_PSF = 21 # should be even
             # Define the PSF as a gaussian
             if self.kernel_type == "gaussian":
                 if self.kernel_width == None:

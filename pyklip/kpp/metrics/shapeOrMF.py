@@ -51,7 +51,7 @@ class ShapeOrMF(KPPSuperClass):
                  label = None,
                  add2prefix = None,
                  keepPrefix = None,
-                 GPI_TSpT_csv=None):
+                 SpT_file_csv=None):
         """
         Define the general parameters of the metric.
 
@@ -150,7 +150,7 @@ class ShapeOrMF(KPPSuperClass):
         else:
             self.keepPrefix = False
 
-        self.GPI_TSpT_csv=GPI_TSpT_csv
+        self.SpT_file_csv=SpT_file_csv
 
 
     def spectrum_iter_available(self):
@@ -491,7 +491,7 @@ class ShapeOrMF(KPPSuperClass):
             self.ny_PSF, self.nx_PSF = self.PSF_flat.shape
 
         if star_type is None and  star_temperature is None:
-            self.star_type = spec.get_specType(self.star_name,self.GPI_TSpT_csv)
+            self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
             self.star_temperature = star_temperature
         else:
             self.star_type = star_type
@@ -947,10 +947,10 @@ def calculate_shape3D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
     nl,ny_PSF,nx_PSF = PSF_cube.shape
 
     # Number of rows and columns to add around a given pixel in order to extract a stamp.
-    row_m = np.floor(ny_PSF/2.0)    # row_minus
-    row_p = np.ceil(ny_PSF/2.0)     # row_plus
-    col_m = np.floor(nx_PSF/2.0)    # col_minus
-    col_p = np.ceil(nx_PSF/2.0)     # col_plus
+    row_m = int(np.floor(ny_PSF/2.0))    # row_minus
+    row_p = int(np.ceil(ny_PSF/2.0))     # row_plus
+    col_m = int(np.floor(nx_PSF/2.0))    # col_minus
+    col_p = int(np.ceil(nx_PSF/2.0))     # col_plus
 
     # Number of pixels on which the metric has to be computed
     N_it = row_indices.size
@@ -965,15 +965,18 @@ def calculate_shape3D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
 
         # Extract stamp cube around the current pixel from the whoel cube
         stamp_cube = copy(cube[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)])
+        var_per_wv = np.zeros(nl)
         # Remove average value of the surrounding pixels in each slice of the stamp cube
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+            var_per_wv[slice_id] = np.nanvar(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
         # Dot product of the PSF with stamp cube.
-        ampl = np.nansum(PSF_cube*stamp_cube)
+        ampl = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None])
         # Normalize the dot product square by the squared norm-2 of the stamp cube.
         # Because we keep the sign shape value is then found in [-1.,1.]
         try:
-            shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+            # shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
+            shape_map[id] = np.sign(ampl)*ampl**2
         except:
             # In case ones divide by zero...
             shape_map[id] =  np.nan

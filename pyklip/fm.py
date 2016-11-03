@@ -16,6 +16,14 @@ from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs
 
 from sys import stdout
 
+#Logic to test mkl exists
+try:
+    import mkl
+    mkl_exists = True
+except ImportError:
+    mkl_exists = False
+
+
 parallel = True
 
 
@@ -568,6 +576,14 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         klipped_selfsub = np.dot(selfsubtraction_1_inner_products, original_KL) + \
                           np.dot(selfsubtraction_2_inner_products, delta_KL)
 
+        # secondorder_inner_products = np.dot(model_sci_mean_sub_rows, delta_KL.T)
+        # klipped_secondOrder = np.dot(selfsubtraction_1_inner_products, delta_KL) + \
+        #                      np.dot(oversubtraction_inner_products, delta_KL) + \
+        #                      np.dot(secondorder_inner_products, original_KL) + \
+        #                      np.dot(secondorder_inner_products, delta_KL)
+        # # print(oversubtraction_inner_products.shape,selfsubtraction_1_inner_products.shape,selfsubtraction_2_inner_products.shape,secondorder_inner_products.shape)
+        # # print(sci_mean_sub_rows.shape,model_sci_mean_sub_rows.shape,delta_KL.shape,original_KL.shape)
+        # return model_sci[None,:] - klipped_oversub - klipped_selfsub - klipped_secondOrder, klipped_oversub, klipped_selfsub
         return model_sci[None,:] - klipped_oversub - klipped_selfsub, klipped_oversub, klipped_selfsub
         #return model_sci[None,:], klipped_oversub, klipped_selfsub
     else:
@@ -1187,8 +1203,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
         x, y = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(imgs[0]))
+        # need to define OWA if one wasn't passed. Try to use NaNs to figure out where it should be
         if OWA is None:
-            OWA = np.sqrt(np.min((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2))
+            if np.size(nanpix) == 0:
+                OWA = np.sqrt(np.max((x - centers[0][0]) ** 2 + (y - centers[0][1]) ** 2))
+            else:
+                # grab the NaN from the 1st percentile (this way we drop outliers)
+                OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
         dr = float(OWA - IWA) / (annuli)
         # calculate the annuli
         rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
@@ -1616,7 +1637,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # result is stored in fmout
     fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                           input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
-                          ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs,
+                          ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind,section_ind_nopadding=section_ind_nopadding, aligned_imgs=aligned_imgs,
                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
@@ -1729,6 +1750,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     else:
         spectra_template = None
 
+    # default to instrument specific OWA?
+    if OWA is None:
+        OWA = dataset.OWA
+
     # save klip parameters as a string
     klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \
                  "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}" \
@@ -1740,6 +1765,11 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
 
+    # Set MLK parameters
+    if mkl_exists:
+        old_mkl = mkl.get_max_threads()
+        mkl.set_num_threads(1)
+
     klip_outputs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, fm_class,
                                      OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                      flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
@@ -1750,9 +1780,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
 
     # write fmout
-    fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams, 
+    fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
                         calibrate_flux=calibrate_flux, spectrum=spectra_template)
-    
 
     # if we want to save the klipped image
     if save_klipped:
@@ -1797,4 +1826,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                  spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                                  filetype="PSF Subtracted Spectral Cube")
 
-
+    #Restore old setting
+    if mkl_exists:
+        mkl.set_num_threads(old_mkl)

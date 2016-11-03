@@ -6,6 +6,7 @@ from copy import copy
 from  glob import glob
 import csv
 import os
+import pyklip.kpp.utils.GPIimage as gpiim
 
 def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 7,
                           include_speckles = False):
@@ -43,10 +44,10 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
     #Julian Day OBServation
     MJDOBS_fits = prihdr['MJD-OBS']
 
-    row_m = np.floor(width/2.0)
-    row_p = np.ceil(width/2.0)
-    col_m = np.floor(width/2.0)
-    col_p = np.ceil(width/2.0)
+    row_m = int(np.floor(width/2.0))
+    row_p = int(np.ceil(width/2.0))
+    col_m = int(np.floor(width/2.0))
+    col_p = int(np.ceil(width/2.0))
 
     if GOI_list_folder is not None:
         object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
@@ -76,15 +77,15 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
                 for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
                     try:
                         pa = float(GOI_list[obj_id,pa_id])
-                        radius = float(GOI_list[obj_id,sep_id])/0.01413
+                        radius = gpiim.as2pix(float(GOI_list[obj_id,sep_id]))
                         status = str(GOI_list[obj_id,STATUS_id])
                         if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
                             x_max_pos = float(radius)*np.cos(np.radians(90+pa))
                             y_max_pos = float(radius)*np.sin(np.radians(90+pa))
                             col_centroid = x_max_pos+center[0]
                             row_centroid = y_max_pos+center[1]
-                            k = round(row_centroid)
-                            l = round(col_centroid)
+                            k = int(round(row_centroid))
+                            l = int(round(col_centroid))
 
                             cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
@@ -102,8 +103,8 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
         y_max_pos = float(radius)*np.sin(np.radians(90+pa))
         col_centroid = x_max_pos+center[0]
         row_centroid = y_max_pos+center[1]
-        k = round(row_centroid)
-        l = round(col_centroid)
+        k = int(round(row_centroid))
+        l = int(round(col_centroid))
 
         cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
 
@@ -169,18 +170,18 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
                             pa = float(GOI_list[obj_id,pa_id])
                             radius = float(GOI_list[obj_id,sep_id])
                             if IWA is not None:
-                                if radius/0.01413 < IWA:
+                                if gpiim.as2pix(radius) < IWA:
                                     continue
                             if OWA is not None:
-                                if radius/0.01413 > OWA:
+                                if gpiim.as2pix(radius) > OWA:
                                     continue
                             status = str(GOI_list[obj_id,STATUS_id])
                             # print(status, include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]))
                             if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
                                 pa_vec.append(pa)
                                 sep_vec.append(radius)
-                                x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
-                                y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
+                                x_max_pos = float(gpiim.as2pix(radius))*np.cos(np.radians(90+pa))
+                                y_max_pos = float(gpiim.as2pix(radius))*np.sin(np.radians(90+pa))
                                 x_vec.append(x_max_pos)
                                 y_vec.append(y_max_pos)
                                 row_vec.append(y_max_pos+center[1])
@@ -192,17 +193,17 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
         for fake_id in range(100):
             try:
                 pa = exthdr["FKPA{0:02d}".format(fake_id)]
-                radius = exthdr["FKSEP{0:02d}".format(fake_id)]*0.01413
+                radius = gpiim.pix2as(exthdr["FKSEP{0:02d}".format(fake_id)])
                 if IWA is not None:
-                    if radius/0.01413 < IWA:
+                    if gpiim.as2pix(radius) < IWA:
                         continue
                 if OWA is not None:
-                    if radius/0.01413 > OWA:
+                    if gpiim.as2pix(radius) > OWA:
                         continue
                 pa_vec.append(pa)
                 sep_vec.append(radius)
-                x_max_pos = float(radius/0.01413)*np.cos(np.radians(90+pa))
-                y_max_pos = float(radius/0.01413)*np.sin(np.radians(90+pa))
+                x_max_pos = float(gpiim.as2pix(radius))*np.cos(np.radians(90+pa))
+                y_max_pos = float(gpiim.as2pix(radius))*np.sin(np.radians(90+pa))
                 x_vec.append(x_max_pos)
                 y_vec.append(y_max_pos)
                 row_vec.append(y_max_pos+center[1])

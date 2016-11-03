@@ -1,4 +1,4 @@
-pyklip package
+pyKLIP API
 ==============
 
 Subpackages
