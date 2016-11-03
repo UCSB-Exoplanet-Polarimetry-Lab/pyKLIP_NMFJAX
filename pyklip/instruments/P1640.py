@@ -111,7 +111,8 @@ class P1640Data(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, corefilepaths=None, spot_directory=None):
+    def __init__(self, filepaths=None, skipslices=None, corefilepaths=None, spot_directory=None, highpass=True,
+                 numthreads=-1,PSF_cube=None):
         """
         Initialization code for P1640Data
 
@@ -146,7 +147,7 @@ class P1640Data(Data):
             self.exthdrs = None # for P1640 this is the prihdrs; exthdrs used for compatibility with P1640 class
             self.flux_units = None # Currently not implemented, may be in future
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass, numthreads=numbthreads,PSF_cube=PSF_cube)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass, numthreads=numthreads, PSF_cube=PSF_cube)
 
     ################################
     ### Instance Required Fields ###
@@ -300,7 +301,7 @@ class P1640Data(Data):
         #self.spot_flux = cube_spot_fluxes
 
             
-    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True,numthreads=-1, PSF_cube=None):
+    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True, numthreads=-1, PSF_cube=None):
         """
         Method to open and read a list of P1640 data. Handles everything that can be done by
         reading directly from the P1640 header or cubes, no calculations. Scaling and Centering handled elsewhere
@@ -308,7 +309,11 @@ class P1640Data(Data):
         Args:
             filepaths: a list of filepaths
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
-
+            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                      can also be a number specifying FWHM of box in pixel units
+            numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
+                        If None, numthreads = mp.cpu_count().
+            PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
         Returns:
             Technically none. It saves things to fields of the P1640Data object. See object doc string
         """
@@ -331,7 +336,8 @@ class P1640Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, spot_scaling_single_cube, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices)
+            cube, center, spot_scaling_single_cube, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
+                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices, highpass=highpass, numthreads=numthreads, psf_func_list=psf_func_list )
 
             data.append(cube)
             centers.append(center)
@@ -884,7 +890,11 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         filepath: the file to open
         spot_directory: path to folder were spot positions are stored (defaults to P1640.ini)
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
-
+        highpass: if True, run a Gaussian high pass filter (default size is sigma = imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
+        numthreads: : Number of threads to be used. Default -1 sequential sat spot flux calc.
+                        If None, numthreads = mp.cpu_count().
+            PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
     Returns: (using z as size of 3rd dimension, z=32 for spec including all wavelengths)
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
@@ -1014,7 +1024,6 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     cleaned = np.copy(frame)
     cleaned[np.where(np.isnan(cleaned))] = 0
 
-    #highpass filter to remove background
     #mask source for median filter
     masked = np.copy(cleaned)
     for loc in locations:
