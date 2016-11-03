@@ -2,34 +2,45 @@ import os
 import re
 import subprocess
 import glob
+from copy import deepcopy
 
 import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
+import random as rd
 
+import multiprocessing as mp
 
-
+import pyklip.kpp.utils.GOI as goi
+import pyklip.spectra_management as spec
+import pyklip.fakes as fakes
 
 #different imports depending on if python2.7 or python3
 import sys
 from copy import copy
+
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
+    from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
 else:
     import configparser as ConfigParser
-
-from pyklip.instruments.Instrument import Data
-from pyklip.instruments.utils.nair import nMathar
+    from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
 
 from pyklip.instruments.P1640_support import P1640spots
 from pyklip.instruments.P1640_support import P1640utils
 from pyklip.instruments.P1640_support import P1640_cube_checker
 
 from scipy.interpolate import interp1d
-
+from pyklip.parallelized import high_pass_filter_imgs
+from pyklip.fakes import gaussfit2d
+from pyklip.fakes import gaussfit2dLSQ
+from pyklip.fakes import PSFcubefit
+import pyklip.spectra_management as spec
 
 class P1640Data(Data):
     """
@@ -135,7 +146,7 @@ class P1640Data(Data):
             self.exthdrs = None # for P1640 this is the prihdrs; exthdrs used for compatibility with P1640 class
             self.flux_units = None # Currently not implemented, may be in future
         else:
-            self.readdata(filepaths, skipslices=skipslices)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass, numthreads=numbthreads,PSF_cube=PSF_cube)
 
     ################################
     ### Instance Required Fields ###
@@ -289,7 +300,7 @@ class P1640Data(Data):
         #self.spot_flux = cube_spot_fluxes
 
             
-    def readdata(self, filepaths, skipslices=None, corefilepaths=None):
+    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True,numthreads=-1, PSF_cube=None):
         """
         Method to open and read a list of P1640 data. Handles everything that can be done by
         reading directly from the P1640 header or cubes, no calculations. Scaling and Centering handled elsewhere
@@ -388,7 +399,7 @@ class P1640Data(Data):
         self.exthdrs = exthdrs
 
     def savedata(self, filepath, data, klipparams = None, filetype = 'PSF Subtracted Spectral Cube', zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None, more_keywords=None):
+                 fakePlparams = None,):
         """
         Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
         For now, the Primary HDU contains the KLIP parameters, scaling, and centering. This may later change 
@@ -473,11 +484,6 @@ class P1640Data(Data):
                 #write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
-
-        # store extra keywords in header
-        if more_keywords is not None:
-            for hdr_key in more_keywords:
-                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # Not used by P1640
         '''
@@ -870,7 +876,7 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions,
     return
 
 def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass=True,
-                        meas_satspot_flux=False, numthreads=-1, psfs_func_list=None):
+                        numthreads=-1, psfs_func_list=None):
     """
     Method to open and parse a P1640 file
 
@@ -882,7 +888,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
     Returns: (using z as size of 3rd dimension, z=32 for spec including all wavelengths)
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
-        parang: array of z of the parallactic angle of the target (same value just repeated z times)
+        parang: array of z of the parallactic angle of the target (same value just repeated z times b/c SDI)
         wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
         astr_hdrs: array of z of the WCS header for each datacube slice
         filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string) NOT USED
@@ -970,6 +976,19 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         wvs = np.delete(wvs, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
         spot_fluxes = np.delete(spot_fluxes, skipslices)
+
+    highpassed = False
+    if isinstance(highpass, bool):
+        if highpass:
+            cube = high_pass_filter_imgs(cube)
+            highpassed = True
+    else:
+        # should be a number
+        if isinstance(highpass, (float, int)):
+            fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            highpassed = True
+    
     
     # pyklip centers need to be [x,y] instead of (row, col)
     #print center.shape
