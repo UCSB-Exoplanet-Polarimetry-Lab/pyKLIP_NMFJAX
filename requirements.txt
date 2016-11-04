@@ -2,3 +2,6 @@ numpy
 scipy
 astropy
 matplotlib
+cython
+emcee
+corner
