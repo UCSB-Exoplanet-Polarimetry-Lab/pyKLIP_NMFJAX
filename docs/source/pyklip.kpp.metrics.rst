@@ -12,6 +12,14 @@ pyklip.kpp.metrics.FMMF module
     :undoc-members:
     :show-inheritance:
 
+pyklip.kpp.metrics.crossCorr module
+-----------------------------------
+
+.. automodule:: pyklip.kpp.metrics.crossCorr
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 pyklip.kpp.metrics.shapeOrMF module
 -----------------------------------
 
