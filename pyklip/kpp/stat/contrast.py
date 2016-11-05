@@ -1103,7 +1103,8 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     metric_1Dstddev = np.array(metric_1Dstddev)
 
     contrast_curve = 5*metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
-    contrast_curve_kMAD = metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)) + metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp))
+    contrast_curve_kMAD = np.sqrt((metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)))**2 + \
+                                  (metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))**2 )
 
     if fakes_SNR_filename_list is not None:
         SNR_real_contrast_list = []
