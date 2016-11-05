@@ -24,7 +24,6 @@ To run BKA, you need the additional packages installed, which should be availabl
 
 * `emcee <http://dan.iel.fm/emcee/current/>`_
 * `corner <https://github.com/dfm/corner.py>`_
-* `cython <http://cython.org/>`_
 
 You also need the following pieces of data to forward model the data.
 
