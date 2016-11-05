@@ -7,8 +7,6 @@ import scipy.linalg as linalg
 import scipy.ndimage as ndi
 import scipy.ndimage.interpolation as sinterp
 
-# cython imports
-import pyximport; pyximport.install(setup_args={"include_dirs":np.get_include()})
 import pyklip.covars as covars
 
 # emcee more MCMC sampling
