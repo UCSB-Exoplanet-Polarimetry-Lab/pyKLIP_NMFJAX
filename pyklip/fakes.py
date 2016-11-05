@@ -501,8 +501,8 @@ def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5,fit_centroid = False,residu
         returned_flux: scalar, estimation of the peak flux of the satellite spot.
             ie Amplitude of the fitted gaussian.
     """
-    x0 = np.round(xguess)
-    y0 = np.round(yguess)
+    x0 = int(np.round(xguess))
+    y0 = int(np.round(yguess))
     #construct our searchbox
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 
