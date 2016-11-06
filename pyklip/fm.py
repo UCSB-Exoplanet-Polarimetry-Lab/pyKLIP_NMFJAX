@@ -702,7 +702,7 @@ def klip_adi(imgs, models, centers, parangs, IWA, annuli=5, subsections=4, movem
     if numbasis is None:
         totalimgs = imgs.shape[0]
         numbasis = np.arange(1,totalimgs + 5,5)
-        print numbasis
+        print(numbasis)
     else:
         if hasattr(numbasis,"__len__"):
             numbasis = np.array(numbasis)

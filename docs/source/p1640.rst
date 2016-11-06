@@ -2,7 +2,7 @@
 
 
 Using pyKLIP with Project 1640 data
-==============================
+===================================
 
 Usage instructions for Project 1640 are similar to those for GPI with the exception that the grid spot positions must
 be found before KLIP can be run. Import the P1640 instrument class instead of the GPI instrument class.

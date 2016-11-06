@@ -970,20 +970,21 @@ def calculate_shape3D_metric(row_indices,col_indices,cube,PSF_cube,stamp_PSF_mas
         for slice_id in range(nl):
             stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
             var_per_wv[slice_id] = np.nanvar(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-        # Dot product of the PSF with stamp cube.
-        ampl = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None])
         # Normalize the dot product square by the squared norm-2 of the stamp cube.
         # Because we keep the sign shape value is then found in [-1.,1.]
         try:
+            # Dot product of the PSF with stamp cube.
+            ampl = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None])
             # shape_map[id] = np.sign(ampl)*ampl**2/np.nansum(stamp_cube**2)
-            shape_map[id] = np.sign(ampl)*ampl**2
+            shape_map[id] = ampl/np.sqrt(np.nansum(PSF_cube**2/var_per_wv[:,None,None]))
         except:
             # In case ones divide by zero...
             shape_map[id] =  np.nan
 
     # The shape value here can be seen as a cosine square as it is a normalized squared dot product.
     # Taking the square root to make it a simple cosine.
-    return np.sign(shape_map)*np.sqrt(abs(shape_map))
+    # return np.sign(shape_map)*np.sqrt(abs(shape_map))
+    return shape_map
 
 
 def calculate_MF2D_metric_star(params):

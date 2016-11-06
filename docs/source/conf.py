@@ -14,13 +14,19 @@
 
 import sys
 import os
+import mock
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#sys.path.insert(0, os.path.abspath('.'))
+sys.path.insert(0, os.path.abspath(__file__) + "../../pyklip/")
 
 # -- General configuration ------------------------------------------------
+
+# mocking things
+MOCK_MODULES = ['pandas', 'photutils']
+for mod_name in MOCK_MODULES:
+    sys.modules[mod_name] = mock.Mock()
 
 # If your documentation needs a minimal Sphinx version, state it here.
 #needs_sphinx = '1.0'
@@ -50,7 +56,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'pyKLIP'
-copyright = u'2015, pyKLIP Developers'
+copyright = u'2016, pyKLIP Developers'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

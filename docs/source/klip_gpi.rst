@@ -1,7 +1,7 @@
 .. _basic-tutorial-label:
 
 Basic KLIP Tutorial with GPI
-==============
+============================
 Here, we will explain how to run a simple PSF subtraciton using the KLIP algorithm in pyKLIP. If you are not familiar
 with KLIP, we suggest you first read `the KLIP paper <http://arxiv.org/abs/1207.4197>`_ which describes the algorithm
 in detail. In this tutorial, we assume you are familiar with the terminology in KLIP. We will use GPI
@@ -61,8 +61,16 @@ Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of 
 
 This will save the processed KLIP images in the field ``dataset.output`` and as FITS files saved using the directory and fileprefix
 specified. The FITS files contain two different kinds of outputs. The first is a "KL-mode cube", a single 3D datacube where the z-axis is all the
-different KL mode cutoffs used to model the stellar PSF. The second is a series of spectral datacubes with the z-axis is wavelength and each datacube
-uses a different KL mode cutoff as specified by its filename.
+different KL mode cutoffs used to model the stellar PSF. Here is an example KL-mode cube using GPI public data on beta
+Pic, where the planet is quite visible.
+
+.. image:: imgs/betpic_j_klmodes_cube.gif
+
+The second is a series of spectral datacubes with the z-axis is wavelength and each datacube
+uses a different KL mode cutoff as specified by its filename. Here is an example of a 20 KL-mode cutoff cube using the
+same GPI data on beta Pic.
+
+.. image:: imgs/betpic_j_kl20_speccube.gif
 
 Picking KLIP Parameters for Point Sources
 -----------------------------------------

@@ -17,7 +17,6 @@ will need to toggle them off yourself for optimal performance. See notes on para
 
 For :ref:`bka-label` specifically, you'll also want to install the following packages:
 
-* cython
 * emcee
 * corner
 

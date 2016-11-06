@@ -144,6 +144,8 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         x_pl = radius * np.cos(theta*np.pi/180.) + center[0]
         y_pl = radius * np.sin(theta*np.pi/180.) + center[1]
 
+        ny,nx = frame.shape
+
         #now that we found the planet location, inject it
         #check whether we are injecting a gaussian of a template PSF
         if type(inputpsf) == np.ndarray:
@@ -177,6 +179,24 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             # find corresponding pixels in the PSF
             xpsf = xstamp - x_pl + boxcent
             ypsf = ystamp - y_pl + boxcent
+
+            # Crop the edge if injection at the edge of the image
+            if xmin < 0:
+                dx = np.min([0,xmin])
+                ypsf = ypsf[:,dx::]
+                xpsf = xpsf[:,dx::]
+            if ymin < 0:
+                dy = np.min([0,ymin])
+                ypsf = ypsf[dy::,:]
+                xpsf = xpsf[dy::,:]
+            if xmax >= nx:
+                dx = np.max([0,xmax-nx + 1])
+                ypsf = ypsf[:,:-dx]
+                xpsf = xpsf[:,:-dx]
+            if ymax >= ny:
+                dy = np.max([0,ymax-ny + 1])
+                ypsf = ypsf[:-dy,:]
+                xpsf = xpsf[:-dy,:]
 
             #inject into frame
             frame[ymin:ymax + 1, xmin:xmax + 1] += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
@@ -481,8 +501,8 @@ def gaussfit2dLSQ(frame, xguess, yguess, searchrad=5,fit_centroid = False,residu
         returned_flux: scalar, estimation of the peak flux of the satellite spot.
             ie Amplitude of the fitted gaussian.
     """
-    x0 = np.round(xguess)
-    y0 = np.round(yguess)
+    x0 = int(np.round(xguess))
+    y0 = int(np.round(yguess))
     #construct our searchbox
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 

@@ -12,6 +12,14 @@ pyklip.instruments.P1640_support.P1640_cube_checker module
     :undoc-members:
     :show-inheritance:
 
+pyklip.instruments.P1640_support.P1640_cube_checker_interactive module
+----------------------------------------------------------------------
+
+.. automodule:: pyklip.instruments.P1640_support.P1640_cube_checker_interactive
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 pyklip.instruments.P1640_support.P1640_spot_checker module
 ----------------------------------------------------------
 

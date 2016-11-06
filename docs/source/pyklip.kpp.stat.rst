@@ -4,6 +4,14 @@ pyklip.kpp.stat package
 Submodules
 ----------
 
+pyklip.kpp.stat.contrast module
+-------------------------------
+
+.. automodule:: pyklip.kpp.stat.contrast
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 pyklip.kpp.stat.contrastFMMF module
 -----------------------------------
 
