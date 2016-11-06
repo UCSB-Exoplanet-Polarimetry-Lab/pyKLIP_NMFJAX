@@ -1,3 +1,4 @@
+
 import multiprocessing as mp
 import ctypes
 import numpy as np
@@ -16,7 +17,7 @@ import itertools
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_file_pattern = 'klip-basis-', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_file_pattern = 'klip-basis', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -30,7 +31,7 @@ class DiskFM(NoFM):
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
-
+        self.numims = inputs_shape[0]
 
         self.dataset = dataset
         self.IWA = dataset.IWA
@@ -38,6 +39,11 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
+
+        output_imgs_shape = self.images.shape + self.numbasis.shape
+        self.output_imgs_shape = output_imgs_shape
+        self.outputs_shape = output_imgs_shape
+
 
         # Coords where align_and_scale places model center (default is inputs center).
         self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
@@ -57,6 +63,7 @@ class DiskFM(NoFM):
         self.basis_file_pattern = basis_file_pattern
         self.load_from_basis = load_from_basis
 
+
         if numthreads == None:
             self.numthreads = mp.cpu_count()
 
@@ -70,6 +77,16 @@ class DiskFM(NoFM):
             self.OWA = OWA
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
+            
+
+            if self.save_basis == True:
+                manager = mp.Manager()
+                global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
+                klmodes_dict = manager.dict()
+                evecs_dict = manager.dict()
+                evals_dict = manager.dict()
+                ref_psfs_indicies_dict = manager.dict()
+                section_ind_dict = manager.dict()
 
         if load_from_basis is True:
             self.load_basis_files(basis_file_pattern)
@@ -108,8 +125,8 @@ class DiskFM(NoFM):
 
         for thisnumbasisindex in range(np.size(numbasis)):
             self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
-                                     fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                     radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+                                       fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
+                                       radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
 
 
         if self.save_basis is True:
@@ -121,12 +138,13 @@ class DiskFM(NoFM):
 
             # FIXME save per wavelength
             # FIXME make it so that it doesn't save one per
-            f = open(self.basis_file_pattern + 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im + '.p', 'wb')
-            pickle.dump(klmodes, f)
-            pickle.dump(evals, f)
-            pickle.dump(evecs, f)
-            pickle.dump(ref_psfs_indicies, f)
-            pickle.dump(section_ind, f)
+            nam = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
+            
+            klmodes_dict[nam] = klmodes
+            evals_dict[nam] = evals
+            evecs_dict[nam] = evecs
+            ref_psfs_indicies_dict[nam] = ref_psfs_indicies
+            section_ind_dict[nam] = section_ind
             
     def fm_parallelized(self):
         '''
@@ -258,6 +276,7 @@ class DiskFM(NoFM):
         output_imgs_numstacked = None
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
+        self.outputs_shape = output_imgs_shape
 
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
 
@@ -333,6 +352,13 @@ class DiskFM(NoFM):
         Return:
             fmout: same but cleaned up if necessary
         """
+        if self.save_basis == True:
+            f = open(self.basis_file_pattern + '.p', 'wb')
+            pickle.dump(klmodes_dict, f)
+            pickle.dump(evecs_dict, f)
+            pickle.dump(evals_dict, f)
+            pickle.dump(ref_psfs_indicies_dict, f)
+            pickle.dump(section_ind_dict, f)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
