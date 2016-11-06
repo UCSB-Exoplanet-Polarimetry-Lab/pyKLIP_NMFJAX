@@ -1031,6 +1031,25 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         IOWA = (IWA,OWA)
         IOWA_as = (pix2as(IWA),pix2as(OWA))
 
+
+    if GOI_list_folder is not None:
+        metric_image_without_planet = mask_known_objects(metric_image,prihdr,exthdr,GOI_list_folder, mask_radius = mask_radius)
+        # metric_image_without_planet = mask_known_objects(metric_image_fakes,prihdr_fakes,exthdr_fakes,GOI_list_folder, mask_radius = mask_radius)
+    else:
+        metric_image_without_planet = metric_image
+
+    metric_1Dstddev,metric_stddev_rSamp = get_image_stddev(metric_image_without_planet,
+                                                                 IOWA,
+                                                                 N = None,
+                                                                 centroid = center,
+                                                                 r_step = Dr/2,
+                                                                 Dr=Dr,
+                                                                 resolution=resolution)
+    metric_stddev_rSamp = np.array([r_tuple[0] for r_tuple in metric_stddev_rSamp])
+    metric_1Dstddev = np.array(metric_1Dstddev)
+    from  scipy.interpolate import interp1d
+    metric_1Dstddev_func = interp1d(metric_stddev_rSamp,metric_1Dstddev,bounds_error=False, fill_value=np.nan)
+
     whereNoNans = np.where(np.isfinite(metric_fakes_val))
     metric_fakes_val = np.array(metric_fakes_val)[whereNoNans]
     sep_list =  np.array(sep_list)[whereNoNans]
@@ -1066,11 +1085,16 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         MAD_conversion = np.zeros(len(unique_sep))
         for k,sep_it in enumerate(unique_sep):
             where_sep = np.where(sep_list==sep_it)
-            med_conversion[k] = np.nanmedian(cont_in_range[where_sep]) / np.nanmedian(metric_in_range[where_sep])
-            MAD_conversion[k] = np.nanmedian(np.abs(cont_in_range[where_sep]/metric_in_range[where_sep] - med_conversion[k]))
-        from  scipy.interpolate import interp1d
+            # med_conversion[k] = np.nanmedian(cont_in_range[where_sep]) / np.nanmedian(metric_in_range[where_sep])
+            # MAD_conversion[k] = np.nanmedian(np.abs(cont_in_range[where_sep]/metric_in_range[where_sep] - med_conversion[k]))
+            med_conversion[k] = np.nanmean(cont_in_range[where_sep]) / np.nanmean(metric_in_range[where_sep])
+            var_conversion = np.nanvar(cont_in_range[where_sep] / metric_in_range[where_sep]) - (med_conversion[k]*metric_1Dstddev_func(as2pix(sep_it))/np.nanmean(metric_in_range[where_sep]))**2
+            # print(var_conversion)
+            # print(sep_it,np.nanstd(cont_in_range[where_sep] / metric_in_range[where_sep]),(med_conversion[k]*metric_1Dstddev_func(as2pix(sep_it))/np.nanmean(metric_in_range[where_sep])))
+            MAD_conversion[k] = np.sqrt(np.nanmax([var_conversion,0]))
         metric_conversion_func = interp1d(unique_sep,med_conversion,bounds_error=False, fill_value=np.nan)
-        kMAD_conversion_func = interp1d(unique_sep,1.4826*MAD_conversion,bounds_error=False, fill_value=np.nan)
+        # kMAD_conversion_func = interp1d(unique_sep,1.4826*MAD_conversion,bounds_error=False, fill_value=np.nan)
+        kMAD_conversion_func = interp1d(unique_sep,MAD_conversion,bounds_error=False, fill_value=np.nan)
 
 
     if 0:
@@ -1086,25 +1110,15 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         ax.tick_params(axis='y', labelsize=20)
         plt.show()
 
-    if GOI_list_folder is not None:
-        metric_image_without_planet = mask_known_objects(metric_image,prihdr,exthdr,GOI_list_folder, mask_radius = mask_radius)
-        # metric_image_without_planet = mask_known_objects(metric_image_fakes,prihdr_fakes,exthdr_fakes,GOI_list_folder, mask_radius = mask_radius)
-    else:
-        metric_image_without_planet = metric_image
-
-    metric_1Dstddev,metric_stddev_rSamp = get_image_stddev(metric_image_without_planet,
-                                                                 IOWA,
-                                                                 N = None,
-                                                                 centroid = center,
-                                                                 r_step = Dr/2,
-                                                                 Dr=Dr,
-                                                                 resolution=resolution)
-    metric_stddev_rSamp = np.array([r_tuple[0] for r_tuple in metric_stddev_rSamp])
-    metric_1Dstddev = np.array(metric_1Dstddev)
 
     contrast_curve = 5*metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
+    # print(metric_conversion_func(pix2as(metric_stddev_rSamp))*metric_1Dstddev/(5*metric_1Dstddev))
+    # print(metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)))
+    # print(5*metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))
     contrast_curve_kMAD = np.sqrt((metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)))**2 + \
-                                  (metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))**2 )
+                                  (5*metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))**2 )
+    # contrast_curve_kMAD = metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
+    # print(contrast_curve_kMAD)
 
     if fakes_SNR_filename_list is not None:
         SNR_real_contrast_list = []
