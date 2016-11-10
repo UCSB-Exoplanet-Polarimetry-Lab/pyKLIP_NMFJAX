@@ -151,52 +151,42 @@ class DiskFM(NoFM):
         Functions like klip_parallelized, but doesn't find new 
         evals and evecs. 
         '''
-        assert self.klmodes_all is not None, "No evals or evecs defined"
-        assert self.evecs_all is not None, "No evals or evecs defined"
-        assert self.evals_all is not None, "No evals or evecs defined"
-        assert self.ref_psfs_indices_all is not None, "No evals or evecs defined"
-        assert self.section_ind_all is not None, "No evals or evecs defined"
-
-        # Define phi bounds and rad bounds. There is one rad and phi bound per sector
-        rad_bounds = [(self.dr * rad + self.IWA, self.dr * (rad + 1) + self.IWA) for rad in self.annuli_list]
-        phi_bounds = [[self.dphi * phi_i, self.dphi  * (phi_i + 1)] for phi_i in self.subs_list]
-        phi_bounds[-1][1] = 2. * np.pi - 0.0001
+#        assert self.klmodes_all is not None, "No evals or evecs defined"
+#        assert self.evecs_all is not None, "No evals or evecs defined"
+#        assert self.evals_all is not None, "No evals or evecs defined"
+#        assert self.ref_psfs_indices_all is not None, "No evals or evecs defined"
+#        assert self.section_ind_all is not None, "No evals or evecs defined"
 
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+        
 
-#        tpool = mp.Pool(processes = self.numthreads)
+        print 'here'
+        print self.dict_keys
+        # Parallelilze this
+        for key in self.dict_keys:
+            rad = int(key[1])
+            phi = int(key[3])
+            img_num = int(key[5:])
+            
 
-
-        # FIXME 
-
-        # fm_from_eigen 
-#        for sector_index, ((radstart,radend), (phistart, phiend)) in enumerate(iterator_sectors):
-        for sector_index in range(len(self.section_ind_all)):
-
-
-            radstart, radend = rad_bounds[sector_index]
-            phistart, phiend = phi_bounds[sector_index]
-            # calculate sector size                                             
+            radstart = self.dr * rad + self.IWA
+            radend = self.dr * (rad + 1) + self.IWA
+            print radstart
+            print radend
+            phistart = self.dphi * phi
+            phiend = self.dphi  * (phi + 1)
+            # May need to do some trickery with the last bound
+#            phi_bounds[-1][1] = 2. * np.pi - 0.0001  
  
-            # sector index chooses both the 
-
-            section_ind = self.section_ind_all[sector_index]
+            section_ind = self.section_ind_dict[key]
             sector_size = np.size(section_ind)
-            original_KL = self.klmodes_all[sector_index]
-            evals = self.evals_all[sector_index]
-            evecs = self.evecs_all[sector_index]
-            ref_psfs_indicies = self.ref_psfs_indices_all[sector_index]
-            img_num = self.imnum_list[sector_index]
-
-
-# No wavelength dependence yet
-#            for wv_index, wv_value in enumerate(self.unique_wvs):
-#                scidata_indicies = np.where(self.wvs == wv_value)[0]
-#                
-#                sector_job_queued[sector_index] += scidata_indicies.shape[0]
-                
+            original_KL = self.klmodes_dict[key]
+            evals = self.evals_dict[key]
+            evecs = self.evecs_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key]
+            
             parallel = False 
                 
 
@@ -223,32 +213,18 @@ class DiskFM(NoFM):
 
     def load_basis_files(self, basis_file_pattern):
         # Need dr and dphi def
-        
-        filenames = glob.glob(basis_file_pattern + '*.p')
-        assert len(filenames) > 0, "No files found"
 
-        nums = [f[len(basis_file_pattern):] for f in filenames]
-        rads = [float(n[1]) for n in nums]
-        subs = [float(n[3]) for n in nums]
-        imnum = [int(n[5:7]) for n in nums]
+        print basis_file_pattern
+        f = open(basis_file_pattern)
+        self.klmodes_dict = pickle.load(f)
+        self.evecs_dict = pickle.load(f)
+        self.evals_dict = pickle.load(f)
+        self.ref_psfs_indicies_dict = pickle.load(f)
+        self.section_ind_dict = pickle.load(f)
 
-        # FIXME wavelengths?
-        self.annuli_list = rads
-        self.subs_list = subs
-        self.imnum_list = imnum
-        
-        self.klmodes_all = []
-        self.evals_all = []
-        self.evecs_all = []
-        self.ref_psfs_indices_all = []
-        self.section_ind_all = []
-        for f in filenames:
-            basis_file = open(f)
-            self.klmodes_all.append(pickle.load(basis_file))
-            self.evals_all.append(pickle.load(basis_file))
-            self.evecs_all.append(pickle.load(basis_file))
-            self.ref_psfs_indices_all.append(pickle.load(basis_file))
-            self.section_ind_all.append(pickle.load(basis_file))
+
+        self.dict_keys = sorted(self.klmodes_dict.keys())
+
         
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
@@ -354,11 +330,11 @@ class DiskFM(NoFM):
         """
         if self.save_basis == True:
             f = open(self.basis_file_pattern + '.p', 'wb')
-            pickle.dump(klmodes_dict, f)
-            pickle.dump(evecs_dict, f)
-            pickle.dump(evals_dict, f)
-            pickle.dump(ref_psfs_indicies_dict, f)
-            pickle.dump(section_ind_dict, f)
+            pickle.dump(dict(klmodes_dict), f)
+            pickle.dump(dict(evecs_dict), f)
+            pickle.dump(dict(evals_dict), f)
+            pickle.dump(dict(ref_psfs_indicies_dict), f)
+            pickle.dump(dict(section_ind_dict), f)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
