@@ -337,7 +337,7 @@ class P1640Data(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, spot_scaling_single_cube, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices, highpass=highpass, numthreads=numthreads, psf_func_list=psf_func_list )
+                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices, highpass=highpass, numthreads=numthreads)#, psf_func_list=psf_func_list )
 
             data.append(cube)
             centers.append(center)
