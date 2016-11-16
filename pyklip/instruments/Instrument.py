@@ -15,8 +15,8 @@ class Data(object):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         OWA: (optional) specifies outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
-        creator: string for creator of the data (used to identify pipelines that call pyklip)
-        klipparams: a string that saves the most recent KLIP parameters
+        creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
+        klipparams: (optional) a string that saves the most recent KLIP parameters
 
 
     Methods:
