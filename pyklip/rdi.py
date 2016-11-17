@@ -110,7 +110,7 @@ class PSFLibrary(object):
         
         # don't compare directly with None
         if badfiles is None:
-            badfiles = []
+            badfiles = np.full(np.shape(self.master_filenames), False, dtype=bool)
         are_bad = np.in1d(self.master_filenames, badfiles)
         
         # good ones are the ones that don't fall in either category
