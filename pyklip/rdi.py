@@ -119,7 +119,7 @@ class PSFLibrary(object):
         filenames_of_dataset_in_lib = self.master_filenames[np.where(in_dataset)]
         dataset_file_indices_in_lib = []
         for filename in filenames_of_dataset_in_lib:
-            index = np.where(filenames_of_dataset_in_lib == self.master_filenames)
+            index = np.where(filename == self.master_filenames)[0][0]
             dataset_file_indices_in_lib.append(index)
         dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
 
