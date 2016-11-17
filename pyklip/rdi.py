@@ -55,6 +55,7 @@ class PSFLibrary(object):
         self.master_library = data
         self.aligned_center = aligned_center
         self.master_filenames = filenames
+
         self.master_correlation = correlation_matrix
         self.master_wvs = wvs
         # fields in the context of a specific dataset
@@ -101,7 +102,11 @@ class PSFLibrary(object):
         """
 
         # we need to exclude bad files and files already in the dataset itself (since that'd be ADI/SDI/etc)
-        in_dataset = np.in1d(self.master_filenames, dataset.filenames)
+        # strip away the directories in the master_filenames
+        master_just_filenames = np.asarray([filename.split('/')[-1] for filename in self.master_filenames])
+        dataset_just_filenames = np.asarray([filename.split('/')[-1] for filename in dataset.filenames])
+        # compare with the dataset filnames (also d)
+        in_dataset = np.in1d(master_just_filenames, dataset_just_filenames)
         
         # don't compare directly with None
         if badfiles is None:
