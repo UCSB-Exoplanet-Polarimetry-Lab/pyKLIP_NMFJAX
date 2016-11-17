@@ -211,7 +211,8 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,PSF_cube=None):
+    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True):
         """
         Method to open and read a list of GPI data
 
@@ -224,6 +225,8 @@ class GPIData(Data):
             numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+            recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
+            recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -305,19 +308,22 @@ class GPIData(Data):
             data = data * inttime0/inttimes[:, None, None]
             spot_fluxes *= inttime0/inttimes
 
-        #only do the wavelength solution and center recalculation if it isn't broadband imaging
+        # only do the wavelength solution and center recalculation if it isn't broadband imaging
         if np.size(np.unique(wvs)) > 1:
             # recalculate wavelegnths from satellite spots
-            wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
+            if recalc_wvs:
+                wvs = rescale_wvs(exthdrs, wvs, skipslices=skipslices)
+
             # recaclulate centers from satellite spots and new wavelegnth solution
-            wvs_bycube = wvs.reshape([dims[0], dims[1]])
-            centers_bycube = centers.reshape([dims[0], dims[1], 2])
-            for i, cubewvs in enumerate(wvs_bycube):
-                try:
-                    centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
-                except KeyError:
-                    print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
-                          "{0}".format(filenames[i*dims[1]]))
+            if recalc_centers:
+                wvs_bycube = wvs.reshape([dims[0], dims[1]])
+                centers_bycube = centers.reshape([dims[0], dims[1], 2])
+                for i, cubewvs in enumerate(wvs_bycube):
+                    try:
+                        centers_bycube[i] = calc_center(prihdrs[i], exthdrs[i], cubewvs, skipslices=skipslices)
+                    except KeyError:
+                        print("Unable to recenter the data using a least squraes fit due to not enough header info for file "
+                              "{0}".format(filenames[i*dims[1]]))
 
         # contrast_scaling = np.zeros(dims[1])
         # spot_fluxes_wvs = np.reshape(spot_fluxes, (dims[0], dims[1]))

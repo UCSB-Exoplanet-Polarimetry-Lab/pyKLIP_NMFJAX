@@ -12,12 +12,12 @@ class PSFLibrary(object):
                                 pyklip.instruments.Data.filenames for cross-matching
         master_correlation (np.ndarray): N x N array of correlations between each 2 frames
         master_wvs (np.ndarray): N wavelengths for each frame
+        nfiles (int): the number of files in the PSF library
         dataset (pyklip.instruments.Instrument.Data)
         correlation (np.ndarray): N_data x M array of correlations between each 2 frames where M are the selected frames
                             and N_data is the number of files in the dataset. Along the N_data dimension, files are
                             ordered in the same way as the dataset object
-        isgoodpsf: array of N indicating which M PSFs are good for this dataset
-        nfiles: the number of files in the PSF library
+        isgoodpsf (np.ndarray): array of N indicating which M PSFs are good for this dataset
 
     """
 
@@ -58,11 +58,12 @@ class PSFLibrary(object):
 
         self.master_correlation = correlation_matrix
         self.master_wvs = wvs
+        self.nfiles = nfiles_data
         # fields in the context of a specific dataset
         self.dataset = None
         self.correlation = None
         self.isgoodpsf = None
-        self.nfiles = nfiles_data
+
 
         # check if correlation matrix was passed in
         if correlation_matrix is None and not compute_correlation:
@@ -74,7 +75,6 @@ class PSFLibrary(object):
     def _compute_correlation(self):
         """
         Computes the correlation matrix and saves it in self.master_correlation
-
         """
         pass
 
