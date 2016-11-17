@@ -54,7 +54,7 @@ class PSFLibrary(object):
         # generate master list of files and meta data from inputs
         self.master_library = data
         self.aligned_center = aligned_center
-        self.master_filenames = filenames
+        self.master_filenames = np.asarray(filenames)
 
         self.master_correlation = correlation_matrix
         self.master_wvs = wvs
@@ -115,22 +115,26 @@ class PSFLibrary(object):
         
         # good ones are the ones that don't fall in either category
         isgood = ~in_dataset & ~badfiles
-        good = np.where(isgood)
+        good = np.where(isgood)[0]
 
         # create a view on the good files
 
         # figure out how the ordering of dataset files are in the PSF library compared to the dataset
         # we want to match the dataset
-        filenames_of_dataset_in_lib = self.master_filenames[np.where(in_dataset)]
+        # filenames_of_dataset_in_lib = self.master_filenames[np.where(in_dataset)]
+        filenames_of_dataset_in_lib = self.master_filenames[in_dataset]
         dataset_file_indices_in_lib = []
         for filename in filenames_of_dataset_in_lib:
             index = np.where(filename == self.master_filenames)[0][0]
             dataset_file_indices_in_lib.append(index)
-        dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
 
-        # generate a correlation matrix that's N_dataset x N_goodpsfs
-        # the ordering of the correlation matrix also ensures that N_dataset is ordered the same as dataset
-        self.correlation = self.master_correlation[dataset_file_indices_in_lib, good]
+        if np.size(dataset_file_indices_in_lib) < 1:
+            print "Dataset not found in PSF Library, library not prepared."
+        else:
+            dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
+            # generate a correlation matrix that's N_dataset x N_goodpsfs
+            # the ordering of the correlation matrix also ensures that N_dataset is ordered the same as datasets
+            self.correlation = self.master_correlation[np.ix_(dataset_file_indices_in_lib, good)]
 
-        # generate a list indicating which files are good
-        self.isgoodpsf = isgood
+            # generate a list indicating which files are good
+            self.isgoodpsf = isgood
