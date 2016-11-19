@@ -20,7 +20,7 @@ except ImportError:
     mkl_exists = False
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
-                pa_imgs, wvs_imgs, centers_imgs):
+                pa_imgs, wvs_imgs, centers_imgs, psf_library, psf_library_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array).
@@ -34,8 +34,10 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         output_imgs_shape: (b, N, y, x), b = number of different KL basis cutoffs for KLIP routine
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
+        psf_library: array of shape (N_lib, y, x) with N_lib PSF library images
     """
-    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center
+    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, psf_lib, \
+        psf_lib_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -49,6 +51,8 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_pa = pa_imgs
     img_wv = wvs_imgs
     img_center = centers_imgs
+    psf_lib = psf_library
+    psf_lib_shape = psf_library_shape
 
 
 def _arraytonumpy(shared_array, shape=None, dtype=float):
@@ -233,8 +237,9 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
     return True
 
 
-def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart, phiend,
-                            minmove, ref_center, minrot, maxrot, spectrum, mode, lite=False,dtype=float):
+def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
+                            phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, psflib_good=None,
+                            psflib_corr=None, lite=False, dtype=float):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -314,9 +319,9 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
-                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, maxnumbasis,
-                                            minmove, minrot, maxrot, mode,
-                                            spectrum=spectrum, lite=lite,dtype=dtype)
+                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
+                                            maxnumbasis, minmove, minrot, maxrot, mode, psflib_good=psflib_good,
+                                            psflib_corr=psflib_corr, spectrum=spectrum, lite=lite,dtype=dtype)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -331,6 +336,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
 
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
+                                    psflib_good=None, psflib_corr=None,
                                     spectrum=None, lite=False,dtype=float):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
@@ -349,6 +355,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)           
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        psflib_good: array of size N_lib indicating which N_good are good are selected in the passed in corr matrix
+        psflib_corr: matrix of size N_sci x N_good with correlation between the target franes and the good RDI PSFs
         spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
                     minmove to determine the separation from the center of the segment to determine contamination and
                     the size of the PSF (TODO: make PSF size another quanitity)
@@ -385,35 +393,86 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     # if no ADI, don't use other parallactic angles
     if "ADI" not in mode.upper():
         goodmv = (goodmv) & (pa_imgs == parang)
+    include_rdi = "RDI" in mode.upper()
 
-    # if minrot > 0:
-    #     file_ind = np.where((moves >= minmove) & (np.abs(pa_imgs - parang) >= minrot))
-    # else:
-    #     file_ind = np.where(moves >= minmove)
-    # select the good reference PSFs
-    file_ind = np.where(goodmv)
-    if np.size(file_ind[0]) < 2:
+
+    good_file_ind = np.where(goodmv)
+    if np.size(good_file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
-    covar_files = covar[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
+    covar_files = covar[good_file_ind[0].reshape(np.size(good_file_ind), 1), good_file_ind[0]]
 
     # pick only the most correlated reference PSFs if there's more than enough PSFs
     if maxnumbasis is None:
         maxnumbasis = np.max(numbasis)
-    maxbasis_possible = np.size(file_ind)
+    maxbasis_possible = np.size(good_file_ind)
+    # if RDI, also include the size of the RDI PSF library
+    # and load in PSF library
+    if include_rdi:
+        num_good_rdi = np.size(psflib_good)
+        maxbasis_possible += num_good_rdi
+        psf_library = _arraytonumpy(psf_lib, (psf_lib_shape[0], psf_lib_shape[1]*psf_lib_shape[2]), dtype=dtype)
 
+    # do we want to downselect out of all the possible references
     if maxbasis_possible > maxnumbasis:
-        xcorr = corr[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
+        # grab the x-correlation with the sci img for valid PSFs
+        xcorr = corr[img_num, good_file_ind[0]]
+        if include_rdi:
+            # indicate which are RDI frames
+            is_rdi_psf = np.append(np.repeat(False, np.size(xcorr)), np.repeat(True, num_good_rdi))
+            # indices for both the dataset and PSF library arrays squished together
+            psfindices = np.append(np.arange(np.size(xcorr)), np.arange(num_good_rdi))
+            # cross correlation now includes both
+            xcorr = np.append(xcorr, psflib_corr[img_num])
+
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxnumbasis:]  # sorted smallest first so need to grab from the end
+
+        if include_rdi:
+            # separate out the RDI ones
+            rdi_selected = np.where(is_rdi_psf[closest_matched])
+            rdi_closest_matched = psfindices[rdi_selected]
+
+            # remove the RDI ones from closest_matched to imitate non-RDI behavior
+            closest_matched = psfindices[np.where(~is_rdi_psf[closest_matched])]
+
+        # grab smaller set of reference PSFs
+        ref_psfs_selected = ref_psfs[good_file_ind[0][closest_matched], :]
         # grab the new and smaller covariance matrix
         covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
-        # grab smaller set of reference PSFs
-        ref_psfs_selected = ref_psfs[file_ind[0][closest_matched], :]
+
+        if include_rdi:
+            rdi_psfs_selected = psf_library[rdi_closest_matched, section_ind[0]]
     else:
         # else just grab the reference PSFs for all the valid files
-        ref_psfs_selected = ref_psfs[file_ind[0], :]
+        ref_psfs_selected = ref_psfs[good_file_ind[0], :]
+
+        if include_rdi:
+            rdi_psfs_selected = psf_library[:, section_ind[0]]
+
+
+    # add PSF library to reference psf list and covariance matrix if needed
+    if include_rdi:
+        # compute covariances.
+        rdi_covar = np.cov(ref_psfs_selected) # N_rdi_sel x N_rdi_sel
+        # compute cross term
+        numpix = np.size(section_ind[0])
+        # cross term has shape N_dataset_ref x N_rdi_selected
+        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.mean(ref_psfs_selected, axis=0)[:, None]),
+                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=0)[:, None]).T) / (numpix - 1)
+        # piece together covariance matrix. It should looke like
+        # [ cov_ref, cov_ref_x_rdi ]
+        # [ cov_rdi_x_ref, cov_rdi ]
+        # first append the horizontal component to get shape of N_all_refs x N_dataset_ref
+        covar_files = np.append(covar_files, covar_ref_x_rdi, axis=0)
+        # now append the bottom half
+        covar_files_bottom = np.append(covar_ref_x_rdi.T, rdi_covar)
+        covar_files = np.append(covar_files, covar_files_bottom)
+
+        # append the rdi psfs to the reference PSFs
+        ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
+
 
     # load input/output data
     if lite:
@@ -720,6 +779,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
                       annuli_spacing="constant", maxnumbasis=None,
                       spectrum=None,
+                      psf_library=None, psf_library_good=None, psf_library_corr=None,
                       save_aligned = False, restored_aligned = None,dtype=float):
     """
     multithreaded KLIP PSF Subtraction
@@ -749,6 +809,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                     the size of the PSF (TODO: make PSF size another quanitity)
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
+        psf_library: array of (N_lib, y, x) with N_lib PSF library PSFs
+        psf_library_good: array of size N_lib indicating which N_good are good are selected in the passed in corr matrix
+        psf_library_corr: matrix of size N_sci x N_good with correlation between the target franes and the good RDI PSFs
         save_aligned:	Save the aligned and scaled images (as well as various wcs information), True/False
         restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
@@ -777,6 +840,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     if aligned_center is None:
         #aligned_center = [int(imgs.shape[2]//2), int(imgs.shape[1]//2)]
         aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
+
+    # validate RDI has an RDI Library with supporting cast
+    if "RDI" in mode.upper():
+        if psf_library is None:
+            raise ValueError("Need to pass in PSF library fields if you want to do RDI.")
+    if psf_library is not None:
+        if psf_library_corr is None or psf_library_good is None:
+            raise ValueError("Need to pass in correlatoin matrix and good selection array for PSF library")
+
 
     #save all bad pixels
     allnans = np.where(np.isnan(imgs))
@@ -858,6 +930,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     centers_imgs = mp.Array(mp_data_type, np.size(centers))
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=dtype)
     centers_imgs_np[:] = centers
+    if psf_library is not None:
+        psf_lib = mp.Array(mp_data_type, np.size(psf_library))
+        psf_lib_np = _arraytonumpy(psf_lib, psf_library.shape, dtype=dtype)
+        psf_lib_np[:] = psf_library
+        psf_lib_shape = psf_library.shape
 
     if restored_aligned is not None:
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape,dtype=dtype)
@@ -865,7 +942,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
+                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
+                             maxtasksperchild=50)
 
     if restored_aligned is None:
         #align and scale the images for each image. Use map to do this asynchronously
@@ -897,7 +975,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                                                                      maxnumbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, lite, dtype
+                                                                     mode, psf_library_good, psf_library_corr, dtype
                                                                      ))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
