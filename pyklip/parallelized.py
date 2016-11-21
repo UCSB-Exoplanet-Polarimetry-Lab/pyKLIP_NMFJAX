@@ -395,7 +395,6 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         goodmv = (goodmv) & (pa_imgs == parang)
     include_rdi = "RDI" in mode.upper()
 
-
     good_file_ind = np.where(goodmv)
     if np.size(good_file_ind[0]) < 2:
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
@@ -740,7 +739,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
                                                                      maxnumbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, lite, dtype))
+                                                                     mode, None, None, lite, dtype))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -935,6 +934,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         psf_lib_np = _arraytonumpy(psf_lib, psf_library.shape, dtype=dtype)
         psf_lib_np[:] = psf_library
         psf_lib_shape = psf_library.shape
+    else:
+        psf_lib = None
+        psf_lib_shape = None
 
     if restored_aligned is not None:
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape,dtype=dtype)
@@ -975,8 +977,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                                                                      maxnumbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, psf_library_good, psf_library_corr, dtype
-                                                                     ))
+                                                                     mode, psf_library_good, psf_library_corr, False,
+                                                                     dtype))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
