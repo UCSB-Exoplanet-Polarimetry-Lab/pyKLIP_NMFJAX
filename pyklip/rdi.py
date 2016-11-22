@@ -1,5 +1,7 @@
 import numpy as np
-
+from astropy.io import fits
+import os.path
+from sys import stdout
 
 class PSFLibrary(object):
     """
@@ -64,7 +66,6 @@ class PSFLibrary(object):
         self.correlation = None
         self.isgoodpsf = None
 
-
         # check if correlation matrix was passed in
         if correlation_matrix is None and not compute_correlation:
             raise AttributeError("You didn't pass in a correlation matrix, which means it needs to be computed. Are you "
@@ -72,13 +73,68 @@ class PSFLibrary(object):
         elif compute_correlation:
             self._compute_correlation()
 
-    def _compute_correlation(self):
+    def _compute_correlation(self, verbose=False, force=False):
         """
         Computes the correlation matrix and saves it in self.master_correlation
-        """
-        pass
 
-    def save_correlation(self, filename, format="numpy"):
+        This computes the correlation between two psfs for every pair of psfs in the library. 
+        This correlation matrix can be used for the selection of PSFs ahead of time, but as of right now
+        it isn't super useful for saving time (e.g. when there are subsections the covariance still needs
+        to be recomputed with all the PSFs currently being used).
+
+        """
+
+        #Get the number of files
+
+        if np.size(self.master_correlation) > 1: 
+            print "WARNING: your mater_correlation matrix already has data in it"
+
+            if not force:
+                print "WARNING: If you want to overwrite the correlation matrix set the 'force' flag to True"
+                return
+            else: 
+                print "WARNING: overwriting master_correlation"
+
+
+        self.master_correlation=np.zeros([self.nfiles,self.nfiles])
+
+        if verbose:
+            print "Making correlation matrix"
+
+
+        #Loop the correlation matrix calculation
+        for i in np.arange(0,nfiles-1):
+            self.master_correlation[i,i]=1.
+
+            #TODO: PARALLELIZE THIS STEP. 
+
+            #Cycle through every file that comes AFTER the current file 
+            for j in np.arange(i+1,nfiles-1):
+
+                if super_verbose:
+                    # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
+                    stdout.write("\r Correlating file {i}% with file {i}%".format(i,j))
+                    stdout.flush()
+                
+                #Ditch where either of the two arrays have NANs
+                where_not_nans = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j])
+
+                data1= data_array[:,:,i]
+                data2= data_array[:,:,j]
+
+                #I believe this bit was copied and pasted from pyklip at some point. 
+                covar_psfs=np.cov([data2[where_not_nans], data1[where_not_nans]])
+                covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+                corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+
+                self.master_correlation[i,j]=corr_psfs[0,1]
+                self.master_correlation[j,i]=corr_psfs[0,1]
+
+        if verbose:
+            print "Done making correlation matrix"
+
+
+    def save_correlation(self, filename, clobber=False, format="fits"):
         """
         Saves self.correlation to a file specified by filename
         Args:
@@ -86,8 +142,22 @@ class PSFLibrary(object):
             format (str): type of file to store the correlation matrix as. Supports numpy?/fits?/pickle? (TBD)
 
         """
-        pass
 
+        #TODO: We should probably save more information into the header here, but what exactly it'll be is TBD
+        if format == "fits":
+            if os.path.isfile(filename):
+            #If the file already exists give user warning.     
+                if clobber:
+                    hdu = fits.PrimaryHDU(self.master_correlation)
+                    hdu.writeto(filename, clobber=clobber)
+                else: 
+                    print "save_correlation: File already exists. Set clobber=True to overwrite"
+            
+        #But for now only fits
+        else:
+            print "Sorry, fits is the only filetype type currently supported for saving correlation matrices"
+            
+    
     def prepare_library(self, dataset, badfiles=None):
         """
         Prepare the PSF Library for an RDI reduction of a specific dataset by only taking the part of the
@@ -137,4 +207,4 @@ class PSFLibrary(object):
             self.correlation = self.master_correlation[np.ix_(dataset_file_indices_in_lib, good)]
 
             # generate a list indicating which files are good
-            self.isgoodpsf = isgood
+            self.isgoodpsf = good
