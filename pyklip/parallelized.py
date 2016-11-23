@@ -271,7 +271,6 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
         Saves data to output array as defined in _tpool_init()
     """
-
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
@@ -396,7 +395,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     include_rdi = "RDI" in mode.upper()
 
     good_file_ind = np.where(goodmv)
-    if np.size(good_file_ind[0]) < 2:
+    if (np.size(good_file_ind[0]) < 2) and (not include_rdi):
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
@@ -421,20 +420,18 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             # indicate which are RDI frames
             is_rdi_psf = np.append(np.repeat(False, np.size(xcorr)), np.repeat(True, num_good_rdi))
             # indices for both the dataset and PSF library arrays squished together
-            psfindices = np.append(np.arange(np.size(xcorr)), np.arange(num_good_rdi))
+            psfindices = np.append(np.arange(np.size(xcorr)), psflib_good)
             # cross correlation now includes both
-            xcorr = np.append(xcorr, psflib_corr[img_num])
+            xcorr = np.append(xcorr, psflib_corr[img_num, psflib_good])
 
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxnumbasis:]  # sorted smallest first so need to grab from the end
-
         if include_rdi:
             # separate out the RDI ones
             rdi_selected = np.where(is_rdi_psf[closest_matched])
-            rdi_closest_matched = psfindices[rdi_selected]
-
+            rdi_closest_matched = psfindices[closest_matched[rdi_selected]]
             # remove the RDI ones from closest_matched to imitate non-RDI behavior
-            closest_matched = psfindices[np.where(~is_rdi_psf[closest_matched])]
+            closest_matched = psfindices[closest_matched[np.where(~is_rdi_psf[closest_matched])]]
 
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[good_file_ind[0][closest_matched], :]
@@ -442,7 +439,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
 
         if include_rdi:
-            rdi_psfs_selected = psf_library[rdi_closest_matched, section_ind[0]]
+            rdi_psfs_selected = psf_library[rdi_closest_matched]
+            rdi_psfs_selected = rdi_psfs_selected[:, section_ind[0]]
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[good_file_ind[0], :]
@@ -450,24 +448,23 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         if include_rdi:
             rdi_psfs_selected = psf_library[:, section_ind[0]]
 
-
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
         # compute covariances.
-        rdi_covar = np.cov(ref_psfs_selected) # N_rdi_sel x N_rdi_sel
+        rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
         # compute cross term
         numpix = np.size(section_ind[0])
         # cross term has shape N_dataset_ref x N_rdi_selected
-        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.mean(ref_psfs_selected, axis=0)[:, None]),
-                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=0)[:, None]).T) / (numpix - 1)
+        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=0)),
+                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=0)).T) / (numpix - 1)
         # piece together covariance matrix. It should looke like
         # [ cov_ref, cov_ref_x_rdi ]
         # [ cov_rdi_x_ref, cov_rdi ]
         # first append the horizontal component to get shape of N_all_refs x N_dataset_ref
-        covar_files = np.append(covar_files, covar_ref_x_rdi, axis=0)
+        covar_files = np.append(covar_files, covar_ref_x_rdi, axis=1)
         # now append the bottom half
-        covar_files_bottom = np.append(covar_ref_x_rdi.T, rdi_covar)
-        covar_files = np.append(covar_files, covar_files_bottom)
+        covar_files_bottom = np.append(covar_ref_x_rdi.T, rdi_covar, axis=1)
+        covar_files = np.append(covar_files, covar_files_bottom, axis=0)
 
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
