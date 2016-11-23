@@ -1,5 +1,5 @@
 import numpy as np
-
+import os
 
 class PSFLibrary(object):
     """
@@ -103,8 +103,9 @@ class PSFLibrary(object):
 
         # we need to exclude bad files and files already in the dataset itself (since that'd be ADI/SDI/etc)
         # strip away the directories in the master_filenames
-        master_just_filenames = np.asarray([filename.split('/')[-1] for filename in self.master_filenames])
-        dataset_just_filenames = np.asarray([filename.split('/')[-1] for filename in dataset.filenames])
+        master_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in self.master_filenames])
+        dataset_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in dataset.filenames])
+        print(dataset_just_filenames)
         # compare with the dataset filnames (also d)
         in_dataset = np.in1d(master_just_filenames, dataset_just_filenames)
         
@@ -134,7 +135,7 @@ class PSFLibrary(object):
             dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
             # generate a correlation matrix that's N_dataset x N_goodpsfs
             # the ordering of the correlation matrix also ensures that N_dataset is ordered the same as datasets
-            self.correlation = self.master_correlation[np.ix_(dataset_file_indices_in_lib, good)]
+            self.correlation = self.master_correlation[dataset_file_indices_in_lib]
 
             # generate a list indicating which files are good
-            self.isgoodpsf = isgood
+            self.isgoodpsf = good
