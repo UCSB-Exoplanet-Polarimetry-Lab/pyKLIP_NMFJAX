@@ -112,7 +112,7 @@ class PSFLibrary(object):
             #Cycle through every file that comes AFTER the current file 
             for j in np.arange(i+1,self.nfiles-1):
 
-                if super_verbose:
+                if verbose:
                     # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
                     stdout.write("\r Correlating file {i}% with file {i}%".format(i,j))
                     stdout.flush()
