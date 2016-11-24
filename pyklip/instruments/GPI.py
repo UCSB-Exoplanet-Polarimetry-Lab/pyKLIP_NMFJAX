@@ -963,6 +963,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         spot_fluxes = np.delete(spot_fluxes, skipslices)
         spots_xloc = np.delete(spots_xloc, skipslices)
         spots_yloc = np.delete(spots_yloc, skipslices)
+        inttime = np.delete(inttime, skipslices)
 
     #high pass and remeasure the satellite spot fluxes if necessary
     highpassed = False
