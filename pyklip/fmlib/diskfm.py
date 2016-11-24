@@ -17,7 +17,7 @@ import itertools
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.py', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.p', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -42,7 +42,7 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-
+        
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
@@ -58,6 +58,7 @@ class DiskFM(NoFM):
         self.save_basis = save_basis
         self.annuli = annuli
         self.subsections = subsections
+        self.OWA = OWA
 
         self.basis_filename = basis_filename
         self.load_from_basis = load_from_basis
@@ -87,7 +88,7 @@ class DiskFM(NoFM):
             section_ind_dict = manager.dict()
 
         if load_from_basis is True:
-            self.load_basis_files(basis_file_pattern)
+            self.load_basis_files(basis_filename)
 
 
     def alloc_fmout(self, output_img_shape):
@@ -123,7 +124,7 @@ class DiskFM(NoFM):
         for thisnumbasisindex in range(np.size(numbasis)):
             self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                        fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                       radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+                                       radstart, radend, phistart, phiend,  padding,IOWA, ref_center, flipx=True) # FIXME
 
 
         if self.save_basis is True:
@@ -196,6 +197,18 @@ class DiskFM(NoFM):
     def load_basis_files(self, basis_file_pattern):
         # Need dr and dphi def
         # Definte IWA, OWA, dr, dphi
+
+        assert self.annuli is not None, "need annuli keyword to load basis"
+        assert self.subsections is not None, "need annuli keyword to load basis"
+        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
+        nanpix = np.where(np.isnan(self.dataset.input[0]))
+        if self.OWA is None:
+            OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
+            self.OWA = OWA
+            self.dr = (OWA - self.dataset.IWA) / self.annuli
+        self.dphi = 2 * np.pi / self.subsections
+
+
 
 
         print basis_file_pattern
@@ -309,7 +322,7 @@ class DiskFM(NoFM):
             fmout: same but cleaned up if necessary
         """
         if self.save_basis == True:
-            f = open(self.basis_file_pattern + '.p', 'wb')
+            f = open(self.basis_filename, 'wb')
             pickle.dump(dict(klmodes_dict), f)
             pickle.dump(dict(evecs_dict), f)
             pickle.dump(dict(evals_dict), f)
