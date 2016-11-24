@@ -2,6 +2,7 @@ import numpy as np
 import os
 from sys import stdout
 from astropy.io import fits
+import pyklip.klip as klip
 
 class PSFLibrary(object):
     """
