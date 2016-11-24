@@ -73,7 +73,7 @@ class PSFLibrary(object):
         elif compute_correlation:
             self._compute_correlation()
 
-    def _compute_correlation(self, verbose=False, force=False):
+    def _compute_correlation(self, verbose=False, force=False, mask=None):
         """
         Computes the correlation matrix and saves it in self.master_correlation
 
@@ -116,14 +116,18 @@ class PSFLibrary(object):
                     stdout.write("\r Correlating file {i}% with file {i}%".format(i,j))
                     stdout.flush()
                 
+                #You might want to only correlate some of the image. 
+                if mask != None:
+                    where_to_corr = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j]) & (mask == mask)
+                else: 
                 #Ditch where either of the two arrays have NANs
-                where_not_nans = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j])
+                    where_to_corr = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j])
 
                 data1= data_array[:,:,i]
                 data2= data_array[:,:,j]
 
                 #I believe this bit was copied and pasted from pyklip at some point. 
-                covar_psfs=np.cov([data2[where_not_nans], data1[where_not_nans]])
+                covar_psfs=np.cov([data2[where_to_corr], data1[where_to_corr]])
                 covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
                 corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
 
@@ -175,7 +179,7 @@ class PSFLibrary(object):
         # strip away the directories in the master_filenames
         master_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in self.master_filenames])
         dataset_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in dataset.filenames])
-        print(dataset_just_filenames)
+        # print(dataset_just_filenames)
         # compare with the dataset filnames (also d)
         in_dataset = np.in1d(master_just_filenames, dataset_just_filenames)
         
