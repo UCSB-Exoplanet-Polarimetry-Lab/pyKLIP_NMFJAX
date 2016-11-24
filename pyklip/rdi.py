@@ -104,13 +104,13 @@ class PSFLibrary(object):
 
 
         #Loop the correlation matrix calculation
-        for i in np.arange(0,nfiles-1):
+        for i in np.arange(0,self.nfiles-1):
             self.master_correlation[i,i]=1.
 
             #TODO: PARALLELIZE THIS STEP. 
 
             #Cycle through every file that comes AFTER the current file 
-            for j in np.arange(i+1,nfiles-1):
+            for j in np.arange(i+1,self.nfiles-1):
 
                 if super_verbose:
                     # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
@@ -119,13 +119,13 @@ class PSFLibrary(object):
                 
                 #You might want to only correlate some of the image. 
                 if mask != None:
-                    where_to_corr = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j]) & (mask == mask)
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) & (mask == mask)
                 else: 
                 #Ditch where either of the two arrays have NANs
-                    where_to_corr = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j])
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) 
 
-                data1= data_array[:,:,i]
-                data2= data_array[:,:,j]
+                data1= self.master_library[i,:,:]
+                data2= self.master_library[j,:,:]
 
                 #I believe this bit was copied and pasted from pyklip at some point. 
                 covar_psfs=np.cov([data2[where_to_corr], data1[where_to_corr]])
