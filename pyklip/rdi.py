@@ -114,7 +114,7 @@ class PSFLibrary(object):
 
                 if verbose:
                     # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
-                    stdout.write("\r Correlating file {i}% with file {i}%".format(i,j))
+                    stdout.write("\r Correlating file {0} with file {1}".format(i,j))
                     stdout.flush()
                 
                 #You might want to only correlate some of the image. 
