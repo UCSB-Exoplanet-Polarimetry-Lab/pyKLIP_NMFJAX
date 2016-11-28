@@ -994,9 +994,21 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     :return:
     '''
 
+    hdulist = pyfits.open(glob(nofakes_filename)[0])
+    metric_image = hdulist[1].data
+    exthdr = hdulist[1].header
+    prihdr = hdulist[0].header
+    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    if IOWA is None:
+        IWA,OWA,inner_mask,outer_mask = get_occ(metric_image, centroid = center)
+        IOWA = (IWA,OWA)
+        IOWA_as = (pix2as(IWA),pix2as(OWA))
+
     real_contrast_list = []
     sep_list = []
+    pa_list = []
     metric_fakes_val = []
+    metric_nofakes_val = []
 
     for fakes_filename in fakes_filename_list:
         # get conversion for pyklip images
@@ -1006,8 +1018,9 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         prihdr_fakes = hdulist[0].header
 
         row_real_object_list,col_real_object_list = get_pos_known_objects(prihdr_fakes,exthdr_fakes,fakes_only=True)
-        sep,pa_real_object_list = get_pos_known_objects(prihdr_fakes,exthdr_fakes,pa_sep=True,fakes_only=True)
+        sep,pa = get_pos_known_objects(prihdr_fakes,exthdr_fakes,pa_sep=True,fakes_only=True)
         sep_list.extend(sep)
+        pa_list.extend(pa)
         for fake_id in range(100):
             try:
                 real_contrast_list.append(exthdr_fakes["FKCONT{0:02d}".format(fake_id)])
@@ -1020,17 +1033,10 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
         #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
         metric_fakes_val.extend([metric_image_fakes[int(np.round(row_real_object)),int(np.round(col_real_object))] \
                                      for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
+        metric_nofakes_val.extend([metric_image[int(np.round(row_real_object)),int(np.round(col_real_object))] \
+                                     for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
 
-    hdulist = pyfits.open(glob(nofakes_filename)[0])
-    metric_image = hdulist[1].data
-    exthdr = hdulist[1].header
-    prihdr = hdulist[0].header
-    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-    if IOWA is None:
-        IWA,OWA,inner_mask,outer_mask = get_occ(metric_image, centroid = center)
-        IOWA = (IWA,OWA)
-        IOWA_as = (pix2as(IWA),pix2as(OWA))
-
+    metric_fakes_val =  np.array(metric_fakes_val) - np.array(metric_nofakes_val)
 
     if GOI_list_folder is not None:
         metric_image_without_planet = mask_known_objects(metric_image,prihdr,exthdr,GOI_list_folder, mask_radius = mask_radius)
@@ -1051,13 +1057,15 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
     metric_1Dstddev_func = interp1d(metric_stddev_rSamp,metric_1Dstddev,bounds_error=False, fill_value=np.nan)
 
     whereNoNans = np.where(np.isfinite(metric_fakes_val))
-    metric_fakes_val = np.array(metric_fakes_val)[whereNoNans]
-    sep_list =  np.array(sep_list)[whereNoNans]
+    metric_fakes_val = metric_fakes_val[whereNoNans]
+    sep_list = np.array(sep_list)[whereNoNans]
+    pa_list = np.array(pa_list)[whereNoNans]
     real_contrast_list =  np.array(real_contrast_list)[whereNoNans]
 
-    sep_list,metric_fakes_val,real_contrast_list = zip(*sorted(zip(sep_list,metric_fakes_val,real_contrast_list)))
+    sep_list,pa_list,metric_fakes_val,real_contrast_list = zip(*sorted(zip(sep_list,pa_list,metric_fakes_val,real_contrast_list)))
     metric_fakes_val = np.array(metric_fakes_val)
     sep_list =  np.array(sep_list)
+    pa_list =  np.array(pa_list)
     real_contrast_list =  np.array(real_contrast_list)
     if linfit:
         if conversion_break is not None:
@@ -1078,23 +1086,21 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
             metric_conversion_func = np.poly1d(z)
     else:
         whereInRange = np.where((sep_list>IOWA_as[0])*(sep_list<IOWA_as[1]))
-        metric_in_range = metric_fakes_val[whereInRange]
+        metric_fakes_in_range = metric_fakes_val[whereInRange]
         cont_in_range = real_contrast_list[whereInRange]
         unique_sep = np.unique(sep_list[whereInRange])
         med_conversion = np.zeros(len(unique_sep))
-        MAD_conversion = np.zeros(len(unique_sep))
+        std_conversion = np.zeros(len(unique_sep))
         for k,sep_it in enumerate(unique_sep):
             where_sep = np.where(sep_list==sep_it)
-            # med_conversion[k] = np.nanmedian(cont_in_range[where_sep]) / np.nanmedian(metric_in_range[where_sep])
-            # MAD_conversion[k] = np.nanmedian(np.abs(cont_in_range[where_sep]/metric_in_range[where_sep] - med_conversion[k]))
-            med_conversion[k] = np.nanmean(cont_in_range[where_sep]) / np.nanmean(metric_in_range[where_sep])
-            var_conversion = np.nanvar(cont_in_range[where_sep] / metric_in_range[where_sep]) - (med_conversion[k]*metric_1Dstddev_func(as2pix(sep_it))/np.nanmean(metric_in_range[where_sep]))**2
-            # print(var_conversion)
-            # print(sep_it,np.nanstd(cont_in_range[where_sep] / metric_in_range[where_sep]),(med_conversion[k]*metric_1Dstddev_func(as2pix(sep_it))/np.nanmean(metric_in_range[where_sep])))
-            MAD_conversion[k] = np.sqrt(np.nanmax([var_conversion,0]))
+            # med_conversion[k] = np.nanmedian(cont_in_range[where_sep]) / np.nanmedian(metric_fakes_in_range[where_sep])
+            # std_conversion[k] = np.nanmedian(np.abs(cont_in_range[where_sep]/metric_fakes_in_range[where_sep] - med_conversion[k]))
+            med_conversion[k] = np.nanmean(cont_in_range[where_sep]/metric_fakes_in_range[where_sep])
+            var_conversion = np.nanvar(cont_in_range[where_sep] / metric_fakes_in_range[where_sep])
+            std_conversion[k] = np.sqrt(var_conversion)
         metric_conversion_func = interp1d(unique_sep,med_conversion,bounds_error=False, fill_value=np.nan)
-        # kMAD_conversion_func = interp1d(unique_sep,1.4826*MAD_conversion,bounds_error=False, fill_value=np.nan)
-        kMAD_conversion_func = interp1d(unique_sep,MAD_conversion,bounds_error=False, fill_value=np.nan)
+        # std_conversion_func = interp1d(unique_sep,1.4826*std_conversion,bounds_error=False, fill_value=np.nan)
+        std_conversion_func = interp1d(unique_sep,std_conversion,bounds_error=False, fill_value=np.nan)
 
 
     if 0:
@@ -1112,13 +1118,6 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
 
 
     contrast_curve = 5*metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
-    # print(metric_conversion_func(pix2as(metric_stddev_rSamp))*metric_1Dstddev/(5*metric_1Dstddev))
-    # print(metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)))
-    # print(5*metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))
-    contrast_curve_kMAD = np.sqrt((metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp)))**2 + \
-                                  (5*metric_1Dstddev*kMAD_conversion_func(pix2as(metric_stddev_rSamp)))**2 )
-    # contrast_curve_kMAD = metric_1Dstddev*metric_conversion_func(pix2as(metric_stddev_rSamp))
-    # print(contrast_curve_kMAD)
 
     if fakes_SNR_filename_list is not None:
         SNR_real_contrast_list = []
@@ -1162,25 +1161,24 @@ def calculate_constrat(nofakes_filename,fakes_filename_list,
 
         with open(os.path.join(save_dir,"contrast-"+suffix+'.csv'), 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
-            csvwriter.writerows([["Seps",spec_type,spec_type+"_kMAD",spec_type+"_1sig",spec_type+"_conv",spec_type+"_conv_kMAD"]])
+            csvwriter.writerows([["Seps",spec_type,spec_type+"_met_std",spec_type+"_conv",spec_type+"_conv_std"]])
             contrast_curve[np.where(np.isnan(contrast_curve))] = -1.
             not_neg = np.where(contrast_curve>0)
             csvwriter.writerows(zip(pix2as(metric_stddev_rSamp[not_neg]),
                                     contrast_curve[not_neg],
-                                    contrast_curve_kMAD[not_neg],
                                     metric_1Dstddev[not_neg],
                                     metric_conversion_func(pix2as(metric_stddev_rSamp[not_neg])),
-                                    kMAD_conversion_func(pix2as(metric_stddev_rSamp[not_neg]))))
+                                    std_conversion_func(pix2as(metric_stddev_rSamp[not_neg]))))
 
         with open(os.path.join(save_dir,"conversion-"+suffix+'.csv'), 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=' ')
-            csvwriter.writerows([["Seps","conversion","fit","metric","contrast","kMAD"]])
-            csvwriter.writerows(zip(sep_list,
+            csvwriter.writerows([["Seps","PA","conversion","fit","metric","contrast","kMAD"]])
+            csvwriter.writerows(zip(sep_list,pa_list,
                                     np.array(real_contrast_list)/np.array(metric_fakes_val),
                                     metric_conversion_func(sep_list),
                                     np.array(metric_fakes_val),
                                     np.array(real_contrast_list),
-                                    kMAD_conversion_func(sep_list)))
+                                    std_conversion_func(sep_list)))
 
     conversion_tuple = (sep_list,np.array(metric_fakes_val)/np.array(real_contrast_list),np.array(metric_fakes_val),np.array(real_contrast_list))
 
