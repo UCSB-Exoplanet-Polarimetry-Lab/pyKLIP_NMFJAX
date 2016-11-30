@@ -412,17 +412,48 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         maxbasis_possible += num_good_rdi
         psf_library = _arraytonumpy(psf_lib, (psf_lib_shape[0], psf_lib_shape[1]*psf_lib_shape[2]), dtype=dtype)
 
+    # load input/output data
+    if lite:
+        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]),dtype=dtype)
+    else:
+        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
+    numpix = np.size(section_ind[0])
+
     # do we want to downselect out of all the possible references
     if maxbasis_possible > maxnumbasis:
         # grab the x-correlation with the sci img for valid PSFs
         xcorr = corr[img_num, good_file_ind[0]]
         if include_rdi:
-            # indicate which are RDI frames
-            is_rdi_psf = np.append(np.repeat(False, np.size(xcorr)), np.repeat(True, num_good_rdi))
+            # calculate real xcorr between image and RDI PSFs for this sector for only the maxnumbasis
+            # best reference PSFs.
+            # grab the maxnumbasis most correlated PSFs from the library
+            num_rdi_psfs_first_downselect = np.min([maxnumbasis, num_good_rdi])
+            rdi_best_corr_max_possbile_indices = np.argsort(psflib_corr[img_num, psflib_good])[-num_rdi_psfs_first_downselect:]
+            # grab these PSFs
+            rdi_best_corr_max_possible = psf_library[psflib_good[rdi_best_corr_max_possbile_indices]]
+            rdi_best_corr_max_possible = rdi_best_corr_max_possible[:, section_ind[0]]
+            print("0", rdi_best_corr_max_possible.shape)
+            # recalculate their correlations in this sector
+            sci_img = aligned_imgs[img_num, section_ind[0]].reshape(1, numpix)
+            # to calculate correlation, first subtract off mean for each image
+            sci_img_mean_sub = sci_img - np.mean(sci_img, axis=1)[:,None]
+            rdi_best_corr_max_possible_mean_sub = rdi_best_corr_max_possible - np.mean(rdi_best_corr_max_possible, axis=1)[:,None]
+            # we will then calcualte the covariance between the science image with the PSF Library
+            sci_x_rdi_best_covar = np.dot(sci_img_mean_sub, rdi_best_corr_max_possible_mean_sub.T ) / (numpix - 1)
+            # to convert from covariance to correlation matrix, we just need to divide by normalization of the datasets
+            sci_norm = np.sum(sci_img_mean_sub*sci_img_mean_sub, axis=1)
+            rdi_best_norm = np.sum(rdi_best_corr_max_possible_mean_sub*rdi_best_corr_max_possible_mean_sub, axis=1)
+            # convert form covaraince matrix to correlation matrix
+            sci_x_rdi_best_corr = sci_x_rdi_best_covar / np.sqrt(rdi_best_norm) / np.sqrt(sci_norm)
+            # now we've recalculated the correlation for this sector for the best RDI PSFs
+
+            # indicate which are RDI frames (remember we are using onyl the top correlated ones that we just comptued
+            # correlations for
+            is_rdi_psf = np.append(np.repeat(False, np.size(xcorr)), np.repeat(True, num_rdi_psfs_first_downselect))
             # indices for both the dataset and PSF library arrays squished together
-            psfindices = np.append(np.arange(np.size(xcorr)), psflib_good)
+            psfindices = np.append(np.arange(np.size(xcorr)), psflib_good[rdi_best_corr_max_possbile_indices])
             # cross correlation now includes both
-            xcorr = np.append(xcorr, psflib_corr[img_num, psflib_good])
+            xcorr = np.append(xcorr, sci_x_rdi_best_corr)
 
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxnumbasis:]  # sorted smallest first so need to grab from the end
@@ -450,13 +481,12 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
-        # compute covariances.
+        # compute covariances. I could just grab these from ~20 lines above, but too lazy
         rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
         # compute cross term
-        numpix = np.size(section_ind[0])
         # cross term has shape N_dataset_ref x N_rdi_selected
-        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=0)),
-                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=0)).T) / (numpix - 1)
+        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:,None]),
+                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
         # piece together covariance matrix. It should looke like
         # [ cov_ref, cov_ref_x_rdi ]
         # [ cov_rdi_x_ref, cov_rdi ]
@@ -470,12 +500,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
 
 
-    # load input/output data
-    if lite:
-        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]),dtype=dtype)
-    else:
-        aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
-    # aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]))[wv_index]
+
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]),dtype=dtype)
 
     # run KLIP
