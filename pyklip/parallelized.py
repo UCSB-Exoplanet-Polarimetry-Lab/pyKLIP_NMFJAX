@@ -432,7 +432,6 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             # grab these PSFs
             rdi_best_corr_max_possible = psf_library[psflib_good[rdi_best_corr_max_possbile_indices]]
             rdi_best_corr_max_possible = rdi_best_corr_max_possible[:, section_ind[0]]
-            print("0", rdi_best_corr_max_possible.shape)
             # recalculate their correlations in this sector
             sci_img = aligned_imgs[img_num, section_ind[0]].reshape(1, numpix)
             # to calculate correlation, first subtract off mean for each image
