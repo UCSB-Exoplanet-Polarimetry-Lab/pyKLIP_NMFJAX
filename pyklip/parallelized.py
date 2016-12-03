@@ -1105,6 +1105,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             raise ValueError("You need to pass in a psf_library if you want to run RDI")
         if psf_library.dataset is dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
+        if aligned_center is not None:
+            if aligned_center != psf_library.aligned_center:
+                raise ValueError("The images need to be aligned to the same center as the RDI Library")
+
+        else:
+            aligned_center = psf_library.aligned_center
         # good rdi_library
         master_library = psf_library.master_library
         rdi_corr_matrix = psf_library.correlation
