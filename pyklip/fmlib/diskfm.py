@@ -30,6 +30,7 @@ class DiskFM(NoFM):
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         # Attributes of input/output
+
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
@@ -63,6 +64,18 @@ class DiskFM(NoFM):
         self.basis_filename = basis_filename
         self.load_from_basis = load_from_basis
 
+        x,y = np.meshgrid(np.arange(inputs_shape[2] * 1.0),np.arange(inputs_shape[1]*1.0))
+        nanpix = np.where(np.isnan(dataset.input[0]))
+        if OWA is None:
+            if np.size(nanpix) == 0:
+                OWA = np.sqrt(np.max((x - self.centers[0][0]) ** 2 + (y - self.centers[0][1]) ** 2))
+            else:
+                # grab the NaN from the 1st percentile (this way we drop outliers)    
+                OWA = np.sqrt(np.percentile((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2, 1))
+        self.OWA = OWA
+
+
+
         if numthreads == None:
             self.numthreads = mp.cpu_count()
 
@@ -71,10 +84,6 @@ class DiskFM(NoFM):
             assert annuli is not None, "need annuli keyword to save basis"
             assert subsections is not None, "need annuli keyword to save basis"
             x, y = np.meshgrid(np.arange(inputs_shape[2] * 1.0), np.arange(inputs_shape[1] * 1.0))
-            nanpix = np.where(np.isnan(dataset.input[0]))
-            if OWA is None:
-                OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
-            self.OWA = OWA
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
             
@@ -106,6 +115,9 @@ class DiskFM(NoFM):
         '''
         FIXME
         '''
+        print radstart
+        print radend
+
         sci = aligned_imgs[input_img_num, section_ind[0]]
 
         refs = aligned_imgs[ref_psfs_indicies, :]
@@ -202,10 +214,7 @@ class DiskFM(NoFM):
         assert self.subsections is not None, "need annuli keyword to load basis"
         x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
         nanpix = np.where(np.isnan(self.dataset.input[0]))
-        if self.OWA is None:
-            OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
-            self.OWA = OWA
-            self.dr = (OWA - self.dataset.IWA) / self.annuli
+        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
         self.dphi = 2 * np.pi / self.subsections
 
 
