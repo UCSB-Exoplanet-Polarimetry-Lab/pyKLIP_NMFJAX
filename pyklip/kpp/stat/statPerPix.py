@@ -35,7 +35,8 @@ class StatPerPix(KPPSuperClass):
                  filename_noPlanets = None,
                  collapse = None,
                  weights = None,
-                 resolution = None):
+                 resolution = None,
+                 folderName=None):
         """
 
 
@@ -55,7 +56,7 @@ class StatPerPix(KPPSuperClass):
         super(StatPerPix, self).__init__(filename,
                                      inputDir = inputDir,
                                      outputDir = outputDir,
-                                     folderName = None,
+                                     folderName = folderName,
                                      mute=mute,
                                      N_threads=N_threads,
                                      label=label,
