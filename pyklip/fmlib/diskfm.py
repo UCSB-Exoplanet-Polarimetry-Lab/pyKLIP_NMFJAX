@@ -82,7 +82,7 @@ class DiskFM(NoFM):
         if self.save_basis == True:
             # Need to know r and phi indicies in fm from eigen
             assert annuli is not None, "need annuli keyword to save basis"
-            assert subsections is not None, "need annuli keyword to save basis"
+            assert subsections is not None, "need subsections keyword to save basis"
             x, y = np.meshgrid(np.arange(inputs_shape[2] * 1.0), np.arange(inputs_shape[1] * 1.0))
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
@@ -210,15 +210,8 @@ class DiskFM(NoFM):
         # Need dr and dphi def
         # Definte IWA, OWA, dr, dphi
 
-        assert self.annuli is not None, "need annuli keyword to load basis"
-        assert self.subsections is not None, "need annuli keyword to load basis"
-        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
-        nanpix = np.where(np.isnan(self.dataset.input[0]))
-        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
-        self.dphi = 2 * np.pi / self.subsections
-
-
-
+#        assert self.annuli is not None, "need annuli keyword to load basis"
+ #       assert self.subsections is not None, "need annuli keyword to load basis"
 
         print basis_file_pattern
         f = open(basis_file_pattern)
@@ -229,7 +222,16 @@ class DiskFM(NoFM):
         self.section_ind_dict = pickle.load(f)
 
         self.dict_keys = sorted(self.klmodes_dict.keys())
+        rads = [int(key[1]) for key in self.dict_keys]
+        phis = [int(key[3]) for key in self.dict_keys]
+        self.annuli = np.max(rads) + 1
+        self.subsections = np.max(phis) + 1
 
+
+        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
+        nanpix = np.where(np.isnan(self.dataset.input[0]))
+        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
+        self.dphi = 2 * np.pi / self.subsections
         
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
