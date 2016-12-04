@@ -78,7 +78,7 @@ def get_IOWA(image, centroid = None):
     for r_id, r_it in enumerate(r_samp):
         annulus = np.where( ((r_it-Dr/2.0) < r) & (r < (r_it+Dr/2.0)) )
         if len(annulus[0]) != 0:
-            radial_val[r_id] = np.sum(image_tmp[annulus])
+            radial_val[r_id] = np.nansum(image_tmp[annulus])
         else:
             radial_val[r_id] = np.nan
 
