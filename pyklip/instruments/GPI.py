@@ -53,6 +53,8 @@ class GPIData(Data):
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
         PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
+        recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
 
 
     Attributes:
@@ -116,7 +118,8 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=True,meas_satspot_flux=False,numthreads=-1,PSF_cube=None):
+    def __init__(self, filepaths=None, skipslices=None, highpass=True,meas_satspot_flux=False,numthreads=-1,
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True):
         """
         Initialization code for GPIData
 
@@ -140,7 +143,8 @@ class GPIData(Data):
             self.exthdrs = None
             self.flux_units = None
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,numthreads=numthreads,PSF_cube=PSF_cube)
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,
+                          numthreads=numthreads,PSF_cube=PSF_cube, recalc_wvs=recalc_wvs, recalc_centers=recalc_centers)
 
     ################################
     ### Instance Required Fields ###
