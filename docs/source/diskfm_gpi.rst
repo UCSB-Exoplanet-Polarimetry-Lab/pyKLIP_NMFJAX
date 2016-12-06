@@ -45,6 +45,6 @@ In order to forward model another disk::
 
 
 Current Works in Progress
-====================================
+------------------------------------
 * Does not support SDI mode
 * Is not parallized 
