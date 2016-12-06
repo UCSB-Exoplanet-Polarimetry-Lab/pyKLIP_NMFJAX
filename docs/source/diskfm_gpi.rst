@@ -2,7 +2,11 @@
 
 Disk Foward Modelling Tutorial with GPI
 =====================================================
-
+Disk forward modelling is intended for use in cases where you would
+like to model a variety of different model disks on the same dataset. This
+can be used with an MCMC that is fitting for model parameters. It
+works by saving the KLIP basis vectors in a file so they do not have
+to be recomputed every time. 
 
 Running
 --------------------------
@@ -27,10 +31,20 @@ If you would like to forward model multiple models on a dataset, then you will s
 
 In both cases you then run::
 
-    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1)
+    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis,
+    annuli = 2, subsections = 1, mode = 'ADI')
+
+Note that in the case that annuli = 1, you will need to set padding =
+0 in klip_dataset
 
 In order to forward model another disk::
   
     diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_file_name = 'klip-basis.p', load_from_basis = True)
     diskobj.update_disk(newmodel)
     fmout = diskobj.fm_parallelized()
+
+
+Current Works in Progress
+====================================
+* Does not support SDI mode
+* Is not parallized 
