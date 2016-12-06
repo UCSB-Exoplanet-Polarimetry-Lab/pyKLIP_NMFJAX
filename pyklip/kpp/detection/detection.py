@@ -199,10 +199,10 @@ class Detection(KPPSuperClass):
 
 
         # Number of rows and columns to add around a given pixel in order to extract a stamp.
-        row_m = np.floor(stamp_size/2.0)    # row_minus
-        row_p = np.ceil(stamp_size/2.0)     # row_plus
-        col_m = np.floor(stamp_size/2.0)    # col_minus
-        col_p = np.ceil(stamp_size/2.0)     # col_plus
+        row_m = int(np.floor(stamp_size/2.0))    # row_minus
+        row_p = int(np.ceil(stamp_size/2.0))     # row_plus
+        col_m = int(np.floor(stamp_size/2.0))    # col_minus
+        col_p = int(np.ceil(stamp_size/2.0))     # col_plus
 
         # Table containing the list of the local maxima with their info
         # Description by column:

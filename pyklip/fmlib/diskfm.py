@@ -17,7 +17,7 @@ import itertools
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.py', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.p', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -30,6 +30,7 @@ class DiskFM(NoFM):
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         # Attributes of input/output
+
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
@@ -42,7 +43,7 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-
+        
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
@@ -58,9 +59,22 @@ class DiskFM(NoFM):
         self.save_basis = save_basis
         self.annuli = annuli
         self.subsections = subsections
+        self.OWA = OWA
 
         self.basis_filename = basis_filename
         self.load_from_basis = load_from_basis
+
+        x,y = np.meshgrid(np.arange(inputs_shape[2] * 1.0),np.arange(inputs_shape[1]*1.0))
+        nanpix = np.where(np.isnan(dataset.input[0]))
+        if OWA is None:
+            if np.size(nanpix) == 0:
+                OWA = np.sqrt(np.max((x - self.centers[0][0]) ** 2 + (y - self.centers[0][1]) ** 2))
+            else:
+                # grab the NaN from the 1st percentile (this way we drop outliers)    
+                OWA = np.sqrt(np.percentile((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2, 1))
+        self.OWA = OWA
+
+
 
         if numthreads == None:
             self.numthreads = mp.cpu_count()
@@ -68,12 +82,8 @@ class DiskFM(NoFM):
         if self.save_basis == True:
             # Need to know r and phi indicies in fm from eigen
             assert annuli is not None, "need annuli keyword to save basis"
-            assert subsections is not None, "need annuli keyword to save basis"
+            assert subsections is not None, "need subsections keyword to save basis"
             x, y = np.meshgrid(np.arange(inputs_shape[2] * 1.0), np.arange(inputs_shape[1] * 1.0))
-            nanpix = np.where(np.isnan(dataset.input[0]))
-            if OWA is None:
-                OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
-            self.OWA = OWA
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
             
@@ -87,7 +97,7 @@ class DiskFM(NoFM):
             section_ind_dict = manager.dict()
 
         if load_from_basis is True:
-            self.load_basis_files(basis_file_pattern)
+            self.load_basis_files(basis_filename)
 
 
     def alloc_fmout(self, output_img_shape):
@@ -105,6 +115,9 @@ class DiskFM(NoFM):
         '''
         FIXME
         '''
+        print radstart
+        print radend
+
         sci = aligned_imgs[input_img_num, section_ind[0]]
 
         refs = aligned_imgs[ref_psfs_indicies, :]
@@ -123,7 +136,7 @@ class DiskFM(NoFM):
         for thisnumbasisindex in range(np.size(numbasis)):
             self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                        fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                       radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+                                       radstart, radend, phistart, phiend,  padding,IOWA, ref_center, flipx=True) # FIXME
 
 
         if self.save_basis is True:
@@ -197,6 +210,8 @@ class DiskFM(NoFM):
         # Need dr and dphi def
         # Definte IWA, OWA, dr, dphi
 
+#        assert self.annuli is not None, "need annuli keyword to load basis"
+ #       assert self.subsections is not None, "need annuli keyword to load basis"
 
         print basis_file_pattern
         f = open(basis_file_pattern)
@@ -207,7 +222,16 @@ class DiskFM(NoFM):
         self.section_ind_dict = pickle.load(f)
 
         self.dict_keys = sorted(self.klmodes_dict.keys())
+        rads = [int(key[1]) for key in self.dict_keys]
+        phis = [int(key[3]) for key in self.dict_keys]
+        self.annuli = np.max(rads) + 1
+        self.subsections = np.max(phis) + 1
 
+
+        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
+        nanpix = np.where(np.isnan(self.dataset.input[0]))
+        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
+        self.dphi = 2 * np.pi / self.subsections
         
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
@@ -309,7 +333,7 @@ class DiskFM(NoFM):
             fmout: same but cleaned up if necessary
         """
         if self.save_basis == True:
-            f = open(self.basis_file_pattern + '.p', 'wb')
+            f = open(self.basis_filename, 'wb')
             pickle.dump(dict(klmodes_dict), f)
             pickle.dump(dict(evecs_dict), f)
             pickle.dump(dict(evals_dict), f)

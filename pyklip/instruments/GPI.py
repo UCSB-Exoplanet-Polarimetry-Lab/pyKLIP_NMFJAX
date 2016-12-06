@@ -1589,7 +1589,7 @@ def generate_spdc_with_fakes(dataset,
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
         annuli = 8
-        dr = 15
+        dr = 15.
         delta_th = 90
 
         # Get parallactic angle of where to put fake planets
@@ -1601,7 +1601,7 @@ def generate_spdc_with_fakes(dataset,
         # for row_id in range(pa_grid.shape[0]):
         #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
         for col_id in range(radii_grid.shape[1]):
-            radii_grid[:,col_id] = radii_grid[:,col_id] + 15./4*np.mod(col_id,4)
+            radii_grid[:,col_id] = radii_grid[:,col_id] + dr/4*np.mod(col_id,4)
         pa_grid[range(1,annuli,3),:] += 30
         pa_grid[range(2,annuli,3),:] += 60
         pa_grid = pa_grid + 5
