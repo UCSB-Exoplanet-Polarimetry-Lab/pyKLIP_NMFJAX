@@ -356,10 +356,12 @@ class DiskFM(NoFM):
         self.model_disk = model_disk
         self.model_disks = np.zeros(self.inputs_shape)
 
+
+
         # FIXME add align and scale
         for i, pa in enumerate(self.pas):
             model_copy = copy.deepcopy(model_disk)
-            model_copy = rotate(model_copy, pa, self.centers[i], flipx = True)
+            model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
             model_copy[np.where(np.isnan(model_copy))] = 0.
             self.model_disks[i] = model_copy
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
