@@ -16,12 +16,21 @@ How to use::
     filelist = glob.glob("path/to/dataset/*.fits")
     dataset = GPI.GPIData(filelist)
     model = [some 2D image array]
+
 For a single run::
-    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, annuli = 2, subsections = 1)
-If you would like to forward model multiple models on a dataset::
-    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, annuli = 2, subsections = 1, save_basis = True, load_from_basis = False)
+
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1)
+
+If you would like to forward model multiple models on a dataset, then you will save the eigenvalues and eigenvectors::
+
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_file_name = 'klip-basis.p', save_basis = True, load_from_basis = False)
+
 In both cases you then run::
-    fmout = fm.klip_dataset(dataset, diskobj, numbasis = nummbasis, annuli = 2, subsections = 1)
+
+    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1)
+
 In order to forward model another disk::
+  
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_file_name = 'klip-basis.p', load_from_basis = True)
     diskobj.update_disk(newmodel)
     fmout = diskobj.fm_parallelized()
