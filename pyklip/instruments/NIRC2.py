@@ -31,6 +31,9 @@ class NIRC2Data(object):
     """
     A sequence of Keck NIRC2 ADI Data. Each NIRC2Data object has the following fields and functions
 
+    Args:
+        filepaths: list of filepaths to files
+
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -91,8 +94,8 @@ class NIRC2Data(object):
         """
         Initialization code for NIRC2Data
 
-        Inputs:
-            filepaths: list of filepaths to files
+        Note:
+            see class docstring for argument details
         """
         super(NIRC2Data, self).__init__()
         self._output = None
@@ -256,7 +259,7 @@ class NIRC2Data(object):
         #self.exthdrs = exthdrs
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,):
+                 fakePlparams = None, more_keywords=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -270,6 +273,8 @@ class NIRC2Data(object):
             center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
                 The first pixel has coordinates (0,0)
             fakePlparams: fake planet params
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                              written into the primary header
 
         """
         hdulist = fits.HDUList()
@@ -361,6 +366,12 @@ class NIRC2Data(object):
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
+ 
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
