@@ -4,12 +4,12 @@ import numpy as np
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
-#import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 from scipy.optimize import leastsq
 from scipy.optimize import minimize
 import glob
 import os
+import csv
 
 
 # First and last wavelength of each band
@@ -86,16 +86,90 @@ def find_lower_nearest(array,value):
     idx = np.nanargmax(diff)
     return array[idx], idx
 
-def get_star_spectrum(filter_name,star_type = None, temperature = None):
+
+def find_nearest(array,value):
+    """
+    Find the nearest element to value in array.
+
+    :param array: Array of value
+    :param value: Value for which one wants the closest value.
+    :return: (closest_value, id) with closest_value the closest lower value and id its index.
+    """
+    diff = np.array(array)-value
+    # diff[np.where(diff>0.0)] = np.nan
+    idx = np.nanargmin(np.abs(diff))
+    return array[idx], idx
+
+def get_specType(object_name,SpT_file_csv = None):
+    """
+    Return the spectral type for a target based on the table in SpT_file
+
+    :param object_name: Name of the target: ie "c_Eri"
+    :param SpT_file: Filename (.csv) of the table containing the target names and their spectral type.
+                    Can be generated from bu quering Simbad.
+                    If None (default), the function directly tries to query Simbad.
+    :return: Spectral type
+    """
+
+    if SpT_file_csv is None:
+        import urllib
+
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        try:
+            return spec_type
+        except:
+            return None
+
+    with open(SpT_file_csv, 'rb') as csvfile_TID:
+        TID_reader = csv.reader(csvfile_TID, delimiter=';')
+        TID_csv_as_list = list(TID_reader)
+        TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
+        target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
+        specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+
+    try:
+        return specTypes[target_names.index(object_name)]
+    except:
+        import urllib
+
+        print("Couldn't find {0} in spectral type list. Try to retrieve it from Simbad.".format(object_name))
+
+        target_names.append(object_name)
+        object_name = object_name.replace('_','+')
+
+        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        text = url.read()
+        for line in text.splitlines():
+            if line.startswith('%S'):
+                spec_type = line.split(" ")[1]
+        specTypes.append(spec_type)
+
+
+        attrib_name=["name","specType"]
+        with open(SpT_file_csv, 'w+') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=';')
+            table_to_csv = [attrib_name]+zip(target_names,specTypes)
+            csvwriter.writerows(table_to_csv)
+
+        return spec_type
+
+def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = None):
     """
     Get the spectrum of a star with given spectral type interpolating in the pickles database.
     The sampling is the one of pipeline reduced cubes.
     The spectrum is normalized to unit mean.
-    Work only for V (ie brown dwarf) star
+    Work only for type V star.
 
     Inputs:
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'
-        star_type: 'A5','F4',... Assume type V star. Is ignored of temperature is defined.
+        star_type: 'A5','F4',... Is ignored if temperature is defined.
+                If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
 
     Output:
@@ -106,12 +180,49 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
 
     #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
 
+    if mute is None:
+        mute = False
+
+    # sampling_pip = get_gpi_wavelength_sampling(filter_name)
+    w_start, w_end, N_sample = band_sampling[filter_name]
+    dw = (w_end-w_start)/N_sample
+    sampling_pip = np.arange(w_start,w_end,dw)
+
+    # Sory hard-coded type...
+    if star_type == "kA6hA9mF0_+_DA":
+        star_type = "A8"
+
+    if star_type is None:
+        return sampling_pip,None
+
+    if len(star_type) > 2:
+        star_type_selec = star_type[0:2]
+    else:
+        star_type_selec = star_type
+
+    try:
+        int(star_type_selec[1])
+    except:
+        try:
+            star_type_selec = star_type[-3:-1]
+            int(star_type_selec[1])
+        except:
+            if not mute:
+                print("Returning None. Couldn't parse spectral type.")
+            return sampling_pip,None
+
+    # Sory hard-coded type...
+    if star_type_selec == "K8":
+        star_type_selec = "K7"
+
     pykliproot = os.path.dirname(os.path.realpath(__file__))
     filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
     filename_pickles_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"AA_README"
 
     #a = np.genfromtxt(filename_temp_lookup, names=True, delimiter=' ', dtype=None)
 
+    # The interpolation is based on the temperature of the star
+    # If the input was not the temperature then it is taken from the mainseq_colors.txt based on the input spectral type
     if temperature is None:
         #Read pickles list
         dict_temp = dict()
@@ -125,11 +236,19 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
                     # splitted_line[2]: Temperature in K
                     dict_temp[splitted_line[0]] = splitted_line[2]
 
-        target_temp = float(dict_temp[star_type])
+        try:
+            target_temp = float(dict_temp[star_type_selec])
+        except:
+            if not mute:
+                print("Returning None. Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
+            return sampling_pip,None
     else:
         target_temp = temperature
 
+    # "AA_README" contains the list of the temperature for which a spectrum is available
+    # Read it here
     dict_filename = dict()
+    temp_list=[]
     with open(filename_pickles_lookup, 'r') as f:
         for line in f:
             if line.startswith('pickles_uk_'):
@@ -142,9 +261,10 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
                 spec_type = splitted_line[1]
                 if splitted_line[0][len(splitted_line[0])-1].isdigit() and not (spec_type.endswith('IV') or spec_type.endswith('I')):
                     dict_filename[float(splitted_line[2])] = splitted_line[0]
+                    temp_list.append(float(splitted_line[2]))
 
-    temp_list = np.array(dict_filename.keys())
-    #print(temp_list)
+    #temp_list = np.array(dict_filename.keys())
+    temp_list = np.array(temp_list)
     # won't work for the hottest and coldest spectra.
     upper_temp, upper_temp_id = find_upper_nearest(temp_list,target_temp)
     lower_temp, lower_temp_id = find_lower_nearest(temp_list,target_temp)
@@ -180,9 +300,6 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
     # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
     lower_spec = np.array(lower_spec)*delta_wave
 
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
 
     upper_counts_per_bin, bin_edges = np.histogram(upper_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=upper_spec)
     lower_counts_per_bin, bin_edges = np.histogram(lower_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=lower_spec)
@@ -211,21 +328,19 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
-def get_planet_spectrum(filename,filter_name):
+def get_planet_spectrum(filename,wavelength):
     """
-    Get the spectrum of a planet from a given file. Files are Mark Marleys'.
-    The sampling is the one of pipeline reduced cubes.
-    The spectrum is normalized to unit mean.
-    I should check that I actually do the right operation on the spectra.
+    Get the normalized spectrum of a planet for a GPI spectral band or any wavelengths array.
+    Spectra are extraced from .flx files from Mark Marley et al's models.
 
-    Inputs:
-        filename: Directory of the gpi pipeline.
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'
+    Args:
+        filename: Path of the .flx file containing the spectrum.
+        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns. When using GPI spectral band,
+                wavelength samples are linearly spaced between the first and the last wavelength of the band.
 
-    Output:
-        (wavelengths, spectrum) where
-            wavelengths: is the gpi sampling of the considered band in mum.
-            spectrum: is the spectrum of the planet for the given band.
+    Return:
+        wavelengths: is the gpi sampling of the considered band in micrometer.
+        spectrum: is the spectrum of the planet for the given band or wavelength array and normalized to unit mean.
     """
 
 
@@ -238,48 +353,53 @@ def get_planet_spectrum(filename,filter_name):
             # splitted_line[2]: T_brt
             # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
 
-            spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            try:
+                spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+            except:
+                break
 
     spec_data = np.array(spec_data)
     N_samp = spec_data.shape[0]
     wave = spec_data[:,1]
-    #wave_intervals = np.zeros(N_samp)
-    #wave_intervals[1:N_samp-1] = wave[2::] - wave[0:(N_samp-2)]
-    #wave_intervals[0] = wave[1]-wave[0]
-    #wave_intervals[N_samp-1] = wave[N_samp-1]-wave[N_samp-2]
     spec = spec_data[:,3]
 
-    # if 0:
-    #     plt.figure(1)
-    #     plt.plot(spec_data[0:100,1],spec_data[0:100,3],'r')
-    #     plt.show()
-
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
-
-    # I think this isn't rigorous. The spectrum is not well binned maybe
-    #counts_per_bin, bin_edges = np.histogram(wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spec)
-    #weights_per_bin, bin_edges = np.histogram(wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=wave_intervals)
-    #spec_pip = dw * counts_per_bin/weights_per_bin
+    # todo: check that it matches the actual sampling
+    if isinstance(wavelength, str):
+        w_start, w_end, N_sample = band_sampling[wavelength]
+        sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
+    else:
+        sampling_pip = wavelength
 
     f = interp1d(wave, spec)
-    spec_pip = f(sampling_pip)
+    # Interpolate the spectrum on GPI sampling and convert F_nu to F_lambda
+    spec_pip = f(sampling_pip)/(sampling_pip**2)
 
-    # if 0:
-    #     plt.figure(2)
-    #     plt.plot(wave[50:100],spec[50:100],'r')
-    #     plt.plot(sampling_pip,spec_pip,'b.')
-    #     plt.show()
+    if 0:
+        import matplotlib.pyplot as plt
+        print()
+        plt.figure(2)
+        wave_range = np.where((wave<sampling_pip[-1]) & (wave>sampling_pip[0]))
+        plt.plot(wave[wave_range],spec[wave_range]/np.nanmean(spec[wave_range]),'r')
+        plt.plot(sampling_pip,spec_pip/np.nanmean(spec_pip),'b.')
+        plt.show()
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
 
 def get_gpi_wavelength_sampling(filter_name):
+    """
+    Return GPI wavelength sampling for a given band.
+
+    Args:
+        filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
+                    Wavelength samples are linearly spaced between the first and the last wavelength of the band.
+
+    Return:
+        wavelengths: is the gpi sampling of the considered band in micrometer.
+    """
 
     w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
+    sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
 
     return sampling_pip
 
@@ -400,7 +520,6 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
     nl_stamp, ny_stamp,nx_stamp = cube_stamp.shape
 
 
-    # Mask to remove the spots already checked in criterion_map.
     stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,nx_stamp,1),np.arange(0,ny_stamp,1))
     r_stamp = np.sqrt((stamp_x_grid-(col_cen-(col_id-col_m)))**2 +(stamp_y_grid-(row_cen-(row_id-row_m)))**2)
     #stamp_mask = np.ones((stamp_nrow,stamp_ncol))
@@ -445,72 +564,3 @@ def extract_planet_spectrum(cube_para, position, PSF_cube_para, method = None,fi
         # plt.show()
 
     return get_gpi_wavelength_sampling(filter), spectrum
-
-
-
-
-
-if __name__ == "__main__":
-
-    OS = platform.system()
-    if OS == "Windows":
-        print("Using WINDOWS!!")
-    else:
-        print("I hope you are using a UNIX OS")
-
-
-    if 0:
-        if OS == "Windows":
-            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\HD_100491\\autoreduced\\"
-            #cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\bet_cir\\autoreduced\\"
-            cube_filename = "C:\\Users\\JB\\Dropbox (GPI)\\GPIDATA\\c_Eri\\autoreduced\\pyklip-S20141218-k100a7s4m3-KL20-speccube.fits"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
-            #outputDir = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\"
-            spectrum_model = ["","C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx",""] #"C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\t2400g100nc.flx",
-            user_defined_PSF_cube = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
-        else:
-            cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/beta_pictoris/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/bet_cir/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/c_Eri/autoreduced/"
-            #cube_filename = "/Users/jruffio/Dropbox (GPI)/GPIDATA/HD19467/autoreduced/"
-            #outputDir = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB"
-            #spectrum_model = ""
-            spectrum_model = ["/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx",""]
-            user_defined_PSF_cube = "/Users/jruffio/Dropbox (GPI)/SCRATCH/Scratch/JB/code/pyklipH-S20141218-k100a7s4m3-original_radial_PSF_cube.fits"
-
-        wave_samp,spectrum = extract_planet_spectrum(cube_filename, (110, 135), user_defined_PSF_cube, method="aperture")
-        # plt.plot(wave_samp,spectrum)
-        # plt.show()
-
-    if 1:
-        if OS == "Windows":
-            #spectrum_model = "C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\t800g100nc.flx"
-            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g100ncflx\\*.flx")
-            filelist = glob.glob("C:\\Users\\JB\\Dropbox (GPI)\\SCRATCH\\Scratch\\JB\\code\\spectra\\g18ncflx\\*.flx")
-        else:
-            spectrum_model = "/Users/jruffio/gpi/pyklip/spectra/t800g100nc.flx"
-
-        for spectrum_model in filelist:
-            print(spectrum_model)
-            #wv,sp = get_star_spectrum(pipeline_dir,'H','F3')
-            wv,spectrum  = get_planet_spectrum(spectrum_model,'H')
-
-            # plt.plot(wv,spectrum/np.nanmean(spectrum))
-            # plt.show()
-
-        # if 0:
-        #     filename = "/Users/jruffio/gpi/pipeline/config/pickles/pickles_uk_23.fits"
-        #     hdulist = pyfits.open(filename)
-        #     cube = hdulist[1].data
-        #     N_samples = np.size(cube)
-        #     c = []
-        #     d = []
-        #     for a,b in cube:
-        #         c.append(a)
-        #         d.append(b)
-        #     print(c,d)
-        #     wavelengths = cube[0][0]
-        #     filter_spec = cube[0][1]
-        #     plt.figure(1)
-        #     plt.plot(wavelengths,filter_spec)
-        #     plt.show()

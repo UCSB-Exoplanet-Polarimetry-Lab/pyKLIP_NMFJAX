@@ -274,7 +274,7 @@ class NIRC2Data(object):
                 The first pixel has coordinates (0,0)
             fakePlparams: fake planet params
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
-                              written into the primary header
+                            written into the primary header
 
         """
         hdulist = fits.HDUList()
@@ -371,7 +371,6 @@ class NIRC2Data(object):
         if more_keywords is not None:
             for hdr_key in more_keywords:
                 hdulist[0].header[hdr_key] = more_keywords[hdr_key]
- 
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()

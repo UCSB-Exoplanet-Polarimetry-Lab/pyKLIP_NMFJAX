@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='pyklip',
@@ -8,7 +8,7 @@ setup(
     author='pyKLIP Developers',
     author_email='jwang@astro.berkeley.edu',
     license='BSD',
-    packages=['pyklip'],
+    packages=find_packages(),
     zip_safe=False,
     classifiers=[
         # Indicate who your project is intended for
@@ -21,8 +21,8 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5',
         ],
-    keywords='KLIP PSF Subtraction',
+    keywords='KLIP PSF Subtraction Exoplanets Astronomy',
     install_requires=['numpy', 'scipy', 'astropy']
     )

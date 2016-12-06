@@ -13,9 +13,11 @@ class Data(object):
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        OWA: (optional) specifies outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
-        creator: string for creator of the data (used to identify pipelines that call pyklip)
-        klipparams: a string that saves the most recent KLIP parameters
+        creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
+        klipparams: (optional) a string that saves the most recent KLIP parameters
+
 
     Methods:
         readdata(): reread in the dadta
@@ -29,6 +31,8 @@ class Data(object):
         self.creator = None
         # set field for klip parameters
         self.klipparams = None
+        # set the outer working angle (optional parameter)
+        self.OWA = None
 
 
     ###################################
@@ -146,7 +150,7 @@ class Data(object):
 
     @staticmethod
     @abc.abstractmethod
-    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None):
+    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None, more_keywords=None):
         """
         Saves data for this instrument
 
@@ -156,11 +160,13 @@ class Data(object):
             klipparams: a string of KLIP parameters. Write it to the 'PSFPARAM' keyword
             filtype: type of file (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube"). Wrriten to 'FILETYPE' keyword
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
+            more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
+                                         written into the primary header
         """
         return NotImplementedError("Subclass needs to implement this!")
 
     @abc.abstractmethod
-    def calibrate_data(self, img, spectral=False):
+    def calibrate_output(self, img, spectral=False):
         """
         Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.

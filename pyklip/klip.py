@@ -5,7 +5,7 @@ import scipy.ndimage as ndimage
 from scipy.stats import t
 
 
-def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None, PSFsarea_forklipping=None, return_basis=False, return_basis_and_eig=False):
+def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, return_basis_and_eig=False):
     """
     Helper function for KLIP that does the linear algebra
     
@@ -15,9 +15,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
                   characterizes the PSF of the p pixels
         numbasis: number of KLIP basis vectors to use (can be an int or an array of ints of length b)
         covar_psfs: covariance matrix of reference psfs passed in so you don't have to calculate it here
-        PSFarea_tobeklipped: Corresponds to sci but with the fake planets only. It is the section to be klipped.
-        PSFsarea_forklipping: Corresponds to ref_psfs but with the fake planets only. It is the set of sections used for
-                              the klipping. ie from which the modes are calculated.
         return_basis: If true, return KL basis vectors (used when onesegment==True)
         return_basis_and_eig: If true, return KL basis vectors as well as the eigenvalues and eigenvectors of the
                                 covariance matrix. Used for KLIP Forward Modelling of Laurent Pueyo.
@@ -41,11 +38,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_psfs_mean_sub[np.where(np.isnan(ref_psfs_mean_sub))] = 0
 
-    # Replace the nans of the PSFs (~fake planet) area by zeros.
-    # We don't want to subtract the mean here. Well at least JB thinks so...
-    if PSFsarea_forklipping is not None:
-        PSFsarea_forklipping[np.where(np.isnan(PSFsarea_forklipping))] = 0
-
     # calculate the covariance matrix for the reference PSFs
     # note that numpy.cov normalizes by p-1 to get the NxN covariance matrix
     # we have to correct for that a few lines down when consturcting the KL
@@ -66,7 +58,9 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # check if there are negative eignevalues as they will cause NaNs later that we have to remove
     # the eigenvalues are ordered smallest to largest
-    check_nans = evals[-1] < 0
+    #check_nans = evals[-1] < 0 # currently this checks that *all* the evals are neg, but we want just one.
+    # also, include 0 because that is a bad value too
+    check_nans = np.any(evals <= 0) # alternatively, check_nans = evals[0] <= 0
 
     # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
     # we're going to recopy them to hopefully improve caching when doing matrix multiplication
@@ -75,7 +69,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
 
     # keep an index of the negative eignevalues for future reference if there are any
     if check_nans:
-        neg_evals = (np.where(evals < 0))[0]
+        neg_evals = (np.where(evals <= 0))[0]
 
     # calculate the KL basis vectors
     kl_basis = np.dot(ref_psfs_mean_sub.T, evecs)
@@ -89,12 +83,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     sci_mean_sub_rows = np.tile(sci_mean_sub, (max_basis, 1))
     sci_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis), 1)) # this is the output image which has less rows
 
-    # Do the same for the PFSs (fake planet)
-    if PSFarea_tobeklipped is not None:
-        PSFarea_tobeklipped_rows = np.tile(PSFarea_tobeklipped, (max_basis, 1))
-        PSFarea_tobeklipped_rows_selected = np.tile(PSFarea_tobeklipped, (np.size(numbasis), 1)) # this is the output image which has less rows
-
-
     # bad pixel mask
     # do it first for the image we're just doing computations on but don't care about the output
     sci_nanpix = np.where(np.isnan(sci_mean_sub_rows))
@@ -102,12 +90,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     # now do it for the output image
     sci_nanpix = np.where(np.isnan(sci_rows_selected))
     sci_rows_selected[sci_nanpix] = 0
-
-    # Do the same for the PFSs (fake planet)
-    if PSFarea_tobeklipped is not None:
-        PSFarea_tobeklipped_rows[np.where(np.isnan(PSFarea_tobeklipped_rows))] = 0
-        solePSFs_nanpix = np.where(np.isnan(PSFarea_tobeklipped_rows_selected))
-        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = 0
 
     # do the KLIP equation, but now all the different k_KLIP simultaneously
     # calculate the inner product of science image with each of the different kl_basis vectors
@@ -137,17 +119,6 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, PSFarea_tobeklipped=None
     # restore NaNs
     sub_img_rows_selected[sci_nanpix] = np.nan
 
-    # Apply klip similarly but this time on the sole PSFs (The fake planet only)
-    # Note that we use the same KL basis as before. Just the inner product changes.
-    if PSFarea_tobeklipped is not None:
-        inner_products_solePSFs = np.dot(PSFarea_tobeklipped_rows, np.require(kl_basis, requirements=['F']))
-        inner_products_solePSFs = inner_products_solePSFs * np.tril(np.ones([max_basis, max_basis]))
-        klip_solePSFs = np.dot(inner_products_solePSFs[numbasis,:], kl_basis.T)
-        PSFarea_tobeklipped_rows_selected = PSFarea_tobeklipped_rows_selected - klip_solePSFs
-        PSFarea_tobeklipped_rows_selected[solePSFs_nanpix] = np.nan
-
-        # need to flip them so the output is shaped (p,b)
-        return sub_img_rows_selected.transpose(), PSFarea_tobeklipped_rows_selected.transpose()
 
     if return_basis is True:
         return sub_img_rows_selected.transpose(), kl_basis.transpose()
@@ -243,7 +214,7 @@ def calc_scaling(sats, refwv=18):
     scaling_factors = separations/separations[refwv]
     return scaling_factors
 
-def align_and_scale(img, new_center, old_center=None, scale_factor=1):
+def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float):
     """
     Helper function that realigns and/or scales the image
 
@@ -266,7 +237,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
 
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
-    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
+    x, y = np.meshgrid(np.arange(dims[1], dtype=dtype), np.arange(dims[0], dtype=dtype))
     mod_flag = 0 #check how many modifications we are making
 
     #if old_center is specified, realign the images
@@ -276,6 +247,8 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
         x -= dx
         y -= dy
         mod_flag += 1
+        #6/10/2016: Next line is a Bug fix
+        new_center = old_center
 
     #if scale_factor is specified, scale the images
     if scale_factor != 1:
@@ -303,16 +276,16 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
         ##stupid scipy functions can't work with masked arrays (NANs)
         ##and trying to use interp2d with sparse arrays is way to slow
         ##hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-        
+
         #minval = np.min([np.nanmin(img), 0.0])
         #nanpix = np.where(np.isnan(img))
         #medval = np.median(img[np.where(~np.isnan(img))])
         #img_copy = np.copy(img)
-        
+
         ## JB question: Doesn't it work only if min<0?
         ## JB: I have to hack the hacked code to allow the sole PSFs alignment to work. Should clean that at some point.
         #    # JB: I think my code should work in both cases so waiting for Jason's approval
-        
+
         #if minval >= 0:
         #    minval2 = -np.nanmax(abs(img))
         #    img_copy[nanpix] = minval2*100.
@@ -360,6 +333,60 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1):
     #resampled_img[good] = interpolated(y[good],x[good])
 
     return resampled_img
+
+
+def align_and_scale_JB(img, new_center, old_center=None, scale_factor=1,dtype=float):
+    """
+    Helper function that realigns and/or scales the image
+
+    >>JB's version<<
+
+    I think the Nan management is better but there is still a bug to be fixed. (grid pattern in the nan background)
+
+    Args:
+        img: 2D image to perform manipulation on
+        new_center: 2 element tuple (xpos, ypos) of new image center
+        old_center: 2 element tuple (xpos, ypos) of old image center
+        scale_factor: how much the stretch/contract the image. Will we
+                      scaled w.r.t the new_center (done after relaignment).
+                      We will adopt the convention
+                        >1: stretch image (shorter to longer wavelengths)
+                        <1: contract the image (longer to shorter wvs)
+                        This means scale factor should be lambda_0/lambda
+                        where lambda_0 is the wavelength you want to scale to
+    Returns:
+        resampled_img: shifted and/or scaled 2D image
+    """
+    ny,nx = img.shape
+    x, y = np.meshgrid(np.arange(nx, dtype=dtype), np.arange(ny, dtype=dtype))
+    # mod_flag = 0 #check how many modifications we are making
+    # print(x.shape)
+
+    if old_center is None:
+        old_center = [ny/2,nx/2]
+
+    dx = old_center[0] - new_center[0]
+    dy = old_center[1] - new_center[1]
+
+    x_rescaled = x/float(scale_factor) - (nx-1)*(1./scale_factor-1)/2.
+    y_rescaled = y/float(scale_factor) - (ny-1)*(1./scale_factor-1)/2.
+
+
+    nanpix = np.where(np.isnan(img))
+    medval = np.median(img[np.where(~np.isnan(img))])
+    img_copy = np.copy(img)
+    img_copy[nanpix] = medval
+
+    resampled_img = ndimage.map_coordinates(img_copy, [y_rescaled+dy/scale_factor, x_rescaled+dx/scale_factor], cval = np.nan)
+    # resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval = np.nan)
+
+    x_nans = (np.fix((x[nanpix]-old_center[0])*scale_factor)+new_center[0]).astype(np.int)
+    y_nans = (np.fix((y[nanpix]-old_center[1])*scale_factor)+new_center[1]).astype(np.int)
+    indices_inbounds = np.where((x_nans<=(nx-1))*(x_nans>=(0))*(y_nans<=(ny-1))*(y_nans>=(0)))
+    where_newnans = (y_nans[indices_inbounds],x_nans[indices_inbounds])
+    resampled_img[where_newnans] = np.nan
+
+    return resampled_img.astype(dtype)
 
 
 def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
@@ -441,7 +468,7 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
-def meas_contrast(dat, iwa, owa, resolution):
+def meas_contrast(dat, iwa, owa, resolution, center=None):
     """
     Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
     thoughput.
@@ -451,45 +478,62 @@ def meas_contrast(dat, iwa, owa, resolution):
         iwa: inner working angle
         owa: outer working angle
         resolution: size of resolution element in pixels (FWHM or lambda/D)
+        center: location of star (x,y). If None, defaults the image size // 2.
 
     Returns:
         (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
 
     """
 
-    #figure out how finely to sample the radial profile
-    numseps = int((owa-iwa)/resolution)
-    seps = np.arange(numseps)*resolution + iwa + resolution/2.0 #don't want to start right at the edge of the occulting mask
+    if center is None:
+        starx = dat.shape[1]//2
+        stary = dat.shape[0]//2
+    else:
+        starx, stary = center
+
+    # figure out how finely to sample the radial profile
+    dr = resolution/2.0
+    numseps = int((owa-iwa)/dr)
+    # don't want to start right at the edge of the occulting mask
+    # but also want to well sample the contrast curve so go at twice the resolution
+    seps = np.arange(numseps) * dr + iwa + resolution/2.0
     dsep = resolution
 
     contrast = []
-    #create a coordinate grid
+    # create a coordinate grid
     x,y = np.meshgrid(np.arange(float(dat.shape[1])), np.arange(float(dat.shape[0])))
-    r = np.sqrt((x-140.)**2 + (y-140.)**2)
-    theta = np.arctan2(y-140, x-140) % 2*np.pi
+    r = np.sqrt((x-starx)**2 + (y-stary)**2)
+    theta = np.arctan2(y-stary, x-starx) % 2*np.pi
     for sep in seps:
-        #make a bunch of circular aperatures at this separation
+        # make a bunch of circular aperatures at this separation
         dtheta = dsep/float(sep)
         thetabins = np.arange(0, 360-np.degrees(dtheta)/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
         specklethetas = []
         specklefluxes = []
         for thistheta in thetabins:
-            #measure the flux in this resolution element
-            #first get the position of the center of the element
-            xphot = np.cos(np.radians(thistheta)) * sep + 140.
-            yphot = np.sin(np.radians(thistheta)) * sep + 140.
-            #coordinate system around this resolution element
+            # measure the flux in this resolution element
+            # first get the position of the center of the element
+            xphot = np.cos(np.radians(thistheta)) * sep + starx
+            yphot = np.sin(np.radians(thistheta)) * sep + stary
+            # coordinate system around this resolution element
             rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
             sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
             gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
-            validphotpix = np.where(rphot <= dsep/2)
-            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.sum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
+            # only apply in a circular region
+            # mask nan's in the gaussian template too, so it is normalized correctly
+            validphotpix = np.where((rphot <= dsep/2) & ~(np.isnan(dat)))
+            if np.size(validphotpix) < 1:
+                continue
+            #nanvals = np.isnan(dat)
+            #if np.size(nanvals) > 0:
+            #    gmask[nanvals] = np.nan
+            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.nansum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
 
             specklethetas.append(thistheta)
             specklefluxes.append(speckleflux)
 
-        #find 5 sigma flux using student-t statistics
-        fpf_flux = t.ppf(0.99999942697, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes, ddof=1))
+        # find 5 sigma flux using student-t statistics
+        fpf_flux = t.ppf(0.99999971334, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes, ddof=1))
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)
@@ -528,6 +572,54 @@ def high_pass_filter(img, filtersize=10):
     img[nan_index] = np.nan
 
     return filtered
+
+
+def define_annuli_bounds(annuli, IWA, OWA, annuli_spacing='constant'):
+    """
+    Defines the annuli boundaries radially
+
+    Args:
+        annuli: number of annuli
+        IWA: inner working angle (pixels)
+        OWA: outer working anglue (pixels)
+        annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced),
+                        log (logarithmical expansion with r), and linear (linearly expansion with r)
+
+    Returns:
+        rad_bounds: array of 2-element tuples that specify the beginning and end radius of that annulus
+
+    """
+    #calculate the annuli ranges
+    if annuli_spacing.lower() == "constant":
+        dr = float(OWA - IWA) / annuli
+        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+    elif annuli_spacing.lower() == "log":
+        # calculate normalization of log scaling
+        unnormalized_log_scaling = np.log(np.arange(annuli) + 1) + 1
+        log_coeff = float(OWA - IWA)/np.sum(unnormalized_log_scaling)
+        # construct the radial spacing
+        rad_bounds = []
+        for i in range(annuli):
+            # lower bound is either mask or end of previous annulus
+            if i == 0:
+                lower_bound = IWA
+            else:
+                lower_bound = rad_bounds[-1][1]
+            upper_bound = lower_bound + log_coeff * unnormalized_log_scaling[i]
+            rad_bounds.append((lower_bound, upper_bound))
+    elif annuli_spacing.lower() == "linear":
+        # scale linaer scaling to OWA-IWA
+        linear_coeff = float(OWA - IWA)/np.sum(np.arange(annuli) + 1)
+        rad_bounds = [(IWA + linear_coeff * rad, IWA + linear_coeff * (rad + 1)) for rad in range(annuli)]
+    else:
+        raise ValueError("annuli_spacing currently only supports 'constant', 'log', or 'linear'")
+
+    # check to make sure the annuli are all greater than 1 pixel
+    min_width = np.min(np.diff(rad_bounds, axis=1))
+    if min_width < 1:
+        raise ValueError("Too many annuli, some annuli are less than 1 pixel")
+
+    return rad_bounds
 
 
 def klip_adi(imgs, centers, parangs, IWA, annuli=5, subsections=4, movement=3, numbasis=None, aligned_center=None,

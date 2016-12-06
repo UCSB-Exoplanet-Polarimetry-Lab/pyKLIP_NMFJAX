@@ -23,17 +23,41 @@ debug = False
 
 class MatchedFilter(NoFM):
     """
-    Planet Characterization class. Goal to characterize the astrometry and photometry of a planet
+    Matched filter with forward modelling.
     """
-    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,# flux_conversion,
-                 spectrallib = None,
+    def __init__(self, inputs_shape,numbasis, input_psfs,input_psfs_wvs,spot_flux,
+                 spectrallib = None, # Input spectra should be in flux not in contrast. The transmission is accounted for.
                  mute = False,
                  star_type = None,
-                 filter = None,
+                 filter_name = None,
                  save_per_sector = None,
-                 datatype="float"):
+                 datatype="float",
+                 fakes_sepPa_list = None,
+                 disable_FM = None,
+                 true_fakes_pos = None):
+        '''
+
+        :param inputs_shape:
+        :param numbasis:
+        :param input_psfs:
+        :param input_psfs_wvs:
+        :param spectrallib:
+        :param mute:
+        :param star_type: String containing the spectral type of the star. 'A5','F4',... Assume type V star.
+                        If None, the spectrum is assumed to be in contrast units.
+        :param filter_name:
+        :param save_per_sector:
+        :param datatype:
+        :param fakes_sepPa_list:
+        :return:
+        '''
         # allocate super class
-        super(MatchedFilter, self).__init__(inputs_shape, numbasis)
+        super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
+
+        if true_fakes_pos is None:
+            self.true_fakes_pos = False
+        else:
+            self.true_fakes_pos = true_fakes_pos
 
         if datatype=="double":
             self.mp_data_type = ctypes.c_double
@@ -53,11 +77,14 @@ class MatchedFilter(NoFM):
         self.nx = self.inputs_shape[2]
         self.N_frames = self.inputs_shape[0]
 
-        if filter is None:
-            filter = "H"
+        if filter_name is None:
+            filter_name = "H"
 
-        if star_type is None:
-            star_type = "G4"
+        self.fakes_sepPa_list = fakes_sepPa_list
+        if disable_FM is None:
+            self.disable_FM = False
+        else:
+            self.disable_FM = disable_FM
 
         self.inputs_shape = self.inputs_shape
         if spectrallib is not None:
@@ -65,7 +92,7 @@ class MatchedFilter(NoFM):
         else:
             spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
             spectra_files = [spectra_folder + "t650g18nc.flx"]
-            self.spectrallib = [specmanage.get_planet_spectrum(filename, filter)[1] for filename in spectra_files]
+            self.spectrallib = [specmanage.get_planet_spectrum(filename, filter_name)[1] for filename in spectra_files]
 
         self.N_spectra = len(self.spectrallib)
 
@@ -74,10 +101,14 @@ class MatchedFilter(NoFM):
         self.nl = np.size(input_psfs_wvs)
         #self.flux_conversion = flux_conversion
         self.input_psfs = input_psfs
-        # Make sure the peak value is unity for all wavelengths
+        # Make sure the total flux of each PSF is unity for all wavelengths
+        # So the peak value won't be unity.
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
+        self.aper_over_peak_ratio = np.zeros(37)
         for l_id in range(self.input_psfs.shape[0]):
-            self.input_psfs[l_id,:,:] /= self.sat_spot_spec[l_id]
+            self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
+            self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
+            #self.input_psfs[l_id,:,:] /= self.sat_spot_spec[l_id]
 
         self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
@@ -88,10 +119,38 @@ class MatchedFilter(NoFM):
         self.col_p = np.ceil(self.nx_psf/2.0)     # col_plus
 
         # TODO: calibrate to contrast units
-        # calibrate spectra to DN
-        self.spectrallib = [self.sat_spot_spec*spectrum/(specmanage.get_star_spectrum(filter, star_type=star_type)[1]) for spectrum in self.spectrallib]
-        self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
-        self.fake_contrast = 10**-5 # ratio of flux of the planet/flux of the star (broad band flux)
+        # Correct spectra for transmission
+
+        if star_type is None:
+            # Spectrum is in contrast units
+            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum for spectrum in self.spectrallib]
+        else:
+            self.spectrallib = [self.sat_spot_spec*self.aper_over_peak_ratio*spectrum/(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]) for spectrum in self.spectrallib]
+        # Normalize the spectra to unit broadband flux
+        self.spectrallib = [spectrum/np.sum(spectrum) for spectrum in self.spectrallib]
+        # import matplotlib.pyplot as plt
+        # plt.plot(self.spectrallib[0]/np.sum(self.spectrallib[0]))
+        # plt.plot(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]/np.sum(specmanage.get_star_spectrum(filter_name, star_type=star_type)[1]))
+        # #plt.plot(spectrum/np.sum(spectrum))
+        # plt.plot(self.sat_spot_spec/np.sum(self.sat_spot_spec))
+        # plt.show()
+        self.fake_contrast = 1. # ratio of flux of the planet/flux of the star (broad band flux)
+        self.N_cubes = self.N_frames/self.nl
+        self.tiled_spectrallib = []
+        # import matplotlib.pyplot as plt
+        from pyklip.instruments.GPI import GPIData
+        for spectrum in self.spectrallib:
+            tiled_spectrum = []
+            for k in range(self.N_cubes):
+                tiled_spectrum.extend(spectrum*np.sum(spot_flux[37*k:(37*(k+1))]*self.aper_over_peak_ratio)*self.fake_contrast/GPIData.spot_ratio[filter_name])
+                # plt.plot(spot_flux[37*k:(37*(k+1))])
+            self.tiled_spectrallib.append(np.array(tiled_spectrum))
+            # plt.show()
+        # import matplotlib.pyplot as plt
+        # plt.plot(self.tiled_spectrallib[0])
+        # plt.plot(spot_flux)
+        # plt.plot(spot_flux[37*k:(37*(k+1))]*self.aper_over_peak_ratio)
+        # plt.show()
 
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
@@ -103,7 +162,7 @@ class MatchedFilter(NoFM):
         self.sub_sampling_coef = 10
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(ny_psf* 1.)-ny_psf/2, np.arange(nx_psf * 1.)-nx_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
         if  self.nearestNeigh_PSF_interp==1:
             x_psf_HD_vec = np.linspace(0,nx_psf-1.,nx_psf*self.sub_sampling_coef)-nx_psf/2
             y_psf_HD_vec = np.linspace(0,ny_psf-1.,ny_psf*self.sub_sampling_coef)-ny_psf/2
@@ -150,7 +209,7 @@ class MatchedFilter(NoFM):
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF/2,np.arange(0,ny_PSF,1)-ny_PSF/2)
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
-        self.stamp_PSF_mask[np.where(r_PSF_stamp < 3.)] = np.nan
+        self.stamp_PSF_mask[np.where(r_PSF_stamp < 7.)] = np.nan
 
     # def alloc_interm(self, max_sector_size, numsciframes):
     #     """Allocates shared memory array for intermediate step
@@ -197,8 +256,54 @@ class MatchedFilter(NoFM):
 
         return fmout, fmout_shape
 
+    def skip_section(self, radstart, radend, phistart, phiend):
+        """
+        Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
+        When True is returned the current section in the loop in klip_parallelized() is skipped.
 
-    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
+        Args:
+            radstart: minimum radial distance of sector [pixels]
+            radend: maximum radial distance of sector [pixels]
+            phistart: minimum azimuthal coordinate of sector [radians]
+            phiend: maximum azimuthal coordinate of sector [radians]
+
+        Returns:
+            Boolean: False so by default it never skips.
+        """
+
+        # print(radstart, radend, phistart, phiend)
+        margin_sep = np.sqrt(2)/2
+        margin_phi = np.sqrt(2)/(2*radstart)
+        # print(margin_sep,margin_phi)
+        if self.fakes_sepPa_list is not None:
+            skipSectionBool = True
+            for sep_it,pa_it in self.fakes_sepPa_list:
+                #print(sep_it,pa_it,(pa_it%360)/180.*np.pi)
+                paend= ((2*np.pi-phistart +np.pi/2)% (2.0 * np.pi))
+                pastart = ((2*np.pi-phiend +np.pi/2)% (2.0 * np.pi))
+                # Normal case when there are no 2pi wrap
+                if pastart < paend:
+                    if (radstart-margin_sep<=sep_it<=radend+margin_sep) and ((pa_it%360)/180.*np.pi >= pastart-margin_phi) & ((pa_it%360)/180.*np.pi < paend+margin_phi):
+                        skipSectionBool = False
+                        break
+                # 2 pi wrap case
+                else:
+                    if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (((pa_it%360)/180.*np.pi >= pastart-margin_phi) | ((pa_it%360)/180.*np.pi < paend+margin_phi)):
+                        skipSectionBool = False
+                        break
+                # if (radstart-margin_sep<=sep_it<=radend+margin_sep) and (phistart-margin_phi<=(pa_it%360)/180.*np.pi<=phiend+margin_phi):
+                #     skipSectionBool = False
+                #     print("coucou")
+                #     #print(radstart, radend, phistart, phiend)
+                #     print(sep_it,pa_it,(pa_it%360)/180.*np.pi)
+                #     break
+        else:
+            skipSectionBool = False
+
+        return skipSectionBool
+
+
+    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
                      parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, **kwargs):
         """
@@ -236,6 +341,25 @@ class MatchedFilter(NoFM):
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
+        # for k in range(aligned_imgs.shape[0]):
+        #     blackboard1 = np.zeros((self.ny,self.nx)) + np.nan
+        #     #print(section_ind)
+        #     plt.figure(1)
+        #     # plt.subplot(1,2,1)
+        #     blackboard1.shape = [input_img_shape[0] * input_img_shape[1]]
+        #     tmp = copy(refs[k,:])
+        #     #tmp[np.where(np.isnan(tmp))] = 1000
+        #     blackboard1[section_ind] = tmp
+        #     blackboard1.shape = [input_img_shape[0],input_img_shape[1]]
+        #     plt.imshow(blackboard1,interpolation="nearest")
+        #     plt.colorbar()
+        #     # plt.subplot(1,2,2)
+        #     # coucou = copy(aligned_imgs[ref_psfs_indicies, :])
+        #     # print(coucou.shape)
+        #     # coucou.shape = [coucou.shape[0],input_img_shape[0],input_img_shape[1]]
+        #     # plt.imshow(coucou[k,:,:],interpolation="nearest")
+        #     plt.show()
+
 
         # Calculate the PA,sep 2D map
         x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.0)- ref_center[0], np.arange(self.ny * 1.0)- ref_center[1])
@@ -243,96 +367,146 @@ class MatchedFilter(NoFM):
         y_grid=y_grid.astype(self.np_data_type)
         r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
         pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
-        #pa_grid = np.arctan2( -y_grid,x_grid) % (2.0 * np.pi)
-        # normal case where there's no 2 pi wrap
-        #print(phistart/np.pi*180,phiend/np.pi*180)
         paend= ((2*np.pi-phistart +np.pi/2)% (2.0 * np.pi))
         pastart = ((2*np.pi-phiend +np.pi/2)% (2.0 * np.pi))
-        #print(pastart/np.pi*180,paend/np.pi*180)
+        # Normal case when there are no 2pi wrap
         if pastart < paend:
             where_section = np.where((r_grid >= radstart) & (r_grid < radend) & (pa_grid >= pastart) & (pa_grid < paend))
         # 2 pi wrap case
         else:
             where_section = np.where((r_grid >= radstart) & (r_grid < radend) & ((pa_grid >= pastart) | (pa_grid < paend)))
-        # JB debug
-        if 0:
-            phi_grid = np.arctan2(y_grid , x_grid) % (2.0 * np.pi)
-            print(parang)
-            print(phistart/np.pi*180,phiend/np.pi*180)
-            print(pastart/np.pi*180,paend/np.pi*180)
-            print(pa_grid[where_section]/np.pi*180)
-            print(r_grid[where_section])
-            print(ref_center)
-            r_grid[where_section] = 0.0
-            pa_grid[where_section] = 0.0
-            plt.subplot(121)
-            plt.imshow(phi_grid)
-            plt.colorbar()
-            plt.subplot(122)
-            plt.imshow(pa_grid)
-            plt.colorbar()
-            plt.show()
 
-        #print("coucou")
         # Get a list of the PAs and sep of the PA,sep map falling in the current section
-        #where_section = where_section[0][::2]
         r_list = r_grid[where_section]
         pa_list = pa_grid[where_section]
-        #r_list = r_list[::10]
-        #pa_list = pa_list[::10]
+        x_list = x_grid[where_section]
+        y_list = y_grid[where_section]
+        row_id_list = where_section[0]
+        col_id_list = where_section[1]
+        # Only select pixel with fakes if needed
+        if self.fakes_sepPa_list is not None:
+            r_list_tmp = []
+            pa_list_tmp = []
+            row_id_list_tmp = []
+            col_id_list_tmp = []
+            for sep_it,pa_it in self.fakes_sepPa_list:
+                x_it = sep_it*np.cos(np.radians(90+pa_it))
+                y_it = sep_it*np.sin(np.radians(90+pa_it))
+                dist_list = np.sqrt((x_list-x_it)**2+(y_list-y_it)**2)
+                min_id = np.nanargmin(dist_list)
+                min_dist = dist_list[min_id]
+                if min_dist < np.sqrt(2)/2:
+                    if self.true_fakes_pos:
+                        r_list_tmp.append(sep_it)
+                        pa_list_tmp.append(np.radians(pa_it))
+                    else:
+                        r_list_tmp.append(r_list[min_id])
+                        pa_list_tmp.append(pa_list[min_id])
+                    row_id_list_tmp.append(row_id_list[min_id])
+                    col_id_list_tmp.append(col_id_list[min_id])
+            r_list = r_list_tmp
+            pa_list = pa_list_tmp
+            row_id_list = row_id_list_tmp
+            col_id_list = col_id_list_tmp
+            # print(r_list,np.rad2deg(pa_list),row_id_list,col_id_list)
 
-        # For all PAs and sep
-        N_tot_it = self.N_spectra*self.N_numbasis*np.size(r_list)
-        #N_it = 0
+        # import glob
+        # mvt,metric = 0.5,"FMMF"
+        # campaign_dir_Fakes = "/home/sda/Dropbox (GPI)/GPIDATA-Fakes/"
+        # filename = "*{0}*{1}.fits".format(mvt,metric)
+        # inputdir = os.path.join(campaign_dir_Fakes,"LQ_Hya","autoreduced","20141218_H_Spec_t1800g100nc_1e6")
+        # filename_path = glob.glob(os.path.join(inputdir,"planet_detec_FMMF_oneAc","t1800g100nc", filename))
+        # hdulist = pyfits.open(filename_path[0])
+        # image = hdulist[1].data
+        # exthdr = hdulist[1].header
+        # prihdr = hdulist[0].header
+        # import pyklip.kpp.utils.GOI as goi
+        # row_id_list2,col_id_list2 = goi.get_pos_known_objects(prihdr,exthdr)
+        # print("coucou",[(a,b) for a,b in zip(row_id_list2,col_id_list2)])
+        # print("bonjou",row_id_list,col_id_list)
+
+
+        # Loop over the input template spectra and the number of KL modes in numbasis
         for spec_id,N_KL_id in itertools.product(range(self.N_spectra),range(self.N_numbasis)):
-            # t1 = time()
-            for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),where_section[0],where_section[1]):
+            # Calculate the projection of the FM and the klipped section for every pixel in the section.
+            # 1/ Inject a fake at one pa and sep in the science image
+            # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
+            # references rotate.
+            # 3/ Calculate the perturbation of the KL modes
+            # 4/ Calculate the FM
+            # 5/ Calculate dot product (matched filter)
+            for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),row_id_list,col_id_list):
                 #print(sep_fk,pa_fk,r_grid[row_id,col_id],pa_grid[row_id,col_id]/np.pi*180)
-                #N_it = N_it + 1
-                #print(N_it,N_tot_it,float(N_it)/float(N_tot_it))
-                #   Generate model sci
+
+                # 1/ Inject a fake at one pa and sep in the science image
                 if self.nearestNeigh_PSF_interp != 0:
+                    # This is a test with a nearest neighbor interpolation but it is not quicker.
+                    # Therefore to be ignored.
                     model_sci,mask = self.generate_model_sci_nearestNeigh(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
                 else:
                     model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#sep_fk,pa_fk)
-                #print("bye")
-                #print(model_sci)
-                #model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*1e-5
-                #model_sci *= self.spectrallib[spec_id][np.where(self.input_psfs_wvs == ref_wv)]*self.fake_contrast
-                #print(np.where(np.array(self.input_psfs_wvs) == ref_wv))
-                #print(self.input_psfs_wvs.index(ref_wv))
-                model_sci *= self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
-                where_fk = np.where(mask>=1)[0]
-                where_background = np.where(mask==2)[0]
-                #print(model_sci[where_fk])
-                #   Generate models ref
-                if self.nearestNeigh_PSF_interp != 0:
-                    models_ref = self.generate_models_nearestNeigh(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+
+                # self.spectrallib[spec_id] is one of the input template spectrum
+                #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)  in DN space.
+                # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
+                # model_sci = model_sci*self.spectrallib[spec_id][self.input_psfs_wvs.index(ref_wv)]*self.fake_contrast
+                model_sci = model_sci*self.tiled_spectrallib[spec_id][input_img_num]
+                where_fk = np.where(mask==2)[0]
+                where_background = np.where(mask>=1)[0]
+
+                # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
+                # references rotate.
+                if not self.disable_FM:
+                    if self.nearestNeigh_PSF_interp != 0:
+                        models_ref = self.generate_models_nearestNeigh(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+                    else:
+                        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
+
+                    # Calculate the spectra to determine the flux of each model reference PSF
+                    # self.spectrallib[spec_id] is one of the input template spectrum
+                    #   It is normalized to unit broad band flux (sum(self.spectrallib[spec_id])=1)
+                    # self.fake_contrast = 1.0 right now. It used to be 10^-5 for random reasons.
+                    # input_spectrum =  self.spectrallib[spec_id]
+                    # input_spectrum = np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
+                    # input_spectrum = input_spectrum[ref_psfs_indicies]
+                    input_spectrum = self.tiled_spectrallib[spec_id][ref_psfs_indicies]
+                    models_ref = models_ref * input_spectrum[:, None]
+
+                    # 3/ Calculate the perturbation of the KL modes
+                    # using original Kl modes and reference models, compute the perturbed KL modes.
+                    # Spectrum is already in the model, that's why we use perturb_specIncluded(). (Much faster)
+                    #print(np.sum(np.isnan(evals)),np.sum(np.isnan(evecs)),np.sum(np.isnan(klmodes)),np.sum(np.isnan(refs)),np.sum(np.isnan(models_ref)))
+                    delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+                    #print(np.sum(np.isnan(delta_KL)))
+
+                    # 4/ Calculate the FM: calculate postklip_psf using delta_KL
+                    # postklip_psf has unit broadband flux
+                    postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
                 else:
-                    #print("coucou")
-                    models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)#32.,170.)#,sep_fk,pa_fk)
-                #print("bonjour")
-                #print(models_ref[0][where_fk])
-                # Calculate the spectra to determine the flux of each model reference PSF
-                input_spectrum =  self.spectrallib[spec_id]
-                #input_spectrum = self.flux_conversion * np.ravel(np.tile(input_spectrum,(1, total_imgs/self.nl)))*1e-5
-                input_spectrum =np.ravel(np.tile(input_spectrum,(1, self.N_frames/self.nl)))*self.fake_contrast
-                input_spectrum = input_spectrum[ref_psfs_indicies]
-                models_ref = models_ref * input_spectrum[:, None]
+                    #if one doesn't want the FM
+                    if np.size(numbasis) == 1:
+                        postklip_psf = model_sci[None,:]
+                    else:
+                        postklip_psf = model_sci
 
-                # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
-                delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
+                # 5/ Calculate dot product (matched filter)
+                # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+                # First dimension details:
+                # 0: dot product
+                # 1: square of the norm of the model
+                # 2: square of the norm of the image
+                sky = np.mean(klipped[where_background,N_KL_id])
+                # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
+                #print(sky)
+                # Subtract local sky background to the klipped image
+                klipped_sub = klipped[where_fk,N_KL_id]-sky
+                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
+                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
+                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id])#np.var(klipped[where_background,N_KL_id]) #np.sum(klipped_sub*klipped_sub)
+                #print(fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id],fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id])
 
-                # calculate postklip_psf using delta_KL
-                #print(model_sci[where_fk])
-                #print(delta_KL)
-                postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None)
-
-                #print(klipped[:,N_KL_id].shape,postklip_psf[N_KL_id,:].shape)
-
-                if 0 and np.size(klipped[where_background,N_KL_id])==0:
-                    print("3")
-                    print(where_background)
+                # Plot for debug only
+                if 0:
 
                     #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
@@ -364,26 +538,6 @@ class MatchedFilter(NoFM):
                     print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
                     print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
                     plt.show()
-                # 0: dot product
-                # 1: square of the norm of the model
-                # 2: square of the norm of the image
-                #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-                sky = np.mean(klipped[where_background,N_KL_id])
-                klipped_sub = klipped[where_fk,N_KL_id]-sky
-                # print(np.sum(klipped[where_fk,N_KL_id]*postklip_psf[N_KL_id,where_fk]))
-                # print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
-                # print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
-                #print(postklip_psf.shape)
-                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
-                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
-                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*klipped_sub)
-
-            # print(input_img_num)
-            # if input_img_num == 50:
-            # t2 = time()
-            # print(t2-t1)
-            # plt.imshow(np.squeeze(fmout[0,spec_id,N_KL_id,input_img_num,:,:]))
-            # plt.show()
 
 
 
@@ -447,10 +601,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -484,8 +638,8 @@ class MatchedFilter(NoFM):
 
         # create a coordinate system for the image that is with respect to the model PSF
         # round to nearest pixel and add offset for center
-        l = round(psf_centx + ref_center[0])
-        k = round(psf_centy + ref_center[1])
+        l = int(round(psf_centx + ref_center[0]))
+        k = int(round(psf_centy + ref_center[1]))
         # recenter coordinate system about the location of the planet
         x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
         y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
@@ -496,7 +650,7 @@ class MatchedFilter(NoFM):
 
         # use intepolation spline to generate a model PSF and write to temp img
         whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
+                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -504,26 +658,39 @@ class MatchedFilter(NoFM):
         whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
 
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 1
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isfinite(self.stamp_PSF_mask))]=2
+        #x_grid, y_grid
+        r_grid = abs(x_grid +y_grid*1j)
+        pa_grid = (np.arctan2( x_grid,y_grid))% (2.0 * np.pi)
+        pastart = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) - float(padding)/sep_fk) % (2.0 * np.pi)
+        paend = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) + float(padding)/sep_fk) % (2.0 * np.pi)
+        if pastart < paend:
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & (pa_grid >= pastart) & (pa_grid < paend))
+        else:
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & ((pa_grid >= pastart) | (pa_grid < paend)))
+        whiteboard[where_mask] = 1
+        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
         mask = whiteboard[section_ind]
 
         # create a canvas to place the new PSF in the sector on
-        if 0:#np.size(np.where(mask==2)[0])==0:
+        if 0:#np.size(np.where(mask==2)[0])==0: 296
             whiteboard.shape = (input_img_shape[0], input_img_shape[1])
-            print(whiteboard.shape)
-            print(section_ind)
+            # print(whiteboard.shape)
+            # print(section_ind)
+            # print(np.size(section_ind))
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
             blackboard[section_ind] = 1#segment_with_model
             blackboard.shape = [input_img_shape[0],input_img_shape[1]]
             plt.figure(1)
-            plt.subplot(1,2,1)
+            plt.subplot(1,3,1)
             im = plt.imshow(whiteboard)
             plt.colorbar(im)
-            plt.subplot(1,2,2)
-            im = plt.imshow(blackboard)
+            plt.subplot(1,3,2)
+            im = plt.imshow(blackboard+whiteboard)
+            plt.colorbar(im)
+            plt.subplot(1,3,3)
+            im = plt.imshow(np.degrees(pa_grid))
             plt.colorbar(im)
             plt.show()
 
@@ -556,10 +723,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -673,10 +840,10 @@ class MatchedFilter(NoFM):
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = np.floor(ny_psf/2.0)    # row_minus
-        row_p = np.ceil(ny_psf/2.0)     # row_plus
-        col_m = np.floor(nx_psf/2.0)    # col_minus
-        col_p = np.ceil(nx_psf/2.0)     # col_plus
+        row_m = int(np.floor(ny_psf/2.0))    # row_minus
+        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
+        col_m = int(np.floor(nx_psf/2.0))    # col_minus
+        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -712,8 +879,8 @@ class MatchedFilter(NoFM):
 
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
-            l = round(psf_centx + ref_center[0])
-            k = round(psf_centy + ref_center[1])
+            l = int(round(psf_centx + ref_center[0]))
+            k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
             x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
             y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
@@ -724,7 +891,7 @@ class MatchedFilter(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

@@ -128,3 +128,36 @@ class NoFM(object):
         """
 
         return fmout
+
+    def skip_section(self, radstart, radend, phistart, phiend):
+        """
+        Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
+        When True is returned the current section in the loop in klip_parallelized() is skipped.
+
+        Args:
+            radstart: minimum radial distance of sector [pixels]
+            radend: maximum radial distance of sector [pixels]
+            phistart: minimum azimuthal coordinate of sector [radians]
+            phiend: maximum azimuthal coordinate of sector [radians]
+
+        Returns:
+            Boolean: False so by default it never skips.
+        """
+        return False
+
+    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
+                   spectrum=None):
+        """
+        Saves the fmout data to disk following the instrument's savedata function
+
+        Args:
+            dataset: Instruments.Data instance. Will use its dataset.savedata() function to save data
+            fmout: the fmout data passed from fm.klip_parallelized which is passed as the output of cleanup_fmout
+            outputdir: output directory
+            fileprefix: the fileprefix to prepend the file name
+            numbasis: KL mode cutoffs used
+            klipparams: string with KLIP-FM parameters
+            calibrate_flux: if True, flux calibrate the data (if applicable)
+            spectrum: if not None, the spectrum to weight the data by. Length same as dataset.wvs
+        """
+        return
