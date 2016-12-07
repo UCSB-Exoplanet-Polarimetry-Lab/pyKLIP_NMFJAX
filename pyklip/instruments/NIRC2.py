@@ -27,7 +27,7 @@ from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
 
-class NIRC2Data(object):
+class NIRC2Data(Data):
     """
     A sequence of Keck NIRC2 ADI Data. Each NIRC2Data object has the following fields and functions
 
