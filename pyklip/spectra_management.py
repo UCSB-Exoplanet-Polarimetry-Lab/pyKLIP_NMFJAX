@@ -111,6 +111,13 @@ def get_specType(object_name,SpT_file_csv = None):
     :return: Spectral type
     """
 
+    # Hard-coded spectral type for some targets. Not ideal but I don't want to think about it right now.
+    if object_name == "iot_Cen":
+        return "A1"
+    if object_name == "IK_Peg":
+        return "A8"
+
+
     if SpT_file_csv is None:
         import urllib
 
@@ -187,10 +194,6 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
     w_start, w_end, N_sample = band_sampling[filter_name]
     dw = (w_end-w_start)/N_sample
     sampling_pip = np.arange(w_start,w_end,dw)
-
-    # Sory hard-coded type...
-    if star_type == "kA6hA9mF0_+_DA":
-        star_type = "A8"
 
     if star_type is None:
         return sampling_pip,None
