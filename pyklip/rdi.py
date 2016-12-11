@@ -1,7 +1,8 @@
 import numpy as np
-from astropy.io import fits
-import os.path
+import os
 from sys import stdout
+from astropy.io import fits
+import pyklip.klip as klip
 
 class PSFLibrary(object):
     """
@@ -73,7 +74,7 @@ class PSFLibrary(object):
         elif compute_correlation:
             self._compute_correlation()
 
-    def _compute_correlation(self, verbose=False, force=False):
+    def _compute_correlation(self, verbose=False, force=False, mask=None):
         """
         Computes the correlation matrix and saves it in self.master_correlation
 
@@ -103,27 +104,31 @@ class PSFLibrary(object):
 
 
         #Loop the correlation matrix calculation
-        for i in np.arange(0,nfiles-1):
+        for i in np.arange(0,self.nfiles-1):
             self.master_correlation[i,i]=1.
 
             #TODO: PARALLELIZE THIS STEP. 
 
             #Cycle through every file that comes AFTER the current file 
-            for j in np.arange(i+1,nfiles-1):
+            for j in np.arange(i+1,self.nfiles-1):
 
-                if super_verbose:
+                if verbose:
                     # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
-                    stdout.write("\r Correlating file {i}% with file {i}%".format(i,j))
+                    stdout.write("\r Correlating file {0} with file {1}".format(i,j))
                     stdout.flush()
                 
+                #You might want to only correlate some of the image. 
+                if mask != None:
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) & (mask == mask)
+                else: 
                 #Ditch where either of the two arrays have NANs
-                where_not_nans = (data_array[:,:,i] == data_array[:,:,i]) & (data_array[:,:,j] == data_array[:,:,j])
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) 
 
-                data1= data_array[:,:,i]
-                data2= data_array[:,:,j]
+                data1= self.master_library[i,:,:]
+                data2= self.master_library[j,:,:]
 
                 #I believe this bit was copied and pasted from pyklip at some point. 
-                covar_psfs=np.cov([data2[where_not_nans], data1[where_not_nans]])
+                covar_psfs=np.cov([data2[where_to_corr], data1[where_to_corr]])
                 covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
                 corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
 
@@ -173,8 +178,9 @@ class PSFLibrary(object):
 
         # we need to exclude bad files and files already in the dataset itself (since that'd be ADI/SDI/etc)
         # strip away the directories in the master_filenames
-        master_just_filenames = np.asarray([filename.split('/')[-1] for filename in self.master_filenames])
-        dataset_just_filenames = np.asarray([filename.split('/')[-1] for filename in dataset.filenames])
+        master_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in self.master_filenames])
+        dataset_just_filenames = np.asarray([filename.split(os.sep)[-1] for filename in dataset.filenames])
+        # print(dataset_just_filenames)
         # compare with the dataset filnames (also d)
         in_dataset = np.in1d(master_just_filenames, dataset_just_filenames)
         
@@ -204,7 +210,7 @@ class PSFLibrary(object):
             dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
             # generate a correlation matrix that's N_dataset x N_goodpsfs
             # the ordering of the correlation matrix also ensures that N_dataset is ordered the same as datasets
-            self.correlation = self.master_correlation[np.ix_(dataset_file_indices_in_lib, good)]
+            self.correlation = self.master_correlation[dataset_file_indices_in_lib]
 
             # generate a list indicating which files are good
             self.isgoodpsf = good

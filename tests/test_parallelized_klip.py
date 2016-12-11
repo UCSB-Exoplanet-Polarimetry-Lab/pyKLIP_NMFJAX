@@ -103,7 +103,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
         assert(len(filelist) == 3)
 
     # create the dataset object
-    dataset = GPI.GPIData(filelist)
+    dataset = GPI.GPIData(filelist, skipslices=[0,36], bad_sat_spots=[3])
 
     # inject fake planet
     fake_seps = [20, 50, 40, 30] # pixels
@@ -126,7 +126,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     speccube_kl20 = spec_hdulist[1].data
 
     # check to make sure it's the right shape
-    assert(speccube_kl20.shape == (37, 281, 281))
+    assert(speccube_kl20.shape == (35, 281, 281))
 
     # look at the output data. Validate the KL mode cube
     spec_hdulist = fits.open("{out}/{pre}-KLmodes-all.fits".format(out=outputdir, pre=prefix))
