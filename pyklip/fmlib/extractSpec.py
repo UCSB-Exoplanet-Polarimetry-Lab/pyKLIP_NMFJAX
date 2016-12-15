@@ -379,7 +379,156 @@ class ExtractSpec(NoFM):
 
         return fmout
 
+def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
+           stamp=10, numthreads=4,
+           spectra_template=None):
+    """
+    inputs: 
+    - pars      - tuple of planet position (sep (pixels), pa (deg)).
+    - numbasis  - can be a list or a single number
+    - mv        - klip movement
+    - stamp     - size of box around companion for FM
+    - numthreads (default=4)
+    - spectrum  - Can provide a template, default is None
+    """
 
+    maxnumbasis = 100 # set from JB's example
+    movement = mv # movement
+    stamp_size=stamp
+
+    print "===================================="
+    print "planet separation, pa:", pars
+    print "numbasis:", numbasis
+    print "movement:", mv
+    print "===================================="
+    print "Generating forward model..."
+
+    planet_sep, planet_pa = pars
+
+    # If 'dataset' does not already have psf model, generate them. 
+    if hasattr(dataset, "psfs"):
+        radial_psfs = dataset.psfs / (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+    else:
+        dataset.generate_psf_cube(20)
+
+    fm_class = ExtractSpec(dataset.input.shape,
+                                  numbasis,
+                                  planet_sep,
+                                  planet_pa,
+                                  radial_psfs,
+                                  np.unique(dataset.wvs),
+                                  stamp_size = stamp_size)
+
+    sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
+                                               dataset.centers,
+                                               dataset.PAs,
+                                               dataset.wvs,
+                                               dataset.IWA,
+                                               fm_class,
+                                               numbasis=numbasis,
+                                               movement=movement,
+                                               #spectrum=spectra_template,
+                                               spectrum=None,
+                                               annuli=[[planet_sep-10,planet_sep+10]],
+                                               subsections=[[(planet_pa-10.)/180.*np.pi,\
+                                                             (planet_pa+10.)/180.*np.pi]],
+                                               numthreads=numthreads,
+                                               maxnumbasis=maxnumbasis)
+    return fmout
+
+def invert_spect_fmodel(fmout, dataset, method = "JB"):
+    """
+    A. Greenbaum Nov 2016
+    
+    Args:
+        fmout: the forward model matrix which has structure:
+               [numbasis, n_frames, n_frames+1, npix]
+        dataset: from GPI.GPIData(filelist) -- typically set highpass=True also
+        method: "JB" or "LP" to try the 2 different inversion methods (JB's or Laurent's)
+    Returns:
+        A spectrum! (In contrast units), size (numbasis, nwav)
+    """
+    N_frames = fmout.shape[2] - 1 # The last element in this axis is the klipped image
+    N_cubes = len(dataset.exthdrs) # ? what attribute has this info?
+    nl = N_frames / N_cubes
+    stamp_size_squared = fmout.shape[-1]
+    stamp_size = np.sqrt(stamp_size_squared)
+
+    # Selection matrix
+    spec_identity = np.identity(nl)
+    selec = np.tile(spec_identity,(N_frames/nl,1))
+
+    # klipped image for each numbasis, n_frames x npix
+    klipped = np.zeros((fmout.shape[0], fmout.shape[1], fmout.shape[3]))
+    estim_spec = np.zeros((fmout.shape[0], nl))
+
+    # The first dimension in fmout is numbasis, and there can be multiple of these,
+    # Especially if you want to see how the spectrum behaves when you change parameters.
+    for ii in range(len(fmout)):
+        klipped[ii, ...] = fmout[ii,:, -1,:]
+        klipped_coadd = np.zeros((nl,stamp_size_squared))
+        for k in range(N_cubes):
+            klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
+        print klipped_coadd.shape
+        klipped_coadd.shape = [nl,stamp_size,stamp_size]
+        FM_noSpec = fmout[ii, :,:N_frames, :]
+
+        # Move spectral dimension to the end (Effectively move pixel dimension to the middle)
+        # [nframes, nframes, npix] -> [nframes, npix, nframes]
+        FM_noSpec = np.rollaxis(FM_noSpec, 2, 1)
+
+        fm_noSpec_coadd = np.dot(selec.T,np.dot(np.rollaxis(FM_noSpec,1,0),selec))
+        if method == "JB":
+            #
+            #JBR's matrix inversion adds up over all exposures, then inverts
+            #
+            fm_noSpec_coadd.shape = [nl,stamp_size,stamp_size,nl]
+            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(nl*stamp_size_squared,nl))
+            pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
+            estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(nl*stamp_size_squared,)))
+        elif method == "LP":
+            #
+            #LP's matrix inversion adds over frames and one wavelength axis, then inverts
+            #
+            A = np.zeros((nl, nl))
+            b = np.zeros(nl)
+            fm = fm_noSpec_coadd.reshape(nwav, stamp_size*stamp_size,nl)
+            fm = np.rollaxis(fmlp, 2,0)
+            fm = np.rollaxis(fmlp, 2,1)
+            data = klipped_coadd.reshape(nwav, stamp_size*stamp_size)
+            for q in range(nl):
+                A[q,:] = np.dot(fmlp[q,:].T,fmlp[q,:])[q,:]
+                b[q] = np.dot(fmlp[q,:].T,datalp[q])[q]
+            estim_spec[ii,:] = np.dot(np.linalf.inv(A), b)
+
+        else:
+            print "method not understood. Choose either JB or LP."
+
+    # Ok now we want to normalize by the right values to give the spectrum in the right units
+    # We will convert the spectrum to contrast and flux, if a stellar spectrum is provided
+    wavs = dataset.wvs[:nl]
+
+    # JB's normalization terms:
+    dataset.generate_psf_cube(20)
+    PSF_cube = copy(dataset.psfs)
+    sat_spot_spec = np.nanmax(PSF_cube, axis=(1,2))
+    aper_over_peak_ratio = np.zeros(nl)
+    sat_spot_flux_for_calib = np.zeros(nl)
+    for l_id in range(PSF_cube.shape[0]):
+        aper_over_peak_ratio[l_id] = np.nansum(PSF_cube[l_id,:,:]) / sat_spot_spec[l_id]
+    for k in range(N_cubes):
+        sat_spot_flux_for_calib = sat_spot_flux_for_calib + \
+                                  np.nansum(dataset.spot_flux[k*nl:(k+1)*nl])*aper_over_peak_ratio
+    sat_spot_flux_for_calib = sat_spot_flux_for_calib/N_cubes
+
+    # Alex's normalization terms:
+    # Avg spot ratio
+    spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+    spot_to_star_ratio = dataset.spot_ratio[dataset.band]
+    normfactor = spot_flux_spectrum / spot_to_star_ratio
+    spec_unit = "CONTRAST"
+
+    return estim_spec / normfactor
 
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
     """
