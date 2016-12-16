@@ -89,8 +89,8 @@ def get_IOWA(image, centroid = None):
 
 def as2pix(sep_as):
     from  pyklip.instruments.GPI import GPIData
-    return sep_as/GPIData.lenslet_scale
+    return np.array(sep_as)/GPIData.lenslet_scale
 
 def pix2as(sep_pix):
     from  pyklip.instruments.GPI import GPIData
-    return sep_pix*GPIData.lenslet_scale
+    return np.array(sep_pix)*GPIData.lenslet_scale
