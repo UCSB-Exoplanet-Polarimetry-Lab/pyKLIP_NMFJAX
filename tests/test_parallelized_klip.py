@@ -89,6 +89,8 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     """
     Tests ADI reduction with fakes injected at certain position angles
 
+    Also tests lite mode
+
     Args:
         filelist: if not None, supply files to test on. Otherwise use standard beta pic data
     """
@@ -119,7 +121,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
-                          calibrate_flux=True, mode="ADI")
+                          calibrate_flux=True, mode="ADI", lite=True)
 
     # look at the output data. Validate the spectral cube
     spec_hdulist = fits.open("{out}/{pre}-KL20-speccube.fits".format(out=outputdir, pre=prefix))
