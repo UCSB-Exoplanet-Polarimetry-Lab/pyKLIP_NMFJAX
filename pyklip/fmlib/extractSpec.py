@@ -492,14 +492,14 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
             #
             A = np.zeros((nl, nl))
             b = np.zeros(nl)
-            fm = fm_noSpec_coadd.reshape(nwav, stamp_size*stamp_size,nl)
-            fm = np.rollaxis(fmlp, 2,0)
-            fm = np.rollaxis(fmlp, 2,1)
-            data = klipped_coadd.reshape(nwav, stamp_size*stamp_size)
+            fm = fm_noSpec_coadd.reshape(nl, stamp_size*stamp_size,nl)
+            fm = np.rollaxis(fm, 2,0)
+            fm = np.rollaxis(fm, 2,1)
+            data = klipped_coadd.reshape(nl, stamp_size*stamp_size)
             for q in range(nl):
-                A[q,:] = np.dot(fmlp[q,:].T,fmlp[q,:])[q,:]
-                b[q] = np.dot(fmlp[q,:].T,datalp[q])[q]
-            estim_spec[ii,:] = np.dot(np.linalf.inv(A), b)
+                A[q,:] = np.dot(fm[q,:].T,fm[q,:])[q,:]
+                b[q] = np.dot(fm[q,:].T,data[q])[q]
+            estim_spec[ii,:] = np.dot(np.linalg.inv(A), b)
 
         else:
             print "method not understood. Choose either JB or LP."
