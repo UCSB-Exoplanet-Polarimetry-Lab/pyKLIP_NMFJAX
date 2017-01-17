@@ -65,13 +65,12 @@ Contents
    :caption: Tutorials
 
    klip_gpi
+   p1640
    contrast_curves
    bka
-   p1640
    fmmf_gpi
-   pyklip
    diskfm_gpi
-
+   pyklip
  
 
 
