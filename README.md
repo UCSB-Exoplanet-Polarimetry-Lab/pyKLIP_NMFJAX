@@ -1,10 +1,15 @@
-# pyKLIP README #
+# pyKLIP #
 [![Documentation Status](https://readthedocs.org/projects/pyklip/badge/?version=latest)](http://pyklip.readthedocs.io/en/latest/?badge=latest) [![build-status](https://pipelines-badges-service.useast.staging.atlassian.io/badge/pyKLIP/pyklip.svg)](https://bitbucket.org/pyKLIP/pyklip/addon/pipelines/home)
     
-A python library for PSF subtraction for both exoplanet and disk imaging. Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, and Laurent Pueyo (see contributors.txt for a detailed list).
+A python library for PSF subtraction for both exoplanet and disk imaging. It uses a parallelized and optimzied implmentation of [KLIP](http://arxiv.org/abs/1207.4197) that supports ADI, SDI, and RDI with a variety of tunable parameters. For characterization, forward modelling tools include a suite of tools built off [KLIP-FM](http://arxiv.org/abs/1604.06097) for astrometry, spectroscopy, planet detection, and disk modelling. pyKLIP is modular and supports data from the Gemini Planet Imager, P1640, Keck/NIRC2, and MagAO/VisAO.
+
+Want to get started? Check out the [quick GPI KLIP tutorial](http://pyklip.readthedocs.io/en/latest/klip_gpi.html) for the basics of pyKLIP.
+
+Development led by Jason Wang. Contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, Kate Follette, Maxwell Millar-Blanchaer, Alexandra Greenbaum, Simon Ko, Tom Esposito, Elijah Spiro, and Laurent Pueyo (see contributors.txt for a details).
+
 If you use pyKLIP in your research, please cite the Astrophysical Source Code Library record of it: [ASCL](http://ascl.net/1506.001) or [ADS](http://adsabs.harvard.edu/abs/2015ascl.soft06001W).
 
 > Wang, J. J., Ruffio, J.-B., De Rosa, R. J., et al. 2015, Astrophysics Source Code Library, ascl:1506.001
 
-For setup instructions, example code, and detailed documentation, read the 
-[documentation](http://pyklip.readthedocs.io/en/latest/) online!
+For setup instructions, example code, and API details, 
+[**read the documentation**](http://pyklip.readthedocs.io/en/latest/) online!
