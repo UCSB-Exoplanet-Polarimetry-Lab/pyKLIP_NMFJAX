@@ -1,24 +1,21 @@
 .. _p1640-label:
 
 
-Using pyKLIP with Project 1640 data
-===================================
+Project 1640 PyKLIP tutorial
+============================
 
 Usage instructions for Project 1640 are similar to those for GPI with the exception that the grid spot positions must
 be found before KLIP can be run. Import the P1640 instrument class instead of the GPI instrument class.
 
 The grid spots locations only need to be found once, after which they can be read from a file. Instructions for use are found below.
 
-Project 1640 PyKLIP tutorial
-============================
+Overview
+--------
 
 P1640 Instrument class and support code to interface with PyKLIP PSF
 subtraction.
 
 Author: Jonathan Aguilar
-
-Overview
---------
 
 The code here defines the instrument class for Project 1640 that
 interacts with the rest of the PyKLIP module. The Instrument class
