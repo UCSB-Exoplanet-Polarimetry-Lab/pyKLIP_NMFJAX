@@ -82,6 +82,7 @@ def get_IOWA(image, centroid = None):
         else:
             radial_val[r_id] = np.nan
 
+    radial_val[np.where(radial_val == 0)] = np.nan
     IWA = r_samp[np.where(np.isfinite(radial_val))[0][0]]
     OWA = r_samp[np.where(np.isfinite(radial_val))[0][-1]]
 
