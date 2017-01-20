@@ -139,7 +139,8 @@ We have also choosen to flux calibrate the data to convert it into contrast unit
    will then need to correct for algorithm throughput by methods such as fake planet injection.
    See :ref:`contrast-label` which explains how to do this in the context of contrast curves.
 
-
+There are more parameters that can be tweaked. Read the docstring of :py:meth:`pyklip.parallelized.klip_dataset` for
+the full details.
 
 Picking KLIP Parameters for Disks
 ---------------------------------
