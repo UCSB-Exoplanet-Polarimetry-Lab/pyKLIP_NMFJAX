@@ -461,7 +461,14 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         flipx: after the rotation, reverse x axis? Yes if True
         flipy: after the rotation, reverse y axis? Yes if True
     """
-    wcs_header.rotateCD(rot_angle)
+    # rotate WCS header by a rotation matrix
+    rot_angle_rad = np.radians(rot_angle)
+    cos_rot = np.cos(rot_angle_rad)
+    sin_rot = np.sin(rot_angle_rad)
+    rot_matrix = np.array([[cos_rot, sin_rot], [-sin_rot, cos_rot]])
+    wcs_header.wcs.cd = np.dot(wcs_header.wcs.cd, rot_matrix)
+
+    # flip RA if true to be North up East left
     if flipx is True:
         wcs_header.wcs.cd[:,0] *= -1
     if flipy is True:
