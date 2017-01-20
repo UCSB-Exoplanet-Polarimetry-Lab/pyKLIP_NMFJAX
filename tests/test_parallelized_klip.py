@@ -107,6 +107,9 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     # create the dataset object
     dataset = GPI.GPIData(filelist, skipslices=[0,36], bad_sat_spots=[3])
 
+    dataset.generate_psfs(boxrad=25//2)
+    assert np.max(dataset.psfs > 0)
+
     # inject fake planet
     fake_seps = [20, 50, 40, 30] # pixels
     fake_pas = [-50, -165, 130, 10] # degrees
