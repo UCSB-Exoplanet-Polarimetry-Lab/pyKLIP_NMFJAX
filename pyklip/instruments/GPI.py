@@ -582,8 +582,14 @@ class GPIData(Data):
             spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
 
             # put all the sat spot info together
-            spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
-                     [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
+            spots = []
+            for j, spot in enumerate([spot0, spot1, spot2, spot3]):
+                # ignore bad sat spots
+                if self.bad_sat_spots is not None:
+                    if j in self.bad_sat_spots:
+                        continue
+                spots.append([float(spot[0]), float(spot[1])])
+
             #now make a psf
             spotpsf = generate_psf(frame, spots, boxrad=boxrad)
             self.psfs.append(spotpsf)
@@ -661,7 +667,13 @@ class GPIData(Data):
                 spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
 
                 #put all the sat spot coordinates together
-                spots = [[float(spot[0]), float(spot[1])] for spot in [spot0, spot1, spot2, spot3]]
+                spots = []
+                for j, spot in enumerate([spot0, spot1, spot2, spot3]):
+                    # ignore bad sat spots
+                    if self.bad_sat_spots is not None:
+                        if j in self.bad_sat_spots:
+                            continue
+                    spots.append([float(spot[0]), float(spot[1])])
 
                 #mask nans
                 cleaned = np.copy(frame)
