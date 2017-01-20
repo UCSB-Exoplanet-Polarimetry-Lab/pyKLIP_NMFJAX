@@ -572,7 +572,7 @@ class GPIData(Data):
         for i,frame in enumerate(self.input):
             # figure out which header and which wavelength slice
             numwaves = np.size(np.unique(self.wvs))
-            hdrindex = int(i)/int(numwaves)
+            hdrindex = int(i//numwaves)
             slice = i % numwaves
             # now grab the values from them by parsing the header
             hdr = self.exthdrs[hdrindex]
