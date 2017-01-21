@@ -1,5 +1,5 @@
 # pyKLIP #
-[![Documentation Status](https://readthedocs.org/projects/pyklip/badge/?version=latest)](http://pyklip.readthedocs.io/en/latest/?badge=latest) [![build-status](https://pipelines-badges-service.useast.staging.atlassian.io/badge/pyKLIP/pyklip.svg)](https://bitbucket.org/pyKLIP/pyklip/addon/pipelines/home)
+[![Documentation Status](https://readthedocs.org/projects/pyklip/badge/?version=latest)](http://pyklip.readthedocs.io/en/latest/?badge=latest) [![build-status](https://pipelines-badges-service.useast.staging.atlassian.io/badge/pyKLIP/pyklip.svg)](https://bitbucket.org/pyKLIP/pyklip/addon/pipelines/home)[![Coverage Status](https://coveralls.io/repos/bitbucket/pyKLIP/pyklip/badge.svg)](https://coveralls.io/bitbucket/pyKLIP/pyklip)
     
 A python library for PSF subtraction for both exoplanet and disk imaging. It uses a parallelized and optimzied implmentation of [KLIP](http://arxiv.org/abs/1207.4197) that supports ADI, SDI, and RDI with a variety of tunable parameters. For characterization, forward modelling tools include a suite of tools built off [KLIP-FM](http://arxiv.org/abs/1604.06097) for astrometry, spectroscopy, planet detection, and disk modelling. pyKLIP is modular and supports data from the Gemini Planet Imager, P1640, Keck/NIRC2, and MagAO/VisAO.
 
