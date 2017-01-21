@@ -18,12 +18,16 @@ pipelines:
           - py.test
 
           #Coverage and Coverall hooking
+          - echo $TEST
+          - echo $COVERALLS_REPO_TOKEN_2
+          - echo $COVERALLS_REPO_TOKEN
           - pip install coverage
           - pip install coveralls
           - coverage run --source ./pyklip -m py.test
           - coverage combine
           # - coverage html
-          - COVERALLS_REPO_TOKEN=${COVERALLS_REPO_TOKEN_2} coveralls
+          # - COVERALLS_REPO_TOKEN=${COVERALLS_REPO_TOKEN_2} coveralls
+          - COVERALLS_REPO_TOKEN=KVBN0miUfz8D7jpQsKS5ngDP7ButdONER coveralls
 
 # #Coverage and Coverall hooking
 # language: python
