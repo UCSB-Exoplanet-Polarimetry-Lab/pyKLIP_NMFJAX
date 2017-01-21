@@ -305,7 +305,7 @@ def check_bad_channels(rad_spot):
     try:
         assert rad_spot.ndim==1
     except AssertionError:
-        print "check_bad_channels received array with wrong dimensions, exiting"
+        print("check_bad_channels received array with wrong dimensions, exiting")
         sys.exit()
     # get bad channels, in ambiguous pairs
     bad_chans0 = np.where(rad_spot[1:] < rad_spot[:-1])[0]
@@ -434,7 +434,7 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
 
     # If you shouldn't overwrite existing files, quit here
     if (exists) and (not overwrite):
-        print "Spot files exist and overwrite is False, skipping..."
+        print("Spot files exist and overwrite is False, skipping...")
         return
 
     # if output_dir, spotid, and ext are NOT specified, used P1640.ini as defaults
@@ -444,13 +444,13 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
         config.read("/data/home/jaguilar/pyklip/pyklip/instruments/P1640.ini")
         if output_dir is None:
             output_dir = config.get("spots", "spot_file_path")
-            print "Using value in P1640.ini for spot output directory: " + output_dir
+            print("Using value in P1640.ini for spot output directory: " + output_dir)
         if spotid is None:
             spotid = config.get("spots", "spot_file_postfix")
-            print "Using value in P1640.ini for spot file ID: " + spotid
+            print("Using value in P1640.ini for spot file ID: " + spotid)
         if ext is None:
             ext = config.get("spots", "spot_file_ext")
-            print "Using value in P1640.ini for spot file ext: " + ext
+            print("Using value in P1640.ini for spot file ext: " + ext)
     
     try:
         for i, spot in enumerate(spot_positions):
@@ -460,7 +460,7 @@ def write_spots_to_file(data_filepath, spot_positions, output_dir=None,
             output_filepath = os.path.join(output_dir, output_filename)
             np.savetxt(output_filepath, spot, delimiter=",",
                            header='row,column')
-            print os.path.basename(output_filepath) + " written"
+            print(os.path.basename(output_filepath) + " written")
     except:
         # implement error handling later?
         pass
