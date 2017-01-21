@@ -267,7 +267,7 @@ class P1640Data(Data):
             try:
                 if spot_directory is not None:
                     spot_filedir = spot_directory
-                    print spot_filedir
+                    print(spot_filedir)
                 else: # use the default set in P1640.ini
                     spot_filedir = P1640Data.config.get("spots","spot_filepath")
                 spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
@@ -946,7 +946,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         try:
             if spot_directory is not None:
                 spot_filedir = spot_directory
-                print spot_filedir
+                print(spot_filedir)
             else: # use the default set in P1640.ini
                 spot_filedir = P1640Data.config.get("spots","spot_file_path")
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
@@ -1001,7 +1001,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
     
     
     # pyklip centers need to be [x,y] instead of (row, col)
-    #print center.shape
+    #print(center.shape)
     center = np.fliplr(center) # [0] because of the way P1640spots works
     return cube, center, scale_factors, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, prihdr, exthdr
 

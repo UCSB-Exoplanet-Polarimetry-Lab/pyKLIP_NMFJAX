@@ -22,7 +22,7 @@ pipelines:
           - pip install coveralls
           - coverage run --source ./pyklip -m py.test
           - coverage combine
-          - coverage html
+          # - coverage html
           - COVERALLS_REPO_TOKEN=$COVERALLS_REPO_TOKEN coveralls
 
 # #Coverage and Coverall hooking

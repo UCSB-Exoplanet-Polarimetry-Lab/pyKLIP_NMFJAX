@@ -115,8 +115,8 @@ class DiskFM(NoFM):
         '''
         FIXME
         '''
-        print radstart
-        print radend
+        print(radstart)
+        print(radend)
 
         sci = aligned_imgs[input_img_num, section_ind[0]]
 
@@ -213,7 +213,7 @@ class DiskFM(NoFM):
 #        assert self.annuli is not None, "need annuli keyword to load basis"
  #       assert self.subsections is not None, "need annuli keyword to load basis"
 
-        print basis_file_pattern
+        print(basis_file_pattern)
         f = open(basis_file_pattern)
         self.klmodes_dict = pickle.load(f)
         self.evecs_dict = pickle.load(f)

@@ -165,15 +165,15 @@ if __name__ == "__main__":
 
     StarName = cfp.get("Contrast","StarName")
     ObsDate =  cfp.get("Contrast","ObsDate")
-    print "Star: {star}\nEpoch: {epoch}".format(star=StarName,epoch=ObsDate)
+    print("Star: {star}\nEpoch: {epoch}".format(star=StarName,epoch=ObsDate))
 
     # validate input paths
     reduced_files = eval(cfp.get("Contrast","reduced_file_search_command"))
     # if you messed up the reduced file path, you get to try again
     while len(reduced_files) == 0:
-        print "No reduced files found with: {0}".format(cfp.get("Contrast","reduced_file_search_command"))
+        print("No reduced files found with: {0}".format(cfp.get("Contrast","reduced_file_search_command")))
         reduced_files = eval(raw_input("Fix command: "))
-        if len(reduced_files) >= 0: print "{0} reduced files found, good job. Moving on...\n".format(len(reduced_files))
+        if len(reduced_files) >= 0: print("{0} reduced files found, good job. Moving on...\n".format(len(reduced_files)))
     
     # STAR FLUX
     # prepare core files
@@ -182,20 +182,20 @@ if __name__ == "__main__":
     core_cubes = [hdulist[0].data for hdulist in core_hdus]
     for core in core_cubes: 
         core[core == 0] = np.nan
-    print "Determining core fluxes and radii"
+    print("Determining core fluxes and radii")
     core_info_all = [P1640cores.get_encircled_energy_cube(c) for c in core_cubes]
     core_info = P1640cores.combine_multiple_cores(core_info_all)
-    print "    ...finished.\n"
+    print("    ...finished.\n")
     
     # POST-PROCESSING FLUX
     contrast_maps = {}
     channels = 'all'
-    print "Generating contrast maps"
+    print("Generating contrast maps")
     for i,ff in enumerate(reduced_files):
         fname = os.path.basename(ff)
-        print "\t{n:2d}/{tot}\t{ff}".format(n=i,tot=len(reduced_files),ff=fname)
+        print("\t{n:2d}/{tot}\t{ff}".format(n=i,tot=len(reduced_files),ff=fname))
         contrast_maps[fname] = calc_contrast_single_file(ff, core_info, chans=channels)
-        print "Processing complete, contrast maps stored in variable 'contrast_maps'"
+        print("Processing complete, contrast maps stored in variable 'contrast_maps'")
 
     plate_scale = np.float(cfp.get("Contrast","plate_scale"))
     if SaveFlag is True:
