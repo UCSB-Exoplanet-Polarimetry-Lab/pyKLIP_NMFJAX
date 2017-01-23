@@ -1,4 +1,4 @@
-.. _extractspec-label:
+.. _fmspect-label:
 
 Spectrum Extraction using extractSpec FM
 ========================================
@@ -41,3 +41,23 @@ gen_fm usage::
     # method indicates which matrix inversion method to use,
     # "JB" matrix inversion adds up over all exposures, then inverts
     # "LP" inversion adds over frames and one wavelength axis, then inverts
+
+One way to calculate a spectrum with errorbars::
+
+    import glob
+    import pyklip.instruments.GPI as GPI
+    import pyklip.fmlib.extractSpec as es
+
+    files = glob.glob("path/to/dataset/*.fits")
+    dataset = GPI.GPIData(files, highpass=True)
+    dataset.generate_psf_cube(20)
+
+    pars = (45, 222) # separation and pa
+    # optional parameters shown w/ default values
+    # This will take a long time - it is running the fm for 11 fake injections
+    # and inverting the matrix by two different methods. It returns a dictionary
+    # containing the spectrum by each method, and the measured error.
+    spectrum_dict = es.get_spectrum_with_errorbars(dataset, pars, movement=1.0,
+                                                   stamp=10, numbasis=3)
+    
+    

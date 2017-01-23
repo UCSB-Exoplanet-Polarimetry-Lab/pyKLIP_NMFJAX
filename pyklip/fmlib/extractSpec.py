@@ -8,6 +8,7 @@ import os
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
+import pyklip.fakes as fakes
 
 from scipy import interpolate
 from copy import copy
@@ -407,7 +408,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
 
     # If 'dataset' does not already have psf model, generate them. 
     if hasattr(dataset, "psfs"):
-        radial_psfs = dataset.psfs / (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+        radial_psfs = dataset.psfs / \
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
     else:
         dataset.generate_psf_cube(20)
 
@@ -419,22 +421,33 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
                                   np.unique(dataset.wvs),
                                   stamp_size = stamp_size)
 
-    sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
-                                               dataset.centers,
-                                               dataset.PAs,
-                                               dataset.wvs,
-                                               dataset.IWA,
-                                               fm_class,
-                                               numbasis=numbasis,
-                                               movement=movement,
-                                               #spectrum=spectra_template,
-                                               spectrum=None,
-                                               annuli=[[planet_sep-10,planet_sep+10]],
-                                               subsections=[[(planet_pa-10.)/180.*np.pi,\
-                                                             (planet_pa+10.)/180.*np.pi]],
-                                               numthreads=numthreads,
-                                               maxnumbasis=maxnumbasis)
-    return fmout
+    fm.klip_dataset(dataset, fm_class,
+                    fileprefix="fmspect",
+                    annuli=[[planet_sep-10,planet_sep+10]],
+                    subsections=[[(planet_pa-10.)/180.*np.pi,(planet_pa+10.)/180.*np.pi]],
+                    movement=movement,
+                    numbasis = np.array([numbasis]), 
+                    maxnumbasis=maxnumbasis,
+                    numthreads=numthreads,
+                    spectrum=None,
+                    save_klipped=False, highpass=True)
+
+    #sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
+    #                                           dataset.centers,
+    #                                           dataset.PAs,
+    #                                           dataset.wvs,
+    #                                           dataset.IWA,
+    #                                           fm_class,
+    #                                           numbasis=numbasis,
+    #                                           movement=movement,
+    #                                           #spectrum=spectra_template,
+    #                                           spectrum=None,
+    #                                           annuli=[[planet_sep-10,planet_sep+10]],
+    #                                           subsections=[[(planet_pa-10.)/180.*np.pi,\
+    #                                                         (planet_pa+10.)/180.*np.pi]],
+    #                                           numthreads=numthreads,
+    #                                           maxnumbasis=maxnumbasis)
+    return dataset.fmout
 
 def invert_spect_fmodel(fmout, dataset, method = "JB"):
     """
@@ -529,6 +542,69 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
     spec_unit = "CONTRAST"
 
     return estim_spec / normfactor
+
+
+def get_spectrum_with_errorbars(dataset, location, movement=1.0, stamp=10, numbasis=3):
+    """
+    Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
+     The steps here:
+     1. calculate forward model at the planet location & invert for spectrum
+     2. Inject several fakes in anulus around planet location w/ measured
+        spectrum and calculate error
+     3. NOT YET IMPLEMENTED -- but it would be goo to have a sanity check:
+        "zero flux" fake recovery with this method - recovered
+        spectrum should match the errors calculated in step # 2
+
+    Inputs:
+        - klip dataset
+        - location of planet (sep, pa) to center the stamp on
+        - klip movement (how aggressive?), default=1.0 pixel
+        - stamp size, default=10 pixels
+        - numbasis - K-L cuttoff
+    Returns:
+        A dictionary containg the extracted spectrum from both matrix inversion 
+        styles (FLUX_JB, FLUX_LP), and measured errors (ERR_JB, ERR_LP)
+    """
+
+    # 1:
+    numbasis = np.array(numbasis)
+    fmout = gen_fm(dataset, location, numbasis=numbasis[0], \
+                      mv=movement, stamp=stamp)
+    # contrast  spectrum
+    spectrum_jb = invert_spect_fmodel(fmout, dataset, method="JB")
+    spectrum_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+
+    # 2:
+    # useful values
+    N_frames = len(dataset.input)
+    N_cubes = len(dataset.exthdrs)
+    nl = N_frames / N_cubes
+    contrast2DN = dataset.spot_flux / dataset.spot_ratio["K1"]
+    # generate a psf model
+    sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
+    PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
+    inputpsfs = np.tile(PSF_cube,(N_cubes, 1, 1))
+    # Where are we placing the fakes? Drop down 10 30 deg apart
+    pas = np.linspace(location[1]+30, (location[1]+(30*11))%360, num=11)
+
+    flux_jb = copy(dataset.spot_flux)
+    flux_lp = copy(dataset.spot_flux)
+    for ii in range(fmout.shape[0]):
+        for k in range(N_cubes):
+            flux_jb[k*nl:(k+1)*nl] = spectrum_jb[ii,...] * contrast2DN[k*nl:(k+1)*nl]
+            flux_lp[k*nl:(k+1)*nl] = spectrum_lp[ii,...] * contrast2DN[k*nl:(k+1)*nl]
+        fake_jb_spectra = np.zeros((len(pas), spectrum_jb.shape[1]))
+        fake_lp_spectra = np.zeros((len(pas), spectrum_lp.shape[1]))
+        for p, pa in enumerate(pas):
+            fakes.inject_planet(dataset.input, dataset.centers, inputpsfs,\
+                                dataset.wcs, location[0], pa)
+            fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
+                           mv=movement, stamp=stamp)
+            fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
+            fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
+        error_jb = np.std(fake_jb_spectra, axis=0)
+        error_lp = np.std(fake_lp_spectra, axis=0)
+    return {"FLUX_JB":flux_jb, "FLUX_LP":flux_lp, "ERR_JB": error_jb, "ERR_LP":error_lp}
 
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
     """
