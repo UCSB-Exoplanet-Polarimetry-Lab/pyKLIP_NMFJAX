@@ -121,7 +121,7 @@ class GPIData(Data):
     ### Constructors ###
     ####################
     def __init__(self, filepaths=None, skipslices=None, highpass=True, meas_satspot_flux=False, numthreads=-1,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None):
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Initialization code for GPIData
 
@@ -148,7 +148,7 @@ class GPIData(Data):
         else:
             self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,
                           numthreads=numthreads,PSF_cube=PSF_cube, recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
-                          bad_sat_spots=bad_sat_spots)
+                          bad_sat_spots=bad_sat_spots, quiet=quiet)
 
     ################################
     ### Instance Required Fields ###
@@ -220,7 +220,7 @@ class GPIData(Data):
     ### Methods ###
     ###############
     def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None):
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Method to open and read a list of GPI data
 
@@ -279,7 +279,7 @@ class GPIData(Data):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
-                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots)
+                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet)
 
 
             # import matplotlib.pyplot as plt
@@ -856,7 +856,7 @@ class GPIData(Data):
 ######################
 
 def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
-                      psfs_func_list=None, bad_sat_spots=None):
+                      psfs_func_list=None, bad_sat_spots=None, quiet=False):
     """
     Method to open and parse a GPI file
 
@@ -885,7 +885,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         prihdr: primary header of the FITS file
         exthdr: 1st extention header of the FITS file
     """
-    print("Reading File: {0}".format(filepath))
+    if not quiet:
+        print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
 
