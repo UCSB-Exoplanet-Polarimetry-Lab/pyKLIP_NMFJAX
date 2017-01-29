@@ -468,7 +468,7 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
         IFSfilter="*"
 
     dirs_to_reduce = os.listdir(base_dir)
-    # dirs_to_reduce = ["HD_202917","c_Eri"]
+    # dirs_to_reduce = ["c_Eri"]
     N=0
     for star_name in dirs_to_reduce:
         if not star_name.startswith('.') and star_name not in stars2ignore:
@@ -476,7 +476,16 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
 
             epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_{0}_Spec".format(IFSfilter)+epoch_suffix+os.path.sep)
 
-            for epochDir in epochDir_glob:
+            compactdate_list = [int(os.path.abspath(epochDir).split(os.path.sep)[-1].split("_")[0]) for epochDir in epochDir_glob]
+            N_cubes_list = [len(glob(epochDir.replace("autoreduced_kpop","autoreduced")+os.path.sep+"S*_spdc_distorcorr.fits")) for epochDir in epochDir_glob]
+            # Find the first valid epoch
+            if len(compactdate_list)==0:
+                continue
+            compactdate_list,N_cubes_list = zip(*sorted(zip(compactdate_list,N_cubes_list)))
+            epochDir = epochDir_glob[np.where(N_cubes_list>20)[0][0]]
+            # exit()
+            # for epochDir in epochDir_glob:
+            if 1:
                 inputDir = os.path.abspath(epochDir)
 
                 file_list = []
@@ -650,6 +659,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
 
     N_ROC = len(filename_filter_list)
     metric_list = [[]]*N_ROC
+    followupSNR_list = [[]]*N_ROC
     pa_list = [[]]*N_ROC
     sep_list = [[]]*N_ROC
     star_name_list = [[]]*N_ROC
@@ -674,8 +684,8 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
         stars2ignore=[]
 
     dirs_to_reduce = os.listdir(base_dir)
-    # dirs_to_reduce = ["HD_202917","c_Eri"]
-    # dirs_to_reduce = ["HR_2562"]
+    # dirs_to_reduce = ["bet01_Tuc"]
+    # dirs_to_reduce = ["gam_TrA"]
     N=0
     for star_name in dirs_to_reduce:
         if not star_name.startswith('.') and star_name not in stars2ignore:
@@ -717,6 +727,8 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                         N_detec = detec_table.shape[0]
                         x_id = detec_table_labels.index("x")
                         y_id = detec_table_labels.index("y")
+                        row_id = detec_table_labels.index("row")
+                        col_id = detec_table_labels.index("col")
 
                         detec_in_range = np.ones(N_detec)
                         if IWA is not None:
@@ -730,6 +742,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                         # isgoi = -1 if detection less than 10 pixel away from GOI
                         # isgoi = 0 otherwise
                         is_GOI = np.zeros(N_detec)
+                        followupSNR_tmp = np.zeros(N_detec)
 
                         filename_fits = filename.split("-DetecTh")[0]+".fits"
                         hdulist = pyfits.open(filename_fits)
@@ -779,6 +792,9 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                                 metric_val = detec_table[k,metric_id]
                                 x_pos = detec_table[k,x_id]
                                 y_pos = detec_table[k,y_id]
+                                row = detec_table[k,row_id]
+                                col = detec_table[k,col_id]
+                                sep = detec_table[k,sep_id]
 
                                 #remove the detection if it is a real star_name
                                 for which_GOI,(x_real_object,y_real_object)  in enumerate(zip(x_real_object_list[GOI_in_range],y_real_object_list[GOI_in_range])):
@@ -790,11 +806,24 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                                         if metric_val > threshold:
                                             N_detected_GOI_list[index] = N_detected_GOI_list[index]+1
                                             visible_GOI_tmp[which_GOI][1] = 1
+                                    # print(star_name,compact_date,is_GOI[k],metric_val,sep)
+
+                                filename_followup = glob(filename.replace("kpop_FMMF","kpop_FMMF_snr{0:0.2f}_sep{1:0.2f}".format(metric_val,sep)).replace("-DetecTh2Mr4.csv",".fits"))
+                                if len(filename_followup) != 0:
+                                    hdulist = pyfits.open(filename_followup[0])
+                                    image = hdulist[1].data
+                                    followupSNR_tmp[k] = np.nanmax(image[int(round(row)),int(round(col))])
+                                else:
+                                    followupSNR_tmp[k] =np.nan
+
+                                # print(metric_val,followupSNR_tmp[k])
 
                             try:
                                 visible_GOI_list[index] = visible_GOI_list[index]+ visible_GOI_tmp
                             except:
                                 visible_GOI_list[index] = visible_GOI_tmp
+
+
                         try:
                             metric_list[index] = metric_list[index]+detec_table[valid_detec[0],metric_id].tolist()
                             pa_list[index] = pa_list[index]+detec_table[valid_detec[0],pa_id].tolist()
@@ -804,6 +833,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                             compact_date_list[index] = compact_date_list[index]+[compact_date]*len(detec_table[valid_detec[0],metric_id].tolist())
                             filter_list[index] = filter_list[index]+[filter_name]*len(detec_table[valid_detec[0],metric_id].tolist())
                             is_GOI_list[index] = is_GOI_list[index]+is_GOI[valid_detec[0]].tolist()
+                            followupSNR_list[index] = followupSNR_list[index]+followupSNR_tmp[valid_detec[0]].tolist()
                         except:
                             metric_list[index] = detec_table[valid_detec[0],metric_id].tolist()
                             pa_list[index] = detec_table[valid_detec[0],pa_id].tolist()
@@ -813,6 +843,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                             compact_date_list[index] = [compact_date]*len(detec_table[valid_detec[0],metric_id].tolist())
                             filter_list[index] = [filter_name]*len(detec_table[valid_detec[0],metric_id].tolist())
                             is_GOI_list[index] = is_GOI[valid_detec[0]].tolist()
+                            followupSNR_list[index] = followupSNR_tmp[valid_detec[0]].tolist()
 
 
 
@@ -826,7 +857,8 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
         compact_date_list[k] = np.array(compact_date_list[k])[argsort_metric].tolist()
         filter_list[k] = np.array(filter_list[k])[argsort_metric].tolist()
         is_GOI_list[k] = np.array(is_GOI_list[k])[argsort_metric].tolist()
+        followupSNR_list[k] = np.array(followupSNR_list[k])[argsort_metric].tolist()
 
     print("N files = {0}".format(N))
 
-    return star_name_list,is_GOI_list,compact_date_list,filter_list,N_cubes_list,metric_list,pa_list,sep_list,N_detected_GOI_list,N_GOI_list,visible_GOI_list
+    return star_name_list,is_GOI_list,compact_date_list,filter_list,N_cubes_list,metric_list,followupSNR_list,pa_list,sep_list,N_detected_GOI_list,N_GOI_list,visible_GOI_list
