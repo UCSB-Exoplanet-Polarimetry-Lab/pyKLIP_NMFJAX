@@ -27,7 +27,7 @@ from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
 
-class NIRC2Data(object):
+class NIRC2Data(Data):
     """
     A sequence of Keck NIRC2 ADI Data. Each NIRC2Data object has the following fields and functions
 
@@ -243,7 +243,7 @@ class NIRC2Data(object):
         star_fluxes = np.array(star_fluxes).reshape([dims[0] * dims[1]])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
 
-        #set these as the fields for the NIRC2Data object
+        #set these as the fields for the GPIData object
         self._input = data
         self._centers = centers
         self._filenums = filenums
@@ -523,7 +523,7 @@ def measure_star_flux(img, star_x, star_y):
 
     flux, fwhm, xfit, yfit = gaussfit2d(img, star_x, star_y, refinefit=False)
     if flux == np.inf: flux == np.nan
-    print flux, fwhm, xfit, yfit
+    print(flux, fwhm, xfit, yfit)
 
     return flux
 
