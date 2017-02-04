@@ -77,6 +77,8 @@ class DiskFM(NoFM):
 
         if numthreads == None:
             self.numthreads = mp.cpu_count()
+        else:
+            self.numthreads = numthreads
 
         if self.save_basis == True:
             # Need to know r and phi indicies in fm from eigen
@@ -323,7 +325,7 @@ class DiskFM(NoFM):
         #If true then it's a spec mode diskand save indivudal specmode cubes for each KL mode
         if np.size(model_disk_shape) > 2: 
 
-            nfiles = np.nanmax(self.dataset.filenums)+1 #Get the number of files  
+            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
             n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
