@@ -30,7 +30,6 @@ class DiskFM(NoFM):
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         # Attributes of input/output
-
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
@@ -315,7 +314,30 @@ class DiskFM(NoFM):
         Uses self.dataset parameters to save fmout, the output of
         fm_paralellized or klip_dataset
         '''
-        KLmode_cube = np.nanmean(fmout, axis = 1)
+
+        #Collapsed across all files (and wavelenths) and divide by number of images to keep units as ADU/coadd
+        KLmode_cube = np.nanmean(fmout, axis = 1)/self.inputs_shape[0] 
+
+        #Check if we have a disk model at multiple wavelengths
+        model_disk_shape = np.shape(self.model_disk)        
+        #If true then it's a spec mode diskand save indivudal specmode cubes for each KL mode
+        if np.size(model_disk_shape) > 2: 
+
+            nfiles = np.nanmax(self.dataset.filenums)+1 #Get the number of files  
+            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+
+            ##Collapse across all files, keeping the wavelengths intact. 
+            KLmode_spectral_cubes = np.zeros([np.size(numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
+            for i in np.arange(n_wv_per_file):
+                KLmode_spectral_cubes[:,i,:,:] = np.nansum(fmout[:,i::n_wv_per_file,:,:], axis =1)/nfiles
+            
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
+
+
         dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                          zaxis=numbasis)
@@ -348,22 +370,66 @@ class DiskFM(NoFM):
         Takes model disk and rotates it to the PAs of the input images for use as reference PSFS
        
         Args: 
-             model_disk: Disk to be forward modeled
-
+             model_disk: Disk to be forward modeled, can be either a 2D array ([N,N], where N is the width and height of your image)
+             in which case, if the dataset is multiwavelength then the same model is used for all wavelenths. Otherwise, the model_disk is 
+             input as a 3D arary, [nwvs, N,N], where nwvs is the number of wavelength channels).  
         Returns:
              None
         '''
+
         self.model_disk = model_disk
         self.model_disks = np.zeros(self.inputs_shape)
 
+        model_disk_shape = np.shape(model_disk)        
+        # print("Rotating Disk Model to PAs of data")
+        
+        # Check if we have a disk at multiple wavelengths
+        if np.size(model_disk_shape) > 2: #Then it's a spec mode disk
+
+            #If we do, then let's make sure that the number of wavelenth channels matches the data. 
+            #Note this only works if all your data files have the same number of wavelenth channels. Which it likely does. 
+            nfiles = np.nanmax(self.dataset.filenums)+1 #Get the number of files  
+            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+            n_disk_wvs = model_disk_shape[0]
+
+            if n_disk_wvs == n_wv_per_file: #If your model wvs match the number of dataset wvs
+                for k in np.arange(nfiles):
+                    for j,wvs in enumerate(range(n_disk_wvs)):
+                        model_copy = copy.deepcopy(model_disk[j,:,:])
+                        model_copy = rotate(model_copy, self.pas[k*n_wv_per_file+j], self.aligned_center, flipx = True)
+                        model_copy[np.where(np.isnan(model_copy))] = 0.
+                        self.model_disks[k*n_wv_per_file+j,:,:] = model_copy 
+
+                # for j,wvs in enumerate(range(n_disk_wvs)):
+                #     for i, pa in enumerate(self.pas[j*n_wv_per_file:(j+1)*n_wv_per_file]):   
+                #         model_copy = copy.deepcopy(model_disk[j,:,:])
+                #         model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                #         model_copy[np.where(np.isnan(model_copy))] = 0.
+                #         self.model_disks[j*n_wv_per_file+i,:,:] = model_copy #This line is incorrect!
 
 
-        # FIXME add align and scale
-        for i, pa in enumerate(self.pas):
-            model_copy = copy.deepcopy(model_disk)
-            model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
-            model_copy[np.where(np.isnan(model_copy))] = 0.
-            self.model_disks[i] = model_copy
+            else: #Then we just use the first model in the stack. (Not the best solution, but whatever)
+                print("The number of wavelenths in your data don't match the number of wavelenths in your disk model.")
+                print("Using the first model in the model disk stack for all cases")
+
+                #K, now do things how you would for just a 2D disk
+                for i, pa in enumerate(self.pas):
+                    model_copy = copy.deepcopy(model_disk[0,:,:])
+                    model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                    model_copy[np.where(np.isnan(model_copy))] = 0.
+                    self.model_disks[i] = model_copy
+                
+
+
+        else: #If we have a 2D disk model, then we'll just do it like this. 
+
+            # FIXME add align and scale
+            for i, pa in enumerate(self.pas):
+                model_copy = copy.deepcopy(model_disk)
+                model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                model_copy[np.where(np.isnan(model_copy))] = 0.
+                self.model_disks[i] = model_copy
+        
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
     def _tpool_init(self, original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
