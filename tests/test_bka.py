@@ -8,7 +8,6 @@ import pyklip.instruments.GPI as GPI
 import pyklip.fmlib.fmpsf as fmpsf
 import pyklip.fm as fm
 import pyklip.fitpsf as fitpsf
-import matplotlib.pylab as plt
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
