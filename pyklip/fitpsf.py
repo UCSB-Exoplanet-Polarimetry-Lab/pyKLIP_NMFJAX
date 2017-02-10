@@ -302,7 +302,7 @@ class FMAstrometry(object):
             # this is a 1-D list, with each param specified by one paramter
             for covar_param_bound, covar_param_guess in zip(covar_param_bounds, self.covar_param_guesses):
                 self.bounds.append([covar_param_guess / (10.**covar_param_bound),
-                                    covar_param_guess * (10**covar_param_guess)])
+                                    covar_param_guess * (10**covar_param_bound)])
 
         if read_noise_bounds is not None:
         # read noise
@@ -370,9 +370,9 @@ class FMAstrometry(object):
         # percentiles has shape [ndims, 3]
         percentiles = np.swapaxes(np.percentile(sampler.flatchain, [16, 50, 84], axis=0), 0, 1)
         self.RA_offset = percentiles[0][1]
-        self.RA_offset_1sigma = (percentiles[0][0], percentiles[0][2])
+        self.RA_offset_1sigma = np.array([percentiles[0][0], percentiles[0][2]])
         self.Dec_offset = percentiles[1][1]
-        self.Dec_offset_1sigma = (percentiles[1][0], percentiles[1][2])
+        self.Dec_offset_1sigma = np.array([percentiles[1][0], percentiles[1][2]])
         self.flux = percentiles[2][1]
         self.flux_1sigma = (percentiles[2][0], percentiles[2][2])
         self.covar_param_bestfits = [thispercentile[1] for thispercentile in percentiles[3:]]
