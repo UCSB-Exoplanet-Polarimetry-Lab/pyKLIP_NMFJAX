@@ -186,16 +186,14 @@ class ShapeOrMF(KPPSuperClass):
         """
         # Define the output Foldername
         if isinstance(spectrum, str):
+
+            # Do the best it can with the spectral information given in inputs.
             if spectrum != "":
                 pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
                 self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
                 spectrum_name = self.spectrum_filename.split(os.path.sep)
                 self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
-            else:
-                self.spectrum_name = "satSpotSpec"
 
-            # Do the best it can with the spectral information given in inputs.
-            if spectrum != "":
                 # spectrum_filename is not empty it is assumed to be a valid path.
                 if not self.mute:
                     print("Spectrum model: "+self.spectrum_filename)
@@ -220,11 +218,12 @@ class ShapeOrMF(KPPSuperClass):
                     if not self.mute:
                         print("Default sat spot spectrum will be used.")
                     self.spectrum_vec = copy(self.sat_spot_spec)
+                    self.spectrum_name = "satSpotSpec"
                 else:
-                    # If the sat spot spectrum is also not given then it just take the band filter spectrum.
                     if not self.mute:
-                        print("Using gpi filter "+self.filter+" spectrum. Could find neither sat spot spectrum nor planet spectrum.")
-                    wv,self.spectrum_vec = spec.get_gpi_filter(self.filter)
+                        print("Spectrum is not or badly defined so taking flat spectrum")
+                    self.spectrum_vec = np.ones(self.nl)
+                    self.spectrum_name = "flat"
 
         elif isinstance(spectrum, np.ndarray):
             self.spectrum_vec = spectrum
@@ -500,16 +499,13 @@ class ShapeOrMF(KPPSuperClass):
         # Load the spectrum here if the data is 3D
         if self.is3D:
             if isinstance(spectrum, str):
+
+                # Do the best it can with the spectral information given in inputs.
                 if spectrum != "":
                     pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
                     self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
                     spectrum_name = self.spectrum_filename.split(os.path.sep)
                     self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
-                else:
-                    self.spectrum_name = "satSpotSpec"
-
-                # Do the best it can with the spectral information given in inputs.
-                if spectrum != "":
                     # spectrum_filename is not empty it is assumed to be a valid path.
                     if not self.mute:
                         print("Spectrum model: "+self.spectrum_filename)
@@ -534,11 +530,12 @@ class ShapeOrMF(KPPSuperClass):
                         if not self.mute:
                             print("Default sat spot spectrum will be used.")
                         self.spectrum_vec = copy(self.sat_spot_spec)
+                        self.spectrum_name = "satSpotSpec"
                     else:
-                        # If the sat spot spectrum is also not given then it just take the band filter spectrum.
                         if not self.mute:
-                            print("Using gpi filter "+self.filter+" spectrum. Could find neither sat spot spectrum nor planet spectrum.")
-                        wv,self.spectrum_vec = spec.get_gpi_filter(self.filter)
+                            print("Spectrum is not or badly defined so taking flat spectrum")
+                        self.spectrum_vec = np.ones(self.nl)
+                        self.spectrum_name = "flat"
 
             elif isinstance(spectrum, np.ndarray):
                 self.spectrum_vec = spectrum
