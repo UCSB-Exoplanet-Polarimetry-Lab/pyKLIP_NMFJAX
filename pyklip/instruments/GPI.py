@@ -1851,3 +1851,28 @@ def spec2inputflux(spectrum,star_sp,spot_flux,aper_over_peak_ratio,spot_ratio=No
         else:
             inputflux[k*nl:(k+1)*nl] = inputflux[k*nl:(k+1)*nl]*np.nansum(spot_flux[k*nl:(k+1)*nl]*aper_over_peak_ratio)
     return inputflux
+
+
+def get_gpi_wavelength_sampling(filter_name):
+    """
+    Return GPI wavelength sampling for a given band.
+
+    Args:
+        filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
+                    Wavelength samples are linearly spaced between the first and the last wavelength of the band.
+
+    Return:
+        wavelengths: is the gpi sampling of the considered band in micrometer.
+    """
+    # First and last wavelength of each band
+    band_sampling = {'Z' : (0.9444, 1.1448, 37),
+                    'Y' : (0.9444, 1.1448, 37),
+                    'J' : (1.1108, 1.353, 37),
+                    'H' : (1.4904, 1.8016, 37),
+                    'K1' : (1.8818, 2.1994, 37),
+                    'K2' : (2.1034, 2.4004, 37)}
+
+    w_start, w_end, N_sample = band_sampling[filter_name]
+    sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
+
+    return sampling_pip
