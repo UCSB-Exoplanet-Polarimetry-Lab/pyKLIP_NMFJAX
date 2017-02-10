@@ -121,12 +121,14 @@ def get_specType(object_name,SpT_file_csv = None):
 
 def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mute = None):
     """
-    Get the spectrum of a star with given spectral type interpolating in the pickles database.
+    Get the spectrum of a star with given spectral type interpolating the pickles database.
     The spectrum is normalized to unit mean.
-    Work only for type V star.
+    It assumes type V star.
 
     Inputs:
-        wvs_or_filter_name: list of wavelengths (or GPI filter 'H', 'J', 'K1', 'K2', 'Y'.)
+        wvs_or_filter_name: array of wavelenths in microns (or string with GPI band 'H', 'J', 'K1', 'K2', 'Y').
+                (When using GPI spectral band wavelength samples are linearly spaced between the first and the last
+                wavelength of the band.)
         star_type: 'A5','F4',... Is ignored if temperature is defined.
                 If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
@@ -137,12 +139,9 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
             spectrum: is the spectrum of the star for the given band.
     """
 
-    #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
-
     if mute is None:
         mute = False
 
-    # sampling_pip = get_gpi_wavelength_sampling(filter_name)
     if isinstance(wvs_or_filter_name, str):
         import pyklip.instruments.GPI as GPI
         sampling_wvs = GPI.get_gpi_wavelength_sampling(wvs_or_filter_name)
@@ -279,8 +278,9 @@ def get_planet_spectrum(filename,wavelength):
 
     Args:
         filename: Path of the .flx file containing the spectrum.
-        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns. When using GPI spectral band,
-                wavelength samples are linearly spaced between the first and the last wavelength of the band.
+        wavelength: array of wavelenths in microns (or string with GPI band 'H', 'J', 'K1', 'K2', 'Y').
+                (When using GPI spectral band wavelength samples are linearly spaced between the first and the last
+                wavelength of the band.)
 
     Return:
         wavelengths: is the gpi sampling of the considered band in micrometer.
@@ -309,8 +309,8 @@ def get_planet_spectrum(filename,wavelength):
 
     # todo: check that it matches the actual sampling
     if isinstance(wavelength, str):
-        w_start, w_end, N_sample = band_sampling[wavelength]
-        sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
+        import pyklip.instruments.GPI as GPI
+        sampling_pip = GPI.get_gpi_wavelength_sampling(wavelength)
     else:
         sampling_pip = wavelength
 
