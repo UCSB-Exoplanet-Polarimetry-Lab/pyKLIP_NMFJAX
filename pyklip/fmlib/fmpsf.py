@@ -113,7 +113,7 @@ class FMPlanetPSF(NoFM):
             fmout_shape: shape of FM data array
 
         """
-        fmout_size = np.prod(output_img_shape)
+        fmout_size = int(np.prod(output_img_shape))
         fmout = mp.Array(ctypes.c_double, fmout_size)
         fmout_shape = output_img_shape
 
@@ -135,7 +135,7 @@ class FMPlanetPSF(NoFM):
 
         """
         perturbmag_shape = (output_img_shape[0], np.size(numbasis))
-        perturbmag = mp.Array(ctypes.c_double, np.prod(perturbmag_shape))
+        perturbmag = mp.Array(ctypes.c_double, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
 
@@ -272,8 +272,8 @@ class FMPlanetPSF(NoFM):
         # Calculate the spectra to determine the flux of each model reference PSF
         total_imgs = np.size(self.flux_conversion)
         num_wvs = self.spectrallib[0].shape[0]
-        input_spectrum = self.flux_conversion[:self.spectrallib[0].shape[0]] * self.spectrallib[0] * self.dflux
-        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs/num_wvs)))
+        input_spectrum = self.flux_conversion[:num_wvs] * self.spectrallib[0] * self.dflux
+        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs//num_wvs)))
         input_spectrum = input_spectrum[ref_psfs_indicies]
         models_ref = models_ref * input_spectrum[:, None]
 
@@ -355,7 +355,7 @@ class FMPlanetPSF(NoFM):
         # if there is more than one wavelength, save spectral cubes
         if np.size(np.unique(dataset.wvs)) > 1:
             numwvs = np.size(np.unique(dataset.wvs))
-            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]/numwvs, numwvs,
+            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
                                             fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
             # for each KL mode, collapse in time to examine spectra

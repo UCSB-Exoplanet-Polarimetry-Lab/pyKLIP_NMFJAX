@@ -1813,7 +1813,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         # if there is more than one wavelength, save spectral cubes
         if np.size(np.unique(dataset.wvs)) > 1:
             numwvs = np.size(np.unique(dataset.wvs))
-            klipped_spec = klipped.reshape([klipped.shape[0], klipped.shape[1]/numwvs, numwvs,
+            klipped_spec = klipped.reshape([klipped.shape[0], klipped.shape[1]//numwvs, numwvs,
                                             klipped.shape[2], klipped.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
             # for each KL mode, collapse in time to examine spectra

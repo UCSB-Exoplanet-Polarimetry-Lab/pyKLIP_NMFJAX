@@ -608,7 +608,7 @@ class GPIData(Data):
 
         # collapse in time dimension
         numwvs = np.size(np.unique(self.wvs))
-        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
         self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = True):
@@ -1492,7 +1492,7 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None, bad_sat
     else:
         num_sat_spots = 4 - np.size(bad_sat_spots)
     centers = np.swapaxes(centers, 0, 1)
-    centers = centers.reshape([centers.shape[0]/num_sat_spots, num_sat_spots, 2])
+    centers = centers.reshape([centers.shape[0]//num_sat_spots, num_sat_spots, 2])
     centers = centers[:,0,:]
     return centers
 

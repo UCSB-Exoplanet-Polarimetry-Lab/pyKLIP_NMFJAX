@@ -374,7 +374,7 @@ class FMAstrometry(object):
         self.covar_param_1sigma = [(thispercentile[0], thispercentile[2]) for thispercentile in percentiles[3:]]
 
         if save_chain:
-            pickle_file = open(chain_output, 'w')
+            pickle_file = open(chain_output, 'wb')
             pickle.dump(sampler.chain, pickle_file)
             pickle.dump(sampler.lnprobability, pickle_file)
             pickle.dump(sampler.acceptance_fraction, pickle_file)
@@ -483,6 +483,7 @@ def lnprior(fitparams, bounds):
     for param, bound in zip(fitparams, bounds):
         if (param >= bound[1]) | (param < bound[0]):
             prior *= -np.inf
+            break
 
     return prior
 

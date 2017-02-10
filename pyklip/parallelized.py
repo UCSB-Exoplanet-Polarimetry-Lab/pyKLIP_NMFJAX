@@ -1235,7 +1235,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
-        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
 
         # save modified data and centers
         dataset.output = rot_imgs
