@@ -461,7 +461,7 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
     N=0
     for object in dirs_to_reduce:
         if not object.startswith('.') and object not in stars2ignore:
-            print(object)
+            # print(object)
 
             epochDir_glob = glob(base_dir+object+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_{0}_Spec".format(band)+epoch_suffix+os.path.sep)
 
@@ -542,7 +542,7 @@ def gather_contrasts(base_dir,filename_filter_list,mute = False,epoch_suffix=Non
         final_sep_samp = final_sep_samp_list[k]
         curr_cont_list = np.zeros((N_curves,np.size(final_sep_samp)))+np.nan
         for l,(sep_samp,cont,star_name) in enumerate(zip(sep_samp_list[k],cont_list[k],star_name_list[k])):
-            print(star_name)
+            #print(star_name)
             interp_f = interp1d(sep_samp,cont,bounds_error = False,fill_value=np.nan)
             curr_cont_list[l,:] = interp_f(final_sep_samp)
             # print(l,ind,(ind+np.size(cont)))
