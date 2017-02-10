@@ -619,18 +619,18 @@ class GPIData(Data):
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube is normalized to have the average sat spot spectrum in DN units.
         The spectrum is built by combining all the estimated sat spot fluxes.
-        Currently hard coded assuming 37 spectral channels!!!
-        This function is not compatible with skipslices.
         It can take a while as this function is not parallelized...
 
         The center of the PSF is exactly on the central pixel of the PSF.
-        (If even width of the array it is the middle pixel with the highest row and column index.)
         The center pixel index is always (nx/2,nx/2) assuming integer division.
 
         The output PSF cube shape doesn't depend on the underlying sat spot flux calculation.
         The sat spot fluxes are only used to set the spectrum of the PSF at the very end.
 
-        CAUTION: I think same_wv_only = False has a bug even in the rescaling of the coordinates
+
+        //!\\ CAUTION 1: I think same_wv_only = False has a bug even in the rescaling of the coordinates
+        //!\\ CAUTION 2: Currently hard coded assuming 37 spectral channels!!!
+                        This function is not compatible with skipslices.
 
         Args:
             boxw: the width the extracted PSF (in pixels). Should be bigger than 20 because there is an interpolation
