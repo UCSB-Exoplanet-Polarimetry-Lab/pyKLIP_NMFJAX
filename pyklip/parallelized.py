@@ -1164,7 +1164,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if spectrum is not None:
         if spectrum.lower() == "methane":
             pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
             spectrum_wvs = spectrum_dat[:,1]
             spectrum_fluxes = spectrum_dat[:,3]
             spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
