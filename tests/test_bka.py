@@ -41,7 +41,7 @@ def test_fmastrometry():
 
     # generate PSF
     dataset.generate_psfs(boxrad=25//2)
-    dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] / numwvs, numwvs]), axis=0)[:, None, None])
+    dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] // numwvs, numwvs]), axis=0)[:, None, None])
 
     # read in model spectrum
     model_file = os.path.join(testdir, "..", "pyklip", "spectra", "cloudy", "t1600g100f2.flx")
@@ -107,6 +107,7 @@ def test_fmastrometry():
     mod_bounds[2:] = np.log(mod_bounds[2:])
     print(mod_bounds)
     lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3)), fma, mod_bounds, fma.covar)
+    print(lnpos, np.nanmean(data_frame), np.nanmean(fm_frame), np.nanmean(fma.data_stamp), np.nanmean(fma.fm_stamp))
     assert lnpos > -np.inf
 
     # run MCMC fit
@@ -120,8 +121,17 @@ def test_fmastrometry():
     RA_error = np.mean(np.abs(fma.RA_offset_1sigma - fma.RA_offset_1sigma))
     Dec_error = np.mean(np.abs(fma.Dec_offset_1sigma - fma.Dec_offset_1sigma))
 
+    print(np.abs(fma.Dec_offset*GPI.GPIData.lenslet_scale - -0.3611))
+
     assert(np.abs(fma.RA_offset*GPI.GPIData.lenslet_scale - -0.2272) < 0.005)
     assert(np.abs(fma.Dec_offset*GPI.GPIData.lenslet_scale - -0.3611) < 0.005)
+
+    # from matplotlib import use
+    # use('Agg')
+    # import matplotlib.pylab as plt
+    # fma.best_fit_and_residuals()
+    # plt.savefig("tests/bka2.png")
+
 
 if __name__ == "__main__":
     test_fmastrometry()
