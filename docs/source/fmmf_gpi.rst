@@ -1,18 +1,24 @@
 .. _fmmf-label:
 
 
+Klip POst Processing (KPOP)
+=====================================================
+TODO
+The kpop objects. The architecture. How does it work.
+
+
 Matched Filter and Point Source Detection
 =====================================================
 
 
 
-This tutorial will provide the necessary steps to run the matched filters as described in Ruffio (2017, in prep.) and detect point sources for direct imaging.
+This tutorial will provide the necessary steps to run the matched filters as described in Ruffio et al. (2017, in prep.) and detect point sources for direct imaging.
 
 The code discussed in the page part of pyKLIP in a subfolder called 'kpp', for KLIP Post Processing, and can be installed following :ref:`install-label`.
 It has only been tested with python2.7 but if you need python 3.5, simply ask and we will make it happen quickly.
 
 Why using a matched filter?
----------
+--------------------------
 
 In signal processing, a matched filter is the linear filter maximizing the Signal to Noise Ratio (SNR) of a known signal in the presence of additive noise.
 
@@ -66,3 +72,6 @@ What are the input data needed to run the FMMF pyklip implementation.
 Running FMMF
 ~~~~~~~~~~~~~~~~~~~~~~~~
 How to run the code.
+
+Contrast Curves Tutorial with GPI
+--------------------------
