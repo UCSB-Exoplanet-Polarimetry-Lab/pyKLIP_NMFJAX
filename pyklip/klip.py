@@ -303,61 +303,6 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float
 
     return resampled_img
 
-
-def align_and_scale_JB(img, new_center, old_center=None, scale_factor=1,dtype=float):
-    """
-    Helper function that realigns and/or scales the image
-
-    >>JB's version<<
-
-    I think the Nan management is better but there is still a bug to be fixed. (grid pattern in the nan background)
-
-    Args:
-        img: 2D image to perform manipulation on
-        new_center: 2 element tuple (xpos, ypos) of new image center
-        old_center: 2 element tuple (xpos, ypos) of old image center
-        scale_factor: how much the stretch/contract the image. Will we
-                      scaled w.r.t the new_center (done after relaignment).
-                      We will adopt the convention
-                        >1: stretch image (shorter to longer wavelengths)
-                        <1: contract the image (longer to shorter wvs)
-                        This means scale factor should be lambda_0/lambda
-                        where lambda_0 is the wavelength you want to scale to
-    Returns:
-        resampled_img: shifted and/or scaled 2D image
-    """
-    ny,nx = img.shape
-    x, y = np.meshgrid(np.arange(nx, dtype=dtype), np.arange(ny, dtype=dtype))
-    # mod_flag = 0 #check how many modifications we are making
-    # print(x.shape)
-
-    if old_center is None:
-        old_center = [ny/2,nx/2]
-
-    dx = old_center[0] - new_center[0]
-    dy = old_center[1] - new_center[1]
-
-    x_rescaled = x/float(scale_factor) - (nx-1)*(1./scale_factor-1)/2.
-    y_rescaled = y/float(scale_factor) - (ny-1)*(1./scale_factor-1)/2.
-
-
-    nanpix = np.where(np.isnan(img))
-    medval = np.median(img[np.where(~np.isnan(img))])
-    img_copy = np.copy(img)
-    img_copy[nanpix] = medval
-
-    resampled_img = ndimage.map_coordinates(img_copy, [y_rescaled+dy/scale_factor, x_rescaled+dx/scale_factor], cval = np.nan)
-    # resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval = np.nan)
-
-    x_nans = (np.fix((x[nanpix]-old_center[0])*scale_factor)+new_center[0]).astype(np.int)
-    y_nans = (np.fix((y[nanpix]-old_center[1])*scale_factor)+new_center[1]).astype(np.int)
-    indices_inbounds = np.where((x_nans<=(nx-1))*(x_nans>=(0))*(y_nans<=(ny-1))*(y_nans>=(0)))
-    where_newnans = (y_nans[indices_inbounds],x_nans[indices_inbounds])
-    resampled_img[where_newnans] = np.nan
-
-    return resampled_img.astype(dtype)
-
-
 def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     """
     Rotate an image by the given angle about the given center.
