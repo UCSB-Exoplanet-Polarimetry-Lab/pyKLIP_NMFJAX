@@ -71,7 +71,6 @@ def get_specType(object_name,SpT_file_csv = None):
     if object_name == "IK_Peg":
         return "A8"
 
-
     if SpT_file_csv is None:
         import urllib
 
@@ -127,7 +126,7 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
     Work only for type V star.
 
     Inputs:
-        wvs_or_filter_name: list of wavelengths or GPI filter 'H', 'J', 'K1', 'K2', 'Y'.
+        wvs_or_filter_name: list of wavelengths (or GPI filter 'H', 'J', 'K1', 'K2', 'Y'.)
         star_type: 'A5','F4',... Is ignored if temperature is defined.
                 If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
@@ -145,9 +144,8 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
 
     # sampling_pip = get_gpi_wavelength_sampling(filter_name)
     if isinstance(wvs_or_filter_name, str):
-        w_start, w_end, N_sample = band_sampling[wvs_or_filter_name]
-        dw = (w_end-w_start)/N_sample
-        sampling_wvs = np.arange(w_start,w_end,dw)
+        import pyklip.instruments.GPI as GPI
+        sampling_wvs = GPI.get_gpi_wavelength_sampling(wvs_or_filter_name)
     else:
         sampling_wvs = wvs_or_filter_name
 
