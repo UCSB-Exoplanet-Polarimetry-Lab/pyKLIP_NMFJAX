@@ -12,52 +12,6 @@ import os
 import csv
 
 
-# First and last wavelength of each band
-band_sampling = {'Z' : (0.9444, 1.1448, 37),
-                'Y' : (0.9444, 1.1448, 37),
-                'J' : (1.1108, 1.353, 37),
-                'H' : (1.4904, 1.8016, 37),
-                'K1' : (1.8818, 2.1994, 37),
-                'K2' : (2.1034, 2.4004, 37)}
-
-def get_gpi_filter(filter_name):
-    """
-    Extract the spectrum of a given gpi filter with the sampling of pipeline reduced cubes.
-
-    Inputs:
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'
-
-    Output:
-        (wavelengths, spectrum) where
-            wavelengths: is the gpi sampling of the considered band in mum.
-            spectrum: is the transmission spectrum of the filter for the given band.
-    """
-
-    # get the path to the file containing the spectrum in the pipeline directory
-    pykliproot = os.path.dirname(os.path.realpath(__file__))
-    filename = pykliproot+os.path.sep+"filters"+os.path.sep+"GPI-filter-"+filter_name+".fits"
-
-    # load the fits array
-    hdulist = pyfits.open(filename)
-    cube = hdulist[1].data
-    wavelengths = cube[0][0]
-    spectrum = cube[0][1]
-
-
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
-
-    counts_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spectrum)
-    N_samples_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=None)
-
-    # if 0:
-    #     plt.figure(1)
-    #     plt.plot(wavelengths,spectrum,'b')
-    #     plt.plot(sampling_pip,counts_per_bin/N_samples_per_bin,'r')
-    #     plt.show()
-
-    return (sampling_pip,counts_per_bin/N_samples_per_bin)
 
 
 def find_upper_nearest(array,value):
@@ -377,23 +331,6 @@ def get_planet_spectrum(filename,wavelength):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
-
-def get_gpi_wavelength_sampling(filter_name):
-    """
-    Return GPI wavelength sampling for a given band.
-
-    Args:
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
-                    Wavelength samples are linearly spaced between the first and the last wavelength of the band.
-
-    Return:
-        wavelengths: is the gpi sampling of the considered band in micrometer.
-    """
-
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
-
-    return sampling_pip
 
 
 
