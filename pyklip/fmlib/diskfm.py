@@ -17,7 +17,7 @@ import itertools
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.p', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.p', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None, mode = 'ADI'):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -26,6 +26,7 @@ class DiskFM(NoFM):
         For first time, instantiate DiskFM with no save_basis and nominal model disk.
         Specify number of annuli and subsections used to save basis vectors
 
+        Currently only supports mode = ADI
         '''
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
@@ -34,6 +35,7 @@ class DiskFM(NoFM):
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
         self.numims = inputs_shape[0]
+        self.mode = mode
 
         # Input dataset attributes
         self.dataset = dataset
@@ -102,8 +104,8 @@ class DiskFM(NoFM):
 
 
     def alloc_fmout(self, output_img_shape):
-        '''
-        Allocates shared memory for output image 
+        ''' 
+       Allocates shared memory for output image 
         '''
         fmout_size = np.prod(output_img_shape)
         fmout_shape = output_img_shape
@@ -116,9 +118,6 @@ class DiskFM(NoFM):
         '''
         FIXME
         '''
-        print(radstart)
-        print(radend)
-
         sci = aligned_imgs[input_img_num, section_ind[0]]
 
         refs = aligned_imgs[ref_psfs_indicies, :]
@@ -175,7 +174,8 @@ class DiskFM(NoFM):
             radend = self.dr * (rad + 1) + self.IWA
             phistart = self.dphi * phi
             phiend = self.dphi  * (phi + 1)
-            # May need to do some trickery with the last bound
+            # FIXME This next line makes subsection != 1 have overlapping sections, but breaks
+            # subsection = 1. Need to add padding option to fix this
 #            phi_bounds[-1][1] = 2. * np.pi - 0.0001  
  
             section_ind = self.section_ind_dict[key]
@@ -208,13 +208,11 @@ class DiskFM(NoFM):
 
 
     def load_basis_files(self, basis_file_pattern):
-        # Need dr and dphi def
-        # Definte IWA, OWA, dr, dphi
+        '''
+        Loads in previously saved basis files and sets variables for fm_from_eigen
+        '''
 
-#        assert self.annuli is not None, "need annuli keyword to load basis"
- #       assert self.subsections is not None, "need annuli keyword to load basis"
-
-        print(basis_file_pattern)
+        # Load in file
         f = open(basis_file_pattern)
         self.klmodes_dict = pickle.load(f)
         self.evecs_dict = pickle.load(f)
@@ -222,13 +220,14 @@ class DiskFM(NoFM):
         self.ref_psfs_indicies_dict = pickle.load(f)
         self.section_ind_dict = pickle.load(f)
 
+        # Set extents for each section
         self.dict_keys = sorted(self.klmodes_dict.keys())
         rads = [int(key[1]) for key in self.dict_keys]
         phis = [int(key[3]) for key in self.dict_keys]
         self.annuli = np.max(rads) + 1
         self.subsections = np.max(phis) + 1
 
-
+        # More geometry parameters
         x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
         nanpix = np.where(np.isnan(self.dataset.input[0]))
         self.dr = (self.OWA - self.dataset.IWA) / self.annuli
@@ -239,7 +238,6 @@ class DiskFM(NoFM):
         original_imgs_shape = self.images.shape
         original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
         original_imgs_np[:] = self.images
-
 
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
@@ -264,39 +262,37 @@ class DiskFM(NoFM):
 
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
 
-
-        # FIXME
+        
+        # Making MP arrays
         fmout_data = None
         fmout_shape = None
-    
         tpool = mp.Pool(processes=self.numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
-
-        # probably okay if these are global variables right now, can make them local later
+        
+        # Okay if these are global variables right now, can make them local later
         self._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
+        if self.mode == 'SDI':
+            # This is an outline for what needs to be done for SDI only, usnure if ti actually works
+            fmout_data = None
+            fmout_shape = None
+    
 
-        print("Begin align and scale images for each wavelength")
-        aligned_outputs = []
-        for threadnum in range(self.numthreads):
-            #multitask this                                                                
-
-            # write own align and scale subset (?)
-            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]
-
-            #save it to shared memory                                           
-        for aligned_output in aligned_outputs:
-            aligned_output.wait()
+            print("Begin align and scale images for each wavelength")
+            aligned_outputs = []
+            for threadnum in range(self.numthreads):
+                aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]         
+                #save it to shared memory                                           
+            for aligned_output in aligned_outputs:
+                aligned_output.wait()
+        else:
+            pass
 
 
+        # Making global shared arrays local
         self.original = original_imgs
         self.original_shape = original_imgs_shape
-        # someone who actually does spec data should make sure that this is actually aligned and scale right
         self.aligned_imgs = aligned
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-#        self.aligned_shape = original_imgs_shape
-#        self.aligned_shape = aligned_shape
-
-        # this looks stupid and probably is
         self.outputs = output_imgs
         self.outputs_shape = output_imgs_shape
         self.outputs_numstacked = output_imgs_numstacked
