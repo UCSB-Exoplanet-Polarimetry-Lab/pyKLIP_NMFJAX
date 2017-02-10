@@ -12,11 +12,6 @@ import pyklip.covars as covars
 # emcee more MCMC sampling
 import emcee
 
-# plotting tools
-import matplotlib
-import matplotlib.pylab as plt
-import corner
-
 
 
 class FMAstrometry(object):
@@ -397,6 +392,8 @@ class FMAstrometry(object):
             fig: the Figure object. If input fig is None, function will make a new one
 
         """
+        import corner
+
         all_labels = [r"x", r"y", r"$\alpha$"]
         all_labels = np.append(all_labels, self.covar_param_labels)
 
@@ -415,6 +412,9 @@ class FMAstrometry(object):
             fig (matplotlib.Figure): the Figure object. If input fig is None, function will make a new one
 
         """
+        import matplotlib
+        import matplotlib.pylab as plt
+
         if fig is None:
             fig = plt.figure(figsize=(12, 4))
 
