@@ -1038,6 +1038,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
+            highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
@@ -1271,11 +1272,12 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
 
         # if applicable, do a background subtraction
         if boxrad >= 7:
-            y_img, x_img = np.indices(frame.shape)
+            y_img, x_img = np.indices(frame.shape, dtype=float)
             r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
             noise_annulus = np.where((r_img > 9) & (r_img <= 12))
             background_mean = np.nanmean(cleaned[noise_annulus])
             spotpsf -= background_mean
+            print(spotx, spoty, np.nanstd(frame), background_mean, np.nanstd(spotpsf))
 
         genpsf.append(spotpsf)
 
