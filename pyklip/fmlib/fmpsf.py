@@ -70,23 +70,23 @@ class FMPlanetPSF(NoFM):
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2.,np.arange(ny_psf* 1.)-ny_psf/2.)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
             #psfs_interp_model_list.append(interpolate.bisplrep(x_psf_grid,y_psf_grid,model_psf))
             #psfs_interp_model_list.append(interpolate.SmoothBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel()))
-            psfs_func_list.append(interpolate.LSQBivariateSpline(y_psf_grid.ravel(),x_psf_grid.ravel(),model_psf.ravel(),y_psf_grid[0:ny_psf-1,0]+0.5,x_psf_grid[0,0:nx_psf-1]+0.5))
+            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
             #psfs_interp_model_list.append(interpolate.interp2d(x_psf_grid,y_psf_grid,model_psf,kind="cubic",bounds_error=False,fill_value=0.0))
             #psfs_interp_model_list.append(interpolate.Rbf(x_psf_grid,y_psf_grid,model_psf,function="gaussian"))
 
-            if False:
+            if 0:
                 import matplotlib.pylab as plt
                 #print(x_psf_grid.shape)
                 #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
                 plt.figure(1)
                 plt.subplot(1,3,1)
-                a = psfs_func_list[wv_index](y_psf_grid[:,0],x_psf_grid[0,:])
+                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0])
                 plt.imshow(a,interpolation="nearest")
                 plt.colorbar()
                 ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
@@ -94,7 +94,7 @@ class FMPlanetPSF(NoFM):
                 plt.imshow(self.input_psfs[wv_index, :, :],interpolation="nearest")
                 plt.colorbar()
                 plt.subplot(1,3,3)
-                plt.imshow((self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
+                plt.imshow(abs(self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
                 plt.colorbar()
                 plt.show()
 
@@ -207,7 +207,7 @@ class FMPlanetPSF(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](y_vec_stamp_centered,x_vec_stamp_centered)
+                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
