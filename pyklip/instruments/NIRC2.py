@@ -372,7 +372,7 @@ class NIRC2Data(Data):
             for hdr_key in more_keywords:
                 hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
-        hdulist.writeto(filepath, clobber=True)
+        hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
 
     def calibrate_data(self, units="contrast"):
