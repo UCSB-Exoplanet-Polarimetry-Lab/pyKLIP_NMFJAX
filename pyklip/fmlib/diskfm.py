@@ -271,21 +271,16 @@ class DiskFM(NoFM):
         # Okay if these are global variables right now, can make them local later
         self._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
-        if self.mode == 'SDI':
-            # This is an outline for what needs to be done for SDI only, usnure if ti actually works
-            fmout_data = None
-            fmout_shape = None
+        fmout_data = None
+        fmout_shape = None
     
-
-            print("Begin align and scale images for each wavelength")
-            aligned_outputs = []
-            for threadnum in range(self.numthreads):
-                aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]         
-                #save it to shared memory                                           
-            for aligned_output in aligned_outputs:
-                aligned_output.wait()
-        else:
-            pass
+        print("Begin align and scale images for each wavelength")
+        aligned_outputs = []
+        for threadnum in range(self.numthreads):
+            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]         
+            #save it to shared memory                                           
+        for aligned_output in aligned_outputs:
+            aligned_output.wait()
 
 
         # Making global shared arrays local
