@@ -70,7 +70,7 @@ class FMPlanetPSF(NoFM):
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.) - nx_psf//2, np.arange(ny_psf * 1.) - ny_psf//2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
@@ -84,9 +84,9 @@ class FMPlanetPSF(NoFM):
                 import matplotlib.pylab as plt
                 #print(x_psf_grid.shape)
                 #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
-                plt.figure(1)
+                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0]).transpose()
+                plt.figure()
                 plt.subplot(1,3,1)
-                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0])
                 plt.imshow(a,interpolation="nearest")
                 plt.colorbar()
                 ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
@@ -198,8 +198,8 @@ class FMPlanetPSF(NoFM):
             l = int(round(psf_centx + ref_center[0]))
             k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
-            x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
-            y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            x_vec_stamp_centered = np.copy(x_grid[0, (l-col_m):(l+col_p)]) - psf_centx
+            y_vec_stamp_centered = np.copy(y_grid[(k-row_m):(k+row_p), 0]) - psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
             # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
@@ -215,6 +215,9 @@ class FMPlanetPSF(NoFM):
             whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
             models.append(segment_with_model)
+
+            # clean whiteboard
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0
 
 
         return np.array(models)
