@@ -29,7 +29,7 @@ class KPPSuperClass(object):
                  label = None,
                  overwrite = False):
         """
-        Define the general parameters of the task.
+        Define the general parameters of the algorithm..
         For e.g, which matched filter template to use, like gaussian or hat, and its width.
 
         Args:
@@ -55,7 +55,7 @@ class KPPSuperClass(object):
             overwrite: Boolean indicating whether or not files should be overwritten if they exist.
                        See check_existence().
 
-        Return:
+        Return: instance of kppSuperClass.
         """
         self.read_func = read_func
 
@@ -118,35 +118,41 @@ class KPPSuperClass(object):
                          label = None,
                          read = True):
         """
-        First read the file and setup the file dependent parameters.
+        First read the file using read_func (see the class  __init__ function) and setup the file dependent parameters.
 
-        For this super class it simply reads the input file including fits headers and store it in self.image.
-        One can also overwrite inputDir, outputDir which is basically the point of this function.
+        The idea of this class is that it can be used several times on different files when using wildcards in the filename.
+        - Parameters defined in the builder function should not change from one file to the other.
+        - Parameters that depend on the file (for e.g the spectral type of the star might change) should be defined in
+        initiliaze (here) after the file has been read.
+
+        After the object has been created, initialize(), run() and save() can be called reapeatedly to reduce all the files
+        matching the filanme if wildcards were used.
+        (Use kppPerDir for an automated version of this)
+
         The file is assumed here to be a fits containing a 2D image or a GPI 3D cube (assumes 37 spectral slice).
 
-        Example for inherited classes:
-        It can read the PSF cube or define the hat function.
-        It can also read the template spectrum in a 3D scenario.
-        It could also overwrite this function in case it needs to read multiple files or non fits file.
-
+        Define the following attribute:
+            - self.image: the image/cube to be processed
+            - (self.nl,)self.ny,self.nx the dimensions of the image. self.nl is only defined if 3D.
+            - self.center: The centers of the images
+            - self.prihdr and self.exthdr if prihdrs and exthdrs are attributes of the instrument class used for read_func.
+            - self.outputDir based on outputDir, folderName and label. Convention is:
+                    self.outputDir = outputDir+os.path.sep+"kpop_"+label+os.path.sep+folderName
 
         Args:
             inputDir: If defined it allows filename to not include the whole path and just the filename.
                             Files will be read from inputDir.
-                            Note tat inputDir might be redefined using initialize at any point.
                             If inputDir is None then filename is assumed to have the absolute path.
             outputDir: Directory where to create the folder containing the outputs.
-                            Note tat inputDir might be redefined using initialize at any point.
-                            If outputDir is None:
-                                If inputDir is defined: outputDir = inputDir+os.path.sep+"planet_detec_"
-            folderName: Name of the folder containing the outputs. It will be located in outputDir.
+                    A kpop folder will be created to save the data. Convention is:
+                    self.outputDir = outputDir+os.path.sep+"kpop_"+label+os.path.sep+folderName
+            folderName: Name of the folder containing the outputs. It will be located in outputDir+os.path.sep+"kpop_"+label
                             Default folder name is "default_out".
-                            The convention is to have one folder per spectral template.
-                            Usually this folderName should be defined by the class itself and not by the user.
-            label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
-            read: If true (default) read the fits file according to inputDir and filename.
+                            A nice convention is to have one folder per spectral template.
+            label: Define the suffix of the kpop output folder when it is not defined. cf outputDir. Default is "default".
+            read: If true (default) read the fits file according to inputDir and filename otherwise only define self.outputDir.
 
-        Return: None
+        Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
 
         if not hasattr(self,"id_matching_file"):
@@ -267,14 +273,12 @@ class KPPSuperClass(object):
 
     def check_existence(self):
         """
-        Check if this metric has already been calculated for this file.
+        Check if the file corresponding to the processed data already exist.
+        In this case one could decide to skip the reduction of this particular file.
 
-        For this super class it returns False.
+        Args:
 
-        Inherited classes:
-        It could check at the output folder if the file with the right extension already exist.
-
-        :return: False
+        Return: False
         """
 
         return False
@@ -282,14 +286,12 @@ class KPPSuperClass(object):
 
     def calculate(self):
         """
-        Calculate the metric map.
+        Process the data.
+        Make sure initialize has been called first.
 
-        For this super class it returns the input fits file read in initialize().
+        Args:
 
-        Inherited classes:
-        It could check at the output folder if the file with the right extension already exist.
-
-        :return: self.image the imput fits file.
+        Return: self.image (the input fits file.)
         """
 
         return self.image
@@ -297,14 +299,15 @@ class KPPSuperClass(object):
 
     def save(self):
         """
-        Save the metric map as a fits file in self.outputDir+os.path.sep+self.folderName
+        Save the processed files.
 
-        For this super class it doesn't do anything.
+        KPOP convention is that it should be saved in:
+        self.outputDir = #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName
 
-        Inherited classes:
-        It should probably include new fits keywords with the metric parameters before saving the outputs.
 
-        :return: None
+        Args:
+
+        Return: None
         """
 
         return None
@@ -312,9 +315,9 @@ class KPPSuperClass(object):
 
     def load(self):
         """
-        Load the metric map if it already exist from self.outputDir+os.path.sep+self.folderName
+        Load the processed files.
 
-        For this super class it doesn't do anything.
+        The idea of that this function knows the output directory and filename as a function of the reduction parameters.
 
         :return: None
         """
