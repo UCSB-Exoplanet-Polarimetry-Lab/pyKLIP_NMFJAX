@@ -366,6 +366,10 @@ class GPIData(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = self.prihdrs[0]["OBJECT"]
+
+
 
 
 
@@ -917,7 +921,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         coadds = exthdr['COADDS0']
 
         #for spectral mode we need to treat each wavelegnth slice separately
-        if exthdr['CTYPE3'].strip() == 'WAVE':
+        if exthdr['CTYPE3'].strip() == 'WAVE' and not ("PYKLIPV" in prihdr.keys()):
             channels = exthdr['NAXIS3']
             wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
             center = []
@@ -991,6 +995,21 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spot_fluxes = [np.sum(polspot_fluxes)]
             except KeyError:
                 spot_fluxes = [1]
+        #for spectral mode we need to treat each wavelegnth slice separately
+        if exthdr['CTYPE3'].strip() == 'KLMODES' or (exthdr['CTYPE3'].strip() == 'WAVE' and ("PYKLIPV" in prihdr.keys())):
+            channels = exthdr['NAXIS3']
+            if exthdr['CTYPE3'].strip() == 'WAVE':
+                wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
+            else:
+                wvs = [0,]*channels
+            center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']],]*channels
+            spot_fluxes = [0,]*channels
+            spots_xloc = [0,]*channels
+            spots_yloc = [0,]*channels
+
+            parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
+            astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         else:
             raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
     finally:
