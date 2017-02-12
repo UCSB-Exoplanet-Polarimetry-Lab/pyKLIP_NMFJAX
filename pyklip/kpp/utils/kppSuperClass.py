@@ -8,58 +8,56 @@ import numpy as np
 
 class KPPSuperClass(object):
     """
-    Super class for all kpop classes (ie FMMF, matched filter, shape, weighted collapse...).
-    Has fall-back functions for all metric dependent calls so that each metric class does not need to implement
-    functions it doesn't want to.
-    It is not a completely empty function and includes features that are probably useful to most inherited class though
-    one might decide to overwrite them.
-    Here it simply returns the input fits file as read.
+    Super class for all kpop classes (ie FMMF, matched filter, SNR calculation...).
+    The initialize function is implemented to read a file but can be disable
 
-    I should remove the option to set output dir in the class definition
+    Using KPPSuperClass would simply read a file and return them as they are.
+
+    The idea of this class is that it can be used several times on different files when using wildcards in the filename.
+    - Parameters defined in the builder function should not change from one file to the other.
+    - Parameters that depend on the file (for e.g the spectral type of the star might change) should be defined in
+    initiliaze after the file has been read.
+
+    After the object has been created, initialize(), run() and save() can be called reapeatedly to reduce all the files
+    matching the filanme if wildcards were used.
+    (Use kppPerDir for an automated version of this)
     """
-    def __init__(self,filename,
-                 inputDir = None,
-                 outputDir = None,
+    def __init__(self,read_func,filename,
                  folderName = None,
                  mute=None,
                  N_threads=None,
                  label = None,
                  overwrite = False):
         """
-        Define the general parameters of the metric.
+        Define the general parameters of the task.
+        For e.g, which matched filter template to use, like gaussian or hat, and its width.
 
-        The idea is that the directories and eventual spectra will be defined later by calling the
-        initialize() function. Furthermore initialize() is where files can be read.
-        It is done that way to ease the analysis of an entire campaign. ie one object is defined
-        for a given metric and then a function calls initialize several time for each target's directory and each
-        spectra.
-
-        Example for inherited classes:
-        It can be the width of the hat function used for the cross correlation in a matched filter for example.
-
-        :param filename: Filename of the file on which to calculate the metric. It should be the complete path unless
-                        inputDir is defined.
-                        It can include wild characters. The file will be selected using the first output of glob.glob().
-        :param inputDir: If defined it allows filename to not include the whole path and just the filename.
-                        Files will be read from inputDir.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If inputDir is None then filename is assumed to have the absolute path.
-        :param outputDir: Directory where to create the folder containing the outputs.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If outputDir is None:
-                            If inputDir is defined: outputDir = inputDir+os.path.sep+"planet_detec_"+label
-                            If inputDir is None: outputDir = "."+os.path.sep+"planet_detec_"+label
-        :param folderName: Name of the folder containing the outputs. It will be located in outputDir.
+        Args:
+            read_func: lambda function treturning a instrument object where the only input should be a list of filenames
+                    to read.
+                    For e.g.:
+                    read_func = lambda filenames:GPI.GPIData(filenames,recalc_centers=False,recalc_wvs=False,highpass=False)
+            filename: Filename of the file to process.
+                        It should be the complete path unless inputDir is used in initialize().
+                        It can include wild characters. The files will be reduced as given by glob.glob().
+            folderName: foldername used in the definition of self.outputDir (where files shoudl be saved) in initialize().
+                        folderName could be the name of the spectrum used for the reduction for e.g.
                         Default folder name is "default_out".
-                        The convention is to have one folder per spectral template.
-                        Usually this folderName should be defined by the class itself and not by the user.
-        :param mute: If True prevent printed log outputs.
-        :param N_threads: Number of threads to be used for the metrics and the probability calculations.
+                        Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
+            mute: If True prevent printed log outputs.
+            N_threads: Number of threads to be used for the metrics and the probability calculations.
                         If None use mp.cpu_count().
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
-        :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+            label: label used in the definition of self.outputDir (where files shoudl be saved) in initialize().
+            .      Default is "default".
+                   Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
+            overwrite: Boolean indicating whether or not files should be overwritten if they exist.
+                       See check_existence().
+
+        Return:
         """
+        self.read_func = read_func
 
         self.overwrite = overwrite
 
@@ -70,22 +68,11 @@ class KPPSuperClass(object):
             self.folderName = folderName+os.path.sep
 
         self.filename = filename
-        # Define the actual filename path
-        if inputDir is None: # If None inputDir will be defined in initalize()
-            self.inputDir = inputDir
-        else:
-            self.inputDir = os.path.abspath(inputDir)
 
         if label is None:
             self.label = "default"
         else:
             self.label = label
-
-        if outputDir is None: # If None outputDir will be defined in initalize()
-            self.outputDir = None
-        else:
-            print("DON'T SET OUTPUTDIR WHEN DEFINING THE CLASS. JB SHOULD REMOVE THIS FEATURE")
-            self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
 
         # Number of threads to be used in case of parallelization.
         if N_threads is None:
@@ -98,13 +85,10 @@ class KPPSuperClass(object):
     def spectrum_iter_available(self):
         """
         Should indicate wether or not the class is equipped for iterating over spectra.
-        If the metric requires a spectrum one might one to iterate over several spectra without rereading the input
+        If the metric requires a spectrum, one might want to iterate over several spectra without rereading the input
         files. In order to iterate over spectra the function init_new_spectrum() should be defined.
-        spectrum_iter_available is a utility function for campaign data processing to know wether or not spectra the
-        metric class should be iterated over different spectra.
 
-        In the case of this super class an therefore by default it returns False.
-
+        Args:
         :return: False
         """
 
@@ -114,12 +98,15 @@ class KPPSuperClass(object):
         """
         Function allowing the reinitialization of the class with a new spectrum without reinitializing everything.
 
-        :param spectrum: spectrum path relative to pykliproot + os.path.sep + "spectra" with pykliproot the directory in
-                        which pyklip is installed. It that case it should be a spectrum from Mark Marley.
-                        Instead of a path it can be a simple ndarray with the right dimension.
-                        Or by default it is a completely flat spectrum.
+        See spectrum_iter_available()
 
-        :return: None
+        Args:
+            spectrum: spectrum path relative to pykliproot + os.path.sep + "spectra" with pykliproot the directory in
+                        which pyklip is installed. It that case it should be a spectrum from Mark Marley or one
+                        following the same convention.
+                        Instead of a path it can be a simple ndarray with the right dimension.
+
+        Return: None
         """
 
         return None
@@ -131,7 +118,7 @@ class KPPSuperClass(object):
                          label = None,
                          read = True):
         """
-        Initialize the non general inputs that are needed for the metric calculation and load required files.
+        First read the file and setup the file dependent parameters.
 
         For this super class it simply reads the input file including fits headers and store it in self.image.
         One can also overwrite inputDir, outputDir which is basically the point of this function.
@@ -142,22 +129,24 @@ class KPPSuperClass(object):
         It can also read the template spectrum in a 3D scenario.
         It could also overwrite this function in case it needs to read multiple files or non fits file.
 
-        :param inputDir: If defined it allows filename to not include the whole path and just the filename.
-                        Files will be read from inputDir.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If inputDir is None then filename is assumed to have the absolute path.
-        :param outputDir: Directory where to create the folder containing the outputs.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If outputDir is None:
-                            If inputDir is defined: outputDir = inputDir+os.path.sep+"planet_detec_"
-        :param folderName: Name of the folder containing the outputs. It will be located in outputDir.
-                        Default folder name is "default_out".
-                        The convention is to have one folder per spectral template.
-                        Usually this folderName should be defined by the class itself and not by the user.
-        :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
-        :param read: If true (default) read the fits file according to inputDir and filename.
 
-        :return: None
+        Args:
+            inputDir: If defined it allows filename to not include the whole path and just the filename.
+                            Files will be read from inputDir.
+                            Note tat inputDir might be redefined using initialize at any point.
+                            If inputDir is None then filename is assumed to have the absolute path.
+            outputDir: Directory where to create the folder containing the outputs.
+                            Note tat inputDir might be redefined using initialize at any point.
+                            If outputDir is None:
+                                If inputDir is defined: outputDir = inputDir+os.path.sep+"planet_detec_"
+            folderName: Name of the folder containing the outputs. It will be located in outputDir.
+                            Default folder name is "default_out".
+                            The convention is to have one folder per spectral template.
+                            Usually this folderName should be defined by the class itself and not by the user.
+            label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+            read: If true (default) read the fits file according to inputDir and filename.
+
+        Return: None
         """
 
         if not hasattr(self,"id_matching_file"):
@@ -196,24 +185,15 @@ class KPPSuperClass(object):
 
             self.id_matching_file = self.id_matching_file+1
 
-            # Open the fits file on which the metric will be applied
-            hdulist = pyfits.open(self.filename_path)
-            if not self.mute:
-                print("Opened: "+self.filename_path)
-
-            # grab the data and headers
+            # Read the image using the user defined reading function
+            self.image_obj = self.read_func([self.filename_path])
+            self.image = self.image_obj.input
             try:
-                self.image = hdulist[1].data
-                self.exthdr = hdulist[1].header
-                self.prihdr = hdulist[0].header
+                self.star_name = self.image_obj.object_name.replace(" ","_")
             except:
-                # This except was used for datacube not following GPI headers convention.
-                if not self.mute:
-                    print("Couldn't read the fits file with GPI conventions. Try assuming data in primary and no headers.")
-                try:
-                    self.image = hdulist[0].data
-                except:
-                    raise Exception("Couldn't read "+self.filename_path+". Is it a fits?")
+                self.star_name = None
+            # print(self.image_obj.centers)
+            # print(self.image_obj.wvs)
 
             # Get input cube dimensions
             self.image = np.squeeze(self.image)
@@ -226,6 +206,26 @@ class KPPSuperClass(object):
                 self.ny,self.nx = self.image.shape
             else:
                 raise Exception("Returning None. fits file "+self.filename_path+" was not a 2D image or a 3D cube...")
+
+            # Get center of the image (star position)
+            try:
+                # Retrieve the center of the image from the fits headers.
+                self.center = self.image_obj.centers
+            except:
+                # If the keywords could not be found the center is defined as the middle of the image
+                if not self.mute:
+                    print("Couldn't find PSFCENTX and PSFCENTY keywords.")
+                self.center = [[(self.nx-1)/2,(self.ny-1)/2],]*self.nl
+
+            try:
+                self.prihdr = self.image_obj.prihdrs[0]
+            except:
+                pass
+            try:
+                self.exthdr = self.image_obj.exthdrs[0]
+            except:
+                pass
+
 
             # If outputDir is None define it as the project directory.
             if outputDir is not None:
