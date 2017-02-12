@@ -15,7 +15,7 @@ class CrossCorr(KPPSuperClass):
     """
     Class for SNR calculation.
     """
-    def __init__(self,filename,
+    def __init__(self,read_func,filename,
                  inputDir = None,
                  outputDir = None,
                  folderName = None,
@@ -47,7 +47,7 @@ class CrossCorr(KPPSuperClass):
         :param weights: If not None and collapse is True then a weighted mean is performed using the weights.
         """
         # allocate super class
-        super(CrossCorr, self).__init__(filename,
+        super(CrossCorr, self).__init__(read_func,filename,
                                      inputDir = inputDir,
                                      outputDir = outputDir,
                                      folderName = folderName,
@@ -113,32 +113,14 @@ class CrossCorr(KPPSuperClass):
                                          folderName = folderName,
                                          label=label)
 
-
-
-        # Get center of the image (star position)
         try:
-            # Retrieve the center of the image from the fits headers.
-            self.center = [self.exthdr['PSFCENTX'], self.exthdr['PSFCENTY']]
-        except:
-            # If the keywords could not be found the center is defined as the middle of the image
-            if not self.mute:
-                print("Couldn't find PSFCENTX and PSFCENTY keywords.")
-            self.center = [(self.nx-1)/2,(self.ny-1)/2]
-
-        # if self.label == "CADI":
-        #     self.center = [140,140]
-
-        try:
-            self.folderName = self.exthdr["METFOLDN"]+os.path.sep
+            self.folderName = self.exthdr["KPPFOLDN"]+os.path.sep
         except:
             pass
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
-        #self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
         self.suffix = "crossCorr"+self.kernel_type
-
-
 
         if self.kernel_type is not None:
             self.ny_PSF = 20 # should be even
@@ -234,8 +216,9 @@ class CrossCorr(KPPSuperClass):
         if self.kernel_type is not None:
             # Check if the input file is 2D or 3D
             if np.size(self.image.shape) == 3: # If the file is a 3D cube
+                self.image_convo = np.zeros(self.image.shape)
                 for l_id in np.arange(self.nl):
-                    self.image[l_id,:,:] = correlate2d(self.image[l_id,:,:],self.PSF,mode="same")
+                    self.image_convo[l_id,:,:] = correlate2d(self.image[l_id,:,:],self.PSF,mode="same")
             else: # image is 2D
                 self.image_convo = correlate2d(self.image,self.PSF,mode="same")
 
@@ -254,40 +237,46 @@ class CrossCorr(KPPSuperClass):
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
-        if hasattr(self,"prihdr") and hasattr(self,"exthdr"):
-            # Save the parameters as fits keywords
-            # MET##### stands for METtistic
+        if not self.mute:
+            print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
+        hdulist = pyfits.HDUList()
 
-            self.exthdr["METFILEN"] = self.filename_path
-            self.exthdr["METINDIR"] = self.inputDir
-            self.exthdr["METOUTDI"] = self.outputDir
-            self.exthdr["METFOLDN"] = self.folderName
-            self.exthdr["METKERTY"] = str(self.kernel_type)
-            self.exthdr["METKERWI"] = str(self.kernel_width)
-
-
-            if not self.mute:
-                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
-            hdulist = pyfits.HDUList()
+        if hasattr(self,"prihdr"):
             hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
-            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.image_convo, name=self.suffix))
-            hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
         else:
-            hdulist = pyfits.HDUList()
             hdulist.append(pyfits.ImageHDU(data=self.image_convo, name=self.suffix))
+
+        if hasattr(self,"exthdr"):
+            # Save the parameters as fits keywords
+            self.exthdr["KPPFILEN"] = os.path.basename(self.filename_path)
+            self.exthdr["KPPFOLDN"] = self.folderName
+            self.exthdr["KPPLABEL"] = self.label
+            
+            self.exthdr["KPPKERTY"] = str(self.kernel_type)
+            self.exthdr["KPPKERWI"] = str(self.kernel_width)
+            self.exthdr["KPPCOLLA"] = str(self.collapse)
+            # Problem with non ASCII characters in np.array2string(self.weights). I don't really understand.
+            # if self.weights is not None:
+            #     self.exthdr["KPPWEIGH"] = np.array2string(self.weights)
+            self.exthdr["KPPNAN2Z"] = str(self.nans2zero)
+
+            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.image_convo, name=self.suffix))
+        else:
             hdulist.append(pyfits.ImageHDU(name=self.suffix))
 
-            hdulist[1].header["METFILEN"] = self.filename_path
-            hdulist[1].header["METINDIR"] = self.inputDir
-            hdulist[1].header["METOUTDI"] = self.outputDir
-            hdulist[1].header["METFOLDN"] = self.folderName
+            hdulist[1].header["KPPFILEN"] = os.path.basename(self.filename_path)
+            hdulist[1].header["KPPFOLDN"] = self.folderName
+            hdulist[1].header["KPPLABEL"] = self.label
 
-            hdulist[1].header["METKERTY"] = str(self.kernel_type)
-            hdulist[1].header["METKERWI"] = str(self.kernel_width)
+            hdulist[1].header["KPPKERTY"] = str(self.kernel_type)
+            hdulist[1].header["KPPKERWI"] = str(self.kernel_width)
+            hdulist[1].header["KPPCOLLA"] = str(self.collapse)
+            # Problem with non ASCII characters in np.array2string(self.weights). I don't really understand.
+            # if self.weights is not None:
+            #     hdulist[1].header["KPPWEIGH"] = np.array2string(self.weights)
+            hdulist[1].header["KPPNAN2Z"] = str(self.nans2zero)
 
-            if not self.mute:
-                print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
-            hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
+        hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
 
         return None
 
