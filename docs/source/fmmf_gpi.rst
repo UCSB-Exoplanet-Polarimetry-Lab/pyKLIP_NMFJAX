@@ -75,3 +75,13 @@ How to run the code.
 
 Contrast Curves Tutorial with GPI
 --------------------------
+
+
+Utilities
+=====================================================
+
+Spectra
+--------------------------
+
+Simulated Planet injection
+--------------------------
