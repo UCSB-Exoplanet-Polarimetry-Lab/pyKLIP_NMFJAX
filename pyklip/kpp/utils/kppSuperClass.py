@@ -101,8 +101,9 @@ class KPPSuperClass(object):
         See spectrum_iter_available()
 
         Args:
-            spectrum: spectrum path relative to pykliproot + os.path.sep + "spectra" with pykliproot the directory in
-                        which pyklip is installed. It that case it should be a spectrum from Mark Marley or one
+            spectrum: spectrum name (string) or array
+                        - spectrum path relative to #pykliproot#/spectra/*/ with pykliproot the directory
+                        in which pyklip is installed. It that case it should be a spectrum from Mark Marley or one
                         following the same convention.
                         Instead of a path it can be a simple ndarray with the right dimension.
 

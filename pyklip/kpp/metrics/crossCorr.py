@@ -1,23 +1,18 @@
 __author__ = 'JB'
 import os
 import astropy.io.fits as pyfits
-from glob import glob
-import multiprocessing as mp
-import numpy as np
 from scipy.signal import correlate2d
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
-from pyklip.kpp.stat.stat_utils import *
 from pyklip.kpp.utils.GOI import *
 import pyklip.kpp.utils.mathfunc as kppmath
+import pyklip.spectra_management as spec
 
 class CrossCorr(KPPSuperClass):
     """
     Cross correlate data.
     """
     def __init__(self,read_func,filename,
-                 inputDir = None,
-                 outputDir = None,
                  folderName = None,
                  mute=None,
                  N_threads=None,
@@ -26,7 +21,7 @@ class CrossCorr(KPPSuperClass):
                  kernel_type = None,
                  kernel_para = None,
                  collapse = None,
-                 weights = None,
+                 spectrum = None,
                  nans2zero = None):
         """
         Define the general parameters of the cross correlation:
@@ -62,8 +57,8 @@ class CrossCorr(KPPSuperClass):
                             to kernel_para. Default value of the width is 1.25.
                     - If kernel_type is a np.ndarray then kernel_type is the user defined template.
             kernel_para: Define the width of the Kernel depending on kernel_type. See kernel_type.
-            collapse: If true and input is 3D then it will collapse the final map. See weights for weighted collapse.
-            weights: If not None and collapse is True then a weighted mean is performed using the weights.
+            collapse: If true and input is 3D then it will collapse the final map. See spectrum for weighted collapse.
+            spectrum: If not None and collapse is True then a weighted mean is performed using the spectrum.
             nans2zero: If True, replace all nans values with zeros.
 
 
@@ -71,8 +66,6 @@ class CrossCorr(KPPSuperClass):
         """
         # allocate super class
         super(CrossCorr, self).__init__(read_func,filename,
-                                     inputDir = inputDir,
-                                     outputDir = outputDir,
                                      folderName = folderName,
                                      mute=mute,
                                      N_threads=N_threads,
@@ -88,11 +81,109 @@ class CrossCorr(KPPSuperClass):
             self.collapse = False
         else:
             self.collapse = collapse
-        self.weights = weights
+        self.spectrum_vec = spectrum
         if nans2zero is None:
             self.nans2zero = True
         else:
             self.nans2zero = nans2zero
+
+
+    def spectrum_iter_available(self):
+        """
+        Should indicate whether or not the class is equipped for iterating over spectra.
+        That depends on the number of dimensions of the input file. If it is 2D there is no spectrum template so it
+        can't and shouldn't iterate over spectra however if the input file is a cube then a spectrum can be used.
+
+        In order to iterate over spectra the function new_init_spectrum() can be called.
+        spectrum_iter_available is a utility function for campaign data processing.
+
+        :return: True if the file read is 3D.
+                False if it is 2D.
+                None if no file has been read and there is no way to know.
+        """
+
+        if hasattr(self,"is3D"):
+            return self.is3D
+        else:
+            return None
+
+    def init_new_spectrum(self,spectrum):
+        """
+        Reinitialization of the reduction spectrum without re-reading the file.
+
+        :param spectrum: spectrum name (string) or ndarray
+                        - string:
+                        spectrum path relative to #pykliproot#/spectra/*/ with pykliproot the directory
+                        in which pyklip is installed.  It that case it should be a spectrum from Mark Marley or one
+                        following the same convention.
+                        - ndarray:
+                        Instead of a path it can be a simple ndarray with the right dimension.
+                        - anything else will result in a constant spectrum.
+
+        :return: None
+        """
+        # Define the output Foldername
+        if isinstance(spectrum, str):
+
+            # Do the best it can with the spectral information given in inputs.
+            if spectrum != "":
+                pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
+                self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
+                spectrum_name = self.spectrum_filename.split(os.path.sep)
+                self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
+
+                # spectrum_filename is not empty it is assumed to be a valid path.
+                if not self.mute:
+                    print("Spectrum model: "+self.spectrum_filename)
+                # Interpolate the spectrum of the planet based on the given filename
+                wv,planet_sp = spec.get_planet_spectrum(self.spectrum_filename,self.filter)
+
+                if hasattr(self, 'sat_spot_spec') \
+                        and (self.star_type is not None or self.star_temperature is not None):
+                    # Interpolate a spectrum of the star based on its spectral type/temperature
+                    wv,star_sp = spec.get_star_spectrum(self.filter,self.star_type,self.star_temperature)
+                    # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+                    self.spectrum_vec = (self.sat_spot_spec/star_sp)*planet_sp
+                else:
+                    # If the sat spot spectrum or the spectral type of the star is missing it won't correct anything
+                    # and keep the ideal spectrum as it is.
+                    if not self.mute:
+                        print("No star spec or sat spot spec so using sole planet spectrum.")
+                    self.spectrum_vec = copy(planet_sp)
+            else:
+                # If spectrum_filename is an empty string the function takes the sat spot spectrum by default.
+                if hasattr(self, 'sat_spot_spec'):
+                    if not self.mute:
+                        print("Default sat spot spectrum will be used.")
+                    self.spectrum_vec = copy(self.sat_spot_spec)
+                    self.spectrum_name = "satSpotSpec"
+                else:
+                    if not self.mute:
+                        print("Spectrum is not or badly defined so taking flat spectrum")
+                    self.spectrum_vec = np.ones(self.nl)
+                    self.spectrum_name = "flat"
+
+        elif isinstance(spectrum, np.ndarray):
+            self.spectrum_vec = spectrum
+            self.spectrum_name = "custom"
+        else:
+            if not self.mute:
+                print("Spectrum is not or badly defined so taking flat spectrum")
+            self.spectrum_vec = np.ones(self.nl)
+            self.spectrum_name = "flat"
+
+
+        self.folderName = self.spectrum_name+os.path.sep
+
+
+        for k in range(self.nl):
+            self.PSF_cube[k,:,:] *= self.spectrum_vec[k]
+        # normalize spectrum with norm 2.
+        self.spectrum_vec = self.spectrum_vec / np.sqrt(np.nansum(self.spectrum_vec**2))
+        # normalize PSF with norm 2.
+        self.PSF_cube = self.PSF_cube/np.sqrt(np.sum(self.PSF_cube**2))
+
+        return None
 
     def initialize(self,inputDir = None,
                          outputDir = None,
@@ -208,11 +299,11 @@ class CrossCorr(KPPSuperClass):
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
 
         if self.collapse:
-            if self.weights is not None:
+            if self.spectrum_vec is not None:
                 image_collapsed = np.zeros((self.ny,self.nx))
                 for k in range(self.nl):
-                    image_collapsed = image_collapsed + self.weights[k]*self.image[k,:,:]
-                self.image = image_collapsed/np.sum(self.weights)
+                    image_collapsed = image_collapsed + self.spectrum_vec[k]*self.image[k,:,:]
+                self.image = image_collapsed/np.sum(self.spectrum_vec)
             else:
                 self.image = np.nanmean(self.image,axis=0)
 
@@ -277,9 +368,9 @@ class CrossCorr(KPPSuperClass):
             self.exthdr["KPPKERTY"] = str(self.kernel_type)
             self.exthdr["KPPKERWI"] = str(self.kernel_para)
             self.exthdr["KPPCOLLA"] = str(self.collapse)
-            # Problem with non ASCII characters in np.array2string(self.weights). I don't really understand.
-            # if self.weights is not None:
-            #     self.exthdr["KPPWEIGH"] = np.array2string(self.weights)
+            # Problem with non ASCII characters in np.array2string(self.spectrum_vec). I don't really understand.
+            # if self.spectrum_vec is not None:
+            #     self.exthdr["KPPWEIGH"] = np.array2string(self.spectrum_vec)
             self.exthdr["KPPNAN2Z"] = str(self.nans2zero)
 
             hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.image_convo, name=self.suffix))
@@ -293,9 +384,9 @@ class CrossCorr(KPPSuperClass):
             hdulist[1].header["KPPKERTY"] = str(self.kernel_type)
             hdulist[1].header["KPPKERWI"] = str(self.kernel_para)
             hdulist[1].header["KPPCOLLA"] = str(self.collapse)
-            # Problem with non ASCII characters in np.array2string(self.weights). I don't really understand.
-            # if self.weights is not None:
-            #     hdulist[1].header["KPPWEIGH"] = np.array2string(self.weights)
+            # Problem with non ASCII characters in np.array2string(self.spectrum_vec). I don't really understand.
+            # if self.spectrum_vec is not None:
+            #     hdulist[1].header["KPPWEIGH"] = np.array2string(self.spectrum_vec)
             hdulist[1].header["KPPNAN2Z"] = str(self.nans2zero)
 
         hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
