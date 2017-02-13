@@ -920,7 +920,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         # get number of co-adds
         coadds = exthdr['COADDS0']
 
-        #for spectral mode we need to treat each wavelegnth slice separately
+        #for spectral mode we need to treat each wavelegnth slice separately (unprocessed data)
         if exthdr['CTYPE3'].strip() == 'WAVE' and not ("PYKLIPV" in prihdr.keys()):
             channels = exthdr['NAXIS3']
             wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
@@ -995,8 +995,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spot_fluxes = [np.sum(polspot_fluxes)]
             except KeyError:
                 spot_fluxes = [1]
-        #for spectral mode we need to treat each wavelegnth slice separately
-        if exthdr['CTYPE3'].strip() == 'KLMODES' or (exthdr['CTYPE3'].strip() == 'WAVE' and ("PYKLIPV" in prihdr.keys())):
+        #for processed data we skip all sat spots related calculations.
+        elif exthdr['CTYPE3'].strip() == 'KLMODES' or (exthdr['CTYPE3'].strip() == 'WAVE' and ("PYKLIPV" in prihdr.keys())):
             channels = exthdr['NAXIS3']
             if exthdr['CTYPE3'].strip() == 'WAVE':
                 wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
