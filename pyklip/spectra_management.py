@@ -56,11 +56,11 @@ def find_nearest(array,value):
 
 def get_specType(object_name,SpT_file_csv = None):
     """
-    Return the spectral type for a target based on the table in SpT_file
+    Return the spectral type for a target based on Simbad or on the table in SpT_file
 
     :param object_name: Name of the target: ie "c_Eri"
     :param SpT_file: Filename (.csv) of the table containing the target names and their spectral type.
-                    Can be generated from bu quering Simbad.
+                    Can be generated from quering Simbad.
                     If None (default), the function directly tries to query Simbad.
     :return: Spectral type
     """
