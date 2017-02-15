@@ -5,11 +5,15 @@ import astropy.io.fits as pyfits
 from glob import glob
 import multiprocessing as mp
 import numpy as np
+from copy import copy
+
+
+import pyklip.spectra_management as spec
 
 class KPPSuperClass(object):
     """
     Super class for all kpop classes (ie FMMF, matched filter, SNR calculation...).
-    The initialize function is implemented to read a file but can be disable
+    The initialize function is implemented to read a file but can be disable.
 
     Using KPPSuperClass would simply read a file and return them as they are.
 
@@ -27,7 +31,8 @@ class KPPSuperClass(object):
                  mute=None,
                  N_threads=None,
                  label = None,
-                 overwrite = False):
+                 overwrite = False,
+                 SpT_file_csv = None):
         """
         Define the general parameters of the algorithm..
         For e.g, which matched filter template to use, like gaussian or hat, and its width.
@@ -54,12 +59,17 @@ class KPPSuperClass(object):
                    Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
             overwrite: Boolean indicating whether or not files should be overwritten if they exist.
                        See check_existence().
+            SpT_file_csv: Filename (.csv) of the table containing the target names and their spectral type.
+                    Can be generated from quering Simbad.
+                    If None (default), the function directly tries to query Simbad.
 
         Return: instance of kppSuperClass.
         """
         self.read_func = read_func
 
         self.overwrite = overwrite
+
+        self.SpT_file_csv = SpT_file_csv
 
         # Define a default folderName is the one given is None.
         if folderName is None:
@@ -94,21 +104,85 @@ class KPPSuperClass(object):
 
         return False
 
-    def init_new_spectrum(self,spectrum):
+    def init_new_spectrum(self,spectrum,
+                                SpT_file_csv = None):
         """
         Function allowing the reinitialization of the class with a new spectrum without reinitializing everything.
+        Generate a transmission corrected spectrum.
+
+        This function can be redefined in the inherited class if not suitable.
 
         See spectrum_iter_available()
 
         Args:
             spectrum: spectrum name (string) or array
-                        - spectrum path relative to #pykliproot#/spectra/*/ with pykliproot the directory
-                        in which pyklip is installed. It that case it should be a spectrum from Mark Marley or one
-                        following the same convention.
-                        Instead of a path it can be a simple ndarray with the right dimension.
+                        - "host_star_spec": The spectrum from the star or the satellite spots is directly used.
+                                            It is derived from the inverse of the calibrate_output() output.
+                        - "constant": Use a constant spectrum np.ones(self.nl).
+                        - other strings: name of the spectrum file in #pykliproot#/spectra/*/ with pykliproot the
+                                        directory in which pyklip is installed. It that case it should be a spectrum
+                                        from Mark Marley or one following the same convention.
+                                        Spectrum will be corrected for transmission.
+                        - ndarray: 1D array with a user defined spectrum. Spectrum will be corrected for transmission.
+            SpT_file_csv: Filename (.csv) of the table containing the target names and their spectral type.
+                    Can be generated from quering Simbad.
+                    If None (default), the function directly tries to query Simbad, which requires internet access.
 
         Return: None
         """
+        self.host_star_spec = 1./self.image_obj.calibrate_output(np.ones((self.nl,1,1)),spectral=True).squeeze()
+        self.host_star_spec = self.host_star_spec/np.mean(self.host_star_spec)
+
+        if SpT_file_csv is not None:
+            self.SpT_file_csv = SpT_file_csv
+        self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
+        # Interpolate a spectrum of the star based on its spectral type/temperature
+        wv,self.star_sp = spec.get_star_spectrum(self.image_obj.wvs,self.star_type)
+
+        # Define the output Foldername
+        if isinstance(spectrum, str):
+
+            # Do the best it can with the spectral information given in inputs.
+            if spectrum == "host_star_spec":
+                # If spectrum_filename is an empty string the function takes the sat spot spectrum by default.
+                if not self.mute:
+                    print("Default host star specrum will be used.")
+                self.spectrum_vec = copy(self.host_star_spec)
+                self.spectrum_name = "host_star_spec"
+            elif spectrum == "constant":
+                if not self.mute:
+                    print("Spectrum is not or badly defined so taking flat spectrum")
+                self.spectrum_vec = np.ones(self.nl)
+                self.spectrum_name = "constant"
+            else :
+                pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
+                self.spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
+                spectrum_name = self.spectrum_filename.split(os.path.sep)
+                self.spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
+
+                # spectrum_filename is not empty it is assumed to be a valid path.
+                if not self.mute:
+                    print("Spectrum model: "+self.spectrum_filename)
+                # Interpolate the spectrum of the planet based on the given filename
+                wv,self.planet_sp = spec.get_planet_spectrum(self.spectrum_filename,self.image_obj.wvs)
+
+                # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+                self.spectrum_vec = (self.host_star_spec/self.star_sp)*self.planet_sp
+
+        elif isinstance(spectrum, np.ndarray):
+            self.planet_sp = spectrum
+            self.spectrum_name = "custom"
+
+            self.star_type = spec.get_specType(self.star_name,self.SpT_file_csv)
+
+            # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+            self.spectrum_vec = (self.host_star_spec/self.star_sp)*self.planet_sp
+        else:
+            raise ValueError("Invalid spectrum: {0}".format(spectrum))
+
+        self.spectrum_vec = self.spectrum_vec/np.mean(self.spectrum_vec)
+
+        self.folderName = self.spectrum_name+os.path.sep
 
         return None
 
