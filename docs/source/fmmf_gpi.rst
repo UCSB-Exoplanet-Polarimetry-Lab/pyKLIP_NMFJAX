@@ -85,3 +85,7 @@ Spectra
 
 Simulated Planet injection
 --------------------------
+
+OI_list_folder
+--------------------------
+Details the convention for this list.
