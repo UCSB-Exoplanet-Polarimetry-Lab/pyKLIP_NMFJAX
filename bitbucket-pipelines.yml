@@ -22,8 +22,7 @@ pipelines:
           # install pyklip
           - python setup.py develop
           
-          # setup coverage
-          - pip install coverage
+          # setup coveralls
           - pip install coveralls
 
           #Coverage and Coverall hooking
