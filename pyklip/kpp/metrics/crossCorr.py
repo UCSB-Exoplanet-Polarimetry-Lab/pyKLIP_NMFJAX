@@ -385,7 +385,7 @@ class CrossCorr(KPPSuperClass):
                 # hdulist[1].header["KPPSPECT"] = np.array2string(self.spectrum_vec)
             hdulist[1].header["KPPNAN2Z"] = str(self.nans2zero)
 
-        hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', clobber=True)
+        hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', overwrite=True)
 
         return None
 
