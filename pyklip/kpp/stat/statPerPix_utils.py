@@ -39,7 +39,7 @@ def get_image_stat_map_perPixMasking(image,
         image: The image or cubes for which one wants the statistic.
         image_without_planet: Same as image but where real signal has been masked out. The code will actually use
                                     map to calculate the standard deviation or the PDF.
-        mask_radius: Radius of the mask used around the current pixel when use_mask_per_pixel = True.
+        mask_radius: Radius of the mask used around the current pixel.
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
