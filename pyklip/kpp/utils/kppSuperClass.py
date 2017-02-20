@@ -73,9 +73,9 @@ class KPPSuperClass(object):
 
         # Define a default folderName is the one given is None.
         if folderName is None:
-            self.folderName = os.path.sep+"default_out" +os.path.sep
+            self.folderName = "default_out"
         else:
-            self.folderName = folderName+os.path.sep
+            self.folderName = folderName
 
         self.filename = filename
 
@@ -182,7 +182,7 @@ class KPPSuperClass(object):
 
         self.spectrum_vec = self.spectrum_vec/np.mean(self.spectrum_vec)
 
-        self.folderName = self.spectrum_name+os.path.sep
+        self.folderName = self.spectrum_name
 
         return None
 
@@ -240,7 +240,7 @@ class KPPSuperClass(object):
 
         # Define a default folderName is the one given is None.
         if folderName is not None:
-            self.folderName = folderName+os.path.sep
+            self.folderName = folderName
 
         # Define the actual filename path
         if inputDir is None:
@@ -340,7 +340,7 @@ class KPPSuperClass(object):
                 if self.inputDir is None:
                     self.outputDir = os.path.abspath("."+os.path.sep+"kpop_"+self.label)
                 else:
-                    self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"kpop_"+self.label)
+                    b = os.path.abspath(self.inputDir+os.path.sep+"kpop_"+self.label)
 
             return False
 
@@ -394,7 +394,7 @@ class KPPSuperClass(object):
 
         The idea of that this function knows the output directory and filename as a function of the reduction parameters.
 
-        :return: None
+        Return: None
         """
 
         return None

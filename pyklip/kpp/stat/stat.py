@@ -174,7 +174,7 @@ class Stat(KPPSuperClass):
                                          label=label)
 
         try:
-            self.folderName = self.exthdr["KPPFOLDN"]+os.path.sep
+            self.folderName = self.prihdr["KPPFOLDN"]+os.path.sep
         except:
             try:
                 self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -190,7 +190,6 @@ class Stat(KPPSuperClass):
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
         #self.prefix = "".join(os.path.basename(self.filename_path).split(".")[0:-1])
         self.suffix = self.type.replace("pixel based ","")
-        print(self.suffix)
         if "pixel based" in self.type:
             self.suffix = self.suffix+"PerPix"
         tmp_suffix = ""
@@ -207,7 +206,6 @@ class Stat(KPPSuperClass):
         else:
             tmp_suffix = "IW"
         self.suffix = self.suffix+tmp_suffix
-        print(self.suffix)
 
         if self.filename_noPlanets is not None:# Check file existence and define filename_path
             if self.inputDir is None or os.path.isabs(self.filename_noPlanets):
@@ -363,52 +361,28 @@ class Stat(KPPSuperClass):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
         if not self.mute:
-            print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
-        hdulist = pyfits.HDUList()
+            print("Saving: "+os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'))
 
-        if hasattr(self,"prihdr"):
-            hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
-        else:
-            hdulist.append(pyfits.ImageHDU(data=self.stat_cube_map, name=self.suffix))
+        # Save the parameters as fits keywords
+        extra_keywords = {"METFILEN":os.path.basename(self.filename_path),
+                          "KPPFOLDN":self.folderName,
+                          "KPPLABEL":self.label,
+                          "KPPMASKR":self.mask_radius,
+                          "KPP_IOWA":str(self.IOWA),
+                          "KPP_N":self.N,
+                          "KPP_DR":self.Dr,
+                          "KPP_DTH":self.Dth,
+                          "KPP_TYPE":self.type,
+                          "KPPRMEDG":self.rm_edge,
+                          "KPPGOILF":self.OI_list_folder}
 
-        if hasattr(self,"exthdr"):
-            # Save the parameters as fits keywords
-            self.exthdr["KPPFILEN"] = os.path.basename(self.filename_path)
-            self.exthdr["KPPFOLDN"] = self.folderName
-            self.exthdr["KPPLABEL"] = self.label
+        if hasattr(self,"filename_noSignal_path"):
+            extra_keywords["KPPFILNS"] = self.filename_noSignal_path
 
-            self.exthdr["KPPMASKR"] = self.mask_radius
-            self.exthdr["KPP_IOWA"] = str(self.IOWA)
-            self.exthdr["KPP_N"] = self.N
-            self.exthdr["KPP_DR"] = self.Dr
-            self.exthdr["KPP_DTH"] = self.Dth
-            self.exthdr["KPP_TYPE"] = self.type
-            self.exthdr["KPPRMEDG"] = self.rm_edge
-            self.exthdr["KPPGOILF"] = self.OI_list_folder
-
-            # This parameters are not always defined
-            if hasattr(self,"filename_noSignal_path"):
-                self.exthdr["KPPFILNS"] = self.filename_noSignal_path
-
-            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.stat_cube_map, name=self.suffix))
-        else:
-            hdulist.append(pyfits.ImageHDU(name=self.suffix))
-
-            hdulist[1].header["KPPFILEN"] = os.path.basename(self.filename_path)
-            hdulist[1].header["KPPFOLDN"] = self.folderName
-            hdulist[1].header["KPPLABEL"] = self.label
-
-            hdulist[1].header["KPPMASKR"] = self.mask_radius
-            hdulist[1].header["KPP_IOWA"] = str(self.IOWA)
-            hdulist[1].header["KPP_N"] = self.N
-            hdulist[1].header["KPP_DR"] = self.Dr
-            hdulist[1].header["KPP_DTH"] = self.Dth
-            hdulist[1].header["KPP_TYPE"] = self.type
-            hdulist[1].header["KPPRMEDG"] = self.rm_edge
-            hdulist[1].header["KPPGOILF"] = self.OI_list_folder
-
-
-        hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', overwrite=True)
+        self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'),
+                         self.stat_cube_map,
+                         filetype=self.suffix,
+                         more_keywords = extra_keywords)
 
         return None
 
