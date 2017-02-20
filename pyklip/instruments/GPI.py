@@ -412,14 +412,18 @@ class GPIData(Data):
         # remove duplicates from list
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
-        hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
-        for i, thispath in enumerate(filenames):
-            thispath = thispath.replace("\\", '/')
-            splited = thispath.split("/")
-            fname = splited[-1]
-            matches = re.search('S20[0-9]{6}[SE][0-9]{4}(_fixed)?', fname)
-            filename = matches.group(0)
-            hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+        # The following paragraph is only valid when reading raw GPI cube.
+        try:
+            hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
+            for i, thispath in enumerate(filenames):
+                thispath = thispath.replace("\\", '/')
+                splited = thispath.split("/")
+                fname = splited[-1]
+                matches = re.search('S20[0-9]{6}[SE][0-9]{4}(_fixed)?', fname)
+                filename = matches.group(0)
+                hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+        except:
+            pass
 
         # write out psf subtraction parameters
         # get pyKLIP revision number
@@ -525,7 +529,7 @@ class GPIData(Data):
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
                 hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-        hdulist.writeto(filepath, clobber=True)
+        hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
