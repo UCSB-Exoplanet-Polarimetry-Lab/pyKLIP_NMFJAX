@@ -29,7 +29,7 @@ to standardized information for pyKLIP::
     import glob
     import pyklip.instruments.GPI as GPI
 
-    filelist = glob.glob("path/to/dataset/*.fits")
+    filelist = glob.glob("path/to/dataset/*.fits", highpass=True)
     dataset = GPI.GPIData(filelist)
 
 This returns ``dataset``, an implementation of the abstract class :py:class:`pyklip.instruments.Instrument.Data` with standardized fields
@@ -41,10 +41,10 @@ Please read the docstring for :py:class:`pyklip.instruments.GPI.GPIData` to more
     were measured and stored in the header.
 
 .. note::
-    When reading in the GPI data, the data are automatically high-pass filtered. If you don't want to do this
-    (e.g. for disk science) or do not like how slow it is, you can turn it off with the optional keyword
-    ``highpass=False``. You can also apply the high-pass filter as pre-processing step before KLIP if you
-    don't want to do it here.
+    When reading in the GPI data, the data are no longer automatically high-pass filtered.
+    You should explictly high pass filter the data if desired (we find it is typically good for planet SNR
+    using the optional keyword ``highpass=True``. You can also apply the high-pass filter as pre-processing
+    step before KLIP in `pyklip.parallelized.klip_dataset` if you don't want to do it here as it is slower.
 
 Running KLIP
 -------------
