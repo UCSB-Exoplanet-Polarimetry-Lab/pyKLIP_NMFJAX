@@ -57,7 +57,7 @@ class CrossCorr(KPPSuperClass):
             kernel_type: String defining type of model to be used for the cross correlation:
                     - "hat": Define the kernel as a simple aperture photometry with radius kernel_para.
                             Default radius is 1.5 pixels.
-                    - "Gaussian": define the kernel as a symmetric 2D gaussian with width (ie standard deviation) equal
+                    - "Gaussian" (default): define the kernel as a symmetric 2D gaussian with width (ie standard deviation) equal
                             to kernel_para. Default value of the width is 1.25.
                     - If kernel_type is a np.ndarray then kernel_type is the user defined template.
             kernel_para: Define the width of the Kernel depending on kernel_type. See kernel_type.
@@ -88,7 +88,11 @@ class CrossCorr(KPPSuperClass):
 
 
 
-        self.kernel_type = kernel_type
+        # Default value of kernel_type is "PSF"
+        if kernel_type == None:
+            self.kernel_type = "Gaussian"
+        else:
+            self.kernel_type = kernel_type
         # The default value is defined later
         self.kernel_para = kernel_para
 
@@ -114,7 +118,6 @@ class CrossCorr(KPPSuperClass):
 
         :return: True if the file read is 3D.
                 False if it is 2D.
-                None if no file has been read and there is no way to know.
         """
 
         return len(self.image.shape) == 3
@@ -202,7 +205,7 @@ class CrossCorr(KPPSuperClass):
                                          label=label)
 
         try:
-            self.folderName = self.exthdr["KPPFOLDN"]+os.path.sep
+            self.folderName = self.prihdr["KPPFOLDN"]+os.path.sep
         except:
             try:
                 self.folderName = self.exthdr["METFOLDN"]+os.path.sep
@@ -287,7 +290,7 @@ class CrossCorr(KPPSuperClass):
         """
         Perform a cross correlation on the current loaded file.
 
-        :return: Processed image.
+        Return: Processed image.
         """
         if not self.mute:
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
@@ -337,55 +340,31 @@ class CrossCorr(KPPSuperClass):
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
-        :return: None
+        Return: None
         """
-
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
         if not self.mute:
-            print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
-        hdulist = pyfits.HDUList()
+            print("Saving: "+os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'))
 
-        if hasattr(self,"prihdr"):
-            hdulist.append(pyfits.PrimaryHDU(header=self.prihdr))
-        else:
-            hdulist.append(pyfits.ImageHDU(data=self.image_convo, name=self.suffix))
+        # Save the parameters as fits keywords
+        extra_keywords = {"METFILEN":os.path.basename(self.filename_path),
+                          "KPPFOLDN":self.folderName,
+                          "KPPLABEL":self.label,
+                          "KPPKERTY":str(self.kernel_type),
+                          "KPPKERPA":str(self.kernel_para),
+                          "KPPCOLLA":self.collapse,
+                          "KPPNAN2Z":str(self.nans2zero)}
 
-        if hasattr(self,"exthdr"):
-            # Save the parameters as fits keywords
-            self.exthdr["KPPFILEN"] = os.path.basename(self.filename_path)
-            self.exthdr["KPPFOLDN"] = self.folderName
-            self.exthdr["KPPLABEL"] = self.label
-            
-            self.exthdr["KPPKERTY"] = str(self.kernel_type)
-            self.exthdr["KPPKERWI"] = str(self.kernel_para)
-            self.exthdr["KPPCOLLA"] = str(self.collapse)
+        if self.collapse:
+            extra_keywords["KPPSPNAM"] = str(self.spectrum_name)
 
-            if self.collapse:
-                self.exthdr["KPPSPNAM"] = str(self.spectrum_name)
-                # Problem with non ASCII characters in np.array2string(self.spectrum_vec). I don't really understand.
-                # self.exthdr["KPPSPECT"] = np.array2string(self.spectrum_vec)
-            self.exthdr["KPPNAN2Z"] = str(self.nans2zero)
-
-            hdulist.append(pyfits.ImageHDU(header=self.exthdr, data=self.image_convo, name=self.suffix))
-        else:
-            hdulist.append(pyfits.ImageHDU(name=self.suffix))
-
-            hdulist[1].header["KPPFILEN"] = os.path.basename(self.filename_path)
-            hdulist[1].header["KPPFOLDN"] = self.folderName
-            hdulist[1].header["KPPLABEL"] = self.label
-
-            hdulist[1].header["KPPKERTY"] = str(self.kernel_type)
-            hdulist[1].header["KPPKERWI"] = str(self.kernel_para)
-            hdulist[1].header["KPPCOLLA"] = str(self.collapse)
-            if self.collapse:
-                hdulist[1].header["KPPSPNAM"] = str(self.spectrum_name)
-                # Problem with non ASCII characters in np.array2string(self.spectrum_vec). I don't really understand.
-                # hdulist[1].header["KPPSPECT"] = np.array2string(self.spectrum_vec)
-            hdulist[1].header["KPPNAN2Z"] = str(self.nans2zero)
-
-        hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits', overwrite=True)
+        print(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'))
+        self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'),
+                         self.image_convo,
+                         filetype=self.suffix,
+                         more_keywords = extra_keywords)
 
         return None
 
