@@ -1334,8 +1334,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # broadband photometry calibration
         if calibrate_flux:
-            numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
