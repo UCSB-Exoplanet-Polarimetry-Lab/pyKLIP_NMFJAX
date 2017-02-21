@@ -88,19 +88,19 @@ class PSFLibrary(object):
         #Get the number of files
 
         if np.size(self.master_correlation) > 1: 
-            print "WARNING: your mater_correlation matrix already has data in it"
+            print("WARNING: your mater_correlation matrix already has data in it")
 
             if not force:
-                print "WARNING: If you want to overwrite the correlation matrix set the 'force' flag to True"
+                print("WARNING: If you want to overwrite the correlation matrix set the 'force' flag to True")
                 return
             else: 
-                print "WARNING: overwriting master_correlation"
+                print("WARNING: overwriting master_correlation")
 
 
         self.master_correlation=np.zeros([self.nfiles,self.nfiles])
 
         if verbose:
-            print "Making correlation matrix"
+            print("Making correlation matrix")
 
 
         #Loop the correlation matrix calculation
@@ -113,7 +113,7 @@ class PSFLibrary(object):
             for j in np.arange(i+1,self.nfiles-1):
 
                 if verbose:
-                    # print "Correlating file "+ str(i) + " with file "+str(j) + "  \r"
+                    # print("Correlating file "+ str(i) + " with file "+str(j) + "  \r")
                     stdout.write("\r Correlating file {0} with file {1}".format(i,j))
                     stdout.flush()
                 
@@ -136,7 +136,7 @@ class PSFLibrary(object):
                 self.master_correlation[j,i]=corr_psfs[0,1]
 
         if verbose:
-            print "Done making correlation matrix"
+            print("Done making correlation matrix")
 
 
     def save_correlation(self, filename, clobber=False, format="fits"):
@@ -150,17 +150,19 @@ class PSFLibrary(object):
 
         #TODO: We should probably save more information into the header here, but what exactly it'll be is TBD
         if format == "fits":
+            hdu = fits.PrimaryHDU(self.master_correlation)
             if os.path.isfile(filename):
             #If the file already exists give user warning.     
                 if clobber:
-                    hdu = fits.PrimaryHDU(self.master_correlation)
                     hdu.writeto(filename, clobber=clobber)
                 else: 
-                    print "save_correlation: File already exists. Set clobber=True to overwrite"
-            
+                    print("save_correlation: File already exists. Set clobber=True to overwrite")
+            else:
+                hdu.writeto(filename)
+
         #But for now only fits
         else:
-            print "Sorry, fits is the only filetype type currently supported for saving correlation matrices"
+            print("Sorry, fits is the only filetype type currently supported for saving correlation matrices")
             
     
     def prepare_library(self, dataset, badfiles=None):
@@ -205,7 +207,7 @@ class PSFLibrary(object):
             dataset_file_indices_in_lib.append(index)
 
         if np.size(dataset_file_indices_in_lib) < 1:
-            print "Dataset not found in PSF Library, library not prepared."
+            print("Dataset not found in PSF Library, library not prepared.")
         else:
             dataset_file_indices_in_lib = np.array(dataset_file_indices_in_lib)
             # generate a correlation matrix that's N_dataset x N_goodpsfs

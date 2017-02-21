@@ -44,6 +44,14 @@ pyklip.instruments.P1640 module
     :undoc-members:
     :show-inheritance:
 
+pyklip.instruments.SPHERE module
+--------------------------------
+
+.. automodule:: pyklip.instruments.SPHERE
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 
 Module contents
 ---------------

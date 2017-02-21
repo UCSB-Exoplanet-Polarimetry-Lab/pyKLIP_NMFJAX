@@ -15,8 +15,13 @@ import glob
 import warnings
 
 import argparse
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
+from pyklip.instruments.P1640_support.P1640spots import get_single_cube_star_positions
 from multiprocessing import Pool, Process, Queue
 
 import numpy as np
@@ -26,9 +31,6 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
-
-sys.path.append(".")
-from P1640spots import get_single_cube_star_positions
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
@@ -156,7 +158,7 @@ def run_checker(files=None, config=None, spot_path=None):
 
     # files vs config: two args enter! one arg leaves!
     if not (files is None) != (config is None):
-        print "Please supply either a list if files or a config file"
+        print("Please supply either a list if files or a config file")
         return None
     elif files is not None:
         fitsfiles = files
@@ -167,7 +169,7 @@ def run_checker(files=None, config=None, spot_path=None):
         fitsfiles = configparser.get("Input","occulted_files").split()
         spot_directory = configparser.get("Spots","spot_file_path")   
     else:
-        print "Please supply either list of files or a config file"
+        print("Please supply either list of files or a config file")
         return None
 
     # spot path - if None, read default
@@ -200,12 +202,12 @@ def run_checker(files=None, config=None, spot_path=None):
             p.start()
 
             # print cube information
-            print "\n{0}/{1} files".format(i+1, len(fitsfiles))
-            print "\nCube: {0}".format(cube_name)
-            print "\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME"))
-            print "\tSeeing: {0}".format(fits.getval(ff, "SEEING"))
-            print "\tAirmass: {0}".format(np.mean([fits.getval(ff, "INIT_AM"),
-                                                   fits.getval(ff, "FINL_AM")]))
+            print("\n{0}/{1} files".format(i+1, len(fitsfiles)))
+            print("\nCube: {0}".format(cube_name))
+            print("\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME")))
+            print("\tSeeing: {0}".format(fits.getval(ff, "SEEING")))
+            print("\tAirmass: {0}".format(np.mean([fits.getval(ff, "INIT_AM"),
+                                                   fits.getval(ff, "FINL_AM")])))
             # ask if cube is good or not
             keep_cube = None
             while keep_cube not in ['y', 'n']:
@@ -225,16 +227,16 @@ def run_checker(files=None, config=None, spot_path=None):
         else:
             good_cubes[key] = None
     
-    #print good_cubes
-    #print "Good cubes: "
+    #print(good_cubes)
+    #print("Good cubes: ")
     #for i in sorted([key for key, val inre good_cubes.iteritems() if val == True]):
-    #    print i
+    #    print(i)
     if np.all(good_cubes.values()):
-        print "\nSpot fitting succeeded for all cubes.\n"
+        print("\nSpot fitting succeeded for all cubes.\n")
     else:
-        print "\nSpot fitting failed for the following cubes:"
-        print "\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False])
-        print "\n"
+        print("\nSpot fitting failed for the following cubes:")
+        print("\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False]))
+        print("\n")
 
     final_good_cubes = sorted([os.path.abspath(i) for i in good_cubes.keys() if good_cubes[i] == True])
     return final_good_cubes
