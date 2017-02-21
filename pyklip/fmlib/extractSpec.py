@@ -397,12 +397,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
     movement = mv # movement
     stamp_size=stamp
 
-    print "===================================="
-    print "planet separation, pa:", pars
-    print "numbasis:", numbasis
-    print "movement:", mv
-    print "===================================="
-    print "Generating forward model..."
+    print("===================================="
+    print("planet separation, pa:".format(pars))
+    print("numbasis:".format(numbasis))
+    print("movement: {0}".format(mv))
+    print("====================================")
+    print("Generating forward model...")
 
     planet_sep, planet_pa = pars
 
@@ -410,18 +410,18 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
     nchannels = int(len(dataset.wvs)/(np.max(dataset.filenums)+1))
     # If 'dataset' does not already have psf model, generate them. 
     if hasattr(dataset, "psfs"):
-        print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
+        print("Using dataset attribute 'psfs' psf model, this is probably GPI data.")
         radial_psfs = dataset.psfs / \
             (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nchannels, nchannels]), axis=0)[:, None, None])
     else:
         try:
-            print "Using generate_psfs to make psf model, this is probably GPI data."
+            print("Using generate_psfs to make psf model, this is probably GPI data.")
             dataset.generate_psf_cube(20)
             radial_psfs = dataset.psfs / \
                 (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nchannels, nchannels]), axis=0)[:, None, None])
         except:
             # If this dataset does not have a working generate_psfs method, just make a gaussian psf
-            print "generate_psfs failed... Generating Gaussian PSFs..."
+            print("generate_psfs failed... Generating Gaussian PSFs...")
             fwhm = lam/D
             # Gaussian standard deviation
             sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
@@ -508,7 +508,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
         for k in range(N_cubes):
             klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
-        print klipped_coadd.shape
+        print(klipped_coadd.shape)
         klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
         FM_noSpec = fmout[ii, :,:N_frames, :]
 
@@ -541,7 +541,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             estim_spec[ii,:] = np.dot(np.linalg.inv(A), b)
 
         else:
-            print "method not understood. Choose either JB or LP."
+            print("method not understood. Choose either JB or LP.")
 
     # Ok now we want to normalize by the right values to give the spectrum in the right units
     # We will convert the spectrum to contrast and flux, if a stellar spectrum is provided
@@ -604,9 +604,9 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     if not hasattr(numbasis, "__iter__"):
         num_k_klip = 1
     else:
-        print hasattr(numbasis, "__iter__")
-        print type(numbasis)
-        print numbasis
+        print(hasattr(numbasis, "__iter__"))
+        print(type(numbasis))
+        print(numbasis)
         num_k_klip = len(numbasis)
     fmout = gen_fm(dataset, location, numbasis=numbasis, \
                       mv=movement, stamp=stamp)
