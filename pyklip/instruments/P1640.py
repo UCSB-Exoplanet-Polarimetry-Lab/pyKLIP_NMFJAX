@@ -386,7 +386,7 @@ class P1640Data(Data):
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
         spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
-        spot_locations = np.array(spot_locations).reshape([dims[0]*dims[1], 4, 2])
+        spot_locations = np.array(spot_locations).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
         # Not used by P1640
         '''
         #only do the wavelength solution and center recalculation if it isn't broadband imaging
@@ -621,19 +621,6 @@ class P1640Data(Data):
         spot3 = self.spot_locations[..., 3,:].reshape(nframes, 2)
 
         for i,frame in enumerate(self.input):
-            #figure out which header and which wavelength slice
-            #numwaves = np.size(np.unique(self.wvs))
-            #hdrindex = int(i)/int(numwaves)
-            #slice = i % numwaves
-            #now grab the values from them by parsing the header
-            #hdr = self.exthdrs[hdrindex]
-            #spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
-            #spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
-            #spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
-            #spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
-
-
-            #put all the sat spot info together
             spots = [[float(spot0[i, 0]), float(spot0[i, 1])], [float(spot1[i, 0]), float(spot1[i, 1])],
                      [float(spot2[i, 0]), float(spot2[i, 1])], [float(spot3[i, 0]), float(spot3[i, 1])]]
             #now make a psf
@@ -658,34 +645,30 @@ class P1640Data(Data):
                 of the background by a plane which is then subtracted to remove linear biases.
 
         Returns:
-            A cube of shape 37*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
+            A cube of shape Nchan*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
         """
 
         n_frames,ny,nx = self.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(ny), np.arange(nx))
         unique_wvs = np.unique(self.wvs)
-        numwaves = np.size(np.unique(self.wvs))
+        numwaves = np.size(self.channels_used)  # np.unique(self.wvs))
 
         psfs = np.zeros((numwaves,boxw,boxw,n_frames,4))
 
+        # spots initially have shape (Ncube x Nchan x Nspots x 2)
+        nframes = reduce(lambda x,y: x*y, self.spot_locations.shape[:-2])
+        spot0 = self.spot_locations[..., 0,:].reshape(nframes, 2)
+        spot1 = self.spot_locations[..., 1,:].reshape(nframes, 2)
+        spot2 = self.spot_locations[..., 2,:].reshape(nframes, 2)
+        spot3 = self.spot_locations[..., 3,:].reshape(nframes, 2)
 
-        for lambda_ref_id, lambda_ref in enumerate(unique_wvs):
+        scale_factors = self.scale_factors.ravel()
+        for lambda_ref_id, lambda_ref in enumerate(self.channels_used):
             for i,frame in enumerate(self.input):
                 #figure out which header and which wavelength slice
-                hdrindex = int(i)/int(numwaves)
-                slice = i % numwaves
-                lambda_curr = unique_wvs[slice]
-                #now grab the values from them by parsing the header
-                hdr = self.exthdrs[hdrindex]
-                spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
-                spot1 = hdr['SATS{wave}_1'.format(wave=slice)].split()
-                spot2 = hdr['SATS{wave}_2'.format(wave=slice)].split()
-                spot3 = hdr['SATS{wave}_3'.format(wave=slice)].split()
-
                 #put all the sat spot info together
-                spots = [[float(spot0[0]), float(spot0[1])],[float(spot1[0]), float(spot1[1])],
-                         [float(spot2[0]), float(spot2[1])],[float(spot3[0]), float(spot3[1])]]
-
+                spots = [[float(spot0[i, 0]), float(spot0[i, 1])], [float(spot1[i, 0]), float(spot1[i, 1])],
+                         [float(spot2[i, 0]), float(spot2[i, 1])], [float(spot3[i, 0]), float(spot3[i, 1])]]
                 #mask nans
                 cleaned = np.copy(frame)
                 cleaned[np.where(np.isnan(cleaned))] = 0
@@ -709,7 +692,6 @@ class P1640Data(Data):
                     #stamp_x -= spotx-xarr_spot
                     #stamp_y -= spoty-yarr_spot
                     #print(spotx-xarr_spot,spoty-yarr_spot)
-
 
 
                     #mask the central blob to calculate background median
@@ -739,7 +721,7 @@ class P1640Data(Data):
                     if 1:
                         stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
                         stamp_th = np.arctan2(stamp_x-dx-boxw/2,stamp_y-dy-boxw/2)
-                        stamp_r /= lambda_ref/lambda_curr
+                        stamp_r /= scale_factors[i]  # lambda_ref/lambda_curr
                         stamp_x = stamp_r*np.cos(stamp_th)+boxw/2
                         stamp_y = stamp_r*np.sin(stamp_th)+boxw/2
                         #print(stamp_x,stamp_y)
@@ -755,14 +737,12 @@ class P1640Data(Data):
         #Build the spectrum of the sat spots
         # Number of cubes in dataset
         N_cubes = int(self.input.shape[0])/int(numwaves)
-        all_sat_spot_spec = np.zeros((37,N_cubes))
+        N_chans = np.size(self.channels_all)
+        all_sat_spot_spec = np.zeros((N_chans, N_cubes))
         for k in range(N_cubes):
-            all_sat_spot_spec[:,k] = self.spot_flux[37*k:37*(k+1)]
+            all_sat_spot_spec[:,k] = self.spot_flux[N_chans*k: N_chans*(k+1)]
         sat_spot_spec = np.nanmean(all_sat_spot_spec,axis=1)
 
-        #stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
-        #stamp_r = np.sqrt((stamp_x-boxw/2)**2+(stamp_y-boxw/2)**2)
-        #stamp_center = np.where(stamp_r<3)
         PSF_cube /= np.sqrt(np.nansum(PSF_cube**2))
         for l in range(numwaves):
             #PSF_cube[l,:,:] -= np.nanmedian(PSF_cube[l,:,:][stamp_center])
@@ -1050,12 +1030,11 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     #mask nans
     cleaned = np.copy(frame)
     cleaned[np.where(np.isnan(cleaned))] = 0
-
     #mask source for median filter
     masked = np.copy(cleaned)
     for loc in locations:
-        spotx = np.round(loc[0])
-        spoty = np.round(loc[1])
+        spotx = np.int(np.round(loc[0]))
+        spoty = np.int(np.round(loc[1]))
         masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
             masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
@@ -1075,8 +1054,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)
-    genpsf = np.mean(genpsf, axis=0) #average the different psfs together    
-
+    genpsf = np.mean(genpsf, axis=0) #average the different psfs together
     return genpsf
 
 
