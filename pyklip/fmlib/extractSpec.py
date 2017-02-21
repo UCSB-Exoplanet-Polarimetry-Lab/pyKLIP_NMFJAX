@@ -430,15 +430,15 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
             x -= stamp // 2
             nl = len(np.unique(data.wvs))
             radial_psfs = np.zeros((nl, stamp, stamp))
-            psf = amplitude * np.exp(-(x**2. + y**2.) / (2. * sigma**2)
+            psf = amplitude * np.exp(-(x**2. + y**2.) / (2. * sigma**2))
 
     fm_class = ExtractSpec(dataset.input.shape,
-                                  numbasis,
-                                  planet_sep,
-                                  planet_pa,
-                                  radial_psfs,
-                                  np.unique(dataset.wvs),
-                                  stamp_size = stamp_size)
+                           numbasis,
+                           planet_sep,
+                           planet_pa,
+                           radial_psfs,
+                           np.unique(dataset.wvs),
+                           stamp_size = stamp_size)
 
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
