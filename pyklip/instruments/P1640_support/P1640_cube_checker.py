@@ -181,10 +181,10 @@ def run_checker(fitsfiles):
                 p = Process(target=draw_cube, args=(cube, cube_name, header, seeing, airmass, i))
                 p.start()
 
-                # print cube information
+                # printcube information
 
-                print "\n{0}/{1} files".format(i+1, len(fitsfiles))
-                print "Cube: {0}".format(cube_name)
+                print("\n{0}/{1} files".format(i+1, len(fitsfiles)))
+                print("Cube: {0}".format(cube_name))
 
                 # ask if cube is good or not
                 keep_cube = None
@@ -303,7 +303,7 @@ def run_spot_checker(files=None, config=None, spot_path=None):
 
     # files vs config: two args enter! one arg leaves!
     if not (files is None) != (config is None):
-        print "Please supply either a list if files or a config file"
+        print("Please supply either a list if files or a config file")
         return None
     elif files is not None:
         fitsfiles = files
@@ -314,7 +314,7 @@ def run_spot_checker(files=None, config=None, spot_path=None):
         fitsfiles = configparser.get("Input","occulted_files").split()
         spot_directory = configparser.get("Spots","spot_file_path")   
     else:
-        print "Please supply either list of files or a config file"
+        print("Please supply either list of files or a config file")
         return None
 
     # spot path - if None, read default
@@ -346,13 +346,13 @@ def run_spot_checker(files=None, config=None, spot_path=None):
             p = Process(target=draw_spot_cube, args=(cube, cube_name, spots))
             p.start()
 
-            # print cube information
-            print "\n{0}/{1} files".format(i+1, len(fitsfiles))
-            print "\nCube: {0}".format(cube_name)
-            print "\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME"))
-            print "\tSeeing: {0}".format(fits.getval(ff, "SEEING"))
-            print "\tAirmass: {0}".format(np.mean([fits.getval(ff, "INIT_AM"),
-                                                   fits.getval(ff, "FINL_AM")]))
+            # printcube information
+            print("\n{0}/{1} files".format(i+1, len(fitsfiles)))
+            print("\nCube: {0}".format(cube_name))
+            print("\tExposure time: {0}".format(fits.getval(ff, "EXP_TIME")))
+            print("\tSeeing: {0}".format(fits.getval(ff, "SEEING")))
+            print("\tAirmass: {0}".format(np.mean([fits.getval(ff, "INIT_AM"),
+                                                   fits.getval(ff, "FINL_AM")])))
             # ask if cube is good or not
             keep_cube = None
             while keep_cube not in ['y', 'n']:
@@ -375,16 +375,16 @@ def run_spot_checker(files=None, config=None, spot_path=None):
         else:
             good_cubes[key] = None
     
-    #print good_cubes
-    #print "Good cubes: "
+    #print(good_cubes)
+    #print("Good cubes: ")
     #for i in sorted([key for key, val inre good_cubes.iteritems() if val == True]):
-    #    print i
+    #    print(i)
     if np.all(good_cubes.values()):
-        print "\nSpot fitting succeeded for all cubes.\n"
+        print("\nSpot fitting succeeded for all cubes.\n")
     else:
-        print "\nSpot fitting failed for the following cubes:"
-        print "\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False])
-        print "\n"
+        print("\nSpot fitting failed for the following cubes:")
+        print("\n".join([i for i in sorted(good_cubes.keys()) if good_cubes[i] == False]))
+        print("\n")
 
     final_good_cubes = sorted([os.path.abspath(i) for i in good_cubes.keys() if good_cubes[i] == True])
     tot_exp_time = get_total_exposure_time(final_good_cubes, units.minute)
@@ -394,7 +394,7 @@ def run_spot_checker(files=None, config=None, spot_path=None):
 
 
 def usage():
-    print """Required packages:
+    print("""Required packages:
 sys, os
 warnings, multiprocessing
 numpy, matplotlib
@@ -410,7 +410,7 @@ Usage:
     %run cube_checker.py {' '.join(files)}
 
 Prints a list of the chosen file paths
-"""
+""")
 
 # Command-line option handling
 # if switch --config is used, treat the following argument like the path to a config file
@@ -465,6 +465,6 @@ if __name__ == "__main__":
         #good_cubes = P1640_spot_checker.run_checker(fitsfiles, spot_path=spot_directory)
     else:
         good_cubes = run_checker(fitsfiles)
-    print "Good cubes:"
-    for i in good_cubes: print i
+    print("Good cubes:")
+    for i in good_cubes: print(i)
 

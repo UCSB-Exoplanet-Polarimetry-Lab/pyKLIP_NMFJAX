@@ -17,7 +17,7 @@ import itertools
 
 
 class DiskFM(NoFM):
-    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_file_pattern = 'klip-basis', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None):
+    def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.p', load_from_basis = False, save_basis = False, annuli = None, subsections = None, OWA = None, numthreads = None, mode = 'ADI'):
         '''
         Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
         vectors. When disk is updated, FM can be run on the new disk without computing new basis
@@ -26,20 +26,26 @@ class DiskFM(NoFM):
         For first time, instantiate DiskFM with no save_basis and nominal model disk.
         Specify number of annuli and subsections used to save basis vectors
 
+        Currently only supports mode = ADI
         '''
         super(DiskFM, self).__init__(inputs_shape, numbasis)
+
+        # Attributes of input/output
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.maxnumbasis = max(numbasis)
         self.numims = inputs_shape[0]
+        self.mode = mode
 
+        # Input dataset attributes
         self.dataset = dataset
         self.IWA = dataset.IWA
         self.images = dataset.input
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-
+        
+        # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
@@ -48,53 +54,58 @@ class DiskFM(NoFM):
         # Coords where align_and_scale places model center (default is inputs center).
         self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
 
+        # Make disk reference PSFS
         self.update_disk(model_disk)
 
         self.save_basis = save_basis
         self.annuli = annuli
         self.subsections = subsections
+        self.OWA = OWA
 
-        self.klmodes_all = None
-        self.evals_all = None
-        self.evecs_all = None
-        self.ref_psfs_indices_all = None
-        self.section_ind_all = None
-
-        self.basis_file_pattern = basis_file_pattern
+        self.basis_filename = basis_filename
         self.load_from_basis = load_from_basis
+
+        x,y = np.meshgrid(np.arange(inputs_shape[2] * 1.0),np.arange(inputs_shape[1]*1.0))
+        nanpix = np.where(np.isnan(dataset.input[0]))
+        if OWA is None:
+            if np.size(nanpix) == 0:
+                OWA = np.sqrt(np.max((x - self.centers[0][0]) ** 2 + (y - self.centers[0][1]) ** 2))
+            else:
+                # grab the NaN from the 1st percentile (this way we drop outliers)    
+                OWA = np.sqrt(np.percentile((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2, 1))
+        self.OWA = OWA
+
 
 
         if numthreads == None:
             self.numthreads = mp.cpu_count()
+        else:
+            self.numthreads = numthreads
 
-        if self.save_basis == True or load_from_basis == True:
+        if self.save_basis == True:
+            # Need to know r and phi indicies in fm from eigen
             assert annuli is not None, "need annuli keyword to save basis"
-            assert subsections is not None, "need annuli keyword to save basis"
+            assert subsections is not None, "need subsections keyword to save basis"
             x, y = np.meshgrid(np.arange(inputs_shape[2] * 1.0), np.arange(inputs_shape[1] * 1.0))
-            nanpix = np.where(np.isnan(dataset.input[0]))
-            if OWA is None:
-                OWA = np.sqrt(np.min((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2))
-            self.OWA = OWA
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
             
-
-            if self.save_basis == True:
-                manager = mp.Manager()
-                global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
-                klmodes_dict = manager.dict()
-                evecs_dict = manager.dict()
-                evals_dict = manager.dict()
-                ref_psfs_indicies_dict = manager.dict()
-                section_ind_dict = manager.dict()
+            # Set up dictionaries for saving basis
+            manager = mp.Manager()
+            global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
+            klmodes_dict = manager.dict()
+            evecs_dict = manager.dict()
+            evals_dict = manager.dict()
+            ref_psfs_indicies_dict = manager.dict()
+            section_ind_dict = manager.dict()
 
         if load_from_basis is True:
-            self.load_basis_files(basis_file_pattern)
+            self.load_basis_files(basis_filename)
 
 
     def alloc_fmout(self, output_img_shape):
-        '''
-        Allocates shared memory for output image 
+        ''' 
+       Allocates shared memory for output image 
         '''
         fmout_size = np.prod(output_img_shape)
         fmout_shape = output_img_shape
@@ -113,7 +124,6 @@ class DiskFM(NoFM):
         refs = refs[:, section_ind[0]]
         refs[np.where(np.isnan(refs))] = 0
 
-
         model_sci = self.model_disks[input_img_num, section_ind[0]]
 
         model_ref = self.model_disks[ref_psfs_indicies, :]
@@ -126,7 +136,7 @@ class DiskFM(NoFM):
         for thisnumbasisindex in range(np.size(numbasis)):
             self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                        fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                       radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+                                       radstart, radend, phistart, phiend,  padding,IOWA, ref_center, flipx=True) # FIXME
 
 
         if self.save_basis is True:
@@ -137,7 +147,6 @@ class DiskFM(NoFM):
                 curr_im = '0' + curr_im
 
             # FIXME save per wavelength
-            # FIXME make it so that it doesn't save one per
             nam = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
             
             klmodes_dict[nam] = klmodes
@@ -151,56 +160,35 @@ class DiskFM(NoFM):
         Functions like klip_parallelized, but doesn't find new 
         evals and evecs. 
         '''
-        assert self.klmodes_all is not None, "No evals or evecs defined"
-        assert self.evecs_all is not None, "No evals or evecs defined"
-        assert self.evals_all is not None, "No evals or evecs defined"
-        assert self.ref_psfs_indices_all is not None, "No evals or evecs defined"
-        assert self.section_ind_all is not None, "No evals or evecs defined"
 
-        # Define phi bounds and rad bounds. There is one rad and phi bound per sector
-        rad_bounds = [(self.dr * rad + self.IWA, self.dr * (rad + 1) + self.IWA) for rad in self.annuli_list]
-        phi_bounds = [[self.dphi * phi_i, self.dphi  * (phi_i + 1)] for phi_i in self.subs_list]
-        phi_bounds[-1][1] = 2. * np.pi - 0.0001
 
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
-
-#        tpool = mp.Pool(processes = self.numthreads)
-
-
-        # FIXME 
-
-        # fm_from_eigen 
-#        for sector_index, ((radstart,radend), (phistart, phiend)) in enumerate(iterator_sectors):
-        for sector_index in range(len(self.section_ind_all)):
-
-
-            radstart, radend = rad_bounds[sector_index]
-            phistart, phiend = phi_bounds[sector_index]
-            # calculate sector size                                             
- 
-            # sector index chooses both the 
-
-            section_ind = self.section_ind_all[sector_index]
-            sector_size = np.size(section_ind)
-            original_KL = self.klmodes_all[sector_index]
-            evals = self.evals_all[sector_index]
-            evecs = self.evecs_all[sector_index]
-            ref_psfs_indicies = self.ref_psfs_indices_all[sector_index]
-            img_num = self.imnum_list[sector_index]
-
-
-# No wavelength dependence yet
-#            for wv_index, wv_value in enumerate(self.unique_wvs):
-#                scidata_indicies = np.where(self.wvs == wv_value)[0]
-#                
-#                sector_job_queued[sector_index] += scidata_indicies.shape[0]
-                
-            parallel = False 
-                
-
+        
+        # Parallelilze this
+        for key in self.dict_keys:
+            rad = int(key[1])
+            phi = int(key[3])
+            img_num = int(key[5:])
             
+            radstart = self.dr * rad + self.IWA
+            radend = self.dr * (rad + 1) + self.IWA
+            phistart = self.dphi * phi
+            phiend = self.dphi  * (phi + 1)
+            # FIXME This next line makes subsection != 1 have overlapping sections, but breaks
+            # subsection = 1. Need to add padding option to fix this
+#            phi_bounds[-1][1] = 2. * np.pi - 0.0001  
+ 
+            section_ind = self.section_ind_dict[key]
+            sector_size = np.size(section_ind)
+            original_KL = self.klmodes_dict[key]
+            evals = self.evals_dict[key]
+            evecs = self.evecs_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key]
+            
+            parallel = False 
+        
             if not parallel:
                 self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                                    input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
@@ -222,33 +210,30 @@ class DiskFM(NoFM):
 
 
     def load_basis_files(self, basis_file_pattern):
-        # Need dr and dphi def
-        
-        filenames = glob.glob(basis_file_pattern + '*.p')
-        assert len(filenames) > 0, "No files found"
+        '''
+        Loads in previously saved basis files and sets variables for fm_from_eigen
+        '''
 
-        nums = [f[len(basis_file_pattern):] for f in filenames]
-        rads = [float(n[1]) for n in nums]
-        subs = [float(n[3]) for n in nums]
-        imnum = [int(n[5:7]) for n in nums]
+        # Load in file
+        f = open(basis_file_pattern)
+        self.klmodes_dict = pickle.load(f)
+        self.evecs_dict = pickle.load(f)
+        self.evals_dict = pickle.load(f)
+        self.ref_psfs_indicies_dict = pickle.load(f)
+        self.section_ind_dict = pickle.load(f)
 
-        # FIXME wavelengths?
-        self.annuli_list = rads
-        self.subs_list = subs
-        self.imnum_list = imnum
-        
-        self.klmodes_all = []
-        self.evals_all = []
-        self.evecs_all = []
-        self.ref_psfs_indices_all = []
-        self.section_ind_all = []
-        for f in filenames:
-            basis_file = open(f)
-            self.klmodes_all.append(pickle.load(basis_file))
-            self.evals_all.append(pickle.load(basis_file))
-            self.evecs_all.append(pickle.load(basis_file))
-            self.ref_psfs_indices_all.append(pickle.load(basis_file))
-            self.section_ind_all.append(pickle.load(basis_file))
+        # Set extents for each section
+        self.dict_keys = sorted(self.klmodes_dict.keys())
+        rads = [int(key[1]) for key in self.dict_keys]
+        phis = [int(key[3]) for key in self.dict_keys]
+        self.annuli = np.max(rads) + 1
+        self.subsections = np.max(phis) + 1
+
+        # More geometry parameters
+        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
+        nanpix = np.where(np.isnan(self.dataset.input[0]))
+        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
+        self.dphi = 2 * np.pi / self.subsections
         
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
@@ -262,7 +247,7 @@ class DiskFM(NoFM):
         recentered_imgs = mp.Array(self.mp_data_type, np.size(self.images)*np.size(unique_wvs))
         recentered_imgs_shape = (np.size(unique_wvs),) + self.images.shape
 
-        # remake the PA, wv, and center arrays as shared arrays                                            
+        # remake the PA, wv, and center arrays as shared arrays                  
         pa_imgs = mp.Array(self.mp_data_type, np.size(self.pas))
         pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.np_data_type)
         pa_imgs_np[:] = self.pas
@@ -280,54 +265,48 @@ class DiskFM(NoFM):
 
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
 
-
-        # FIXME
+        
+        # Making MP arrays
         fmout_data = None
         fmout_shape = None
-        
-
         tpool = mp.Pool(processes=self.numthreads, initializer=fm._tpool_init,initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs, self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None, fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
-
         
-        # probably okay if these are global variables right now, can make them local later
+        # Okay if these are global variables right now, can make them local later
         self._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
-
-
+        fmout_data = None
+        fmout_shape = None
+    
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
         for threadnum in range(self.numthreads):
-            #multitask this                                                                
-
-            # write own align and scale subset (?)
-            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]
-
+            aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]         
             #save it to shared memory                                           
         for aligned_output in aligned_outputs:
             aligned_output.wait()
 
 
-        self.original = original_imgs
-        self.original_shape = original_imgs_shape
-        # someone who actually does spec data should make sure that this is actually aligned and scale right
-        self.aligned_imgs = aligned
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-#        self.aligned_shape = original_imgs_shape
-#        self.aligned_shape = aligned_shape
-
-        # this looks stupid and probably is
-        self.outputs = output_imgs
-        self.outputs_shape = output_imgs_shape
-        self.outputs_numstacked = output_imgs_numstacked
-        self.img_pa = pa_imgs
-        self.img_wv = wvs_imgs
-        self.img_center =  centers_imgs
-        self.fmout = fmout
-        self.fmout_shape = fmout_shape
-        self.pa_imgs = pa_imgs
-        self.wvs_imgs = wvs_imgs
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
+
+        # Delete global variables so it can pickle
+        del pa_imgs
+        del wvs_imgs
+        del original_imgs
+        del original_imgs_shape
+        del original_imgs_np
+        del recentered_imgs
+        del recentered_imgs_shape
+        del centers_imgs_np
+        del fmout_data
+        del fmout_shape
+        del output_imgs
+        del output_imgs_shape
+        del output_imgs_numstacked
+        del centers_imgs
+        del wvs_imgs_np
+        del pa_imgs_np
 
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False, spectrum=None):
@@ -335,7 +314,30 @@ class DiskFM(NoFM):
         Uses self.dataset parameters to save fmout, the output of
         fm_paralellized or klip_dataset
         '''
-        KLmode_cube = np.nanmean(fmout, axis = 1)
+
+        #Collapsed across all files (and wavelenths) and divide by number of images to keep units as ADU/coadd
+        KLmode_cube = np.nanmean(fmout, axis = 1)/self.inputs_shape[0] 
+
+        #Check if we have a disk model at multiple wavelengths
+        model_disk_shape = np.shape(self.model_disk)        
+        #If true then it's a spec mode diskand save indivudal specmode cubes for each KL mode
+        if np.size(model_disk_shape) > 2: 
+
+            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+
+            ##Collapse across all files, keeping the wavelengths intact. 
+            KLmode_spectral_cubes = np.zeros([np.size(numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
+            for i in np.arange(n_wv_per_file):
+                KLmode_spectral_cubes[:,i,:,:] = np.nansum(fmout[:,i::n_wv_per_file,:,:], axis =1)/nfiles
+            
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
+
+
         dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                          zaxis=numbasis)
@@ -349,31 +351,85 @@ class DiskFM(NoFM):
         Args:
             fmout: numpy array of ouput of FM
 
-        Return:
+        Returns:
             fmout: same but cleaned up if necessary
         """
         if self.save_basis == True:
-            f = open(self.basis_file_pattern + '.p', 'wb')
-            pickle.dump(klmodes_dict, f)
-            pickle.dump(evecs_dict, f)
-            pickle.dump(evals_dict, f)
-            pickle.dump(ref_psfs_indicies_dict, f)
-            pickle.dump(section_ind_dict, f)
+            f = open(self.basis_filename, 'wb')
+            pickle.dump(dict(klmodes_dict), f)
+            pickle.dump(dict(evecs_dict), f)
+            pickle.dump(dict(evals_dict), f)
+            pickle.dump(dict(ref_psfs_indicies_dict), f)
+            pickle.dump(dict(section_ind_dict), f)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
     def update_disk(self, model_disk):
+        '''
+        Takes model disk and rotates it to the PAs of the input images for use as reference PSFS
+       
+        Args: 
+             model_disk: Disk to be forward modeled, can be either a 2D array ([N,N], where N is the width and height of your image)
+             in which case, if the dataset is multiwavelength then the same model is used for all wavelenths. Otherwise, the model_disk is 
+             input as a 3D arary, [nwvs, N,N], where nwvs is the number of wavelength channels).  
+        Returns:
+             None
+        '''
 
         self.model_disk = model_disk
         self.model_disks = np.zeros(self.inputs_shape)
 
-        # FIXME align and scale
-        for i, pa in enumerate(self.pas):
-            model_copy = copy.deepcopy(model_disk)
-            model_copy = rotate(model_copy, pa, self.centers[i], flipx = True)
-            model_copy[np.where(np.isnan(model_copy))] = 0.
-            self.model_disks[i] = model_copy
+        model_disk_shape = np.shape(model_disk)        
+        # print("Rotating Disk Model to PAs of data")
+        
+        # Check if we have a disk at multiple wavelengths
+        if np.size(model_disk_shape) > 2: #Then it's a spec mode disk
+
+            #If we do, then let's make sure that the number of wavelenth channels matches the data. 
+            #Note this only works if all your data files have the same number of wavelenth channels. Which it likely does. 
+            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+            n_disk_wvs = model_disk_shape[0]
+
+            if n_disk_wvs == n_wv_per_file: #If your model wvs match the number of dataset wvs
+                for k in np.arange(nfiles):
+                    for j,wvs in enumerate(range(n_disk_wvs)):
+                        model_copy = copy.deepcopy(model_disk[j,:,:])
+                        model_copy = rotate(model_copy, self.pas[k*n_wv_per_file+j], self.aligned_center, flipx = True)
+                        model_copy[np.where(np.isnan(model_copy))] = 0.
+                        self.model_disks[k*n_wv_per_file+j,:,:] = model_copy 
+
+                # for j,wvs in enumerate(range(n_disk_wvs)):
+                #     for i, pa in enumerate(self.pas[j*n_wv_per_file:(j+1)*n_wv_per_file]):   
+                #         model_copy = copy.deepcopy(model_disk[j,:,:])
+                #         model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                #         model_copy[np.where(np.isnan(model_copy))] = 0.
+                #         self.model_disks[j*n_wv_per_file+i,:,:] = model_copy #This line is incorrect!
+
+
+            else: #Then we just use the first model in the stack. (Not the best solution, but whatever)
+                print("The number of wavelenths in your data don't match the number of wavelenths in your disk model.")
+                print("Using the first model in the model disk stack for all cases")
+
+                #K, now do things how you would for just a 2D disk
+                for i, pa in enumerate(self.pas):
+                    model_copy = copy.deepcopy(model_disk[0,:,:])
+                    model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                    model_copy[np.where(np.isnan(model_copy))] = 0.
+                    self.model_disks[i] = model_copy
+                
+
+
+        else: #If we have a 2D disk model, then we'll just do it like this. 
+
+            # FIXME add align and scale
+            for i, pa in enumerate(self.pas):
+                model_copy = copy.deepcopy(model_disk)
+                model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
+                model_copy[np.where(np.isnan(model_copy))] = 0.
+                self.model_disks[i] = model_copy
+        
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
     def _tpool_init(self, original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
@@ -431,7 +487,7 @@ class DiskFM(NoFM):
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
                          new_center=None):
         """
-        Rotate and save sector in output image at desired ranges
+        Rotate and save sector in output image at desired ranges. Need my own version of this that doesn't use a global variable (maybe?0
         
         Args:
         input_shape: shape of input_image

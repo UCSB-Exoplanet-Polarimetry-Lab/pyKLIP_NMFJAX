@@ -14,5 +14,20 @@ pipelines:
           # - cd pyklip # move into repo base dir
           # - ls pyklip
           - ls pyklip/instruments
+          
+          # install some more dependencies
+          - pip install emcee
+          - pip install corner
+          
+          # install pyklip
           - python setup.py develop
-          - py.test
+          
+          # setup coveralls
+          - pip install coveralls
+          - conda install -c https://conda.anaconda.org/astropy photutils
+
+
+          #Coverage and Coverall hooking
+          - coverage run --source ./pyklip -m py.test
+          - coverage combine
+          - COVERALLS_REPO_TOKEN=$COVERALLS_REPO_TOKEN_2 coveralls

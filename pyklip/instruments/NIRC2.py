@@ -27,7 +27,7 @@ from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
 
-class NIRC2Data(object):
+class NIRC2Data(Data):
     """
     A sequence of Keck NIRC2 ADI Data. Each NIRC2Data object has the following fields and functions
 
@@ -274,7 +274,7 @@ class NIRC2Data(object):
                 The first pixel has coordinates (0,0)
             fakePlparams: fake planet params
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
-                             written into the primary header
+                            written into the primary header
 
         """
         hdulist = fits.HDUList()
@@ -372,7 +372,7 @@ class NIRC2Data(object):
             for hdr_key in more_keywords:
                 hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
-        hdulist.writeto(filepath, clobber=True)
+        hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
 
     def calibrate_data(self, units="contrast"):
@@ -523,7 +523,7 @@ def measure_star_flux(img, star_x, star_y):
 
     flux, fwhm, xfit, yfit = gaussfit2d(img, star_x, star_y, refinefit=False)
     if flux == np.inf: flux == np.nan
-    print flux, fwhm, xfit, yfit
+    print(flux, fwhm, xfit, yfit)
 
     return flux
 

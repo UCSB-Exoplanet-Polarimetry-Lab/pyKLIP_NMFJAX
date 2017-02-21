@@ -383,7 +383,7 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False,epoch_suffix
         if not star_name.startswith('.') and star_name not in stars2ignore:
             #print(star_name)
 
-            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
+            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
@@ -428,7 +428,7 @@ def gather_multiple_ROCs(base_dir,filename_filter_list,mute = False,epoch_suffix
     return threshold_sampling_list,master_N_false_pos_list,master_N_true_detec_list,N
 
 
-def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch_suffix=None,stars2ignore=None):
+def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch_suffix=None,stars2ignore=None,IFSfilter=None):
     """
     Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
     If the folders are organized following the convention below then it will make sure there is a ROC file for each
@@ -464,6 +464,9 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
     if stars2ignore is None:
         stars2ignore=[]
 
+    if IFSfilter is None:
+        IFSfilter="*"
+
     dirs_to_reduce = os.listdir(base_dir)
     # dirs_to_reduce = ["HD_202917","c_Eri"]
     N=0
@@ -471,7 +474,7 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
         if not star_name.startswith('.') and star_name not in stars2ignore:
             #print(star_name)
 
-            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
+            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_{0}_Spec".format(IFSfilter)+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
@@ -509,8 +512,8 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
                             sep_list[index] = sep_list[index]+detec_table[above_thres[0],sep_id].tolist()
                         except:
                             metric_list[index] = detec_table[above_thres[0],metric_id].tolist()
-                            pa_list[index] = pa_list[above_thres[0],pa_id].tolist()
-                            sep_list[index] = sep_list[above_thres[0],sep_id].tolist()
+                            pa_list[index] = detec_table[above_thres[0],pa_id].tolist()
+                            sep_list[index] = detec_table[above_thres[0],sep_id].tolist()
 
 
     print("N files = {0}".format(N))
@@ -519,7 +522,7 @@ def get_all_false_pos(base_dir,filename_filter_list,threshold,mute = False,epoch
 
 
 
-def get_metrics_stat(base_dir,filename_filter_list,IOWA,bins,GOI_list_folder,mute = False,epoch_suffix=None,stars2ignore=None):
+def get_metrics_stat(base_dir,filename_filter_list,IOWA,bins,GOI_list_folder,mute = False,epoch_suffix=None,stars2ignore=None,IFSfilter=None):
     """
     Build the multiple combined ROC curve from individual frame ROC curve while making sure they have the same inputs.
     If the folders are organized following the convention below then it will make sure there is a ROC file for each
@@ -555,6 +558,9 @@ def get_metrics_stat(base_dir,filename_filter_list,IOWA,bins,GOI_list_folder,mut
     if stars2ignore is None:
         stars2ignore=[]
 
+    if IFSfilter is None:
+        IFSfilter="*"
+
     dirs_to_reduce = os.listdir(base_dir)
     # dirs_to_reduce = ["HD_202917","c_Eri"]
     N=0
@@ -562,7 +568,7 @@ def get_metrics_stat(base_dir,filename_filter_list,IOWA,bins,GOI_list_folder,mut
         if not star_name.startswith('.') and star_name not in stars2ignore:
             #print(star_name)
 
-            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
+            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_{0}_Spec".format(IFSfilter)+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
@@ -662,7 +668,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
         ignore_distance=10
 
     if detec_distance is None:
-        detec_distance=2
+        detec_distance=3
 
     if stars2ignore is None:
         stars2ignore=[]
@@ -675,7 +681,7 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
         if not star_name.startswith('.') and star_name not in stars2ignore:
             #print(star_name)
 
-            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
+            epochDir_glob = glob(base_dir+star_name+os.path.sep+"autoreduced_kpop"+os.path.sep+"*_*_Spec"+epoch_suffix+os.path.sep)
 
             for epochDir in epochDir_glob:
                 inputDir = os.path.abspath(epochDir)
@@ -800,8 +806,8 @@ def get_candidates(base_dir,filename_filter_list,threshold,mute = False,epoch_su
                             is_GOI_list[index] = is_GOI_list[index]+is_GOI[valid_detec[0]].tolist()
                         except:
                             metric_list[index] = detec_table[valid_detec[0],metric_id].tolist()
-                            pa_list[index] = pa_list[valid_detec[0],pa_id].tolist()
-                            sep_list[index] = sep_list[valid_detec[0],sep_id].tolist()
+                            pa_list[index] = detec_table[valid_detec[0],pa_id].tolist()
+                            sep_list[index] = detec_table[valid_detec[0],sep_id].tolist()
                             star_name_list[index] = [star_name]*len(detec_table[valid_detec[0],metric_id].tolist())
                             N_cubes_list[index] = [N_cubes]*len(detec_table[valid_detec[0],metric_id].tolist())
                             compact_date_list[index] = [compact_date]*len(detec_table[valid_detec[0],metric_id].tolist())

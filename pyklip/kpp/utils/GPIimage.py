@@ -78,10 +78,11 @@ def get_IOWA(image, centroid = None):
     for r_id, r_it in enumerate(r_samp):
         annulus = np.where( ((r_it-Dr/2.0) < r) & (r < (r_it+Dr/2.0)) )
         if len(annulus[0]) != 0:
-            radial_val[r_id] = np.sum(image_tmp[annulus])
+            radial_val[r_id] = np.nansum(image_tmp[annulus])
         else:
             radial_val[r_id] = np.nan
 
+    radial_val[np.where(radial_val == 0)] = np.nan
     IWA = r_samp[np.where(np.isfinite(radial_val))[0][0]]
     OWA = r_samp[np.where(np.isfinite(radial_val))[0][-1]]
 
@@ -89,8 +90,8 @@ def get_IOWA(image, centroid = None):
 
 def as2pix(sep_as):
     from  pyklip.instruments.GPI import GPIData
-    return sep_as/GPIData.lenslet_scale
+    return np.array(sep_as)/GPIData.lenslet_scale
 
 def pix2as(sep_pix):
     from  pyklip.instruments.GPI import GPIData
-    return sep_pix*GPIData.lenslet_scale
+    return np.array(sep_pix)*GPIData.lenslet_scale

@@ -61,6 +61,14 @@ pyklip.parallelized module
     :undoc-members:
     :show-inheritance:
 
+pyklip.rdi module
+-----------------
+
+.. automodule:: pyklip.rdi
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 pyklip.spectra_management module
 --------------------------------
 

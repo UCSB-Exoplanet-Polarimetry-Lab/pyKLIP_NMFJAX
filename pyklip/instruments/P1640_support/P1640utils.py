@@ -110,7 +110,7 @@ def get_cube_xsection(orig_cube, center, width):
         assert(center[0] < shape[1])
         assert(center[1] < shape[2])
     except AssertionError:
-        print "bad value for center"
+        print("bad value for center")
         return None
     # [(xlow, xhigh),(ylow,yhigh)]
     center_lims = np.array([(np.max([0,center[0]-width]), np.min([shape[-1],center[0]+width])),
@@ -139,7 +139,7 @@ def get_PSF_center(cube, refchan=26, fine=False):
         centers = np.array([np.unravel_index(np.nanargmax(center_cutout[chan]), center_cutout[chan].shape)
                             for chan in range(nchan)] + init_center - width)
     except ValueError:
-        print "All-NaN slice encountered:", chan
+        print("All-NaN slice encountered:", chan)
         return None
     # If you want centroiding, do a second pass
     if fine == True:
