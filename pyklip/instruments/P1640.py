@@ -527,11 +527,15 @@ class P1640Data(Data):
             except KeyError:
                 exthdr['PC1_2'] = 0.0
                 exthdr['PC2_1'] = 0.0
-            #remove CD values as those are confusing
-            exthdr.remove('CD1_1')
-            exthdr.remove('CD1_2')
-            exthdr.remove('CD2_1')
-            exthdr.remove('CD2_2')
+            # remove CD values as those are confusing
+            # currently not found in P1640 headers
+            try:
+                exthdr.remove('CD1_1')
+                exthdr.remove('CD1_2')
+                exthdr.remove('CD2_1')
+                exthdr.remove('CD2_2')
+            except:
+                pass
             exthdr['CDELT1'] = 1
             exthdr['CDELT2'] = 1
 
