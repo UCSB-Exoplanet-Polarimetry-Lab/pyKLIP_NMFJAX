@@ -396,9 +396,9 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     maxnumbasis = 100 # set from JB's example
     movement = mv # movement
-    stamp_size = stamp
-    N_frames = dataset.wvs.size
-    N_cubes = np.unique(dataset.filenums).size 
+    stamp_size=stamp
+    N_frames = len(dataset.input)
+    N_cubes = len(dataset.exthdrs)
     nl = N_frames / N_cubes
 
     print("====================================")
@@ -432,13 +432,13 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     if model_from_spots == False:
         uniqwvs = dataset.wvs[:nl]
         radial_psfs = np.zeros((nl, stamp, stamp))
-        telD = dataset.config.get('observatory','primary_diam')
+        telD = float(dataset.config.get('observatory','primary_diam'))
         for wv, lam in enumerate(uniqwvs):
             # Calculate lam/D in pixels - first convert wavelength to [m]
             # lam[m] / D[m] is in radians -- convert to arcsec
-            fwhm_arcsec = ((lam*1.0e-6)/D) * (3600*180/np.pi)
+            fwhm_arcsec = ((lam*1.0e-6)/telD) * (3600*180/np.pi)
             # convert to pixels with ifs_lenslet_scale
-            fwhm = fwhm_arcsec/dataset.config.get('instrument','ifs_lenslet_scale')
+            fwhm = fwhm_arcsec/float(dataset.config.get('instrument','ifs_lenslet_scale'))
             # Gaussian standard deviation - from another routine
             sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
 
