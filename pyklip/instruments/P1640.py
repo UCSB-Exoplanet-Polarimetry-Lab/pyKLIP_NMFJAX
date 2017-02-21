@@ -100,7 +100,7 @@ class P1640Data(Data):
         #get some information specific to each band
         bands = ['H']
         for band in bands:
-            centralwave[band] = float(config.get("instrument", "cen_wave"))
+            centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
             fpm_diam[band] = float(config.get("instrument", "fpm_diam")) / lenslet_scale  # pixels
         flux_zeropt = float(config.get("instrument", "zero_pt_flux"))
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
@@ -414,7 +414,7 @@ class P1640Data(Data):
         # use the spot scalings instead of the wavelength solution; that comes separately anyway
         #self._wvs =  wvs
         self._wvs = np.tile(np.mean(spot_scalings, axis=0), spot_scalings.shape[0])
-        self._wcs = None # wcs_hdrs not used by P1640 
+        self._wcs = wcs_hdrs 
         self._IWA = P1640Data.fpm_diam[fpm_band]/2.0
         self.spot_flux = spot_fluxes
         self.scale_factors = spot_scalings
@@ -630,6 +630,9 @@ class P1640Data(Data):
             self.psfs.append(spotpsf)
 
         self.psfs = np.array(self.psfs)
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
+                                           self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=14):
         """
@@ -935,7 +938,6 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         w = wcs.WCS(header=exthdr, naxis=[1,2])
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = 0 # for P1640 #exthdr['AVPARANG']
-        '''
         # WCS information not saved by P1640
         vert_angle = -(360-parang) + P1640Data.ifs_rotation - 90
         vert_angle = np.radians(vert_angle)
@@ -945,7 +947,6 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
-        '''
         
         channels = exthdr['NAXIS3']
         wvs = P1640spots.P1640params.wlsol #get wavelength solution
@@ -1037,7 +1038,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     for loc in locations:
         spotx = np.int(np.round(loc[0]))
         spoty = np.int(np.round(loc[1]))
-        masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = scipy.stats.nanmedian(
+        masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = np.nanmedian(
             masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
 

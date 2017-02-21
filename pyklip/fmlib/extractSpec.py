@@ -406,17 +406,19 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
 
     planet_sep, planet_pa = pars
 
+    # number of spectral channels
+    nchannels = int(len(dataset.wvs)/(np.max(dataset.filenums)+1))
     # If 'dataset' does not already have psf model, generate them. 
     if hasattr(dataset, "psfs"):
         print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
         radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nchannels, nchannels]), axis=0)[:, None, None])
     else:
         try:
             print "Using generate_psfs to make psf model, this is probably GPI data."
             dataset.generate_psf_cube(20)
             radial_psfs = dataset.psfs / \
-                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nchannels, nchannels]), axis=0)[:, None, None])
         except:
             # If this dataset does not have a working generate_psfs method, just make a gaussian psf
             print "generate_psfs failed... Generating Gaussian PSFs..."
@@ -574,7 +576,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         return estim_spec
 
 
-def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3):
+def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False):
     """
     Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
      The steps here:
@@ -591,6 +593,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
         - klip movement (how aggressive?), default=1.0 pixel
         - stamp size, default=10 pixels
         - numbasis - K-L cuttoff
+        - contrast [False] True: units of contrast. False: units of DN
     Returns:
         A dictionary containg the extracted spectrum from both matrix inversion 
         styles (FLUX_JB, FLUX_LP), and measured errors (ERR_JB, ERR_LP)
@@ -623,7 +626,10 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     N_cubes = len(dataset.exthdrs)
     nl = int(N_frames / N_cubes)
     # Factor to convert contrast spectrum back to data number PER FRAME
-    contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
+    # Jonathan hack
+    contrast2DN = np.ones_like(dataset.spot_flux)
+    if contrast == True:
+        contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
     # generate a psf model
     sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
     PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
