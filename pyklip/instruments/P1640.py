@@ -518,7 +518,7 @@ class P1640Data(Data):
             #update astro header
             #I don't have a better way doing this so we'll just inject all the values by hand
             astroheader = astr_hdr.to_header()
-            exthdr = hdulist[1].header
+            exthdr = hdulist[0].header
             exthdr['PC1_1'] = astroheader['PC1_1']
             exthdr['PC2_2'] = astroheader['PC2_2']
             try:
