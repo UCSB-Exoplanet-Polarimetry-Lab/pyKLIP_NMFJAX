@@ -511,8 +511,6 @@ class P1640Data(Data):
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
 
-        # Not used by P1640
-        '''
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:
             astr_hdr = self.wcs[0]
@@ -536,7 +534,6 @@ class P1640Data(Data):
             exthdr.remove('CD2_2')
             exthdr['CDELT1'] = 1
             exthdr['CDELT2'] = 1
-        '''
 
         #use the dataset center if none was passed in
         if center is None:
@@ -943,11 +940,15 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         cdmatrix = pc * P1640Data.lenslet_scale /3600.
+        # P1640 workaround
+        w.wcs.cd = cdmatrix
+        """ old version
         w.wcs.cd[0,0] = cdmatrix[0,0]
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
-        
+        """
+
         channels = exthdr['NAXIS3']
         wvs = P1640spots.P1640params.wlsol #get wavelength solution
         # calculate centers from satellite spots
