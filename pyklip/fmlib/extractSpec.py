@@ -398,8 +398,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
     stamp_size=stamp
 
     print("===================================="
-    print("planet separation, pa:".format(pars))
-    print("numbasis:".format(numbasis))
+    print("planet separation, pa: {0}".format(pars))
+    print("numbasis: {0}".format(numbasis))
     print("movement: {0}".format(mv))
     print("====================================")
     print("Generating forward model...")
