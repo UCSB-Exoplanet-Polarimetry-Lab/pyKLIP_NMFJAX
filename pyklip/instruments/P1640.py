@@ -385,8 +385,9 @@ class P1640Data(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-        spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
         spot_locations = np.array(spot_locations).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
+        # for the spot scalings factors, take the mean for each wavelength
+        spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
         # Not used by P1640
         '''
         #only do the wavelength solution and center recalculation if it isn't broadband imaging
@@ -604,13 +605,13 @@ class P1640Data(Data):
             self._core_psf = star_psf
 
 
-    def generate_psfs(self, boxrad=7):
+    def generate_psfs(self, boxrad=7, gauss=True):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
-        Currently hard coded assuming 37 spectral channels!!!
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
-            spotyx: Ncube x Nchan x 4 x 2 array of spot (row, col) positions
+            # spotyx: Ncube x Nchan x 4 x 2 array of spot (row, col) positions
+            gauss [False]: if True, use a gaussian PSF
         Returns:
             saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
@@ -623,17 +624,37 @@ class P1640Data(Data):
         spot2 = self.spot_locations[..., 2,:].reshape(nframes, 2)
         spot3 = self.spot_locations[..., 3,:].reshape(nframes, 2)
 
-        for i,frame in enumerate(self.input):
-            spots = [[float(spot0[i, 0]), float(spot0[i, 1])], [float(spot1[i, 0]), float(spot1[i, 1])],
-                     [float(spot2[i, 0]), float(spot2[i, 1])], [float(spot3[i, 0]), float(spot3[i, 1])]]
-            #now make a psf
-            spotpsf = generate_psf(frame, spots, boxrad=boxrad)
-            self.psfs.append(spotpsf)
-
-        self.psfs = np.array(self.psfs)
-        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
-                                           self.psfs.shape[1], self.psfs.shape[2]))
-        self.psfs = np.mean(self.psfs, axis=0)
+        if gauss == True: # simulate the PSF as a gaussian
+            stamp = 2*boxrad + 1
+            uniqwvs = np.unique(self.wvs)
+            nl = uniqwvs.size
+            radial_psfs = np.zeros((nl, stamp, stamp))
+            telD = self.config.getfloat('observatory','primary_diam')
+            for wv, lam in enumerate(uniqwvs):
+                # Calculate lam/D in pixels - first convert wavelength to [m]
+                # lam[m] / D[m] is in radians -- convert to arcsec
+                fwhm_arcsec = ((lam*1.0e-6)/telD) * (3600*180/np.pi)
+                # convert to pixels with ifs_lenslet_scale
+                fwhm = fwhm_arcsec/self.config.getfloat('instrument','ifs_lenslet_scale')
+                # Gaussian standard deviation - from another routine
+                sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
+                #centered in the array
+                y,x = np.indices([stamp, stamp])
+                y -= stamp // 2
+                x -= stamp // 2
+                radial_psfs[wv,...] = np.exp(-(x**2. + y**2.) / (2. * sigma**2))
+            self.psfs = radial_psfs / np.mean(radial_psfs.sum(axis=0))
+        else: # use the spots to build the psf
+            for i,frame in enumerate(self.input):
+                spots = [[float(spot0[i, 0]), float(spot0[i, 1])], [float(spot1[i, 0]), float(spot1[i, 1])],
+                         [float(spot2[i, 0]), float(spot2[i, 1])], [float(spot3[i, 0]), float(spot3[i, 1])]]
+                #now make a psf
+                spotpsf = generate_psf(frame, spots, boxrad=boxrad)
+                self.psfs.append(spotpsf)
+                self.psfs = np.array(self.psfs)
+                self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
+                                                   self.psfs.shape[1], self.psfs.shape[2]))
+            self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=14):
         """
