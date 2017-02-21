@@ -396,9 +396,9 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     maxnumbasis = 100 # set from JB's example
     movement = mv # movement
-    stamp_size=stamp
-    N_frames = fmout.shape[2] - 1 # The last element in this axis is the klipped image
-    N_cubes = len(dataset.exthdrs) # ? what attribute has this info?
+    stamp_size = stamp
+    N_frames = dataset.wvs.size
+    N_cubes = np.unique(dataset.filenums).size 
     nl = N_frames / N_cubes
 
     print("====================================")
@@ -447,7 +447,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
             y -= stamp // 2
             x -= stamp // 2
             radial_psfs[wv,...] = np.exp(-(x**2. + y**2.) / (2. * sigma**2))
-        radial_psfs /= np.mean(radial_psfs.sum(axis=0)
+        radial_psfs /= np.mean(radial_psfs.sum(axis=0))
 
     fm_class = ExtractSpec(dataset.input.shape,
                            numbasis,
@@ -591,7 +591,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         return estim_spec
 
 
-def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False):
+def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False, model_from_spots=True):
     """
     Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
      The steps here:
@@ -609,6 +609,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
         - stamp size, default=10 pixels
         - numbasis - K-L cuttoff
         - contrast [False] True: units of contrast. False: units of DN
+        - model_from_spots [True]: use spots as PSF models, or [False] use gaussians
     Returns:
         A dictionary containg the extracted spectrum from both matrix inversion 
         styles (FLUX_JB, FLUX_LP), and measured errors (ERR_JB, ERR_LP)
@@ -674,7 +675,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
             fakes.inject_planet(dataset.input, dataset.centers, psf_inject,\
                                 dataset.wcs, location[0], pa)
             fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
-                           mv=movement, stamp=stamp)
+                           mv=movement, stamp=stamp, model_from_spots=model_from_spots)
             fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
             fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
         error_jb = np.std(fake_jb_spectra, axis=0)
