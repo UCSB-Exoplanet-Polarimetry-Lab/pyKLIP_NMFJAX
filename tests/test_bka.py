@@ -2,8 +2,12 @@ import glob
 import os
 import time
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pylab as plt
 import scipy.interpolate as sinterp
 import astropy.io.fits as fits
+
 import pyklip.instruments.GPI as GPI
 import pyklip.fmlib.fmpsf as fmpsf
 import pyklip.fm as fm
@@ -126,11 +130,9 @@ def test_fmastrometry():
     assert(np.abs(fma.RA_offset*GPI.GPIData.lenslet_scale - -0.2272) < 0.005)
     assert(np.abs(fma.Dec_offset*GPI.GPIData.lenslet_scale - -0.3611) < 0.005)
 
-    # from matplotlib import use
-    # use('Agg')
-    # import matplotlib.pylab as plt
-    # fma.best_fit_and_residuals()
-    # plt.savefig("tests/bka2.png")
+
+    fma.best_fit_and_residuals()
+    plt.savefig("tests/bka2.png")
 
 
 if __name__ == "__main__":
