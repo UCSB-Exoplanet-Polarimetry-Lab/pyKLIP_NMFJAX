@@ -444,7 +444,7 @@ def _rotate_wcs_hdr(wcs_header, rot_angle, flipx=False, flipy=False):
         wcs_header.wcs.cd[:,1] *= -1
 
 
-def meas_contrast(dat, iwa, owa, resolution, center=None):
+def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
     """
     Measures the contrast in the image. Image must already be in contrast units and should be corrected for algorithm
     thoughput.
@@ -455,6 +455,7 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
         owa: outer working angle
         resolution: size of resolution element in pixels (FWHM or lambda/D)
         center: location of star (x,y). If None, defaults the image size // 2.
+        low_pass_filter: if True, run a Gaussian filter to smooth high frequency noise
 
     Returns:
         (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
@@ -474,6 +475,20 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
     # but also want to well sample the contrast curve so go at twice the resolution
     seps = np.arange(numseps) * dr + iwa + resolution/2.0
     dsep = resolution
+    # find equivalent Gaussian PSF for this resolution
+    sigma = dsep / 2.355  # assume resolution element size corresponds to FWHM
+
+    # run a low pass filter on the data
+    masked = np.copy(dat)
+    nan_locs = np.where(np.isnan(dat))
+    masked[nan_locs] = 0
+    filtered = ndimage.gaussian_filter(masked, sigma=sigma, truncate=2)
+    # because of NaNs, we need to renormalize the gaussian filter, since NaNs shouldn't contribute
+    norm_dat = np.ones(filtered.shape)
+    norm_dat[nan_locs] = 0
+    filter_norm = ndimage.gaussian_filter(norm_dat, sigma=sigma, truncate=2)
+    filtered /= filter_norm
+    filtered[nan_locs] = np.nan
 
     contrast = []
     # create a coordinate grid
@@ -481,35 +496,15 @@ def meas_contrast(dat, iwa, owa, resolution, center=None):
     r = np.sqrt((x-starx)**2 + (y-stary)**2)
     theta = np.arctan2(y-stary, x-starx) % 2*np.pi
     for sep in seps:
-        # make a bunch of circular aperatures at this separation
-        dtheta = dsep/float(sep)
-        thetabins = np.arange(0, 360-np.degrees(dtheta)/2., np.degrees(dtheta)) #make sure last element doesn't overlap with first
-        specklethetas = []
-        specklefluxes = []
-        for thistheta in thetabins:
-            # measure the flux in this resolution element
-            # first get the position of the center of the element
-            xphot = np.cos(np.radians(thistheta)) * sep + starx
-            yphot = np.sin(np.radians(thistheta)) * sep + stary
-            # coordinate system around this resolution element
-            rphot = np.sqrt((x-xphot)**2 + (y-yphot)**2)
-            sigma = dsep/2.355 #assume resolution element size corresponds to FWHM
-            gmask = np.exp(-rphot**2/(2*sigma**2)) #construct gaussian mask
-            # only apply in a circular region
-            # mask nan's in the gaussian template too, so it is normalized correctly
-            validphotpix = np.where((rphot <= dsep/2) & ~(np.isnan(dat)))
-            if np.size(validphotpix) < 1:
-                continue
-            #nanvals = np.isnan(dat)
-            #if np.size(nanvals) > 0:
-            #    gmask[nanvals] = np.nan
-            speckleflux = np.nansum(gmask[validphotpix]*dat[validphotpix])/np.nansum(gmask[validphotpix]*gmask[validphotpix]) #convolve with gaussian
-
-            specklethetas.append(thistheta)
-            specklefluxes.append(speckleflux)
+        # calculate noise in an annulus with width of the resolution element
+        annulus = np.where((r < sep + resolution/2) & (r > sep - resolution/2))
+        noise_mean = np.nanmean(filtered[annulus])
+        noise_std = np.nanstd(filtered[annulus], ddof=1)
+        # account for small sample statistics
+        num_samples = int(np.floor(2*np.pi*sep/resolution))
 
         # find 5 sigma flux using student-t statistics
-        fpf_flux = t.ppf(0.99999971334, len(specklefluxes)-1, loc=np.mean(specklefluxes), scale=np.std(specklefluxes, ddof=1))
+        fpf_flux = t.ppf(0.99999971334, num_samples-1, loc=noise_mean, scale=noise_std)
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)

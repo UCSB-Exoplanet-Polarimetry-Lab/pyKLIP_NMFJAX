@@ -232,6 +232,40 @@ def test_annuli_bounds():
     assert np.all(np.diff(log_bound_widths) > 0)
 
 
+def test_meas_contrast():
+    """
+    Test the klip.meas_contrast function
+
+    """
+    # create a canvas
+    y, x = np.indices([201,201])
+    center = [100, 100]
+    r = np.sqrt((x-center[0])**2 + (y-center[1])**2)
+
+    # draw some random numbers
+    rand_data = np.random.standard_normal(r.shape)
+    # scale random by the distance to the star
+    rand_data *= 1./(r**3)
+
+    # bounds
+    iwa = 10 # pixels
+    owa = 70 # pixels
+    # mask "coronagraph"
+    rand_data[np.where(r < iwa)] = np.nan
+    # create a square mask at the outer bondaries
+    outer_nans = np.where((np.abs(x - center[0]) >= owa - 10) | np.abs(y - center[1]) >= owa - 10)
+    rand_data[outer_nans] = np.nan
+
+    seps, contrast = klip.meas_contrast(rand_data, iwa, owa, 3, center=center)
+
+    print(seps, contrast)
+    closer_contrast = contrast[0]
+    for c in contrast[1:]:
+        # assert is less than previous closer in contrast, or at least within 10%
+        assert(closer_contrast - c > -(0.1*closer_contrast))
+        closer_contrast = c
+
+
 if __name__ == "__main__":
     test_transform_and_centroding()
     test_transform_and_centroding_with_custom_PSF()
