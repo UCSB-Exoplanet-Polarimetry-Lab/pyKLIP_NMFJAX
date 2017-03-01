@@ -5,7 +5,7 @@ import sys
 from time import time
 
 
-directory = '/pyklip/pyklip/instruments/P1640_support/tutorial'
+directory = os.path.abspath('tutorial')
 tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data.tar.gz'
 tarball_command = 'tar -xvf P1640_tutorial_data.tar.gz'
 #Note: the tarball command on the tutorial is wrong. 
@@ -32,15 +32,15 @@ def test_p1640_tutorial():
 
     #Note: Under Fit grid spots there is a typo. "Grid spots MUST exist, and (for now) the[THEY] MUST be in the normal orientation."
     #Fit grid spots
-    sys.path.append("..")
-    import P1640spots
-    spot_filepath = 'shared_spot_folder/'
-    spot_filesuffix = '-spot'
-    spot_fileext = 'csv'
-    for test_file in filelist:
-        spot_positions = P1640spots.get_single_file_spot_positions(test_file, rotated_spots=False)
-        P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath,
-                                      spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
+    # sys.path.append("..")
+    # import P1640spots
+    # spot_filepath = 'shared_spot_folder/'
+    # spot_filesuffix = '-spot'
+    # spot_fileext = 'csv'
+    # for test_file in filelist:
+    #     spot_positions = P1640spots.get_single_file_spot_positions(test_file, rotated_spots=False)
+    #     P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath,
+    #                                   spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
     #vet grid spots
     # good_spots = P1640_cube_checker.run_spot_checker(good_cubes, spot_path='shared_spot_folder/')
 
