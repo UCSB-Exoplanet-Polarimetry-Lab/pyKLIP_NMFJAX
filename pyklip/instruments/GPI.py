@@ -565,7 +565,6 @@ class GPIData(Data):
     def generate_psfs(self, boxrad=7):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
-        Currently hard coded assuming 37 spectral channels!!!
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
