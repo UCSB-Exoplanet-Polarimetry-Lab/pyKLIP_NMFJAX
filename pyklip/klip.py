@@ -455,7 +455,9 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
         owa: outer working angle
         resolution: size of resolution element in pixels (FWHM or lambda/D)
         center: location of star (x,y). If None, defaults the image size // 2.
-        low_pass_filter: if True, run a Gaussian filter to smooth high frequency noise
+        low_pass_filter: if True, run a low pass filter.
+                         Can also be a float which specifices the width of the Gaussian filter (sigma).
+                         If False, no Gaussian filter is run
 
     Returns:
         (seps, contrast): tuple of separations in pixels and corresponding 5 sigma FPF
@@ -479,16 +481,10 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
     sigma = dsep / 2.355  # assume resolution element size corresponds to FWHM
 
     # run a low pass filter on the data
-    masked = np.copy(dat)
-    nan_locs = np.where(np.isnan(dat))
-    masked[nan_locs] = 0
-    filtered = ndimage.gaussian_filter(masked, sigma=sigma, truncate=2)
-    # because of NaNs, we need to renormalize the gaussian filter, since NaNs shouldn't contribute
-    norm_dat = np.ones(filtered.shape)
-    norm_dat[nan_locs] = 0
-    filter_norm = ndimage.gaussian_filter(norm_dat, sigma=sigma, truncate=2)
-    filtered /= filter_norm
-    filtered[nan_locs] = np.nan
+    if isinstance(low_pass_filter, float) or low_pass_filter:
+        filtered = nan_gaussian_filter(dat, sigma)
+    else:
+        filtered = dat
 
     contrast = []
     # create a coordinate grid
@@ -508,6 +504,36 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)
+
+
+def nan_gaussian_filter(img, sigma):
+    """
+    Gaussian low-pass filter that handles nans
+
+    Args:
+        img: 2-D image
+        sigma: float specifiying width of Gaussian
+
+    Returns:
+        filtered: 2-D image that has been smoothed with a Gaussian
+
+    """
+    # make a copy to mask with nans
+    masked = np.copy(img)
+    nan_locs = np.where(np.isnan(img))
+    masked[nan_locs] = 0
+
+    # filter the image
+    filtered = ndimage.gaussian_filter(masked, sigma=sigma, truncate=4)
+
+    # because of NaNs, we need to renormalize the gaussian filter, since NaNs shouldn't contribute
+    norm_dat = np.ones(filtered.shape)
+    norm_dat[nan_locs] = 0
+    filter_norm = ndimage.gaussian_filter(norm_dat, sigma=sigma, truncate=4)
+    filtered /= filter_norm
+    filtered[nan_locs] = np.nan
+
+    return filtered
 
 
 def high_pass_filter(img, filtersize=10):
