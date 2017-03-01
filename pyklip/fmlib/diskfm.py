@@ -161,6 +161,8 @@ class DiskFM(NoFM):
         evals and evecs. 
         '''
 
+
+
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
         
@@ -239,6 +241,7 @@ class DiskFM(NoFM):
         original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
         original_imgs_np[:] = self.images
 
+
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
         recentered_imgs = mp.Array(self.mp_data_type, np.size(self.images)*np.size(unique_wvs))
@@ -283,23 +286,27 @@ class DiskFM(NoFM):
             aligned_output.wait()
 
 
-        # Making global shared arrays local
-        self.original = original_imgs
-        self.original_shape = original_imgs_shape
-        self.aligned_imgs = aligned
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-        self.outputs = output_imgs
-        self.outputs_shape = output_imgs_shape
-        self.outputs_numstacked = output_imgs_numstacked
-        self.img_pa = pa_imgs
-        self.img_wv = wvs_imgs
-        self.img_center =  centers_imgs
-        self.fmout = fmout
-        self.fmout_shape = fmout_shape
-        self.pa_imgs = pa_imgs
-        self.wvs_imgs = wvs_imgs
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
+
+        # Delete global variables so it can pickle
+        del pa_imgs
+        del wvs_imgs
+        del original_imgs
+        del original_imgs_shape
+        del original_imgs_np
+        del recentered_imgs
+        del recentered_imgs_shape
+        del centers_imgs_np
+        del fmout_data
+        del fmout_shape
+        del output_imgs
+        del output_imgs_shape
+        del output_imgs_numstacked
+        del centers_imgs
+        del wvs_imgs_np
+        del pa_imgs_np
 
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False, spectrum=None):
