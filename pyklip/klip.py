@@ -478,12 +478,21 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
     seps = np.arange(numseps) * dr + iwa + resolution/2.0
     dsep = resolution
     # find equivalent Gaussian PSF for this resolution
-    sigma = dsep / 2.355  # assume resolution element size corresponds to FWHM
 
-    # run a low pass filter on the data
-    if isinstance(low_pass_filter, float) or low_pass_filter:
+
+    # run a low pass filter on the data, check if input is boolean or a number
+    if not isinstance(low_pass_filter, bool):
+        # manually passed in low pass filter size
+        sigma = low_pass_filter
+        print(sigma, low_pass_filter)
+        filtered = nan_gaussian_filter(dat, sigma)
+    elif low_pass_filter:
+        # set low pass filter size to be same as resolution element
+        sigma = dsep / 2.355  # assume resolution element size corresponds to FWHM
+        print(sigma, low_pass_filter)
         filtered = nan_gaussian_filter(dat, sigma)
     else:
+        # no filtering
         filtered = dat
 
     contrast = []
