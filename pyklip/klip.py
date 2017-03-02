@@ -540,6 +540,9 @@ def nan_gaussian_filter(img, sigma):
     filtered /= filter_norm
     filtered[nan_locs] = np.nan
 
+    # for some reason, the fitlered image peak pixel fluxes get decreased by 2
+    filtered *= 2
+
     return filtered
 
 
