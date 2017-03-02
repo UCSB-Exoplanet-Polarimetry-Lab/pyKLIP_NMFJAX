@@ -258,12 +258,19 @@ def test_meas_contrast():
 
     seps, contrast = klip.meas_contrast(rand_data, iwa, owa, 3, center=center)
 
-    print(seps, contrast)
     closer_contrast = contrast[0]
     for c in contrast[1:]:
         # assert is less than previous closer in contrast, or at least within 10%
         assert(closer_contrast - c > -(0.1*closer_contrast))
         closer_contrast = c
+
+    # also test other data inputs for low_pass_filter in measure contrast
+    seps, contrast2 = klip.meas_contrast(rand_data, iwa, owa, 3, center=center, low_pass_filter=False)
+    seps, contrast3 = klip.meas_contrast(rand_data, iwa, owa, 3, center=center, low_pass_filter=1)
+
+    # they shouldn't be the same
+    assert contrast2[0] != contrast[0]
+    assert contrast3[0] != contrast[0]
 
 
 if __name__ == "__main__":
