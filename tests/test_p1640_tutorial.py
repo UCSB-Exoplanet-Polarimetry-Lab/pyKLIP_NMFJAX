@@ -5,14 +5,17 @@ import sys
 from time import time
 
 
-directory = os.getcwd()
-print(directory)
-directory = directory[:-5] + '/pyklip/instruments/P1640_support/tutorial'
-tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data.tar.gz'
-tarball_command = 'tar -xvf P1640_tutorial_data.tar.gz'
-#Note: the tarball command on the tutorial is wrong. 
-
 def test_p1640_tutorial():
+    """
+    Running throught the P1640 tutorial without the interactive parts. 
+    """
+
+    directory = os.getcwd()
+    print(directory)
+    directory = directory[:-5] + 'pyklip/instruments/P1640_support/tutorial'
+    tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data.tar.gz'
+    tarball_command = 'tar -xvf P1640_tutorial_data.tar.gz'
+    #Note: the tarball command on the tutorial is wrong. 
 
     # time it
     t1 = time()
