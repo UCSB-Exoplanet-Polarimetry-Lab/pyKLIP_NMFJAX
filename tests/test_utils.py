@@ -268,7 +268,7 @@ def test_meas_contrast():
     seps, contrast2 = klip.meas_contrast(rand_data, iwa, owa, 3, center=center, low_pass_filter=False)
     seps, contrast3 = klip.meas_contrast(rand_data, iwa, owa, 3, center=center, low_pass_filter=1)
 
-    # they shouldn't be the same
+    # they shouldn't be the same as the original
     assert contrast2[0] != contrast[0]
     assert contrast3[0] != contrast[0]
 
@@ -276,3 +276,4 @@ def test_meas_contrast():
 if __name__ == "__main__":
     test_transform_and_centroding()
     test_transform_and_centroding_with_custom_PSF()
+    test_meas_contrast()
