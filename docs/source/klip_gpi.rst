@@ -29,8 +29,8 @@ to standardized information for pyKLIP::
     import glob
     import pyklip.instruments.GPI as GPI
 
-    filelist = glob.glob("path/to/dataset/*.fits", highpass=True)
-    dataset = GPI.GPIData(filelist)
+    filelist = glob.glob("path/to/dataset/*.fits")
+    dataset = GPI.GPIData(filelist, highpass=True)
 
 This returns ``dataset``, an implementation of the abstract class :py:class:`pyklip.instruments.Instrument.Data` with standardized fields
 that are needed to perform the KLIP subtraction, none of which are instrument specific.
