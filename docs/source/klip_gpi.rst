@@ -87,7 +87,11 @@ Geometry
 We have divided the image into 9 annuli and each annuli into 4
 sectors (which do not rotate with the sky) and run KLIP independently on each sector.
 Picking the geometry depends on the structure of the PSF, but we have
-found this to be pretty good for GPI data. 
+found this to be pretty good for GPI data.
+
+``annuli_spacing``
+""""""""""""""""""
+By default we break up the image into equal sized annuli (except for the last one that emcompasses the rest of the image), but sometimes we want smaller annuli closer in, since the stellar PSF changes rapidly there. In that case, we suggest setting ``annuli_spacing="log"`` so the widths of the annuli increases logarithmatically.
 
 "Aggressiveness"
 ^^^^^^^^^^^^^^^^
