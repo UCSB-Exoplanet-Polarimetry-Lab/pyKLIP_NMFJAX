@@ -86,6 +86,7 @@ data, it is suggested you inject many planets to explore the attenuation factor 
 separation, and KLIP parameters (more aggressive reductions increase attenuation of flux due to KLIP).Fake planets are free, so the more the merrier!
 
 First, let's read in the data again. This is the same dataset as you read in to run KLIP the first time.
+
 .. code-block:: python
 
     import glob
