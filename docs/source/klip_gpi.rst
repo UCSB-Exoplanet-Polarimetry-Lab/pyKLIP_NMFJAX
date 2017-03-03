@@ -24,7 +24,9 @@ you can use the reduced Beta Pic datacubes from the
 `GPI Public Data Release <https://www.gemini.edu/sciops/instruments/gpi/public-data>`_.
 
 Once you have reduced some data, we need to identify and parse through the GPI data from GPI specific information
-to standardized information for pyKLIP::
+to standardized information for pyKLIP
+
+.. code-block:: python
 
     import glob
     import pyklip.instruments.GPI as GPI
@@ -51,7 +53,8 @@ Running KLIP
 
 Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of the easily parallelizable computation, we will use the
 :mod:`pyklip.parallelized` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code
-::
+
+.. code-block:: python
 
     import pyklip.parallelized as parallelized
 
