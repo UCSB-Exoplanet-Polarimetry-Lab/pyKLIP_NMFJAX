@@ -241,16 +241,16 @@ class ExtractSpec(NoFM):
             l = round(psf_centx + ref_center[0])
             k = round(psf_centy + ref_center[1])
             # recenter coordinate system about the location of the planet
-            x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
-            y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            x_vec_stamp_centered = x_grid[0, int(l-col_m):int(l+col_p)]-psf_centx
+            y_vec_stamp_centered = y_grid[int(k-row_m):int(k+row_p), 0]-psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
             # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
             # use intepolation spline to generate a model PSF and write to temp img
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+            whiteboard[int(k-row_m):int(k+row_p), int(l-col_m):int(l+col_p)] = \
+                    self.psfs_func_list[int(wv_index[0])](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -261,11 +261,11 @@ class ExtractSpec(NoFM):
 
             if stamp_size is not None:
                 # These are actually indices of indices. they indicate which indices correspond to the stamp in section_ind
-                stamp_mask[(k-row_m_stamp):(k+row_p_stamp), (l-col_m_stamp):(l+col_p_stamp)] = 1
+                stamp_mask[int(k-row_m_stamp):int(k+row_p_stamp), int(l-col_m_stamp):int(l+col_p_stamp)] = 1
                 stamp_mask.shape = [nx*ny]
                 stamp_indices.append(np.where(stamp_mask[section_ind] == 1)[0])
                 stamp_mask.shape = [ny,nx]
-                stamp_mask[(k-row_m_stamp):(k+row_p_stamp), (l-col_m_stamp):(l+col_p_stamp)] = 0
+                stamp_mask[int(k-row_m_stamp):int(k+row_p_stamp), int(l-col_m_stamp):int(l+col_p_stamp)] = 0
 
         if stamp_size is not None:
             return np.array(models),stamp_indices
@@ -412,6 +412,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
             (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
     else:
         dataset.generate_psf_cube(20)
+        radial_psfs = dataset.psfs / \
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
 
     fm_class = ExtractSpec(dataset.input.shape,
                                   numbasis,
@@ -426,7 +428,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
                     annuli=[[planet_sep-10,planet_sep+10]],
                     subsections=[[(planet_pa-10.)/180.*np.pi,(planet_pa+10.)/180.*np.pi]],
                     movement=movement,
-                    numbasis = np.array([numbasis]), 
+                    #numbasis = np.array([numbasis]), 
+                    numbasis = numbasis, 
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=None,
@@ -479,11 +482,11 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
     # Especially if you want to see how the spectrum behaves when you change parameters.
     for ii in range(len(fmout)):
         klipped[ii, ...] = fmout[ii,:, -1,:]
-        klipped_coadd = np.zeros((nl,stamp_size_squared))
+        klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
         for k in range(N_cubes):
             klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
         print klipped_coadd.shape
-        klipped_coadd.shape = [nl,stamp_size,stamp_size]
+        klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
         FM_noSpec = fmout[ii, :,:N_frames, :]
 
         # Move spectral dimension to the end (Effectively move pixel dimension to the middle)
@@ -495,20 +498,20 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
             #
             #JBR's matrix inversion adds up over all exposures, then inverts
             #
-            fm_noSpec_coadd.shape = [nl,stamp_size,stamp_size,nl]
-            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(nl*stamp_size_squared,nl))
+            fm_noSpec_coadd.shape = [int(nl),int(stamp_size),int(stamp_size),int(nl)]
+            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
             pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
-            estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(nl*stamp_size_squared,)))
+            estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(int(nl*stamp_size_squared),)))
         elif method == "LP":
             #
             #LP's matrix inversion adds over frames and one wavelength axis, then inverts
             #
             A = np.zeros((nl, nl))
             b = np.zeros(nl)
-            fm = fm_noSpec_coadd.reshape(nl, stamp_size*stamp_size,nl)
+            fm = fm_noSpec_coadd.reshape(int(nl), int(stamp_size*stamp_size),int(nl))
             fm = np.rollaxis(fm, 2,0)
             fm = np.rollaxis(fm, 2,1)
-            data = klipped_coadd.reshape(nl, stamp_size*stamp_size)
+            data = klipped_coadd.reshape(int(nl), int(stamp_size*stamp_size))
             for q in range(nl):
                 A[q,:] = np.dot(fm[q,:].T,fm[q,:])[q,:]
                 b[q] = np.dot(fm[q,:].T,data[q])[q]
@@ -544,14 +547,14 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
     return estim_spec / normfactor
 
 
-def get_spectrum_with_errorbars(dataset, location, movement=1.0, stamp=10, numbasis=3):
+def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3):
     """
     Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
      The steps here:
      1. calculate forward model at the planet location & invert for spectrum
      2. Inject several fakes in anulus around planet location w/ measured
         spectrum and calculate error
-     3. NOT YET IMPLEMENTED -- but it would be goo to have a sanity check:
+     3. Another check on errors:
         "zero flux" fake recovery with this method - recovered
         spectrum should match the errors calculated in step # 2
 
@@ -567,23 +570,46 @@ def get_spectrum_with_errorbars(dataset, location, movement=1.0, stamp=10, numba
     """
 
     # 1:
-    numbasis = np.array(numbasis)
-    fmout = gen_fm(dataset, location, numbasis=numbasis[0], \
+    numbasis = np.array([numbasis,])
+    if not hasattr(numbasis, "__iter__"):
+        num_k_klip = 1
+    else:
+        print hasattr(numbasis, "__iter__")
+        print type(numbasis)
+        print numbasis
+        num_k_klip = len(numbasis)
+    fmout = gen_fm(dataset, location, numbasis=numbasis, \
                       mv=movement, stamp=stamp)
     # contrast  spectrum
     spectrum_jb = invert_spect_fmodel(fmout, dataset, method="JB")
     spectrum_lp = invert_spect_fmodel(fmout, dataset, method="LP")
 
+    # 3:
+    # zero spectrum
+    zeroloc = (location[0], (location[1]+180)%360)
+    zero_jb = invert_spect_fmodel(fmout, dataset, method="JB")
+    zero_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+
     # 2:
     # useful values
     N_frames = len(dataset.input)
     N_cubes = len(dataset.exthdrs)
-    nl = N_frames / N_cubes
-    contrast2DN = dataset.spot_flux / dataset.spot_ratio["K1"]
+    nl = int(N_frames / N_cubes)
+    # Factor to convert contrast spectrum back to data number PER FRAME
+    contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
     # generate a psf model
     sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
     PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
     inputpsfs = np.tile(PSF_cube,(N_cubes, 1, 1))
+
+   # Save the klipped data array (new attricbute of dataset:
+    klipped = fmout[:,:,-1,:]
+    klipped_coadd = np.zeros((num_k_klip, nl, 10*10))
+    for k in range(N_cubes):
+        klipped_coadd = klipped_coadd + klipped[:, k*nl:(k+1)*nl, :]
+    klipped_coadd.shape = [num_k_klip, nl, int(10), int(10)]
+    dataset.klipped = klipped_coadd
+
     # Where are we placing the fakes? Drop down 10 30 deg apart
     pas = np.linspace(location[1]+30, (location[1]+(30*11))%360, num=11)
 
@@ -596,7 +622,8 @@ def get_spectrum_with_errorbars(dataset, location, movement=1.0, stamp=10, numba
         fake_jb_spectra = np.zeros((len(pas), spectrum_jb.shape[1]))
         fake_lp_spectra = np.zeros((len(pas), spectrum_lp.shape[1]))
         for p, pa in enumerate(pas):
-            fakes.inject_planet(dataset.input, dataset.centers, inputpsfs,\
+            psf_inject = inputpsfs*(flux_jb)[:,None,None]
+            fakes.inject_planet(dataset.input, dataset.centers, psf_inject,\
                                 dataset.wcs, location[0], pa)
             fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
                            mv=movement, stamp=stamp)
@@ -604,7 +631,11 @@ def get_spectrum_with_errorbars(dataset, location, movement=1.0, stamp=10, numba
             fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
         error_jb = np.std(fake_jb_spectra, axis=0)
         error_lp = np.std(fake_lp_spectra, axis=0)
-    return {"FLUX_JB":flux_jb, "FLUX_LP":flux_lp, "ERR_JB": error_jb, "ERR_LP":error_lp}
+    spectextract_dictionary = {"FLUX_JB":spectrum_jb, "FLUX_LP":spectrum_lp,\
+                               "ERR_JB": error_jb, "ERR_LP":error_lp,\
+                               "ZERO_JB":zero_jb, "ZERO_LP":zero_lp}
+
+    return spectextract_dictionary
 
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
     """
