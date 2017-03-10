@@ -29,6 +29,7 @@ class Matchedfilter(KPPSuperClass):
                  SpT_file_csv=None,
                  kernel_type = None,
                  kernel_para = None,
+                 PSF_read_func = None,
                  PSF_cube = None,
                  spectrum = None,
                  sky_aper_radius = None,
@@ -52,7 +53,7 @@ class Matchedfilter(KPPSuperClass):
                         Default folder name is "default_out".
                         Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
             mute: If True prevent printed log outputs.
-            N_threads: Number of threads to be used for the metrics and the probability calculations.
+            N_threads: Number of threads to be used.
                         If None use mp.cpu_count().
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
@@ -78,9 +79,14 @@ class Matchedfilter(KPPSuperClass):
                             to kernel_para. Default value of the width is 1.25.
                     - If kernel_type is a np.ndarray then kernel_type is the user defined template.
             kernel_para: Define the width of the Kernel depending on kernel_type. See kernel_type.
+            PSF_read_func: lambda function used to read the PSF_cube.
+                    It should return an object with at least two attributes input and wvs corresponding to the PSF cube and the associated wavelengths per slide.
+                    The input shoudl be a list of filenames,
+                    For e.g.: read_func = lambda filenames:GPI.GPIData(filenames,highpass=False)
             PSF_cube: Array or string defining the planet PSF if kernel_type == "PSF".
                       - np.ndarray: Should have the same number of dimensions as the image.
                       - string: Read file using read_func().
+                            (make sure the file follows the conventions of the instrument).
                             - if absolute path: Simply picks up that file
                             - otherwise search for a matching file based on the directory of the image.
                       - None: use default value "*-original_radial_PSF_cube.fits"
@@ -129,6 +135,7 @@ class Matchedfilter(KPPSuperClass):
 
         if self.kernel_type == "PSF":
             self.PSF_cube = PSF_cube
+        self.PSF_read_func = PSF_read_func
 
         if add2prefix is not None:
             self.add2prefix = "_"+add2prefix
@@ -211,7 +218,7 @@ class Matchedfilter(KPPSuperClass):
                          folderName = None,
                          label = None):
         """
-        Read the file using read_func (see the class  __init__ function) and define the cross correlation kernel
+        Read the file using read_func (see the class  __init__ function) and define the matched filter kernel
         according to kernel_type.
 
         Can be called several time to process all the files matching the filename.
@@ -292,16 +299,16 @@ class Matchedfilter(KPPSuperClass):
                     print("Loading PSF cube: "+self.PSF_cube_path)
 
                 # Load the PSF cube if a file has been found or was just generated
-                self.PSF_obj = self.read_func([self.PSF_cube_path])
-                self.PSF_cube = self.PSF_obj.input
+                self.PSF_obj = self.PSF_read_func([self.PSF_cube_path])
+                self.PSF_cube_arr = self.PSF_obj.input
 
-            if (len(self.image.shape) == 2) and not (len(self.PSF_cube.shape) == 3):
+            if (len(self.image.shape) == 2) and not (len(self.PSF_cube_arr.shape) == 3):
                 # flatten the PSF cube if the data is 2D
-                self.PSF_cube =  np.nanmean(self.PSF_cube,axis=0)
+                self.PSF_cube_arr =  np.nanmean(self.PSF_cube_arr,axis=0)
             # Remove the spectral shape from the psf cube because it is dealt with independently
-            if (len(self.PSF_cube.shape) == 3):
-                for l_id in range(self.PSF_cube.shape[0]):
-                    self.PSF_cube[l_id,:,:] = self.PSF_cube[l_id,:,:]/np.nanmax(self.PSF_cube[l_id,:,:])
+            if (len(self.PSF_cube_arr.shape) == 3):
+                for l_id in range(self.PSF_cube_arr.shape[0]):
+                    self.PSF_cube_arr[l_id,:,:] = self.PSF_cube_arr[l_id,:,:]/np.nanmax(self.PSF_cube_arr[l_id,:,:])
 
 
         # Define the PSF as a gaussian
@@ -323,9 +330,9 @@ class Matchedfilter(KPPSuperClass):
             if (len(self.image.shape) == 3):
                 # Duplicate the PSF to get a PSF cube.
                 # Caution: No spectral widening implemented here
-                self.PSF_cube = np.tile(PSF,(self.nl,1,1))
+                self.PSF_cube_arr = np.tile(PSF,(self.nl,1,1))
             else:
-                self.PSF_cube = PSF
+                self.PSF_cube_arr = PSF
 
         # Define the PSF as an aperture or "hat" function
         if self.kernel_type == "hat":
@@ -345,14 +352,14 @@ class Matchedfilter(KPPSuperClass):
             if (len(self.image.shape) == 3):
                 # Duplicate the PSF to get a PSF cube.
                 # Caution: No spectral widening implemented here
-                self.PSF_cube = np.tile(PSF,(self.nl,1,1))
+                self.PSF_cube_arr = np.tile(PSF,(self.nl,1,1))
             else:
-                self.PSF_cube = PSF
+                self.PSF_cube_arr = PSF
 
         if (len(self.image.shape) == 3):
-            self.nl_PSF, self.ny_PSF, self.nx_PSF = self.PSF_cube.shape
+            self.nl_PSF, self.ny_PSF, self.nx_PSF = self.PSF_cube_arr.shape
         else:
-            self.ny_PSF, self.nx_PSF = self.PSF_cube.shape
+            self.ny_PSF, self.nx_PSF = self.PSF_cube_arr.shape
 
 
         if (len(self.image.shape) == 3):
@@ -362,7 +369,7 @@ class Matchedfilter(KPPSuperClass):
                 self.init_new_spectrum(self.spectrum,self.SpT_file_csv)
 
         # self.PSF_cube = self.PSF_cube / np.sqrt(np.sum(self.PSF_cube**2))
-        self.PSF_cube = self.PSF_cube / np.nansum(self.PSF_cube)
+        self.PSF_cube_arr = self.PSF_cube_arr / np.nansum(self.PSF_cube_arr)
 
         # Define the suffix used when saving files
         if (len(self.image.shape) == 3):
@@ -468,7 +475,7 @@ class Matchedfilter(KPPSuperClass):
             outputs_list = pool.map(calculate_matchedfilter_star, itertools.izip(chunks_row_indices,
                                                        chunks_col_indices,
                                                        itertools.repeat(self.image),
-                                                       itertools.repeat(self.PSF_cube),
+                                                       itertools.repeat(self.PSF_cube_arr),
                                                        itertools.repeat(stamp_PSF_mask)))
 
             for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
@@ -480,7 +487,7 @@ class Matchedfilter(KPPSuperClass):
             out = calculate_matchedfilter(flat_cube_noNans_noEdges[0],
                                                        flat_cube_noNans_noEdges[1],
                                                        self.image,
-                                                       self.PSF_cube,
+                                                       self.PSF_cube_arr,
                                                        stamp_PSF_mask)
 
             mf_map[flat_cube_noNans_noEdges] = out[0]
@@ -494,10 +501,10 @@ class Matchedfilter(KPPSuperClass):
 
     def save(self):
         """
-        Save the metric map as a fits file as
-        self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
+        Save the processed files as:
+        #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
-        It saves the metric parameters if self.prihdr and self.exthdr were already defined.
+        It saves the metric parameters in self.prihdr.
 
         :return: None
         """
@@ -506,7 +513,7 @@ class Matchedfilter(KPPSuperClass):
 
 
         # Save the parameters as fits keywords
-        extra_keywords = {"METFILEN":os.path.basename(self.filename_path),
+        extra_keywords = {"KPPFILEN":os.path.basename(self.filename_path),
                          "KPPFOLDN":self.folderName,
                          "KPPLABEL":self.label,
                          "KPPKERTY":str(self.kernel_type),
