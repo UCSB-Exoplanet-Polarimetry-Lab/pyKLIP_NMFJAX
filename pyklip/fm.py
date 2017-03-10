@@ -1116,7 +1116,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                   I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
                   Warning: There is a bug if N_pix_sector is too big for the first annulus. The annulus is defined from
                             0 to 2pi which create a bug later on. It is probably in the way pa_start and pa_end are
-                            defined in fm_from_eigen(). (I am taking about matched filter by the way)
+                            defined in fm_from_eigen().
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
