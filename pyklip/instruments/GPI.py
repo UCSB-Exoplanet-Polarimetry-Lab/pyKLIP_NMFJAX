@@ -269,12 +269,22 @@ class GPIData(Data):
         exthdrs = []
 
         if PSF_cube is not None:
-            numwv,ny_psf,nx_psf =  PSF_cube.shape
+            if isinstance(PSF_cube, np.ndarray):
+                PSF_cube_arr = PSF_cube
+            else: # Read PSF cube from memory if a string given
+                if os.path.isabs(PSF_cube):
+                    PSF_cube_path = os.path.abspath(glob.glob(os.path.join(PSF_cube))[0])
+                else:
+                    base_path = os.path.dirname(filepaths[0])
+                    PSF_cube_path = os.path.abspath(glob.glob(os.path.join(base_path,PSF_cube))[0])
+                hdulist = fits.open(PSF_cube_path)
+                PSF_cube_arr = hdulist[1].data
+            numwv,ny_psf,nx_psf =  PSF_cube_arr.shape
             x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
             psfs_func_list = []
             from scipy import interpolate
             for wv_index in range(numwv):
-                model_psf = PSF_cube[wv_index, :, :]
+                model_psf = PSF_cube_arr[wv_index, :, :]
                 psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
         else:
             psfs_func_list = None
@@ -706,11 +716,11 @@ class GPIData(Data):
                     spotx = loc[0]
                     spoty = loc[1]
                     # Get the closest pixel
-                    xarr_spot = np.round(spotx)
-                    yarr_spot = np.round(spoty)
+                    xarr_spot = int(np.round(spotx))
+                    yarr_spot = int(np.round(spoty))
                     # Extract a stamp around the sat spot
-                    stamp = cleaned[(yarr_spot-np.floor(boxw/2.0)):(yarr_spot+np.ceil(boxw/2.0)),\
-                                    (xarr_spot-np.floor(boxw/2.0)):(xarr_spot+np.ceil(boxw/2.0))]
+                    stamp = cleaned[(yarr_spot-int(np.floor(boxw/2.0))):(yarr_spot+int(np.ceil(boxw/2.0))),\
+                                    (xarr_spot-int(np.floor(boxw/2.0))):(xarr_spot+int(np.ceil(boxw/2.0)))]
                     # Define coordinates grids for the stamp
                     stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
                     # Calculate the shift of the sat spot centroid relative to the closest pixel.
@@ -1025,10 +1035,13 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 channels = 1
             if exthdr['CTYPE3'].strip() == 'WAVE':
                 wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
-                spot_fluxes = []
-                # The average sat spot for the dataset can be retrieved from DN2CON
-                for i in range(channels):
-                    spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                try:
+                    spot_fluxes = []
+                    # The average sat spot for the dataset can be retrieved from DN2CON
+                    for i in range(channels):
+                        spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                except:
+                    spot_fluxes = [0,]*channels
             else:
                 wvs = [0,]*channels
                 spot_fluxes = [0,]*channels
@@ -1414,6 +1427,7 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None, bad_sat
                         if none, ignores slices 0,1, len-2, len-1 (first and last two)
         skipslices: slices that were already skipped in processing
         bad_sat_stots: of the 4 sat spots, which are bad and should be ignored. Indexed 0-3 based on x coordinate
+
     Returns:
         centx, centy: star center
     """
