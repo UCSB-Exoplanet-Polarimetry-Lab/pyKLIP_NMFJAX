@@ -64,7 +64,6 @@ def get_specType(object_name,SpT_file_csv = None):
                     If None (default), the function directly tries to query Simbad.
     :return: Spectral type
     """
-
     # Hard-coded spectral type for some targets. Not ideal but I don't want to think about it right now.
     if object_name == "iot_Cen":
         return "A1"
@@ -76,14 +75,18 @@ def get_specType(object_name,SpT_file_csv = None):
 
         object_name = object_name.replace('_','+')
 
-        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('%S'):
-                spec_type = line.split(" ")[1]
+            if line.startswith('Spectral type:'):
+                spec_type =line.replace("Spectral type: ","").split(" ")[0]
         try:
             return spec_type
         except:
+            print("Couldn't find {0} in Simbad.".format(object_name))
             return None
 
     with open(SpT_file_csv, 'rb') as csvfile_TID:
@@ -103,11 +106,13 @@ def get_specType(object_name,SpT_file_csv = None):
         target_names.append(object_name)
         object_name = object_name.replace('_','+')
 
-        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('%S'):
-                spec_type = line.split(" ")[1]
+            if line.startswith('Spectral type:'):
+                spec_type =line.replace("Spectral type: ","").split(" ")[0]
         specTypes.append(spec_type)
 
 
