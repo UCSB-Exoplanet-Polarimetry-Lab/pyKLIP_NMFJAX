@@ -340,7 +340,9 @@ class CrossCorr(KPPSuperClass):
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
-        Return: None
+        It saves the metric parameters in self.prihdr.
+
+        :return: None
         """
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
@@ -349,7 +351,7 @@ class CrossCorr(KPPSuperClass):
             print("Saving: "+os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'))
 
         # Save the parameters as fits keywords
-        extra_keywords = {"METFILEN":os.path.basename(self.filename_path),
+        extra_keywords = {"KPPFILEN":os.path.basename(self.filename_path),
                           "KPPFOLDN":self.folderName,
                           "KPPLABEL":self.label,
                           "KPPKERTY":str(self.kernel_type),

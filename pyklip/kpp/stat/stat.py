@@ -49,7 +49,7 @@ class Stat(KPPSuperClass):
                         Default folder name is "default_out".
                         Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
             mute: If True prevent printed log outputs.
-            N_threads: Number of threads to be used for the metrics and the probability calculations.
+            N_threads: Number of threads to be used.
                         If None use mp.cpu_count().
                         If -1 do it sequentially.
                         Only available if "pixel based: is defined,
@@ -354,6 +354,8 @@ class Stat(KPPSuperClass):
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
+        It saves the metric parameters in self.prihdr.
+
         :return: None
         """
 
@@ -364,7 +366,7 @@ class Stat(KPPSuperClass):
             print("Saving: "+os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'))
 
         # Save the parameters as fits keywords
-        extra_keywords = {"METFILEN":os.path.basename(self.filename_path),
+        extra_keywords = {"KPPFILEN":os.path.basename(self.filename_path),
                           "KPPFOLDN":self.folderName,
                           "KPPLABEL":self.label,
                           "KPPMASKR":self.mask_radius,

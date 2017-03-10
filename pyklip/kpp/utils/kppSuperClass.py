@@ -50,7 +50,7 @@ class KPPSuperClass(object):
                         Default folder name is "default_out".
                         Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
             mute: If True prevent printed log outputs.
-            N_threads: Number of threads to be used for the metrics and the probability calculations.
+            N_threads: Number of threads to be used.
                         If None use mp.cpu_count().
                         If -1 do it sequentially.
                         Note that it is not used for this super class.
@@ -130,8 +130,8 @@ class KPPSuperClass(object):
 
         Return: None
         """
-        self.host_star_spec = 1./self.image_obj.calibrate_output(np.ones((self.nl,1,1)),spectral=True).squeeze()
-        self.host_star_spec = self.host_star_spec/np.mean(self.host_star_spec)
+        self.dn_per_contrast = 1./self.image_obj.calibrate_output(np.ones((self.nl,1,1)),spectral=True).squeeze()
+        self.host_star_spec = self.dn_per_contrast/np.mean(self.dn_per_contrast)
 
         if SpT_file_csv is not None:
             self.SpT_file_csv = SpT_file_csv
@@ -244,7 +244,7 @@ class KPPSuperClass(object):
 
         # Define the actual filename path
         if inputDir is None:
-            self.inputDir = self.inputDir
+            self.inputDir = None
         else:
             self.inputDir = os.path.abspath(inputDir)
 
@@ -340,7 +340,7 @@ class KPPSuperClass(object):
                 if self.inputDir is None:
                     self.outputDir = os.path.abspath("."+os.path.sep+"kpop_"+self.label)
                 else:
-                    b = os.path.abspath(self.inputDir+os.path.sep+"kpop_"+self.label)
+                    self.outputDir = os.path.abspath(self.inputDir+os.path.sep+"kpop_"+self.label)
 
             return False
 
