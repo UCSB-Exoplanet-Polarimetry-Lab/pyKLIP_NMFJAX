@@ -8,50 +8,51 @@ from scipy.signal import convolve2d
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp.stat.stat_utils import *
-from pyklip.kpp.utils.GOI import *
+from pyklip.kpp.utils.oi import *
 import pyklip.kpp.utils.mathfunc as kppmath
 import pyklip.kpp.utils.GPIimage as gpiim
 
 class Detection(KPPSuperClass):
     """
-    Class for SNR calculation.
+    Class for detecting blobs in a image.
     """
-    def __init__(self,filename,
-                 inputDir = None,
-                 outputDir = None,
+    def __init__(self,read_func,filename,
                  mute=None,
-                 N_threads=None,
-                 label = None,
+                 overwrite = False,
                  mask_radius = None,
                  threshold = None,
                  maskout_edge = None,
-                 overwrite = False,
                  IWA = None,
-                 OWA = None):
+                 OWA = None,
+                 pix2as=None):
         """
+        Define the general parameters for the blob detection.
 
-
-        :param filename: Filename of the file on which to calculate the metric. It should be the complete path unless
-                        inputDir is defined.
-                        It can include wild characters. The file will be selected using the first output of glob.glob().
-        :param filename_noSignal: One should be careful with this one since it requires it should find the same number
-                            of files with no signal than normal images when calling glob.glob().
-                            Besides one has to check that the ordering of glob outputs are matching for both lists.
-        :param mute: If True prevent printed log outputs.
-        :param N_threads: Number of threads to be used for the metrics and the probability calculations.
-                        If None use mp.cpu_count().
-                        If -1 do it sequentially.
-                        Note that it is not used for this super class.
-        :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+        Args:
+            read_func: lambda function treturning a instrument object where the only input should be a list of filenames
+                    to read.
+                    For e.g.:
+                    read_func = lambda filenames:GPI.GPIData(filenames,recalc_centers=False,recalc_wvs=False,highpass=False)
+            filename: Filename of the file to process.
+                        It should be the complete path unless inputDir is used in initialize().
+                        It can include wild characters. The files will be reduced as given by glob.glob().
+            mute: If True prevent printed log outputs.
+            overwrite: Boolean indicating whether or not files should be overwritten if they exist.
+                       See check_existence().
+            mask_radius: Radius of the mask used for masking point sources or the surroundings of the current pixel out
+                        of the data. Default value is 4 pixels.
+            threshold: Threshold under which blob should be ignore.
+            maskout_edge: mask a 10 pixels border around each NaN pixel.
+            IWA: inner working angle in pixels.
+            OWA: outer working angle in pixels.
+            pix2as: Platescale (arcsec per pixel).
         """
         # allocate super class
-        super(Detection, self).__init__(filename,
-                                     inputDir = inputDir,
-                                     outputDir = outputDir,
+        super(Detection, self).__init__(read_func,filename,
                                      folderName = None,
                                      mute=mute,
-                                     N_threads=N_threads,
-                                     label=label,
+                                     N_threads=None,
+                                     label=None,
                                      overwrite = overwrite)
 
         if mask_radius is None:
@@ -73,40 +74,33 @@ class Detection(KPPSuperClass):
         self.IWA = IWA
         self.OWA = OWA
 
+        self.pix2as = pix2as
 
-    def initialize(self,inputDir = None,
+
+    def  initialize(self,inputDir = None,
                          outputDir = None,
-                         folderName = None,
-                         compact_date = None,
-                         label = None):
+                         folderName = None):
         """
-        Initialize the non general inputs that are needed for the metric calculation and load required files.
+        Read the files using read_func (see the class  __init__ function).
 
-        For this super class it simply reads the input file including fits headers and store it in self.image.
-        One can also overwrite inputDir, outputDir which is basically the point of this function.
-        The file is assumed here to be a fits containing a 2D image or a GPI 3D cube (assumes 37 spectral slice).
+        Can be called several time to process all the files matching the filename.
 
-        Example for inherited classes:
-        It can read the PSF cube or define the hat function.
-        It can also read the template spectrum in a 3D scenario.
-        It could also overwrite this function in case it needs to read multiple files or non fits file.
+        Also define the output filename (if it were to be saved) such that check_existence() can be used.
 
-        :param inputDir: If defined it allows filename to not include the whole path and just the filename.
-                        Files will be read from inputDir.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If inputDir is None then filename is assumed to have the absolute path.
-        :param outputDir: Directory where to create the folder containing the outputs.
-                        Note tat inputDir might be redefined using initialize at any point.
-                        If outputDir is None:
-                            If inputDir is defined: outputDir = inputDir+os.path.sep+"planet_detec_"
-        :param folderName: Name of the folder containing the outputs. It will be located in outputDir.
+        Args:
+            inputDir: If defined it allows filename to not include the whole path and just the filename.
+                            Files will be read from inputDir.
+                            If inputDir is None then filename is assumed to have the absolute path.
+            outputDir: Directory where to create the folder containing the outputs.
+                    A kpop folder will be created to save the data. Convention is:
+                    self.outputDir = outputDir+os.path.sep+"kpop_"+label+os.path.sep+folderName
+            folderName: Name of the folder containing the outputs. It will be located in outputDir+os.path.sep+"kpop_"+label
                         Default folder name is "default_out".
-                        The convention is to have one folder per spectral template.
-                        If the keyword METFOLDN is available in the fits file header then the keyword value is used no
-                        matter the input.
-        :param label: Define the suffix to the output folder when it is not defined. cf outputDir. Default is "default".
+                        A nice convention is to have one folder per spectral template.
+                        If the file read has been created with KPOP, folderName is automatically defined from that
+                        file.
 
-        :return: None
+        Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
         if not self.mute:
             print("~~ INITializing "+self.__class__.__name__+" ~~")
@@ -115,29 +109,20 @@ class Detection(KPPSuperClass):
         init_out = super(Detection, self).initialize(inputDir = inputDir,
                                          outputDir = outputDir,
                                          folderName = folderName,
-                                         label=label)
-
-
-        # Get center of the image (star position)
-        try:
-            # Retrieve the center of the image from the fits headers.
-            self.center = [self.exthdr['PSFCENTX'], self.exthdr['PSFCENTY']]
-        except:
-            # If the keywords could not be found the center is defined as the middle of the image
-            if not self.mute:
-                print("Couldn't find PSFCENTX and PSFCENTY keywords.")
-            self.center = [(self.nx-1)/2,(self.ny-1)/2]
-
-        if self.label == "CADI":
-            self.center = [140,140]
+                                         label=None)
 
         try:
-            self.folderName = self.exthdr["METFOLDN"]+os.path.sep
+            self.folderName = self.prihdr["KPPFOLDN"]+os.path.sep
         except:
             try:
-                self.folderName = self.exthdr["STAFOLDN"]+os.path.sep
+                self.folderName = self.exthdr["METFOLDN"]+os.path.sep
+                print("/!\ CAUTION: Reading deprecated data.")
             except:
-                pass
+                try:
+                    self.folderName = self.exthdr["STAFOLDN"]+os.path.sep
+                    print("/!\ CAUTION: Reading deprecated data.")
+                except:
+                    self.folderName = None
 
         file_ext_ind = os.path.basename(self.filename_path)[::-1].find(".")
         self.prefix = os.path.basename(self.filename_path)[:-(file_ext_ind+1)]
@@ -147,14 +132,23 @@ class Detection(KPPSuperClass):
 
     def check_existence(self):
         """
+        Return whether or not a filename of the processed data can be found.
 
-        :return: False
+        If overwrite is True, the output is always false.
+
+        Return: boolean
         """
 
-        file_exist = (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv')) >= 1)
+
+        if self.folderName is not None:
+            myname = self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv'
+        else:
+            myname = self.outputDir+os.path.sep+self.prefix+'-'+self.suffix+'.csv'
+
+        file_exist = (len(glob(myname)) >= 1)
 
         if file_exist and not self.mute:
-            print("Output already exist: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv')
+            print("Output already exist: "+myname)
 
         if self.overwrite and not self.mute:
             print("Overwriting is turned ON!")
@@ -164,9 +158,9 @@ class Detection(KPPSuperClass):
 
     def calculate(self):
         """
+        Find the brightest blobs in the image/cube.
 
-        :param N: Defines the width of the ring by the number of pixels it has to contain
-        :return: self.image the imput fits file.
+        :return: Detection table..
         """
         if not self.mute:
             print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
@@ -179,7 +173,7 @@ class Detection(KPPSuperClass):
         # Build as grids of x,y coordinates.
         # The center is in the middle of the array and the unit is the pixel.
         # If the size of the array is even 2n x 2n the center coordinate in the array is [n,n].
-        x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0],np.arange(0,self.ny,1)-self.center[1])
+        x_grid, y_grid = np.meshgrid(np.arange(0,self.nx,1)-self.center[0][0],np.arange(0,self.ny,1)-self.center[0][1])
 
 
         # Definition of the different masks used in the following.
@@ -192,7 +186,7 @@ class Detection(KPPSuperClass):
 
         # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
         if self.maskout_edge:
-            IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center)
+            IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center[0])
             conv_kernel = np.ones((10,10))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
@@ -230,7 +224,7 @@ class Detection(KPPSuperClass):
             row_id,col_id = max_ind[0][0],max_ind[1][0]
             x_max_pos, y_max_pos = x_grid[row_id,col_id],y_grid[row_id,col_id]
             sep_pix = np.sqrt(x_max_pos**2+y_max_pos**2)
-            sep_arcsec = gpiim.pix2as(sep_pix)
+            sep_arcsec = self.pix2as *sep_pix
             pa = np.mod(np.rad2deg(np.arctan2(-x_max_pos,y_max_pos)),360)
 
 
@@ -253,16 +247,27 @@ class Detection(KPPSuperClass):
 
     def save(self):
         """
+        Save the processed files as:
+        #user_outputDir#+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
+        or if self.label and self.folderName are not None:
+        #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
         :return: None
         """
 
-        if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
-            os.makedirs(self.outputDir+os.path.sep+self.folderName)
+        if self.folderName is not None:
+            if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
+                os.makedirs(self.outputDir+os.path.sep+self.folderName)
+            myname = self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv'
+        else:
+            if not os.path.exists(self.outputDir):
+                os.makedirs(self.outputDir)
+            myname = self.outputDir+os.path.sep+self.prefix+'-'+self.suffix+'.csv'
+
 
         if not self.mute:
-            print("Saving: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv')
-        with open(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.csv', 'w+') as csvfile:
+            print("Saving: "+myname)
+        with open(myname, 'w+') as csvfile:
             csvwriter = csv.writer(csvfile, delimiter=';')
             csvwriter.writerows([self.table_labels])
             csvwriter.writerows(self.candidate_table)
