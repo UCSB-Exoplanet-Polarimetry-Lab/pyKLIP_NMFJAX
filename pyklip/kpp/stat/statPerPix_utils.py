@@ -89,12 +89,13 @@ def get_image_stat_map_perPixMasking(image,
     if N_threads is None:
         N_threads = mp.cpu_count()
 
-    if N_threads != -1:
+    N_pix = image_noNans[0].size
+    chunk_size = N_pix/N_threads
+
+    if N_threads != -1 and chunk_size != 0:
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
 
-        N_pix = image_noNans[0].size
-        chunk_size = N_pix/N_threads
         N_chunks = N_pix/chunk_size
 
         # Shuffle the list of indices such that a thread doesn't end up with only the outer most pixel (where the number
