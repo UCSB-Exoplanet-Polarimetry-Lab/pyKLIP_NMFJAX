@@ -87,11 +87,3 @@ def get_IOWA(image, centroid = None):
     OWA = r_samp[np.where(np.isfinite(radial_val))[0][-1]]
 
     return IWA,OWA
-
-def as2pix(sep_as):
-    from  pyklip.instruments.GPI import GPIData
-    return np.array(sep_as)/GPIData.lenslet_scale
-
-def pix2as(sep_pix):
-    from  pyklip.instruments.GPI import GPIData
-    return np.array(sep_pix)*GPIData.lenslet_scale
