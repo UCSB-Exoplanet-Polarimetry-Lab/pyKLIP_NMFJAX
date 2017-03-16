@@ -203,12 +203,11 @@ class Matchedfilter(KPPSuperClass):
         super(Matchedfilter, self).init_new_spectrum(self.spectrum,SpT_file_csv=self.SpT_file_csv)
 
         for k in range(self.nl):
-            self.PSF_cube[k,:,:] *= self.spectrum_vec[k]/np.nanmax(self.PSF_cube[k,:,:])
+            self.PSF_cube_arr[k,:,:] *= self.spectrum_vec[k]/np.nanmax(self.PSF_cube_arr[k,:,:])
         # normalize spectrum with norm 2.
         self.spectrum_vec = self.spectrum_vec / np.sqrt(np.nansum(self.spectrum_vec**2))
         # # normalize PSF with norm 2.
-        # self.PSF_cube = self.PSF_cube/np.sqrt(np.sum(self.PSF_cube**2))
-        self.PSF_cube = self.PSF_cube / np.nansum(self.PSF_cube)
+        self.PSF_cube_arr = self.PSF_cube_arr / np.nansum(self.PSF_cube_arr)
 
         return None
 
@@ -247,7 +246,6 @@ class Matchedfilter(KPPSuperClass):
                         If the file read has been created with KPOP, folderName is automatically defined from that
                         file.
             label: Define the suffix of the kpop output folder when it is not defined. cf outputDir. Default is "default".
-            read: If true (default) read the fits file according to inputDir and filename otherwise only define self.outputDir.
 
         Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
@@ -395,10 +393,11 @@ class Matchedfilter(KPPSuperClass):
         Return: boolean
         """
 
-        file_exist = (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')) >= 1)
+        suffix = "MF"+self.suffix
+        file_exist = (len(glob(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+suffix+'.fits'))) >= 1)
 
         if file_exist and not self.mute:
-            print("Output already exist: "+self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits')
+            print("Output already exist: "+os.path.join(self.outputDir,self.folderName,self.prefix+'-'+suffix+'.fits'))
 
         if self.overwrite and not self.mute:
             print("Overwriting is turned ON!")
@@ -453,14 +452,13 @@ class Matchedfilter(KPPSuperClass):
         stamp_PSF_mask = np.ones((self.ny_PSF,self.nx_PSF))
         stamp_PSF_mask[where_mask] = np.nan
 
+        N_pix = flat_cube_noNans_noEdges[0].size
+        chunk_size = N_pix/self.N_threads
 
-        if self.N_threads > 0:
+        if self.N_threads > 0 and chunk_size != 0:
             pool = mp.Pool(processes=self.N_threads)
 
             ## cut images in N_threads part
-            # get the first and last index of each chunck
-            N_pix = flat_cube_noNans_noEdges[0].size
-            chunk_size = N_pix/self.N_threads
             N_chunks = N_pix/chunk_size
 
             # Get the chunks
@@ -503,8 +501,6 @@ class Matchedfilter(KPPSuperClass):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
-
-        It saves the metric parameters in self.prihdr.
 
         :return: None
         """
