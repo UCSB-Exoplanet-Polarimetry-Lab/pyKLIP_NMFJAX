@@ -72,6 +72,7 @@ def run(obj):
         map = obj.calculate()
         obj.save()
     else:
-        map = obj.load()
+        pass
+        #map = obj.load()
 
-    return map
+    return None
