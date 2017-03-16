@@ -13,7 +13,7 @@ import pyklip.spectra_management as spec
 import pyklip.fm as fm
 import pyklip.fmlib.matchedFilter as mf
 import pyklip.klip as klip
-import pyklip.kpp.utils.GOI as GOI
+import pyklip.kpp.utils.oi as oi
 import pyklip.kpp.utils.GPIimage as gpiim
 
 
@@ -49,7 +49,8 @@ class FMMF(KPPSuperClass):
                  true_fakes_pos = None,
                  keepPrefix = None,
                  compact_date_func = None,
-                 filter_name_func = None):
+                 filter_name_func = None,
+                 pix2as=None):
         """
         Define the general parameters of the matched filter.
 
@@ -146,6 +147,7 @@ class FMMF(KPPSuperClass):
                                 in the output filename if keepPrefix is False.
             filter_name_func: lambda function returning the name of the filter (e.g. "H", "J","K1"...) of the
                                 observation to be used in the output filename if keepPrefix is False.
+            pix2as: Platescale (arcsec per pixel). (Used if fakes_only is True)
 
         Return: instance of FMMF.
         """
@@ -245,6 +247,8 @@ class FMMF(KPPSuperClass):
             
         self.compact_date_func = compact_date_func
         self.filter_name_func = filter_name_func
+
+        self.pix2as = pix2as
 
     def spectrum_iter_available(self):
         """
@@ -356,7 +360,6 @@ class FMMF(KPPSuperClass):
                         If the file read has been created with KPOP, folderName is automatically defined from that
                         file.
             label: Define the suffix of the kpop output folder when it is not defined. cf outputDir. Default is "default".
-            read: If true (default) read the fits file according to inputDir and filename otherwise only define self.outputDir.
 
         Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
@@ -402,10 +405,14 @@ class FMMF(KPPSuperClass):
 
         try:
             self.prihdr = self.image_obj.prihdrs[0]
+            if np.sum(["FKPA" in key for key in self.prihdr.keys()]):
+                self.fakehdr = self.prihdr
         except:
             pass
         try:
             self.exthdr = self.image_obj.exthdrs[0]
+            if np.sum(["FKPA" in key for key in self.exthdr.keys()]):
+                self.fakehdr = self.exthdr
         except:
             pass
 
@@ -425,8 +432,12 @@ class FMMF(KPPSuperClass):
             self.filter_name = self.filter_name_func(self.filename_path_list[0])
 
         if self.keepPrefix:
-            file_ext_ind = os.path.basename(self.filename_path_list[0])[::-1].find(".")
-            self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]
+            if self.flux_overlap is not None:
+                file_ext_ind = os.path.basename(self.filename_path_list[0])[::-1].find(".")
+                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+            else:
+                file_ext_ind = os.path.basename(self.filename_path_list[0])[::-1].find(".")
+                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
         else:
             if self.flux_overlap is not None:
                 self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
@@ -459,8 +470,9 @@ class FMMF(KPPSuperClass):
             
         # read fakes from headers and give sepPa list to MatchedFilter
         if self.fakes_only:
-            sep_list, pa_list = GOI.get_pos_known_objects(self.prihdr,self.exthdr,GOI_list_folder=None,xy = False,pa_sep = True,fakes_only=True)
-            self.fakes_sepPa_list = [(gpiim.as2pix(sep),pa) for sep,pa in zip(sep_list, pa_list)]
+            sep_list, pa_list = oi.get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,OI_list_folder=None,
+                                                         xy = False,pa_sep = True,fakes_only=True)
+            self.fakes_sepPa_list = [(1./self.pix2as*sep,pa) for sep,pa in zip(sep_list, pa_list)]
         else:
             self.fakes_sepPa_list = None
 
@@ -507,8 +519,10 @@ class FMMF(KPPSuperClass):
         else:
             presuffix = ""
 
-        suffix1 = presuffix+"FMMF"+susuffix
-        file_exist=(len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)
+        file_exist = True
+        for nmbasis in self.numbasis:
+            suffix1 = presuffix+"FMMF-KL{0}".format(nmbasis)+susuffix
+            file_exist= file_exist and (len(glob(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix1+'.fits')) >= 1)
 
         if file_exist and not self.mute:
             print("Output already exist.")
@@ -589,8 +603,6 @@ class FMMF(KPPSuperClass):
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
-        It saves the metric parameters in self.prihdr.
-
         :return: None
         """
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
@@ -657,7 +669,7 @@ class FMMF(KPPSuperClass):
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.final_cube_modes[k],
-                             filetype=suffix,
+                             filetype="PSF subtracted spectral cube with fmpyklip",
                              more_keywords = extra_keywords)
 
         return None
