@@ -248,6 +248,8 @@ class KPPSuperClass(object):
         else:
             self.inputDir = os.path.abspath(inputDir)
 
+        if not hasattr(self,"outputDir"):
+            self.outputDir = None
 
         if read:
             # Check file existence and define filename_path
@@ -299,18 +301,33 @@ class KPPSuperClass(object):
                 self.center = [[(self.nx-1)/2,(self.ny-1)/2],]*self.nl
 
             try:
-                self.prihdr = self.image_obj.prihdrs[0]
+                hdulist = pyfits.open(self.filename_path)
+                self.prihdr = hdulist[0].header
+                hdulist.close()
             except:
-                pass
+                self.prihdr = None
             try:
-                self.exthdr = self.image_obj.exthdrs[0]
+                hdulist = pyfits.open(self.filename_path)
+                self.exthdr = hdulist[1].header
+                hdulist.close()
             except:
-                pass
+                self.exthdr = None
 
+            # Figure out which header
+            self.fakeinfohdr = None
+            if self.prihdr is not None:
+                if np.sum(["FKPA" in key for key in self.prihdr.keys()]):
+                    self.fakeinfohdr = self.prihdr
+            if self.exthdr is not None:
+                if np.sum(["FKPA" in key for key in self.exthdr.keys()]):
+                    self.fakeinfohdr = self.exthdr
 
             # If outputDir is None define it as the project directory.
             if outputDir is not None:
-                self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
+                if self.label is not None:
+                    self.outputDir = os.path.abspath(outputDir+os.path.sep+"kpop_"+self.label)
+                else:
+                    self.outputDir = os.path.abspath(outputDir)
             else: # if self.outputDir is None:
                 split_path = np.array(os.path.dirname(self.filename_path).split(os.path.sep))
                 if np.sum(word.startswith("planet_detec_") for word in split_path):
@@ -321,7 +338,10 @@ class KPPSuperClass(object):
                     planet_detec_label = split_path[np.where(["kpop" in mystr for mystr in split_path])][-1]
                     self.outputDir = os.path.abspath(self.filename_path.split(planet_detec_label)[0]+planet_detec_label)
                 else:
-                    self.outputDir = os.path.join(os.path.dirname(self.filename_path),"kpop_"+self.label)
+                    if self.label is not None:
+                        self.outputDir = os.path.join(os.path.dirname(self.filename_path),"kpop_"+self.label)
+                    else:
+                        self.outputDir = os.path.dirname(self.filename_path)
 
             if self.process_all_files:
                 if self.id_matching_file < self.N_matching_files:
