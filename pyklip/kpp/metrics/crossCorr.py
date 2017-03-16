@@ -4,7 +4,6 @@ import astropy.io.fits as pyfits
 from scipy.signal import correlate2d
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
-from pyklip.kpp.utils.GOI import *
 import pyklip.kpp.utils.mathfunc as kppmath
 import pyklip.spectra_management as spec
 
@@ -192,7 +191,6 @@ class CrossCorr(KPPSuperClass):
                         If the file read has been created with KPOP, folderName is automatically defined from that
                         file.
             label: Define the suffix of the kpop output folder when it is not defined. cf outputDir. Default is "default".
-            read: If true (default) read the fits file according to inputDir and filename otherwise only define self.outputDir.
 
         Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
@@ -339,8 +337,6 @@ class CrossCorr(KPPSuperClass):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
-
-        It saves the metric parameters in self.prihdr.
 
         :return: None
         """
