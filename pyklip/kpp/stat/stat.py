@@ -8,7 +8,7 @@ from scipy.signal import correlate2d
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 from pyklip.kpp.stat.statPerPix_utils import *
-from pyklip.kpp.utils.GOI import *
+from pyklip.kpp.utils.oi import *
 import pyklip.kpp.utils.mathfunc as kppmath
 
 class Stat(KPPSuperClass):
@@ -32,7 +32,8 @@ class Stat(KPPSuperClass):
                  filename_noPlanets = None,
                  resolution = None,
                  image_wide = False,
-                 r_step = None):
+                 r_step = None,
+                 pix2as=None):
         """
         Define the general parameters of the SNR calculation.
 
@@ -95,6 +96,7 @@ class Stat(KPPSuperClass):
             image_wide: Don't divide the image in annuli or sectors when computing the statistic.
                         Use the entire image directly. Not available if "pixel based: is defined,
             r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
+            pix2as: Platescale (arcsec per pixel).
 
         """
         # allocate super class
@@ -136,6 +138,8 @@ class Stat(KPPSuperClass):
         else:
             self.r_step = r_step
 
+        self.pix2as = pix2as
+
 
     def initialize(self,inputDir = None,
                          outputDir = None,
@@ -161,7 +165,6 @@ class Stat(KPPSuperClass):
                         If the file read has been created with KPOP, folderName is automatically defined from that
                         file.
             label: Define the suffix of the kpop output folder when it is not defined. cf outputDir. Default is "default".
-            read: If true (default) read the fits file according to inputDir and filename otherwise only define self.outputDir.
 
         Return: True if all the files matching the filename (with wildcards) have been processed. False otherwise.
         """
@@ -200,7 +203,7 @@ class Stat(KPPSuperClass):
                 tmp_suffix = tmp_suffix+"N"+str(self.N)
             if self.Dth is not None:
                 tmp_suffix = tmp_suffix+"Dth"+str(self.Dth)
-            if "pixel based" in self.type:
+            if "pixel based" not in self.type:
                 if self.r_step is not None:
                     tmp_suffix = tmp_suffix+"rs"+str(self.r_step)
         else:
@@ -235,14 +238,26 @@ class Stat(KPPSuperClass):
             self.image_noPlanets = self.image_noPlanets_obj.input
 
             try:
-                self.prihdr_noPlanets = self.image_obj.prihdrs[0]
+                hdulist = pyfits.open(self.filename_noPlanets_path)
+                self.prihdr_noPlanets = hdulist[0].header
+                hdulist.close()
             except:
-                pass
+                self.prihdr_noPlanets = None
             try:
-                self.exthdr_noPlanets = self.image_obj.exthdrs[0]
+                hdulist = pyfits.open(self.filename_noPlanets_path)
+                self.exthdr_noPlanets = hdulist[1].header
+                hdulist.close()
             except:
-                pass
+                self.exthdr_noPlanets = None
 
+            # Figure out which header
+            self.fakeinfohdr_noPlanets = None
+            if self.prihdr_noPlanets is not None:
+                if np.sum(["FKPA" in key for key in self.prihdr_noPlanets.keys()]):
+                    self.fakeinfohdr_noPlanets = self.prihdr_noPlanets
+            if self.exthdr_noPlanets is not None:
+                if np.sum(["FKPA" in key for key in self.exthdr_noPlanets.keys()]):
+                    self.fakeinfohdr_noPlanets = self.exthdr_noPlanets
 
         return init_out
 
@@ -283,12 +298,20 @@ class Stat(KPPSuperClass):
             wider_mask = correlate2d(outer_mask,conv_kernel,mode="same")
             self.image[np.where(np.isnan(wider_mask))] = np.nan
 
-        # If OI_list_folder is not None. Mask the known objects from the image that will be used for calculating the
-        # PDF. This masked image is given separately to the probability calculation function.
-        if self.filename_noPlanets is not None:
-            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.prihdr_noPlanets,self.exthdr_noPlanets,self.OI_list_folder, mask_radius = self.mask_radius)
+        if self.OI_list_folder is not None:
+            try:
+                MJDOBS = self.prihdr.header['MJD-OBS']
+            except:
+                raise ValueError("Could not find MJDOBS. Probably because non GPI data. Code needs to be improved")
         else:
-            self.image_without_planet = mask_known_objects(self.image,self.prihdr,self.exthdr,self.OI_list_folder, mask_radius = self.mask_radius)
+            MJDOBS = None
+
+        if self.filename_noPlanets is not None:
+            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.fakeinfohdr_noPlanets,self.star_name,self.pix2as,
+                                      MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
+        else:
+            self.image_without_planet =  mask_known_objects(self.image,self.fakeinfohdr,self.star_name,self.pix2as,
+                                      MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
 
         if np.size(self.image.shape) == 3:
             # Not tested
@@ -353,8 +376,6 @@ class Stat(KPPSuperClass):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
-
-        It saves the metric parameters in self.prihdr.
 
         :return: None
         """
