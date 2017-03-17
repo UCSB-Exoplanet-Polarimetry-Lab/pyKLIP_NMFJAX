@@ -18,6 +18,8 @@ Maxwell Millar-Blanchaer: helped develop and test the RDI functionality
 
 Alexandra Greenbaum: leading the development of the KLIP-FM spectral extraction library
 
+Tom Esposito: Helped with the NIRC2 interface, and the disk forward modelling
+
 Simon Ko: adding coverage reports to the continuous integration
 
 Elijah Spiro: helped develop the MagAO interface

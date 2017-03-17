@@ -24,13 +24,15 @@ you can use the reduced Beta Pic datacubes from the
 `GPI Public Data Release <https://www.gemini.edu/sciops/instruments/gpi/public-data>`_.
 
 Once you have reduced some data, we need to identify and parse through the GPI data from GPI specific information
-to standardized information for pyKLIP::
+to standardized information for pyKLIP
+
+.. code-block:: python
 
     import glob
     import pyklip.instruments.GPI as GPI
 
     filelist = glob.glob("path/to/dataset/*.fits")
-    dataset = GPI.GPIData(filelist)
+    dataset = GPI.GPIData(filelist, highpass=True)
 
 This returns ``dataset``, an implementation of the abstract class :py:class:`pyklip.instruments.Instrument.Data` with standardized fields
 that are needed to perform the KLIP subtraction, none of which are instrument specific.
@@ -41,17 +43,18 @@ Please read the docstring for :py:class:`pyklip.instruments.GPI.GPIData` to more
     were measured and stored in the header.
 
 .. note::
-    When reading in the GPI data, the data are automatically high-pass filtered. If you don't want to do this
-    (e.g. for disk science) or do not like how slow it is, you can turn it off with the optional keyword
-    ``highpass=False``. You can also apply the high-pass filter as pre-processing step before KLIP if you
-    don't want to do it here.
+    When reading in the GPI data, the data are no longer automatically high-pass filtered.
+    You should explictly high pass filter the data if desired (we find it is typically good for planet SNR
+    using the optional keyword ``highpass=True``. You can also apply the high-pass filter as pre-processing
+    step before KLIP in `pyklip.parallelized.klip_dataset` if you don't want to do it here as it is slower.
 
 Running KLIP
 -------------
 
 Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of the easily parallelizable computation, we will use the
 :mod:`pyklip.parallelized` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code
-::
+
+.. code-block:: python
 
     import pyklip.parallelized as parallelized
 
@@ -84,7 +87,11 @@ Geometry
 We have divided the image into 9 annuli and each annuli into 4
 sectors (which do not rotate with the sky) and run KLIP independently on each sector.
 Picking the geometry depends on the structure of the PSF, but we have
-found this to be pretty good for GPI data. 
+found this to be pretty good for GPI data.
+
+``annuli_spacing``
+""""""""""""""""""
+By default we break up the image into equal sized annuli (except for the last one that emcompasses the rest of the image), but sometimes we want smaller annuli closer in, since the stellar PSF changes rapidly there. In that case, we suggest setting ``annuli_spacing="log"`` so the widths of the annuli increases logarithmatically.
 
 "Aggressiveness"
 ^^^^^^^^^^^^^^^^

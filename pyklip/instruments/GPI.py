@@ -66,6 +66,8 @@ class GPIData(Data):
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        wv_indices: Array of N indicies specifying the slice of datacube this frame comes frame (accounts of skipslices)
+                You can use this to index into the header to grab info for the respective slice
         spot_flux: Array of N of average satellite spot flux for each frame
         dn_per_contrast: Flux calibration factor in units of DN/contrast (divide by image to "calibrate" flux)
                 Can also be thought of as the DN of the unocculted star
@@ -119,7 +121,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=True, meas_satspot_flux=False, numthreads=-1,
+    def __init__(self, filepaths=None, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Initialization code for GPIData
@@ -144,6 +146,7 @@ class GPIData(Data):
             self.prihdrs = None
             self.exthdrs = None
             self.flux_units = None
+            self.wv_indices = None
         else:
             self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,
                           numthreads=numthreads,PSF_cube=PSF_cube, recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
@@ -255,6 +258,7 @@ class GPIData(Data):
         filenames = []
         rot_angles = []
         wvs = []
+        wv_indices = []
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
@@ -285,11 +289,10 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
+            cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
                                   psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet)
-
 
             # import matplotlib.pyplot as plt
             # print(filepath)
@@ -301,7 +304,8 @@ class GPIData(Data):
             spot_fluxes.append(spot_flux)
             rot_angles.append(pa)
             wvs.append(wv)
-            filenums.append(np.ones(pa.shape[0]) * index)
+            wv_indices.append(cube_wv_indices)
+            filenums.append(np.ones(pa.shape[0], dtype=int) * index)
             wcs_hdrs.append(astr_hdrs)
             inttimes.append(inttime)
             prihdrs.append(prihdr)
@@ -322,6 +326,7 @@ class GPIData(Data):
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
         rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation)  # want North Up
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
+        wv_indices = np.array(wv_indices).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
@@ -368,6 +373,7 @@ class GPIData(Data):
         self._wvs = wvs
         self._wcs = wcs_hdrs
         self._IWA = GPIData.fpm_diam[fpm_band]/2.0
+        self.wv_indices = wv_indices
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
         self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
@@ -584,7 +590,6 @@ class GPIData(Data):
     def generate_psfs(self, boxrad=7):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
-        Currently hard coded assuming 37 spectral channels!!!
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
@@ -597,8 +602,12 @@ class GPIData(Data):
         for i,frame in enumerate(self.input):
             # figure out which header and which wavelength slice
             numwaves = np.size(np.unique(self.wvs))
-            hdrindex = int(i//numwaves)
-            slice = i % numwaves
+            # hdrindex = int(i//numwaves)
+            # slice = i % numwaves
+
+            hdrindex = self.filenums[i]
+            slice = self.wv_indices[i]
+
             # now grab the values from them by parsing the header
             hdr = self.exthdrs[hdrindex]
             spot0 = hdr['SATS{wave}_0'.format(wave=slice)].split()
@@ -623,7 +632,7 @@ class GPIData(Data):
 
         # collapse in time dimension
         numwvs = np.size(np.unique(self.wvs))
-        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
         self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = True):
@@ -945,6 +954,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         if exthdr['CTYPE3'].strip() == 'WAVE':
             channels = exthdr['NAXIS3']
             wvs = exthdr['CRVAL3'] + exthdr['CD3_3'] * np.arange(channels) #get wavelength solution
+            wv_indices = np.arange(channels, dtype=int)
             center = []
             spot_fluxes = []
             spots_xloc = []
@@ -1007,6 +1017,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
         elif exthdr['CTYPE3'].strip() == 'STOKES':
             wvs = [1.0]
+            wv_indices = np.array([0])
             cube = np.sum(cube, axis=0)  #sum to total intensity
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
@@ -1061,6 +1072,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         center = np.delete(center, skipslices, axis=0)
         parang = np.delete(parang, skipslices)
         wvs = np.delete(wvs, skipslices)
+        wv_indices = np.delete(wv_indices, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
         spot_fluxes = np.delete(spot_fluxes, skipslices)
         spots_xloc = np.delete(spots_xloc, skipslices)
@@ -1076,6 +1088,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
+            highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
             cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
             highpassed = True
@@ -1092,8 +1105,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
 
             if numthreads == -1:
                 # default sat spot measuring code
-                for slice, spots_xs, spots_ys, wv in zip(cube, spots_xloc, spots_yloc, wvs):
-                    new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys,psfs_func_list=psfs_func_list,wave_index=np.where(wv_unique == wv)[0])
+                for slice, spots_xs, spots_ys, wv, wv_index in zip(cube, spots_xloc, spots_yloc, wvs, wv_indices):
+                    new_spotfluxes = measure_sat_spot_fluxes(slice, spots_xs, spots_ys,psfs_func_list=psfs_func_list,wave_index=wv_index)
                     if np.sum(np.isfinite(new_spotfluxes)) == 0:
                         print("Infite satellite spot fluxes", (slice, spots_xs, spots_ys))
                     spot_fluxes.append(np.nanmean(new_spotfluxes))
@@ -1104,8 +1117,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     numthreads = mp.cpu_count()
                 tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
-                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,np.where(wv_unique == wv)[0]))
-                                                for id,(slice, spots_xs, spots_ys,wv) in enumerate(zip(cube, spots_xloc, spots_yloc,wvs))]
+                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,wv_indices))
+                                                for id,(slice, spots_xs, spots_ys, wv, wv_index) in enumerate(zip(cube, spots_xloc, spots_yloc, wvs, wv_indices))]
 
                 for out in tpool_outputs:
                     out.wait()
@@ -1114,7 +1127,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 tpool.close()
         #print(spot_fluxes)
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
+    return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
@@ -1309,7 +1322,7 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
 
         # if applicable, do a background subtraction
         if boxrad >= 7:
-            y_img, x_img = np.indices(frame.shape)
+            y_img, x_img = np.indices(frame.shape, dtype=float)
             r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
             noise_annulus = np.where((r_img > 9) & (r_img <= 12))
             background_mean = np.nanmean(cleaned[noise_annulus])
@@ -1531,7 +1544,7 @@ def calc_center(prihdr, exthdr, wvs, ignoreslices=None, skipslices=None, bad_sat
     else:
         num_sat_spots = 4 - np.size(bad_sat_spots)
     centers = np.swapaxes(centers, 0, 1)
-    centers = centers.reshape([centers.shape[0]/num_sat_spots, num_sat_spots, 2])
+    centers = centers.reshape([centers.shape[0]//num_sat_spots, num_sat_spots, 2])
     centers = centers[:,0,:]
     return centers
 

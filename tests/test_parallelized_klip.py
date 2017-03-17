@@ -28,7 +28,7 @@ def test_exmaple_gpi_klip_dataset():
     assert(len(filelist) == 3)
 
     # create the dataset object
-    dataset = GPI.GPIData(filelist)
+    dataset = GPI.GPIData(filelist, highpass=True)
 
     # run klip parallelized
     outputdir = testdir
@@ -105,7 +105,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
         assert(len(filelist) == 3)
 
     # create the dataset object
-    dataset = GPI.GPIData(filelist, skipslices=[0,36], bad_sat_spots=[3])
+    dataset = GPI.GPIData(filelist, skipslices=[0,36], bad_sat_spots=[3], highpass=False)
 
     dataset.generate_psfs(boxrad=25//2)
     assert np.max(dataset.psfs > 0)
@@ -124,7 +124,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
-                          calibrate_flux=True, mode="ADI", lite=True)
+                          calibrate_flux=True, mode="ADI", lite=True, highpass=True)
 
     # look at the output data. Validate the spectral cube
     spec_hdulist = fits.open("{out}/{pre}-KL20-speccube.fits".format(out=outputdir, pre=prefix))

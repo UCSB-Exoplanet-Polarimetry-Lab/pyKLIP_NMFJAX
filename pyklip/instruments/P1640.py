@@ -541,7 +541,7 @@ class P1640Data(Data):
 
 
         
-        hdulist.writeto(filepath, clobber=True)
+        hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
 
     def calibrate_output(self, units="contrast"):
