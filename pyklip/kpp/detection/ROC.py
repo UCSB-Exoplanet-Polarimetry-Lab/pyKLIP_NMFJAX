@@ -196,11 +196,11 @@ class ROC(KPPSuperClass):
             except:
                 raise ValueError("Could not find MJDOBS. Probably because non GPI data. Code needs to be improved")
             x_real_object_list,y_real_object_list = \
-                get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,
+                get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,center=self.center[0],
                                       MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder,
                                       xy = True,ignore_fakes=True,IWA=self.IWA,OWA=self.OWA)
 
-        row_object_list,col_object_list = get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,
+        row_object_list,col_object_list = get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,center=self.center[0],
                                                                 IWA=self.IWA,OWA=self.OWA)
 
         self.false_detec_proba_vec = []

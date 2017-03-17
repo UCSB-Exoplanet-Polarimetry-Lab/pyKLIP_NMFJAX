@@ -404,17 +404,26 @@ class FMMF(KPPSuperClass):
         super(FMMF, self).init_new_spectrum(self.spectrum,SpT_file_csv=self.SpT_file_csv)
 
         try:
-            self.prihdr = self.image_obj.prihdrs[0]
-            if np.sum(["FKPA" in key for key in self.prihdr.keys()]):
-                self.fakehdr = self.prihdr
+            hdulist = pyfits.open(self.filename_path_list[0])
+            self.prihdr = hdulist[0].header
+            hdulist.close()
         except:
-            pass
+            self.prihdr = None
         try:
-            self.exthdr = self.image_obj.exthdrs[0]
-            if np.sum(["FKPA" in key for key in self.exthdr.keys()]):
-                self.fakehdr = self.exthdr
+            hdulist = pyfits.open(self.filename_path_list[0])
+            self.exthdr = hdulist[1].header
+            hdulist.close()
         except:
-            pass
+            self.exthdr = None
+
+        # Figure out which header
+        self.fakeinfohdr = None
+        if self.prihdr is not None:
+            if np.sum(["FKPA" in key for key in self.prihdr.keys()]):
+                self.fakeinfohdr = self.prihdr
+        if self.exthdr is not None:
+            if np.sum(["FKPA" in key for key in self.exthdr.keys()]):
+                self.fakeinfohdr = self.exthdr
 
         # If outputDir is None define it as the project directory.
         if outputDir is not None:

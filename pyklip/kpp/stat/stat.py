@@ -307,11 +307,13 @@ class Stat(KPPSuperClass):
             MJDOBS = None
 
         if self.filename_noPlanets is not None:
-            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.fakeinfohdr_noPlanets,self.star_name,self.pix2as,
-                                      MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
+            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.fakeinfohdr_noPlanets,self.star_name,
+                                                           self.pix2as,self.center[0],MJDOBS=MJDOBS,
+                                                           OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
         else:
             self.image_without_planet =  mask_known_objects(self.image,self.fakeinfohdr,self.star_name,self.pix2as,
-                                      MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
+                                                            self.center[0],MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder,
+                                                            mask_radius = self.mask_radius)
 
         if np.size(self.image.shape) == 3:
             # Not tested

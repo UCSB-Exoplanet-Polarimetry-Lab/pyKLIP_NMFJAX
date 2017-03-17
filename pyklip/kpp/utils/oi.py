@@ -7,7 +7,7 @@ from  glob import glob
 import csv
 import os
 
-def mask_known_objects(cube,fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
+def mask_known_objects(cube,fakeinfohdr,object_name,pix2as,center,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
                           include_speckles = False,IWA=None,OWA=None, mask_radius = 7):
     """
 
@@ -18,7 +18,7 @@ def mask_known_objects(cube,fakeinfohdr,object_name,pix2as,center=None,MJDOBS=No
         fakeinfohdr: fits file header containing the injected planets related keywords.
         object_name: Name of the star being observed.
         pix2as: platescale.
-        center: Center of the image (needed if xy = True).
+        center: Center of the image.
         MJDOBS: Julian date of the observation. (needed when OI_list_folder is not None)
         OI_list_folder: List of Object of Interest (OI) that should be masked from any standard deviation
                         calculation. See the online documentation for instructions on how to define it.
@@ -77,7 +77,7 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
         fakeinfohdr: fits file header containing the injected planets related keywords.
         object_name: Name of the star being observed.
         pix2as: platescale.
-        center: Center of the image (needed if xy = True).
+        center: Center of the image (not needed if pa_sep = True).
         MJDOBS: Julian date of the observation. (needed when OI_list_folder is not None)
         OI_list_folder: List of Object of Interest (OI) that should be masked from any standard deviation
                         calculation. See the online documentation for instructions on how to define it.
