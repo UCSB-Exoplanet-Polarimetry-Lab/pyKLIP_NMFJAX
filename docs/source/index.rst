@@ -68,7 +68,7 @@ Contents
    p1640
    contrast_curves
    bka
-   fmmf_gpi
+   kpop_gpi
    diskfm_gpi
    pyklip
  
