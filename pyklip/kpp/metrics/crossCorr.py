@@ -2,6 +2,9 @@ __author__ = 'JB'
 import os
 import astropy.io.fits as pyfits
 from scipy.signal import correlate2d
+import numpy as np
+from glob import glob
+from copy import copy
 
 from pyklip.kpp.utils.kppSuperClass import KPPSuperClass
 import pyklip.kpp.utils.mathfunc as kppmath
