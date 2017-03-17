@@ -42,7 +42,7 @@ def get_image_stat_map(image,
         N: Defines the width of the ring by the number of pixels it has to include.
                 The width of the annuli will therefore vary with sepration. Default is N=3000.
         centroid: (x_cen,y_cen) Define the center of the image.
-                Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
         mute: Won't print any logs.
         Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
@@ -177,7 +177,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
         N: Defines the width of the ring by the number of pixels it has to include.
                 The width of the annuli will therefore vary with sepration. Default is N=3000.
         centroid: (x_cen,y_cen) Define the center of the image.
-                Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
         Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
@@ -221,7 +221,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
     image_mask[np.where(np.isnan(image))] = 0
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -330,7 +330,7 @@ def get_image_stddev(image,
         N: Defines the width of the ring by the number of pixels it has to include.
                 The width of the annuli will therefore vary with sepration. Default is N=3000.
         centroid: (x_cen,y_cen) Define the center of the image.
-                Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
         Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
@@ -358,7 +358,7 @@ def get_image_stddev(image,
     image_mask[np.where(np.isnan(image))] = 0
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -405,7 +405,7 @@ def get_image_stddev(image,
 
         if resolution is not None and np.size(data) != 0:
             N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
-            sigma = sigma*np.sqrt(1+1/N_res_elt)
+            sigma = sigma*np.sqrt(1+1./N_res_elt)
         stddev_list.append(sigma)
         annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
 

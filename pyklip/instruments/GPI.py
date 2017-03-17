@@ -278,7 +278,7 @@ class GPIData(Data):
                 hdulist = fits.open(PSF_cube_path)
                 PSF_cube_arr = hdulist[1].data
             numwv,ny_psf,nx_psf =  PSF_cube_arr.shape
-            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
             psfs_func_list = []
             from scipy import interpolate
             for wv_index in range(numwv):
@@ -689,7 +689,7 @@ class GPIData(Data):
 
             for i,frame in frames_iter:
                 #figure out which header and which wavelength slice
-                hdrindex = int(i)/int(numwaves)
+                hdrindex = int(i)//int(numwaves)
                 slice = i % numwaves
                 lambda_curr = unique_wvs[slice]
                 #now grab the values from them by parsing the header
@@ -734,7 +734,7 @@ class GPIData(Data):
                     # The goal of the following section is to remove the local background (or sky) around the sat spot.
                     # The plane is defined by 3 constants (a,b,c) such that z = a*x+b*y+c
                     # In order to do so we fit a 2D plane to the stamp after having masked the sat spot (centered disk)
-                    stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
+                    stamp_r = np.sqrt((stamp_x-dx-boxw//2)**2+(stamp_y-dy-boxw//2)**2)
                     stamp_masked = copy(stamp)
                     stamp_x_masked = stamp_x-dx
                     stamp_y_masked = stamp_y-dy
@@ -760,14 +760,14 @@ class GPIData(Data):
                         # For example if lambda_ref < lambda_curr the grid values need to increase because the current stamp
                         #  is bigger than the reference.
                         # The next 2 lines convert cartesion coordinates to cylindrical.
-                        stamp_r = np.sqrt((stamp_x-dx-boxw/2)**2+(stamp_y-dy-boxw/2)**2)
-                        stamp_th = np.arctan2(stamp_y-dy-boxw/2,stamp_x-dx-boxw/2)
+                        stamp_r = np.sqrt((stamp_x-dx-boxw//2)**2+(stamp_y-dy-boxw//2)**2)
+                        stamp_th = np.arctan2(stamp_y-dy-boxw//2,stamp_x-dx-boxw//2)
                         #stamp_th = np.arctan2(stamp_x-dx-boxw/2,stamp_y-dy-boxw/2)
                         # Rescale radius grid
                         stamp_r /= lambda_ref/lambda_curr
                         # Converting cylindrical back to cartesian.
-                        stamp_x = stamp_r*np.cos(stamp_th)+boxw/2 + dx
-                        stamp_y = stamp_r*np.sin(stamp_th)+boxw/2 + dy
+                        stamp_x = stamp_r*np.cos(stamp_th)+boxw//2 + dx
+                        stamp_y = stamp_r*np.sin(stamp_th)+boxw//2 + dy
                         # At this point stamp_x/y is centered on the center pixel but properly scaled wrt wavelength.
 
                     # Because map_coordinates wants the coordinate of the new grid relative to the old we need to shift
@@ -778,10 +778,10 @@ class GPIData(Data):
                     # apply a hann window on the edges with size equal to this argument
                     if tapersize > 0:
                         tapery, taperx = np.indices(stamp.shape)
-                        taperr = np.sqrt((taperx-boxw/2)**2 + (tapery-boxw/2)**2)
-                        stamp[np.where(taperr > boxw/2)] = 0
-                        hann_window = 0.5  - 0.5 * np.cos(np.pi * (boxw/2 - taperr) / tapersize)
-                        taper_region = np.where(taperr > boxw/2 - tapersize)
+                        taperr = np.sqrt((taperx-boxw//2)**2 + (tapery-boxw//2)**2)
+                        stamp[np.where(taperr > boxw//2)] = 0
+                        hann_window = 0.5  - 0.5 * np.cos(np.pi * (boxw//2 - taperr) / tapersize)
+                        taper_region = np.where(taperr > boxw//2 - tapersize)
                         stamp[taper_region] *= hann_window[taper_region]
 
                     # Set to zero negative values if requested
@@ -798,7 +798,7 @@ class GPIData(Data):
 
         #Build the average spectrum of the sat spots
         # Number of cubes in dataset
-        N_cubes = int(self.input.shape[0])/int(numwaves)
+        N_cubes = int(self.input.shape[0])//int(numwaves)
         all_sat_spot_spec = np.zeros((37,N_cubes))
         for k in range(N_cubes):
             all_sat_spot_spec[:,k] = self.spot_flux[37*k:37*(k+1)]
@@ -841,12 +841,12 @@ class GPIData(Data):
             #current_slice = np.zeros((nx,nx))
 
             stamp_x, stamp_y = np.meshgrid(np.arange(nx, dtype=np.float32), np.arange(nx, dtype=np.float32))
-            stamp_r = np.sqrt((stamp_x - nx/2)**2+(stamp_y - nx/2)**2)
+            stamp_r = np.sqrt((stamp_x - nx//2)**2+(stamp_y - nx//2)**2)
             stamp_x_hd, stamp_y_hd = np.meshgrid(np.arange(nx_hd, dtype=np.float32)/(nx_hd-1)*(nx-1), np.arange(nx_hd, dtype=np.float32)/(nx_hd-1)*(nx-1))
             for l in range(nl):
                 hd_psf[l,:,:] = ndimage.map_coordinates(self.psfs[l,:,:], [stamp_y_hd, stamp_x_hd])
                 #hd_psf[l,nx/2*k_hd,nx/2*k_hd] = 0. # center
-            stamp_r_hd = np.sqrt((stamp_x_hd-stamp_x_hd[nx/2*k_hd,nx/2*k_hd])**2+(stamp_y_hd-stamp_y_hd[nx/2*k_hd,nx/2*k_hd])**2)
+            stamp_r_hd = np.sqrt((stamp_x_hd-stamp_x_hd[nx//2*k_hd,nx//2*k_hd])**2+(stamp_y_hd-stamp_y_hd[nx//2*k_hd,nx//2*k_hd])**2)
 
             dr = 1.0/k_hd
             Dr = 2.0/k_hd
@@ -1195,7 +1195,7 @@ def recalculate_sat_spot_fluxes(dataset, skipslices=None, numthreads=-1, PSF_cub
 
     if PSF_cube is not None:
         numwv,ny_psf,nx_psf =  PSF_cube.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
         psfs_func_list = []
         from scipy import interpolate
         for wv_index in range(numwv):

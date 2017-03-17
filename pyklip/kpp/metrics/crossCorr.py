@@ -235,8 +235,8 @@ class CrossCorr(KPPSuperClass):
                 if not self.mute:
                     print("Generate gaussian PSF")
                 # Build the grid for PSF stamp.
-                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF/2,
-                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF/2)
+                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF//2,
+                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF//2)
 
                 self.PSF = kppmath.gauss2d(x_PSF_grid, y_PSF_grid,1.0,0.0,0.0,self.kernel_para,self.kernel_para)
 
@@ -248,8 +248,8 @@ class CrossCorr(KPPSuperClass):
                         print("Default radius = {0} used for the hat function".format(self.kernel_para))
 
                 # Build the grid for PSF stamp.
-                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF/2,
-                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF/2)
+                x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,self.ny_PSF,1)-self.ny_PSF//2,
+                                                     np.arange(0,self.nx_PSF,1)-self.nx_PSF//2)
                 # Use aperture for the cross correlation.
                 # Calculate the corresponding hat function
                 self.PSF = kppmath.hat(x_PSF_grid, y_PSF_grid, self.kernel_para)

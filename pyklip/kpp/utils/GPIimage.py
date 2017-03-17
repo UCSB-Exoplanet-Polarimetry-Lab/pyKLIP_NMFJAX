@@ -14,7 +14,7 @@ def get_occ(image, centroid = None):
     ny,nx = image.shape
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -53,7 +53,7 @@ def get_IOWA(image, centroid = None):
     ny,nx = image.shape
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 

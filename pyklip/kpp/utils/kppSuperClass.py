@@ -298,7 +298,7 @@ class KPPSuperClass(object):
                 # If the keywords could not be found the center is defined as the middle of the image
                 if not self.mute:
                     print("Couldn't find PSFCENTX and PSFCENTY keywords.")
-                self.center = [[(self.nx-1)/2,(self.ny-1)/2],]*self.nl
+                self.center = [[(self.nx-1)//2,(self.ny-1)//2],]*self.nl
 
             try:
                 hdulist = pyfits.open(self.filename_path)
