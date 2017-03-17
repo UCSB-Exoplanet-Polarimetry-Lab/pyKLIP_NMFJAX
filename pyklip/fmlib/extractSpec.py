@@ -539,7 +539,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
 
     # Alex's normalization terms:
     # Avg spot ratio
-    spot_flux_spectrum = np.sum(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+    spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
     spot_to_star_ratio = dataset.spot_ratio[dataset.band]
     normfactor = spot_flux_spectrum / spot_to_star_ratio
     spec_unit = "CONTRAST"
