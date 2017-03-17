@@ -46,7 +46,7 @@ def get_image_stat_map_perPixMasking(image,
         N: Defines the width of the ring by the number of pixels it has to include.
                 The width of the annuli will therefore vary with sepration.
         centroid: (x_cen,y_cen) Define the center of the image.
-                Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         mute: Won't print any logs.
         N_threads: Number of threads to be used. If None run sequentially.
         Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
@@ -70,7 +70,7 @@ def get_image_stat_map_perPixMasking(image,
         IWA,OWA = IOWA
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -90,13 +90,13 @@ def get_image_stat_map_perPixMasking(image,
         N_threads = mp.cpu_count()
 
     N_pix = image_noNans[0].size
-    chunk_size = N_pix/N_threads
-
-    if N_threads != -1 and chunk_size != 0:
+    chunk_size = N_pix//N_threads
+        
+    if N_threads != -1 and chunk_size :
         pool = NoDaemonPool(processes=N_threads)
         #pool = mp.Pool(processes=N_threads)
 
-        N_chunks = N_pix/chunk_size
+        N_chunks = N_pix//chunk_size
 
         # Shuffle the list of indices such that a thread doesn't end up with only the outer most pixel (where the number
         # of pixels in the pdf is much bigger which make it a lot slower compared to his brothers)
@@ -192,7 +192,7 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                     statistic is calculated.
         N: Defines the width of the ring by the number of pixels it has to include.
                 The width of the annuli will therefore vary with sepration.
-        centroid: Define the cente rof the image. Default is x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        centroid: Define the cente rof the image. Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         mute: Won't print any logs.
         N_threads: Number of threads to be used. If None run sequentially.
         Dr: If not None defines the width of the ring as Dr. N is then ignored.

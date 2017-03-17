@@ -125,7 +125,7 @@ class MatchedFilter(NoFM):
         self.psfs_func_list = psfs_func_list
 
         ny_PSF,nx_PSF = input_psfs.shape[1:]
-        stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF/2,np.arange(0,ny_PSF,1)-ny_PSF/2)
+        stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF//2,np.arange(0,ny_PSF,1)-ny_PSF//2)
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
         self.stamp_PSF_mask[np.where(r_PSF_stamp < 7.)] = np.nan

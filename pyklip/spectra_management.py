@@ -346,8 +346,8 @@ def place_model_PSF(PSF_template,x_cen,y_cen,output_shape, x_grid = None, y_grid
     x_grid = x_grid.astype(np.float)
     y_grid = y_grid.astype(np.float)
 
-    x_grid -= x_cen - nx_template/2
-    y_grid -= y_cen - ny_template/2
+    x_grid -= x_cen - nx_template//2
+    y_grid -= y_cen - ny_template//2
 
     return ndimage.map_coordinates(PSF_template, [y_grid,x_grid], mode='constant', cval=0.0)
 

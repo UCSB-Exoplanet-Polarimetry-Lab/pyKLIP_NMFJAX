@@ -321,7 +321,7 @@ class Matchedfilter(KPPSuperClass):
             # Build the grid for PSF stamp.
             ny_PSF = 20 # should be even
             nx_PSF = 20 # should be even
-            x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,ny_PSF,1)-ny_PSF/2,np.arange(0,nx_PSF,1)-nx_PSF/2)
+            x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,ny_PSF,1)-ny_PSF//2,np.arange(0,nx_PSF,1)-nx_PSF//2)
 
             PSF = kppmath.gauss2d(x_PSF_grid, y_PSF_grid,1.0,0.0,0.0,self.kernel_para,self.kernel_para)
 
@@ -342,7 +342,7 @@ class Matchedfilter(KPPSuperClass):
             # Build the grid for PSF stamp.
             ny_PSF = 20 # should be even
             nx_PSF = 20 # should be even
-            x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,ny_PSF,1)-ny_PSF/2,np.arange(0,nx_PSF,1)-nx_PSF/2)
+            x_PSF_grid, y_PSF_grid = np.meshgrid(np.arange(0,ny_PSF,1)-ny_PSF//2,np.arange(0,nx_PSF,1)-nx_PSF//2)
             # Use aperture for the cross correlation.
             # Calculate the corresponding hat function
             PSF = kppmath.hat(x_PSF_grid, y_PSF_grid, self.kernel_para)
@@ -429,10 +429,10 @@ class Matchedfilter(KPPSuperClass):
         flat_cube_mask[flat_cube_nans] = np.nan
         flat_cube_noEdges_mask = copy(flat_cube_mask)
         # remove the edges if not already nans
-        flat_cube_noEdges_mask[0:self.ny_PSF/2,:] = np.nan
-        flat_cube_noEdges_mask[:,0:self.nx_PSF/2] = np.nan
-        flat_cube_noEdges_mask[(self.ny-self.ny_PSF/2):self.ny,:] = np.nan
-        flat_cube_noEdges_mask[:,(self.nx-self.nx_PSF/2):self.nx] = np.nan
+        flat_cube_noEdges_mask[0:self.ny_PSF//2,:] = np.nan
+        flat_cube_noEdges_mask[:,0:self.nx_PSF//2] = np.nan
+        flat_cube_noEdges_mask[(self.ny-self.ny_PSF//2):self.ny,:] = np.nan
+        flat_cube_noEdges_mask[:,(self.nx-self.nx_PSF//2):self.nx] = np.nan
         # Get the pixel coordinates corresponding to non nan pixels and not too close from the edges of the array.
         flat_cube_noNans_noEdges = np.where(np.isnan(flat_cube_noEdges_mask) == 0)
 
@@ -445,21 +445,21 @@ class Matchedfilter(KPPSuperClass):
         # We use the PSF cube to consider also the spectrum of the planet we are looking for.
         if not self.mute:
             print("Calculate the matched filter maps. It is done pixel per pixel so it might take a while...")
-        stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,self.nx_PSF,1)-self.nx_PSF/2,
-                                                         np.arange(0,self.ny_PSF,1)-self.ny_PSF/2)
+        stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,self.nx_PSF,1)-self.nx_PSF//2,
+                                                         np.arange(0,self.ny_PSF,1)-self.ny_PSF//2)
         r_PSF_stamp = (stamp_PSF_x_grid)**2 +(stamp_PSF_y_grid)**2
         where_mask = np.where(r_PSF_stamp < (self.sky_aper_radius**2))
         stamp_PSF_mask = np.ones((self.ny_PSF,self.nx_PSF))
         stamp_PSF_mask[where_mask] = np.nan
 
         N_pix = flat_cube_noNans_noEdges[0].size
-        chunk_size = N_pix/self.N_threads
+        chunk_size = N_pix//self.N_threads
 
         if self.N_threads > 0 and chunk_size != 0:
             pool = mp.Pool(processes=self.N_threads)
 
             ## cut images in N_threads part
-            N_chunks = N_pix/chunk_size
+            N_chunks = N_pix//chunk_size
 
             # Get the chunks
             chunks_row_indices = []

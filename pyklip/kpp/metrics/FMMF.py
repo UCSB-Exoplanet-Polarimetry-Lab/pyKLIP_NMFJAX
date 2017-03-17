@@ -593,7 +593,7 @@ class FMMF(KPPSuperClass):
         # Form regular klipped cubes
         self.sub_imgs = sub_imgs
         N_unique_wvs = len(np.unique(self.image_obj.wvs))
-        self.N_cubes = len(self.image_obj.wvs)/N_unique_wvs
+        self.N_cubes = len(self.image_obj.wvs)//N_unique_wvs
         cubes_list = []
         for k in range(self.N_cubes):
             cubes_list.append(sub_imgs[:,k*N_unique_wvs:(k+1)*N_unique_wvs,:,:])
