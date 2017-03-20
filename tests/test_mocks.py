@@ -37,8 +37,9 @@ def test_mock_SDI(mock_klip_parallelized):
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
                           calibrate_flux=True, mode="SDI")
-
-    assert(os.path.isfile("mock*"))
+    
+    mocked_glob = glob.glob(testdir + 'mock*')
+    assert(len(mocked_glob)==5)
 
     print("{0} seconds to run".format(time()-t1))
 
