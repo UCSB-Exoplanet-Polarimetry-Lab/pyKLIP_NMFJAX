@@ -69,6 +69,7 @@ Contents
    bka
    fmmf_gpi
    diskfm_gpi
+   developing
    pyklip
  
 
