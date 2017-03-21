@@ -19,7 +19,7 @@ class Ifs(Data):
     """
     # class initialization
     # Astrometric calibration: Maire et al. 2016
-    north_offset = -1.75 # who knows on the sign on this angle
+    north_offset = -102.18 # who knows on the sign on this angle
     platescale = 0.007462
 
     # Coonstructor
@@ -51,11 +51,14 @@ class Ifs(Data):
         # read in PA info among other things
         with fits.open(info_fits) as hdulist:
             metadata = hdulist[1].data
-            self._PAs = np.repeat(metadata["PA"] - metadata['PUPOFF'], self.nwvs)
+            self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
             self._filenames = np.repeat(metadata["FILE"], self.nwvs)
 
+        # we don't need to flip x for North Up East left
+        self.flipx = False
+
         # I have no idea
-        self.IWA = 0.2 / Ifs.platescale # 0.2" IWA
+        self.IWA = 0.15 / Ifs.platescale # 0.15" IWA
 
         # We aren't doing WCS info for SPHERE
         self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
@@ -270,8 +273,11 @@ class Irdis(Data):
         # read in PA info among other things
         with fits.open(info_fits) as hdulist:
             metadata = hdulist[1].data
-            self._PAs = np.repeat(metadata["PA"] - metadata['PUPOFF'], self.nwvs)
+            self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
             self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+
+        # we don't need to flip x for North Up East left
+        self.flipx = False
 
         # I have no idea
         self.IWA = 0.2 / Ifs.platescale # 0.2" IWA

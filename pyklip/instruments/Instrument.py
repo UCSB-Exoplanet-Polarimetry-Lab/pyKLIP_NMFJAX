@@ -17,6 +17,7 @@ class Data(object):
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters
+        flipx: (optional) True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
 
 
     Methods:
@@ -33,6 +34,8 @@ class Data(object):
         self.klipparams = None
         # set the outer working angle (optional parameter)
         self.OWA = None
+        # determine whether a reflection is needed for North-up East-left (optional)
+        self.flipx = True
 
 
     ###################################
