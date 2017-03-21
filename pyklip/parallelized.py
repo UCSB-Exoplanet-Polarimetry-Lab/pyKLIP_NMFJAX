@@ -1232,7 +1232,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # parallelized rotate images
         print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                                hdrs=dataset.wcs, new_center=aligned_center)
 
         # reconstruct datacubes, need to obtain wavelength dimension size
@@ -1309,7 +1309,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if dataset.wcs is not None:
             print("Derotating Images...")
             rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads,
-                                   flipx=True,
+                                   flipx=dataset.flipx,
                                    hdrs=dataset.wcs, new_center=aligned_center)
             # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
             rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
@@ -1414,7 +1414,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # parallelized rotate images
         print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                                hdrs=dataset.wcs, new_center=aligned_center)
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
