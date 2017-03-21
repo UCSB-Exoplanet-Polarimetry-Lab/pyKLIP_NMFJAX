@@ -547,7 +547,10 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
         # lazy hack around the fact that wcs objects don't preserve wcs.cd fields when sent to other processes
         # so let's just do it manually outside of the rotation
         if not disable_wcs_rotation:
-            [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx) for angle, astr_hdr in zip(angles, hdrs)]
+            for angle, astr_hdr in zip(angles, hdrs):
+                if astr_hdr is None:
+                    continue
+                klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx)
 
     # reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
