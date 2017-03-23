@@ -11,9 +11,10 @@ import pyklip.instruments
 import pyklip.parallelized as parallelized
 import pyklip.instruments.GPI as GPI
 import pyklip.fakes as fakes
-import pytest
+
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
+
 def test_exmaple_gpi_klip_dataset():
     """
     Tests standard pykip.parallelized.klip_dataset() with GPI data from the tutorial. Uses no spectral template
