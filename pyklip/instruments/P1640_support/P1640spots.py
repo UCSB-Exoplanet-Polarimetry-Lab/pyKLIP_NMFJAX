@@ -17,7 +17,11 @@ from astropy.modeling import models, fitting
 
 from photutils import aperture_photometry, CircularAperture
 
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
 class P1640params:
     num_spots = 4
@@ -335,7 +339,7 @@ def fix_bad_channels(spot, centers, bad_chans):
     channels = range(spot.shape[0])
 
     # remove all bad channels from fitting and interpolation channels
-    good_channels = channels[:]
+    good_channels = list(channels[:])
     try:
         for i in np.unique(np.ravel(bad_chans)): good_channels.remove(i)
     except ValueError:
@@ -573,7 +577,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
         rad_spots = np.linalg.norm(fixed_spot_locs[i] - centers,
                                    axis=-1)
         bad_channels = check_bad_channels(rad_spots)
-        while len(bad_channels) != 0:
+        while len(list(bad_channels)) != 0:
             fixed_spot_locs[i] = fix_bad_channels(fixed_spot_locs[i], 
                                                   centers, bad_channels)
             # update radial spot distances to check they've all been corrected
@@ -605,7 +609,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
         rad_spots = np.linalg.norm(refined_spot_locs[i] - centers, 
                                    axis=-1)
         bad_channels = check_bad_channels(rad_spots)
-        while len(bad_channels) != 0:
+        while len(list(bad_channels)) != 0:
             refined_spot_locs[i] = fix_bad_channels(refined_spot_locs[i], 
                                                     centers, bad_channels)
             # update radial spot distances to check they've all been corrected
