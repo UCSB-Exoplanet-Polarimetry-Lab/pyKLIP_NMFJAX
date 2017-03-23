@@ -14,7 +14,6 @@ import pyklip.fakes as fakes
 
 import unittest.mock as mock
 from unittest.mock import patch
-import numpy as np
 
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
