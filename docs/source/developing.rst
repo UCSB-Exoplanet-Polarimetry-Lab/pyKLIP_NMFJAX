@@ -84,5 +84,122 @@ Once you have your image, you can cp over local files into the container. To do 
 
 It should be noted that if the specified destination does not exist, it will create the destination for you. For example if I were to do the following ::
         
-        $ docker cp <somefile> zealous_goldwasser:/pyklip/
-inside the zealous_goldwasser container and it did not already have a pyklip directory, docker would create the directory for me and place the file in it, just like the normal cp command. 
+        $ docker cp <somefile/directory> zealous_goldwasser:/pyklip
+inside the `zealous_goldwasser` container and it did not already have a pyklip directory, docker would create the directory for me and place the file in it, just like the normal cp command. 
+
+Deleting Images and Containers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+You may find that your docker is getting a bit cluttered after playing around with it. The following section will show you how to delete images and containers. You can also refer to `this cheat sheet <https://www.digitalocean.com/community/tutorials/how-to-remove-docker-images-containers-and-volumes#a-docker-cheat-sheet>`__ for more on deleting images and containers. The below is just a few basic and useful commands. 
+
+`Deleting Containers`
+"""""""""""""""""""""
+
+To delete a container, first locate the container(s) you wish to delete, then use ``docker rm <ID or NAME>`` to delete::
+
+        $ docker ps -a
+
+        CONTAINER ID        IMAGE                   COMMAND                  CREATED             STATUS                     PORTS               NAMES
+        c6695e4d9a63        simonko/pyklip:latest   "/usr/bin/tini -- ..."   6 seconds ago       Exited (0) 3 seconds ago                       zealous_goldwasser
+
+        $ docker rm <container ID (c6695e4d9a63) or Name (zealous goldwasser)>
+
+To delete multiple containers at once use the filter flag. For example, if you want to delete all exited containers ::
+
+        $ docker rm $(docker ps -a -f status=exited -q)
+You can also find all containers all exited containers using just the command in the parenthesis without the -q flag. This is particularly useful if there are many exited containers and you don't remember which ones you wanted to delete. 
+
+`Deleting Images`
+"""""""""""""""""
+
+To delete your images first you must find which ones you wish to delete. It should also be noted that to delete an image, there can be no containers attached to it. ::
+
+
+        $ docker images
+
+        REPOSITORY              TAG                 IMAGE ID            CREATED             SIZE
+        pyklip-pipeline         latest              e9a584c685bb        13 days ago         2.37 GB
+        simonko/pyklip          latest              e9a584c685bb        13 days ago         2.37 GB
+        localrepo               latest              dc74a96e5ef0        2 weeks ago         2.25 GB
+        ubuntu                  latest              0ef2e08ed3fa        3 weeks ago         130 MB
+        continuumio/anaconda3   latest              26043756c44f        6 weeks ago         2.23 GB
+
+        $ docker rmi <repository name>
+
+.. note::
+        Before you delete an image, all containers using the image must be DELETED, not exited.
+
+To delete ALL of your images ::
+
+        $ docker rmi $(docker images -a -q)
+
+Creating Images
+^^^^^^^^^^^^^^^
+In this section, you will learn how to create and upload your own image. To do this you need to make a dockerfile. If you wish to share the image for others to use, you need to create a Docker Hub account and push your image into a repository. This section will go over all of these steps. For a more detailed tutorial `use this link <https://docs.docker.com/engine/getstarted/step_four/#step-4-run-your-new-docker-whale>`__. Otherwise here are the very basics. 
+
+Docker images are created from a set of commands in a dockerfile. What goes on this file is entirely up to you. Docker uses these commands to create an image, and it can be an entirely new one or an image based off of another existing image. 
+
+
+1. Create a file and name it dockerfile. There are three basic commands that go on a dockerfile.
+    - FROM <Repository>:<Build> - This command will tell docker that this image is based off of another image. You can specify which build to use. To use the most up-to-date version of the image, use "latest" for build. 
+    - RUN <Command> - This will run commands in a new layer and creates a new image. Typically used for installing necessary packages. You can have multiple RUN statements.
+    - CMD <Command> - This is the default command that will run once the image environment has been set up. You can only have ONE CMD statement. 
+    For more information on RUN vs CMD here is a `useful link <http://goinbigdata.com/docker-run-vs-cmd-vs-entrypoint/>`__.
+2. After you've made your file run the following command to create your image ::
+    
+        $ docker build -t <Image Name> <Path to Directory of Dockerfile>
+The ``-t`` flag lets you name the image. 
+
+For example, the docker file used for the pyklip image I set up above (under the "Using Docker" section) is made using a dockerfile with the following content: ::
+
+        FROM continuumio/anaconda3:latest
+        RUN git clone https://bitbucket.org/pyKLIP/pyklip.git \
+         && pip install coveralls \
+         && pip install emcee \
+         && pip install corner \
+         && conda install -c https://conda.anaconda.org/astropy photutils
+
+Uploading Images
+^^^^^^^^^^^^^^^^
+1. If you haven't already, `create a Docker Hub account <https://hub.docker.com/register/?utm_source=getting_started_guide&utm_medium=embedded_MacOSX&utm_campaign=create_docker_hub_account>`__. 
+2. After you've made your account, sign in and click on "Create Repository" and fill out the details. Make sure visibility is set to PUBLIC. Press create.
+3. Find your image ID. Using a previous example ::
+
+        $ docker images
+
+        REPOSITORY              TAG                 IMAGE ID            CREATED             SIZE
+        pyklip-pipeline         latest              e9a584c685bb        13 days ago         2.37 GB
+
+The image ID would be e9a584c685bb. 
+
+4. Tag the image using ::
+        
+        $ docker tag <Image ID> <DockerHub Account Name>/<Image Name>:<Version or Tag>
+
+So for the pyklip pipeline image my command would be: ::
+        
+        $ docker tag e9a584c685bb simonko/pyklip:latest 
+
+Check that the image has been tagged ::
+
+        $ docker images
+
+        REPOSITORY              TAG                 IMAGE ID            CREATED             SIZE
+        pyklip-pipeline         latest              e9a584c685bb        13 days ago         2.37 GB
+        simonko/pyklip          latest              e9a584c685bb        13 days ago         2.37 GB
+5. Login to Docker on terminal ::
+        
+        $ docker login
+
+        Username: *****
+        Password: *****
+        Login Succeeded
+6. Push your tagged image to docker hub ::
+
+        $ docker push <Repository Name> 
+
+7. To pull from the repo now, all you have to do is run the repo. Docker will automatically pull from docker hub if it cannot find it locally. 
+
+
+
+
+
