@@ -24,6 +24,8 @@ pipelines:
           
           # setup coveralls
           - pip install coveralls
+          - conda install -c https://conda.anaconda.org/astropy photutils
+
 
           #Coverage and Coverall hooking
           - coverage run --source ./pyklip -m py.test
