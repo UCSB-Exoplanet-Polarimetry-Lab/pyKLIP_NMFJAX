@@ -10,16 +10,17 @@ This is a guide for developing for the pyKLIP package.
 In this section we will go over:
 
 1. Our Build
-2. Setting up and using a local build environment with Docker
-3. Code Coverage and Tests
+2. Docker
+3. Code Coverage and Testing
 
 
-Our Build
+1. Our Build
 ----------
 Most of the code for pyKLIP is written in python, specifically python versions 2.7 and 3.6. It is to be noted, however, that as we are using the `anaconda3 image <https://hub.docker.com/r/continuumio/anaconda3>`__ for our build which uses python version 3.6, so make sure all code can run in python 3. Anaconda comes with many useful packages built-in so if you need a package check out `the following link <https://docs.continuum.io/anaconda/pkg-docs>`__ before installing anything and see if it's already included. 
 
 
-Docker
+
+2. Docker
 ------
 
 One very useful tool to have is a local build environment of the pyKLIP package to work on. We will be using a software container platform called Docker and this tutorial will provide a brief overview on how to set it up and how to use it with respect to pyKLIP. 
@@ -201,5 +202,7 @@ Check that the image has been tagged ::
 
 
 
+3. Coverage and Testing
+-----------------------
 
 
