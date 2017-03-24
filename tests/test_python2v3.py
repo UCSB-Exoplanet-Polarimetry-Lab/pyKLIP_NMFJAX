@@ -1,12 +1,4 @@
 import glob
-    """
-    Tests ADI reduction with fakes injected at certain position angles
-
-    Also tests lite mode
-
-    Args:
-        filelist: if not None, supply files to test on. Otherwise use standard beta pic data
-    """
 
 def test_print(filesToCheck='/pyklip/**/.py'):
     """
