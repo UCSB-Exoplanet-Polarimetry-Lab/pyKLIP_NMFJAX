@@ -1,6 +1,9 @@
 import glob
+import os 
 
-def test_print(filesToCheck='/pyklip/**/.py'):
+
+test_directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', '**', '*.py')
+def test_print(filesToCheck=test_directory):
     """
     Tests the entire pyklip directory for bad print statements in python files that would break if run on python 3.
     If there is ever a "print " as you would normally print in python 2, it will throw a syntax error with all the files and lines that the bad print statements were found in.
@@ -18,15 +21,15 @@ def test_print(filesToCheck='/pyklip/**/.py'):
 
     #gathers all python files in pyklip directory recursively
     files = glob.iglob(filesToCheck, recursive=True)
-    #used to check multiline comments such as doc strings. While multiline_comment is true it simply skips over the lines checking for the end before skipping.
-    multiline_comment = False
+    
     #dictionary to hold all bad prints so user can find and fix all bad print. (Key, Value) = ((string) File, (list) Line)
     bad_prints = {}
-
     for file in files:
         with open(file) as f:
             content = f.readlines()
         linecount = 1
+        #used to check multiline comments such as doc strings. While multiline_comment is true it simply skips over the lines checking for the end before skipping.
+        multiline_comment = False
         for line in content:
             #Checking for multiline comments before skipping. 
             if '\"\"\"' in line:
