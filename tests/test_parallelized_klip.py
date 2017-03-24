@@ -157,9 +157,16 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     print("{0} seconds to run".format(time()-t1))
 
 
+#sets up a patch object to mock. 
 @patch('pyklip.parallelized.klip_parallelized')
 def test_mock_SDI(mock_klip_parallelized):
-    #create a mocked return value for klip_parallelized that returns a4d array of size (b,N,y,x)
+    """
+    Tests SDI reduction with mocked data. 
+
+    Args: mock patch object 
+    """
+
+    #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.
     mock_klip_parallelized.return_value = np.zeros((4,111,281,281))
 
     # time it
