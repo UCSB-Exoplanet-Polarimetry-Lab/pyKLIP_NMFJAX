@@ -164,7 +164,7 @@ def test_mock_SDI(mock_klip_parallelized):
     Tests SDI reduction with mocked data. 
 
     Args: 
-        mock patch object 
+        mock_klip_parallelized: mock patch object. 
     """
 
     #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.

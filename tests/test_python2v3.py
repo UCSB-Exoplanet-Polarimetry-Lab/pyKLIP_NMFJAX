@@ -18,7 +18,7 @@ def test_print(filesToCheck=test_directory):
     Double quote strings ("print ")
 
     Args: 
-        String of location and type of files to check. 
+        filesToCheck: String of location and type of files to check. Defaults to python files in pyklip. 
 
     Raises: 
         SyntaxError: Bad print statements in: 
