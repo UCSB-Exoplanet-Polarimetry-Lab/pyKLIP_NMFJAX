@@ -5,18 +5,25 @@ import os
 test_directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', '**', '*.py')
 def test_print(filesToCheck=test_directory):
     """
+    Tests for bad print statements that will fail in python 3. 
+
     Tests the entire pyklip directory for bad print statements in python files that would break if run on python 3.
     If there is ever a "print " as you would normally print in python 2, it will throw a syntax error with all the files and lines that the bad print statements were found in.
     Files should be written using python 3's print() function. 
 
     Cases it checks:
     Triple quote multiline comments  
-    inline comments (#print)
-    single quote character strings ('print ')
-    double quote strings ("print ")
+    Inline comments (#print)
+    Single quote character strings ('print ')
+    Double quote strings ("print ")
 
-    Args: String of location and type of files to check. 
-    Returns: A SyntaxError if there exist any bad print statements, otherwise nothing. 
+    Args: 
+        String of location and type of files to check. 
+
+    Raises: 
+        SyntaxError: Bad print statements in: 
+            File: File
+                Lines: Lines 
     """
 
     #gathers all python files in pyklip directory recursively
