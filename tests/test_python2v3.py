@@ -41,9 +41,9 @@ def test_print(filesToCheck=test_directory):
             if multiline_comment:
                 linecount += 1
                 continue
-            #splits line by spaces and ignores whitespace
-            split_line = list(filter(None, line.split(" ")))
-            if split_line[0] == "print" or "print\"" in split_line[0] or "print\'" in split_line[0]:
+            #splits line by spaces and ignores trailing whitespace
+            split_line = line.strip().split(" ")
+            if split_line[0] == "print" or "print\"" in split_line[0][:6] or "print\'" in split_line[0][:6]:
                 #initializes list in dictionary if it doesn't exist. 
                 bad_prints.setdefault(file_name, []).append(linecount)
             linecount += 1
