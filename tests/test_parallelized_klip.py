@@ -38,7 +38,7 @@ def test_exmaple_gpi_klip_dataset():
     outputdir = testdir
     prefix = "example-betapic-j-k100a9s4m1"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
-                          annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
+                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
                           calibrate_flux=True, mode="ADI+SDI")
 
     # look at the output data. Validate the spectral cube
@@ -76,8 +76,8 @@ def test_exmaple_gpi_klip_dataset():
     assert np.abs((flux_meas - true_flux)/true_flux) < 0.4
     # positonal error
     theta = fakes.convert_pa_to_image_polar(true_pa, dataset.wcs[0])
-    true_x = true_sep * np.cos(np.radians(theta)) + dataset.centers[0,0]
-    true_y = true_sep * np.sin(np.radians(theta)) + dataset.centers[0,1]
+    true_x = true_sep * np.cos(np.radians(theta)) + dataset.centers[0, 0]
+    true_y = true_sep * np.sin(np.radians(theta)) + dataset.centers[0, 1]
     assert np.abs(true_x - x_meas) < 0.4
     assert np.abs(true_y - y_meas) < 0.4
     # fwhm error
@@ -109,7 +109,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
         assert(len(filelist) == 3)
 
     # create the dataset object
-    dataset = GPI.GPIData(filelist, skipslices=[0,36], bad_sat_spots=[3], highpass=False)
+    dataset = GPI.GPIData(filelist, skipslices=[0, 36], bad_sat_spots=[3], highpass=False)
 
     dataset.generate_psfs(boxrad=25//2)
     assert np.max(dataset.psfs > 0)
@@ -127,7 +127,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     outputdir = testdir
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
-                          annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
+                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
                           calibrate_flux=True, mode="ADI", lite=True, highpass=True)
 
     # look at the output data. Validate the spectral cube
@@ -152,9 +152,9 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
         peakflux = fakes.retrieve_planet_flux(collapsed_kl20, dataset.centers[0], dataset.wcs[0], fake_sep,
                                               fake_pa, refinefit=True)
 
-        assert (np.abs((peakflux/0.7-fake_contrast)/fake_contrast) < 0.5)
+        assert (np.abs((peakflux/0.7 - fake_contrast)/fake_contrast) < 0.5)
 
-    print("{0} seconds to run".format(time()-t1))
+    print("{0} seconds to run".format(time() - t1))
 
 
 #sets up a patch object to mock. 
@@ -163,12 +163,12 @@ def test_mock_SDI(mock_klip_parallelized):
     """
     Tests SDI reduction with mocked data. 
 
-    Args: 
+    Args: `
         mock_klip_parallelized: mock patch object. 
     """
 
     #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.
-    mock_klip_parallelized.return_value = np.zeros((4,111,281,281))
+    mock_klip_parallelized.return_value = np.zeros((4, 111, 281, 281))
 
     # time it
     t1 = time()
@@ -184,13 +184,13 @@ def test_mock_SDI(mock_klip_parallelized):
     outputdir = testdir
     prefix = "mock"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
-                          annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
+                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
                           calibrate_flux=True, mode="SDI")
 
     mocked_glob = glob.glob(testdir + 'mock*')
-    assert(len(mocked_glob)==5)
+    assert(len(mocked_glob) == 5)
 
-    print("{0} seconds to run".format(time()-t1))
+    print("{0} seconds to run".format(time() - t1))
 
 
 
