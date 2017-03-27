@@ -203,6 +203,23 @@ filepath: path to file to output
                 # write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
+                hdulist[0].header['CUNIT3'] = "N/A"
+                hdulist[0].header['CRVAL3'] = 1
+                hdulist[0].header['CRPIX3'] = 1.
+                hdulist[0].header['CD3_3'] = 1.
+
+        if "Spectral" in filetype:
+            uniquewvs = np.unique(self.wvs)
+            # do spectral stuff instead
+            # because wavelength solutoin is nonlinear, we're not going to store it here
+            hdulist[0].header['CTYPE3'] = 'WAVE'
+            hdulist[0].header['CUNIT3'] = "N/A"
+            hdulist[0].header['CRPIX3'] = 1.
+            hdulist[0].header['CRVAL3'] = 0
+            hdulist[0].header['CD3_3'] = 1
+            # write it out instead
+            for i, wv in enumerate(uniquewvs):
+                hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
         center = self.centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
@@ -425,6 +442,22 @@ filepath: path to file to output
                 # write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = (klmode, "KL Mode of slice {0}".format(i))
+                hdulist[0].header['CUNIT3'] = "N/A"
+                hdulist[0].header['CRVAL3'] = 1
+                hdulist[0].header['CRPIX3'] = 1.
+                hdulist[0].header['CD3_3'] = 1.
+
+        if "Spectral" in filetype:
+            uniquewvs = np.sort(np.unique(self.wvs))
+            # do spectral stuff instead
+            # because wavelength solutoin is nonlinear, we're not going to store it here
+            hdulist[0].header['CTYPE3'] = 'WAVE'
+            hdulist[0].header['CUNIT3'] = "microns"
+            hdulist[0].header['CRPIX3'] = 1.
+            # there's only 2 wvs in DBI
+            hdulist[0].header['CRVAL3'] = uniquewvs[0]
+            hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
+            # write it out instead
 
         center = self.centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
