@@ -1106,7 +1106,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
             phi_bounds[-1][1] = 2 * np.pi - 0.0001
         else:
-            phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
+            sign = -1
+            if not flipx:
+                sign = 1
+            phi_bounds = [[((sign*pa + np.pi/2)) % (2*np.pi) for pa in pa_tuple[::sign]] for pa_tuple in subsections]
 
         iterator_sectors = itertools.product(rad_bounds, phi_bounds)
         tot_sectors = len(rad_bounds)*len(phi_bounds)
