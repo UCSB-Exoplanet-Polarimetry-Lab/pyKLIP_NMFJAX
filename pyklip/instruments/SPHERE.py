@@ -17,8 +17,6 @@ class Ifs(Data):
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
             If info_fits is None: info_fits = data_cube.replace("cube_coro","info")
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
-            If wavelenegth_info is None: wavelenegth_info = data_cube.replace("cube_coro","wavelength")
-        keepslices: List of indices of the slices to be considered for the speckle subtraction.
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
