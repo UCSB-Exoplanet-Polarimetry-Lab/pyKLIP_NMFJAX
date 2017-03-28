@@ -1261,8 +1261,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # broadband flux calibration for KL mode cube
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                          zaxis=numbasis)
 
         # for each KL mode, collapse in time to examine spectra
@@ -1333,9 +1334,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # broadband photometry calibration
         if calibrate_flux:
+            numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
         num_wvs = np.size(np.unique(dataset.wvs))  # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
@@ -1434,8 +1436,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
 
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
