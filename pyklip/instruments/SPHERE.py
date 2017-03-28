@@ -41,7 +41,7 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, psf_cube_size=21, nan_mask_boxsize=9,
+    def __init__(self, data_cube, psf_cube=None, info_fits=None, wavelength_info=None, psf_cube_size=21, nan_mask_boxsize=9,
                  IWA=0.15,keepslices=None):
         super(Ifs, self).__init__()
 
