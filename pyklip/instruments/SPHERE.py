@@ -13,8 +13,12 @@ class Ifs(Data):
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
+            If psf_cube is None: psf_cube = data_cube.replace("cube_coro","cube_psf")
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
+            If info_fits is None: info_fits = data_cube.replace("cube_coro","info")
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
+            If wavelenegth_info is None: wavelenegth_info = data_cube.replace("cube_coro","wavelength")
+        keepslices: List of indices of the slices to be considered for the speckle subtraction.
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
@@ -41,9 +45,17 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, psf_cube_size=21, nan_mask_boxsize=9,
-                 IWA=0.15):
+    def __init__(self, data_cube, psf_cube=None, info_fits=None, wavelength_info=None,keepslices=None,
+                 psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15):
         super(Ifs, self).__init__()
+
+        if psf_cube is None:
+            psf_cube = data_cube.replace("cube_coro","cube_psf")
+        if info_fits is None:
+            info_fits = data_cube.replace("cube_coro","info")
+        if wavelength_info is None:
+            wavelength_info = data_cube.replace("cube_coro","wavelength")
+
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
@@ -95,6 +107,16 @@ class Ifs(Data):
 
         self._output = None
 
+        if keepslices is not None:
+            self.input = self.input[keepslices,:,:]
+            self._filenums = self._filenums[keepslices]
+            self._centers = self._centers[keepslices]
+            self._wvs = self._wvs[keepslices]
+            self._PAs = self._PAs[keepslices]
+            self._filenames = self._filenames[keepslices]
+
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = os.path.basename(data_cube).split("_")[0]
 
     ################################
     ### Instance Required Fields ###

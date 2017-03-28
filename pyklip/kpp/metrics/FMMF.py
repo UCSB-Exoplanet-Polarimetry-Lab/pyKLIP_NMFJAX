@@ -456,6 +456,7 @@ class FMMF(KPPSuperClass):
         # Build the PSF cube
         if isinstance(self.PSF_cube, np.ndarray):
             self.PSF_cube_arr = self.PSF_cube
+            self.PSF_cube_path = "None"
         else:
             self.PSF_cube_filename = self.PSF_cube
 
@@ -588,7 +589,8 @@ class FMMF(KPPSuperClass):
         self.contrast_map = contrast_map
 
         # Update the wcs headers to indicate North up
-        [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.image_obj.PAs, self.image_obj.wcs)]
+        if self.image_obj.wcs[0] is not None:
+            [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.image_obj.PAs, self.image_obj.wcs)]
 
         # Form regular klipped cubes
         self.sub_imgs = sub_imgs
@@ -600,9 +602,7 @@ class FMMF(KPPSuperClass):
         self.final_cube_modes = np.sum(cubes_list,axis = 0)
         self.final_cube_modes[np.where(self.final_cube_modes==0)] = np.nan
 
-
         self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map,self.final_cube_modes]
-
 
         return self.metricMap
 
