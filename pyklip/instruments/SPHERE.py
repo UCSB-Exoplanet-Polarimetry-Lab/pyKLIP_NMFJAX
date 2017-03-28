@@ -2,6 +2,7 @@ import os, subprocess
 import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
+import scipy.ndimage as ndimage
 
 from pyklip.instruments.Instrument import Data
 
@@ -14,13 +15,25 @@ class Ifs(Data):
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
-            If wavelenegth_info is None: wavelenegth_info = data_cube.replace("cube_coro","wavelength")
-        keepslices: List of indices of the slices to be considered for the speckle subtraction.
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
 
     Attributes:
+        input: Array of shape (N,y,x) for N images of shape (y,x)
+        centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
+        filenums: Array of size N for the numerical index to map data to file that was passed in
+        filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
+        wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
+        IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        psfs: Spectral cube of size (Nwv, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
+        nfiles: number of datacubes
+        nwvs: number of wavelengths
+
     """
     # class initialization
     # Astrometric calibration: Maire et al. 2016
@@ -31,6 +44,14 @@ class Ifs(Data):
     def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, psf_cube_size=21, nan_mask_boxsize=9,
                  IWA=0.15,keepslices=None):
         super(Ifs, self).__init__()
+
+        if psf_cube is None:
+            psf_cube = data_cube.replace("cube_coro","cube_psf")
+        if info_fits is None:
+            info_fits = data_cube.replace("cube_coro","info")
+        if wavelength_info is None:
+            wavelength_info = data_cube.replace("cube_coro","wavelength")
+
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
@@ -40,6 +61,10 @@ class Ifs(Data):
             # collapse files with wavelengths
             self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
                                             self.input.shape[3])
+            # zeros are nans, and anything adjacient to a pixel less than zero is 0.
+            input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+            self.input[np.where(input_minfilter <= 0)] = np.nan
+
             # centers are at dim/2
             self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
 
@@ -47,6 +72,13 @@ class Ifs(Data):
         with fits.open(psf_cube) as hdulist:
             self.psfs = hdulist[0].data # Nwvs, Ny, Nx
             self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
+
+            # trim the cube
+            pixelsbefore = psf_cube_size//2
+            pixelsafter = psf_cube_size - pixelsbefore
+            self.psfs = np.copy(self.psfs[:, self.psfs_center[1]-pixelsbefore:self.psfs_center[1]+pixelsafter,
+                                            self.psfs_center[0]-pixelsbefore:self.psfs_center[0]+pixelsafter])
+            self.psfs_center = [psf_cube_size//2, psf_cube_size//2]
 
         # read in wavelength solution
         with fits.open(wavelength_info) as hdulist:
@@ -64,13 +96,23 @@ class Ifs(Data):
         self.flipx = False
 
         # I have no idea
-        self.IWA = 0.15 / Ifs.platescale # 0.15" IWA
+        self.IWA = IWA / Ifs.platescale # 0.15" IWA
 
         # We aren't doing WCS info for SPHERE
         self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
 
         self._output = None
 
+        if keepslices is not None:
+            self.input = self.input[keepslices,:,:]
+            self._filenums = self._filenums[keepslices]
+            self._centers = self._centers[keepslices]
+            self._wvs = self._wvs[keepslices]
+            self._PAs = self._PAs[keepslices]
+            self._filenames = self._filenames[keepslices]
+
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = os.path.basename(data_cube).split("_")[0]
 
     ################################
     ### Instance Required Fields ###
@@ -152,7 +194,7 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
 
@@ -164,7 +206,7 @@ filepath: path to file to output
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-
+        
         """
         hdulist = fits.HDUList()
         hdulist.append(fits.PrimaryHDU(data=data))
@@ -259,8 +301,27 @@ class Irdis(Data):
     A sequence of SPHERE IRDIS Data.
 
     Args:
+        data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
+        psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
+        info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
+        wavelength_str: string to specifiy the band (e.g. "H2H3", "K1K2")
+        psf_cube_size: size of the psf cube to save (length along 1 dimension)
+        IWA: inner working angle of the data in arcsecs
 
     Attributes:
+        input: Array of shape (N,y,x) for N images of shape (y,x)
+        centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
+        filenums: Array of size N for the numerical index to map data to file that was passed in
+        filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
+        wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
+        IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        psfs: Spectral cube of size (2, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
+        nfiles: number of datacubes
+        nwvs: number of wavelengths (i.e. 2 for dual band imaging)
     """
     # class initialization
     # Astrometric calibration: Maire et al. 2016
@@ -271,7 +332,7 @@ class Irdis(Data):
                    "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str):
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2):
         super(Irdis, self).__init__()
         # read in the data
         with fits.open(data_cube) as hdulist:
@@ -288,7 +349,17 @@ class Irdis(Data):
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
             self.psfs = hdulist[0].data # Nwvs, Ny, Nx
+            if np.size(self.psfs.shape) == 4:
+                # multiple PSF sequences were taken. Collpase them and take the average
+                self.psfs = np.nanmean(self.psfs, axis=0)
             self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
+
+            # trim the cube
+            pixelsbefore = psf_cube_size//2
+            pixelsafter = psf_cube_size - pixelsbefore
+            self.psfs = np.copy(self.psfs[:, self.psfs_center[1]-pixelsbefore:self.psfs_center[1]+pixelsafter,
+                                            self.psfs_center[0]-pixelsbefore:self.psfs_center[0]+pixelsafter])
+            self.psfs_center = [psf_cube_size//2, psf_cube_size//2]
 
         db_wvs = Irdis.wavelengths[wavelength_str]
         self._wvs = np.tile(db_wvs, self.nfiles)
@@ -303,7 +374,7 @@ class Irdis(Data):
         self.flipx = False
 
         # I have no idea
-        self.IWA = 0.2 / Ifs.platescale # 0.2" IWA
+        self.IWA = IWA / Ifs.platescale # 0.2" IWA
 
         # We aren't doing WCS info for SPHERE
         self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
@@ -391,7 +462,7 @@ class Irdis(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype=None, zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
 
