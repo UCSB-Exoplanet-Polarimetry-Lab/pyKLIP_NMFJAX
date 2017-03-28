@@ -787,7 +787,8 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype
     return
 
 
-def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend, padding, parang,IOWA):
+def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend, padding, parang, IOWA,
+                          flatten=True, flipx=False):
     """
     Gets the pixels (via numpy.where) that correspond to this section
 
@@ -810,8 +811,11 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
 
     # create a coordinate system.
     x, y = np.meshgrid(np.arange(input_shape[1] * 1.0), np.arange(input_shape[0] * 1.0))
-    x.shape = (x.shape[0] * x.shape[1]) # Flatten
-    y.shape = (y.shape[0] * y.shape[1])
+    if flatten:
+        x.shape = (x.shape[0] * x.shape[1]) # Flatten
+        y.shape = (y.shape[0] * y.shape[1])
+    if flipx:
+        x = img_center[0] - (x - img_center[0])        
     r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
     phi = np.arctan2(y - img_center[1], x - img_center[0])
 
@@ -912,37 +916,41 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     xp = (x-img_center[0])*np.cos(angle_rad) + (y-img_center[1])*np.sin(angle_rad) + img_center[0]
     yp = -(x-img_center[0])*np.sin(angle_rad) + (y-img_center[1])*np.cos(angle_rad) + img_center[1]
 
-    if new_center is None:
-        new_center = img_center
+    # if new_center is None:
+    #     new_center = img_center
 
-    rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
-    phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
+    # rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
+    # phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
 
-    # grab sectors based on whether the phi coordinate wraps
-    # padded sector
-    # check to see if with padding, the phi coordinate wraps
-    if phiend_padded >=  phistart_padded:
-        # doesn't wrap
-        in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
-                               (phip >= phistart_padded) & (phip < phiend_padded))
-    else:
-        # wraps
-        in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
-                                            ((phip >= phistart_padded) | (phip < phiend_padded)))
-    rot_sector_pix = np.where(in_padded_sector)
+    # # grab sectors based on whether the phi coordinate wraps
+    # # padded sector
+    # # check to see if with padding, the phi coordinate wraps
+    # if phiend_padded >=  phistart_padded:
+    #     # doesn't wrap
+    #     in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+    #                            (phip >= phistart_padded) & (phip < phiend_padded))
+    # else:
+    #     # wraps
+    #     in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
+    #                                         ((phip >= phistart_padded) | (phip < phiend_padded)))
+    # rot_sector_pix = np.where(in_padded_sector)
 
-    # only padding
-    # check to see if without padding, the phi coordinate wraps
-    if phiend >=  phistart:
-        # no wrap
-        in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
-                                   & in_padded_sector)
-    else:
-        # wrap
-        in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
-                                    | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
-    rot_sector_pix_onlypadding = np.where(in_only_padding)
+    rot_sector_pix = _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend,
+                                          padding, 0, IOWA, flatten=False, flipx=flipx)
 
+    # # only padding
+    # # check to see if without padding, the phi coordinate wraps
+    # if phiend >=  phistart:
+    #     # no wrap
+    #     in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
+    #                                & in_padded_sector)
+    # else:
+    #     # wrap
+    #     in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
+    #                                 | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
+    # rot_sector_pix_onlypadding = np.where(in_only_padding)
+
+    dims = input_shape
     blank_input = np.zeros(dims[1] * dims[0])
     blank_input[sector_ind] = sector
     blank_input.shape = [dims[0], dims[1]]
@@ -976,8 +984,8 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     sector_validpix = np.where(~np.isnan(rot_sector))
 
     # need to define only where the non nan pixels are, so we can store those in the output image
-    blank_output = np.zeros(dims[1] * dims[0]) * np.nan
-    blank_output[sector_ind] = rot_sector
+    blank_output = np.zeros([dims[0], dims[1]]) * np.nan
+    blank_output[rot_sector_pix] = rot_sector
     blank_output.shape = (dims[0], dims[1])
     rot_sector_validpix_2d = np.where(~np.isnan(blank_output))
 
