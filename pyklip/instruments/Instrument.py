@@ -233,7 +233,7 @@ class GenericData(Data):
         self.centers = np.array(centers)
 
         if self.centers.shape [0] != nfiles:
-            raise ValueError("Input data has shape {0} but centers has shape {1}".format(self.inputs.shape,
+            raise ValueError("Input data has shape {0} but centers has shape {1}".format(self.input.shape,
                                                                                          self.centers.shape))
 
         if parangs is not None:
