@@ -28,6 +28,6 @@ def test_generic_dataset():
 
     dataset = Instrument.GenericData(inputdata, fakecenters, parangs=fakepas, wvs=fakewvs, filenames=filenames)
 
-    dataset.savedata("./generic_dataset.fits", dataset.input)
+    dataset.savedata(os.path.join(testdir, "generic_dataset.fits"), dataset.input)
     # it didn't crash? Good enough
 
