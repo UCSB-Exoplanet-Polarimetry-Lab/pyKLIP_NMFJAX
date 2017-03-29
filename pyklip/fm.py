@@ -916,40 +916,17 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
     xp = (x-img_center[0])*np.cos(angle_rad) + (y-img_center[1])*np.sin(angle_rad) + img_center[0]
     yp = -(x-img_center[0])*np.sin(angle_rad) + (y-img_center[1])*np.cos(angle_rad) + img_center[1]
 
-    # if new_center is None:
-    #     new_center = img_center
+    if new_center is None:
+        new_center = img_center
 
-    # rp = np.sqrt((xp - new_center[0])**2 + (yp - new_center[1])**2)
-    # phip = (np.arctan2(yp-new_center[1], xp-new_center[0]) + angle_rad) % (2 * np.pi)
+    rot_sector_pix = _get_section_indicies(input_shape, new_center, radstart, radend, phistart, phiend,
+                                           padding, 0, IOWA, flatten=False, flipx=flipx)
 
-    # # grab sectors based on whether the phi coordinate wraps
-    # # padded sector
-    # # check to see if with padding, the phi coordinate wraps
-    # if phiend_padded >=  phistart_padded:
-    #     # doesn't wrap
-    #     in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
-    #                            (phip >= phistart_padded) & (phip < phiend_padded))
-    # else:
-    #     # wraps
-    #     in_padded_sector = ((rp >= radstart_padded) & (rp < radend_padded) &
-    #                                         ((phip >= phistart_padded) | (phip < phiend_padded)))
-    # rot_sector_pix = np.where(in_padded_sector)
 
-    rot_sector_pix = _get_section_indicies(input_shape, img_center, radstart, radend, phistart, phiend,
-                                          padding, 0, IOWA, flatten=False, flipx=flipx)
-
-    # # only padding
-    # # check to see if without padding, the phi coordinate wraps
-    # if phiend >=  phistart:
-    #     # no wrap
-    #     in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
-    #                                & in_padded_sector)
-    # else:
-    #     # wrap
-    #     in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
-    #                                 | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
-    # rot_sector_pix_onlypadding = np.where(in_only_padding)
-
+    # do NaN detection by defining any pixel in the new coordiante system (xp, yp) as a nan
+    # if any one of the neighboring pixels in the original image is a nan
+    # e.g. (xp, yp) = (120.1, 200.1) is nan if either (120, 200), (121, 200), (120, 201), (121, 201)
+    # is a nan
     dims = input_shape
     blank_input = np.zeros(dims[1] * dims[0])
     blank_input[sector_ind] = sector
@@ -964,22 +941,14 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
                        np.isnan(blank_input[yp_ceil.ravel(), xp_floor.ravel()]) |
                        np.isnan(blank_input[yp_ceil.ravel(), xp_ceil.ravel()]))
 
-    # resample image based on new coordinates
-    # scipy uses y,x convention when meshgrid uses x,y
-    # stupid scipy functions can't work with masked arrays (NANs)
-    # and trying to use interp2d with sparse arrays is way to slow
-    # hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-    # then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
-    minval = np.min([np.nanmin(blank_input), 0.0])
+    # resample image based on new coordinates, set nan values as median
     nanpix = np.where(np.isnan(blank_input))
     medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
     input_copy = np.copy(blank_input)
-    input_copy[nanpix] = minval * 5.0
-    rot_sector_mask = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=minval * 5.0)
     input_copy[nanpix] = medval
     rot_sector = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
 
-    #rot_sector[np.where(rot_sector_mask < minval)] = np.nan
+    # mask nans
     rot_sector[rotnans] = np.nan
     sector_validpix = np.where(~np.isnan(rot_sector))
 
@@ -1137,7 +1106,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
             phi_bounds[-1][1] = 2 * np.pi - 0.0001
         else:
-            phi_bounds = [[(-(pa - np.pi/2)) % (2*np.pi) for pa in pa_tuple[::-1]] for pa_tuple in subsections]
+            sign = -1
+            if not flipx:
+                sign = 1
+            phi_bounds = [[((sign*pa + np.pi/2)) % (2*np.pi) for pa in pa_tuple[::sign]] for pa_tuple in subsections]
 
         iterator_sectors = itertools.product(rad_bounds, phi_bounds)
         tot_sectors = len(rad_bounds)*len(phi_bounds)
