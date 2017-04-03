@@ -108,7 +108,7 @@ a width of 30 pixels. The width just needs to be big enough that you see the ent
     movement = 4 # we are using an conservative exclusion criteria of 4 pixels
 
     # run KLIP-FM
-    import pykip.fm as fm
+    import pyklip.fm as fm
     fm.klip_dataset(dataset, fm_class, outputdir=outputdir, fileprefix=prefix, numbasis=numbasis,
                     annuli=annulus_bounds, subsections=subsections, padding=padding, movement=movement)
 
