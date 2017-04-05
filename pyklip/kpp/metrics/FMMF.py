@@ -573,18 +573,18 @@ class FMMF(KPPSuperClass):
         # The mf.MatchedFilter class calculate the projection of the FM on the data for each pixel and images.
         # The final combination to form the cross  cross correlation, matched filter and contrast maps is done right
         # here.
-        FMCC_map = np.sum(fmout[0,:,:,:,:,:],axis=2) \
-                        / np.sqrt(np.sum(fmout[1,:,:,:,:,:],axis=2))
+        FMCC_map = np.nansum(fmout[0,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:],axis=2))
         FMCC_map[np.where(FMCC_map==0)]=np.nan
         self.FMCC_map = FMCC_map
 
-        FMMF_map = np.sum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
-                        / np.sqrt(np.sum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2))
+        FMMF_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2))
         FMMF_map[np.where(FMMF_map==0)]=np.nan
         self.FMMF_map = FMMF_map
 
-        contrast_map = np.sum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
-                        / np.sum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2)
+        contrast_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2)
         contrast_map[np.where(contrast_map==0)]=np.nan
         self.contrast_map = contrast_map
 

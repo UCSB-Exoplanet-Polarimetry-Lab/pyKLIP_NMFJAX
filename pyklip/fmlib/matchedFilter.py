@@ -104,6 +104,7 @@ class MatchedFilter(NoFM):
         self.spectrallib = spectrallib
         self.N_spectra = len(self.spectrallib)
 
+
         # create bounds for PSF stamp size
         self.row_m = int(np.floor(ny_psf/2.0))    # row_minus
         self.row_p = int(np.ceil(ny_psf/2.0))     # row_plus
@@ -357,13 +358,20 @@ class MatchedFilter(NoFM):
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
-                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub*postklip_psf[N_KL_id,where_fk])
+                if np.sum(np.isfinite(klipped_sub))/np.size(klipped_sub)<=0.75:
+                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                else:
+                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nansum(klipped_sub*postklip_psf[N_KL_id,where_fk])
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = \
-                                        np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
-                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id])
+                                        np.nansum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
+                if np.sum(np.isfinite(klipped[where_background,N_KL_id]))/np.size(klipped[where_background,N_KL_id])<=0.75:
+                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                else:
+                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nanvar(klipped[where_background,N_KL_id])
 
                 # Plot sector, klipped and FM model for debug only
-                if 0:
+                if 0 and np.nansum(klipped[where_fk,N_KL_id]) != 0:
+                    print(sep_fk,pa_fk,row_id,col_id)
                     #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
                     blackboard2 = np.zeros((self.ny,self.nx))
@@ -373,6 +381,7 @@ class MatchedFilter(NoFM):
                     plt.subplot(1,3,1)
                     blackboard1.shape = [input_img_shape[0] * input_img_shape[1]]
                     blackboard1[section_ind] = mask
+                    blackboard1[section_ind] = blackboard1[section_ind] + 1
                     blackboard1.shape = [input_img_shape[0],input_img_shape[1]]
                     plt.imshow(blackboard1)
                     plt.colorbar()
