@@ -105,6 +105,11 @@ class Ifs(Data):
 
         self._output = None
 
+        # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+        self.psfs_wvs = np.unique(self.wvs)
+        self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+        self.dn_per_contrast = np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs])
+
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
             self._filenums = self._filenums[keepslices]
@@ -568,4 +573,15 @@ filepath: path to file to output
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
+        # return img
+        if units == "contrast":
+            if spectral:
+                # spectral cube, each slice needs it's own calibration
+                numwvs = img.shape[0]
+                img /= self.dn_per_contrast[:numwvs, None, None]
+            else:
+                # broadband image
+                img /= np.nanmean(self.dn_per_contrast)
+            self.flux_units = "contrast"
+
         return img

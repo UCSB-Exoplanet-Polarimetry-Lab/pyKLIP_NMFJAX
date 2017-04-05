@@ -216,7 +216,7 @@ class MatchedFilter(NoFM):
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None,
                       ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, flipx=True, **kwargs):
         """
         Calculate and project the FM at every pixel of the sector. Store the result in fmout.
 
@@ -316,7 +316,7 @@ class MatchedFilter(NoFM):
                 # 1/ Inject a fake at one pa and sep in the science image
                 model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv,
                                                          radstart, radend, phistart, phiend, padding, ref_center,
-                                                         parang, ref_wv,sep_fk,pa_fk)
+                                                         parang, ref_wv,sep_fk,pa_fk, flipx)
                 # Normalize the science image according to the spectrum. the model is normalize to unit contrast,
                 model_sci = model_sci*self.spectrallib[spec_id][input_img_num]
                 where_fk = np.where(mask==2)[0]
@@ -326,7 +326,7 @@ class MatchedFilter(NoFM):
                 # references rotate.
                 if not self.disable_FM:
                     models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend,
-                                                      phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk)
+                                                      phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk, flipx)
 
                     # Normalize the models with the spectrum. the model is normalize to unit contrast,
                     input_spectrum = self.spectrallib[spec_id][ref_psfs_indicies]
@@ -358,19 +358,20 @@ class MatchedFilter(NoFM):
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
+                klipped_sub_finite = np.where(np.isfinite(klipped_sub))
                 if np.sum(np.isfinite(klipped_sub))/np.size(klipped_sub)<=0.75:
                     fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                 else:
-                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nansum(klipped_sub*postklip_psf[N_KL_id,where_fk])
+                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub[klipped_sub_finite]*postklip_psf[N_KL_id,where_fk][klipped_sub_finite])
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = \
-                                        np.nansum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
+                                        np.sum(postklip_psf[N_KL_id,where_fk][klipped_sub_finite]*postklip_psf[N_KL_id,where_fk][klipped_sub_finite])
                 if np.sum(np.isfinite(klipped[where_background,N_KL_id]))/np.size(klipped[where_background,N_KL_id])<=0.75:
                     fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                 else:
-                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nanvar(klipped[where_background,N_KL_id])
+                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id][klipped_sub_finite])
 
                 # Plot sector, klipped and FM model for debug only
-                if 0 and np.nansum(klipped[where_fk,N_KL_id]) != 0:
+                if 1:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
                     print(sep_fk,pa_fk,row_id,col_id)
                     #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
@@ -418,7 +419,7 @@ class MatchedFilter(NoFM):
             hdulist.writeto(self.fmout_dir,clobber=True)
         return
 
-    def generate_model_sci(self, input_img_shape, section_ind, pa, wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk):
+    def generate_model_sci(self, input_img_shape, section_ind, pa, wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk, flipx):
         """
         Generate model PSFs at the correct location of this segment of the science image denotated by its wv and
         parallactic angle.
@@ -439,6 +440,7 @@ class MatchedFilter(NoFM):
             ref_wv: wavelength of science image
             sep_fk: separation of the planet to be injected.
             pa_fk: position angle of the planet to be injected.
+            flipx: if True, flip x coordinate in final image
 
         Return: (models, mask)
             models: vector of size p where p is the number of pixels in the segment
@@ -464,6 +466,10 @@ class MatchedFilter(NoFM):
         # grab PSF given wavelength
         wv_index = [spec.find_nearest(self.input_psfs_wvs,wv)[1]]
 
+        sign = -1.
+        if flipx:
+            sign = 1.
+
         # The trigonometric calculation are save in a dictionary to avoid calculating them many times.
         recalculate_trig = False
         if pa not in self.psf_centx_notscaled:
@@ -472,8 +478,9 @@ class MatchedFilter(NoFM):
             if pa_fk != self.curr_pa_fk[pa] or sep_fk != self.curr_sep_fk[pa]:
                 recalculate_trig = True
         if recalculate_trig: # we could actually store the values for the different pas too...
-            self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - pa_fk - pa))
-            self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - pa_fk - pa))
+            # flipx requires the opposite rotation
+            self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - sign*pa_fk - pa))
+            self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - sign*pa_fk - pa))
             self.curr_pa_fk[pa] = pa_fk
             self.curr_sep_fk[pa] = sep_fk
 
@@ -503,7 +510,7 @@ class MatchedFilter(NoFM):
 
         # Define the masks for where the planet is and the background.
         r_grid = abs(x_grid +y_grid*1j)
-        pa_grid = (np.arctan2( x_grid,y_grid))% (2.0 * np.pi)
+        pa_grid = (np.arctan2(x_grid,y_grid))% (2.0 * np.pi)
         pastart = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) - float(padding)/sep_fk) % (2.0 * np.pi)
         paend = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) + float(padding)/sep_fk) % (2.0 * np.pi)
         if pastart < paend:
@@ -536,7 +543,7 @@ class MatchedFilter(NoFM):
 
         return segment_with_model,mask
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk,flipx):
         """
         Generate model PSFs at the correct location of this segment for each image denotated by its wv and parallactic
         angle.
@@ -557,6 +564,7 @@ class MatchedFilter(NoFM):
             ref_wv: wavelength of science image
             sep_fk: separation of the planet to be injected.
             pa_fk: position angle of the planet to be injected.
+            flipx: if True, flip x coordinate in final image
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -573,6 +581,10 @@ class MatchedFilter(NoFM):
         row_p = int(np.ceil(ny_psf/2.0))     # row_plus
         col_m = int(np.floor(nx_psf/2.0))    # col_minus
         col_p = int(np.ceil(nx_psf/2.0))     # col_plus
+
+        sign = -1.
+        if flipx:
+            sign = 1.
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -592,8 +604,8 @@ class MatchedFilter(NoFM):
                 if pa_fk != self.curr_pa_fk[pa] or sep_fk != self.curr_sep_fk[pa]:
                     recalculate_trig = True
             if recalculate_trig: # we could actually store the values for the different pas too...
-                self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - pa_fk - pa))
-                self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - pa_fk - pa))
+                self.psf_centx_notscaled[pa] = sep_fk * np.cos(np.radians(90. - sign*pa_fk - pa))
+                self.psf_centy_notscaled[pa] = sep_fk * np.sin(np.radians(90. - sign*pa_fk - pa))
                 self.curr_pa_fk[pa] = pa_fk
                 self.curr_sep_fk[pa] = sep_fk
 
