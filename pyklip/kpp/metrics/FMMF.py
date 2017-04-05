@@ -565,7 +565,8 @@ class FMMF(KPPSuperClass):
                                    N_pix_sector=self.N_pix_sector,
                                    save_klipped = self.save_klipped,
                                    OWA = self.OWA,
-                                   mute_progression = self.mute_progression)
+                                   mute_progression = self.mute_progression,
+                                   flipx = self.image_obj.flipx)
 
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         fmout[np.where(fmout==0)] = np.nan
