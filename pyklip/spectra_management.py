@@ -81,8 +81,11 @@ def get_specType(object_name,SpT_file_csv = None):
                               obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('Spectral type:'):
-                spec_type =line.replace("Spectral type: ","").split(" ")[0]
+            # if line.startswith('Spectral type:'):
+            if line.find('Spectral type:') != -1:
+                # print(line)
+                spec_type =line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
+
         try:
             return spec_type
         except:
@@ -95,6 +98,7 @@ def get_specType(object_name,SpT_file_csv = None):
         TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
         target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
         specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+
 
     try:
         return specTypes[target_names.index(object_name)]
