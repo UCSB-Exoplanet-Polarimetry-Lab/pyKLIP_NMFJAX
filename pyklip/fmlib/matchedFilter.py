@@ -118,10 +118,13 @@ class MatchedFilter(NoFM):
 
         x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
         psfs_func_list = []
-        for wv_index in range(numwv_psf):
-            model_psf = self.input_psfs[wv_index, :, :]
-            psf_func = interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5)
-            psfs_func_list.append(psf_func)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for wv_index in range(numwv_psf):
+                model_psf = self.input_psfs[wv_index, :, :]
+                psf_func = interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5)
+                psfs_func_list.append(psf_func)
 
         self.psfs_func_list = psfs_func_list
 
