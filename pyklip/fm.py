@@ -1401,7 +1401,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
-    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_nanpix = np.where(np.isnan(ref_psfs_mean_sub))
     ref_psfs_mean_sub[ref_nanpix] = 0
 
