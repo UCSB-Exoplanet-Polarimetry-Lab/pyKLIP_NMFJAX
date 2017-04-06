@@ -1412,9 +1412,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     covar_psfs = np.cov(ref_psfs_mean_sub)
     #also calculate correlation matrix since we'll use that to select reference PSFs
     covar_diag_sqrt = np.sqrt(np.diag(covar_psfs))
-    covar_diag_sqrt_inverse = 1./covar_diag_sqrt
+    covar_diag_sqrt_inverse = np.zeros(covar_diag_sqrt.shape)
+    where_zeros = np.where(covar_diag_sqrt != 0)
+    covar_diag_sqrt_inverse[where_zeros] = 1./covar_diag_sqrt[where_zeros]
     # any image where the diagonal is 0 is all NaNs and shouldn't be infinity
-    covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
+    # covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
     covar_diag = np.diagflat(covar_diag_sqrt_inverse)
     
     corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
