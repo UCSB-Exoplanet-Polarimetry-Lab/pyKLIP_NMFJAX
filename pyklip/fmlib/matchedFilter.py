@@ -260,8 +260,12 @@ class MatchedFilter(NoFM):
         y_grid=y_grid.astype(self.np_data_type)
         r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
         pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
-        paend= ((2*np.pi-phistart +np.pi/2.)% (2.0 * np.pi))
-        pastart = ((2*np.pi-phiend +np.pi/2.)% (2.0 * np.pi))
+        if flipx:
+            paend= ((-phistart + np.pi/2.)% (2.0 * np.pi))
+            pastart = ((-phiend + np.pi/2.)% (2.0 * np.pi))
+        else:
+            pastart = ((phistart - np.pi/2.)% (2.0 * np.pi))
+            paend= ((phiend - np.pi/2.)% (2.0 * np.pi))
         # Normal case when there are no 2pi wrap
         if pastart < paend:
             where_section = np.where((r_grid >= radstart) & (r_grid < radend) & (pa_grid >= pastart) & (pa_grid < paend))
@@ -371,7 +375,7 @@ class MatchedFilter(NoFM):
                     fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id][klipped_sub_finite])
 
                 # Plot sector, klipped and FM model for debug only
-                if 1:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
+                if 0:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
                     print(sep_fk,pa_fk,row_id,col_id)
                     #if 0:
                     blackboard1 = np.zeros((self.ny,self.nx))
@@ -510,13 +514,13 @@ class MatchedFilter(NoFM):
 
         # Define the masks for where the planet is and the background.
         r_grid = abs(x_grid +y_grid*1j)
-        pa_grid = (np.arctan2(x_grid,y_grid))% (2.0 * np.pi)
-        pastart = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) - float(padding)/sep_fk) % (2.0 * np.pi)
-        paend = (np.radians(pa_fk) -(2*np.pi-np.radians(pa)) + float(padding)/sep_fk) % (2.0 * np.pi)
-        if pastart < paend:
-            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & (pa_grid >= pastart) & (pa_grid < paend))
+        th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
+        thstart = (np.radians(pa_fk)- float(padding)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        thend = (np.radians(pa_fk) + float(padding)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        if thstart < thend:
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & (th_grid >= thstart) & (th_grid < thend))
         else:
-            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & ((pa_grid >= pastart) | (pa_grid < paend)))
+            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & ((th_grid >= thstart) | (th_grid < thend)))
         whiteboard[where_mask] = 1
         whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -524,6 +528,8 @@ class MatchedFilter(NoFM):
 
         # create a canvas to place the new PSF in the sector on
         if 0:#np.size(np.where(mask==2)[0])==0: 296
+            print(pa,pa_fk)
+            print(thstart,thend)
             whiteboard.shape = (input_img_shape[0], input_img_shape[1])
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -537,7 +543,7 @@ class MatchedFilter(NoFM):
             im = plt.imshow(blackboard+whiteboard)
             plt.colorbar(im)
             plt.subplot(1,3,3)
-            im = plt.imshow(np.degrees(pa_grid))
+            im = plt.imshow(np.degrees(th_grid))
             plt.colorbar(im)
             plt.show()
 
