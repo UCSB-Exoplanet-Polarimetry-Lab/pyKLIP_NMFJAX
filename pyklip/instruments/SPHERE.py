@@ -17,6 +17,7 @@ class Ifs(Data):
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
             If info_fits is None: info_fits = data_cube.replace("cube_coro","info")
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
+             If None, wavelength_info = data_cube.replace("cube_coro","wavelength")
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
@@ -106,17 +107,22 @@ class Ifs(Data):
         self._output = None
 
         # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+        # But it works with keepslices
         self.psfs_wvs = np.unique(self.wvs)
         self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
         self.dn_per_contrast = np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs])
 
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
-            self._filenums = self._filenums[keepslices]
-            self._centers = self._centers[keepslices]
-            self._wvs = self._wvs[keepslices]
-            self._PAs = self._PAs[keepslices]
-            self._filenames = self._filenames[keepslices]
+            self.nfiles = self.input.shape[0]
+            self.nwvs = self.input.shape[1]
+            self.filenums = self.filenums[keepslices]
+            self.centers = self.centers[keepslices]
+            self.wvs = self.wvs[keepslices]
+            self.PAs = self.PAs[keepslices]
+            self.filenames = self.filenames[keepslices]
+            self.dn_per_contrast = self.dn_per_contrast[keepslices]
+            self.wcs = self.wcs[keepslices]
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = os.path.basename(data_cube).split("_")[0]
@@ -313,7 +319,9 @@ class Irdis(Data):
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
+            If None, psf_cube = data_cube.replace("cube_coro","cube_psf")
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
+            If None, info_fits = data_cube.replace("cube_coro","info")
         wavelength_str: string to specifiy the band (e.g. "H2H3", "K1K2")
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         IWA: inner working angle of the data in arcsecs
@@ -342,8 +350,18 @@ class Irdis(Data):
                    "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2):
+    def __init__(self, data_cube, psf_cube=None, info_fits=None, wavelength_str=None, psf_cube_size=21, IWA=0.2,
+                 keepslices=None):
         super(Irdis, self).__init__()
+
+        # Defining default values for psf_cube and info_fits because kpop doesn't handle reading several files.
+        if psf_cube is None:
+            psf_cube = data_cube.replace("cube_coro","cube_psf")
+        if info_fits is None:
+            info_fits = data_cube.replace("cube_coro","info")
+        if wavelength_str is None:
+            raise ValueError("In Irdis, wavelength_str should be defined (e.g. 'H2H3', 'K1K2')")
+
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
@@ -391,6 +409,26 @@ class Irdis(Data):
 
         self._output = None
 
+        # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+        # But it works with keepslices
+        self.psfs_wvs = np.unique(self.wvs)
+        self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+        self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+
+        if keepslices is not None:
+            self.input = self.input[keepslices,:,:]
+            self.nfiles = self.input.shape[0]
+            self.nwvs = self.input.shape[1]
+            self.filenums = self.filenums[keepslices]
+            self.centers = self.centers[keepslices]
+            self.wvs = self.wvs[keepslices]
+            self.PAs = self.PAs[keepslices]
+            self.filenames = self.filenames[keepslices]
+            self.dn_per_contrast = self.dn_per_contrast[keepslices]
+            self.wcs = self.wcs[keepslices]
+
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = os.path.basename(data_cube).split("_")[0]
 
     ################################
     ### Instance Required Fields ###
