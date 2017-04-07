@@ -303,8 +303,8 @@ if __name__ == "__main__":
     else:
         print("I hope you are using a UNIX OS")
 
-    print 'Number of arguments:', len(sys.argv), 'arguments.'
-    print 'Argument List:', str(sys.argv)
+    print('Number of arguments:', len(sys.argv), 'arguments.')
+    print('Argument List:', str(sys.argv))
     print("CPU COUNT: {0}".format(mp.cpu_count()))
 
     ###########################################################################################
