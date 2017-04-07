@@ -1,8 +1,8 @@
 import glob
+import sys
 import os
 
-
-test_directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', '**', '*.py')
+test_directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', '**')
 def test_print(filesToCheck=test_directory):
     """
     Tests for bad print statements that will fail in python 3.
@@ -24,8 +24,18 @@ def test_print(filesToCheck=test_directory):
     """
 
     #gathers all python files in pyklip directory recursively
-    files = glob.iglob(filesToCheck, recursive=True)
-
+    if sys.version_info > (3,4):
+        #python 3.5+ behavior for recursive globbing
+        filesToCheck = filesToCheck + os.path.sep + '*.py'
+        files = glob.iglob(filesToCheck, recursive=True)    
+    else:
+        #python 2.2->3.4 behavior for recursive globbing
+        import fnmatch
+        files = []
+        for root, dirname, filenames in os.walk('..'):
+            for filename in fnmatch.filter(filenames, '*.py'):
+                files.append(os.path.join(root, filename))
+    
     #dictionary to hold all bad prints. (Key, Value) = ((string) File, (list) Line)
     bad_prints = {}
     for file_name in files:
