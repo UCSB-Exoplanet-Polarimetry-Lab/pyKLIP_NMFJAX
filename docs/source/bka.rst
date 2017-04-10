@@ -83,7 +83,7 @@ First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward mo
     # initialize the FM Planet PSF class
     import pyklip.fmlib.fmpsf as fmpsf
     fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
-                                 np.unique(dataset.wvs), dn_per_contrast, star_spt='A6', wavelengths='J',
+                                 np.unique(dataset.wvs), dn_per_contrast, star_spt='A6',
                                  spectrallib=[guessspec])
 
 .. note::
