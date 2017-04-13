@@ -30,7 +30,11 @@ from astropy.io import fits
 from astropy import units
 
 import argparse
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
 sys.path.append(".")
 import P1640spots
