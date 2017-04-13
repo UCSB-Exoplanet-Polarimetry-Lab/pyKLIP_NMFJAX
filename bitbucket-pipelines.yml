@@ -27,7 +27,7 @@ pipelines:
           - conda install -c https://conda.anaconda.org/astropy photutils
 
           #instal pyqt4
-          - apt-get install python-qt4
+          - apt-get -y install python-qt4
 
 
           #Coverage and Coverall hooking
