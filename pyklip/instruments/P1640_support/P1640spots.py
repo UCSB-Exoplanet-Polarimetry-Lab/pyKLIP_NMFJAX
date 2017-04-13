@@ -315,7 +315,8 @@ def check_bad_channels(rad_spot):
     bad_chans0 = np.where(rad_spot[1:] < rad_spot[:-1])[0]
     bad_chans1 = bad_chans0+1
     # convert to list and sort
-    bad_chans = zip(bad_chans0, bad_chans1)
+    bad_chans = list(zip(bad_chans0, bad_chans1))
+    temp3 = list(bad_chans)
     return bad_chans
 
 def fix_bad_channels(spot, centers, bad_chans):
@@ -544,8 +545,6 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
     Output:
         spot_array: Nspots x Nchan x 2 array of spot positions. 
     """
-    print('initializing')
-
     #################################
     # some unavoidable initializations
     nchan = cube.shape[0]
@@ -557,21 +556,17 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
                                      for i in spot_masks])
     #################################
 
-    print('initial pass')
     #################################
     # Initial pass
     init_spots = get_initial_spot_guesses(cube, rotated_spots)
-    print("fitting")
 
     # now, fit rest of spots using initial guesses
     spot_fits, spot_locs = fit_grid_spots(masked_cubes, init_centers, init_spots)
-    print("calculating")
     #################################
     # Calculate centers
     # At each channel, fit lines through opposing spots
     centers = get_single_cube_star_positions(spot_locs)
-    print("fixing")
-    # Fix 'bad' spots: 
+    # Fix 'bad' spots:
     # Fit the radial separation and get x and y from that
     fixed_spot_locs = np.copy(spot_locs)
     centered_spots = fixed_spot_locs - centers
@@ -579,15 +574,14 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
         rad_spots = np.linalg.norm(fixed_spot_locs[i] - centers,
                                    axis=-1)
         bad_channels = check_bad_channels(rad_spots)
-        print('before while')
         while len(list(bad_channels)) != 0:
-            print('while looping')
-            fixed_spot_locs[i] = fix_bad_channels(fixed_spot_locs[i], 
+            fixed_spot_locs[i] = fix_bad_channels(fixed_spot_locs[i],
                                                   centers, bad_channels)
             # update radial spot distances to check they've all been corrected
             rad_spots = np.linalg.norm(fixed_spot_locs[i] - centers, 
                                        axis=-1)
             bad_channels = check_bad_channels(rad_spots)
+
     # update centers using new positions
     centers = get_single_cube_star_positions(fixed_spot_locs)
 
@@ -597,8 +591,7 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
                                                  fixed_spot_locs)
     refined_masked_cubes =  ma.masked_array([ma.masked_array(cube, mask=i) 
                                              for i in refined_masks])
-    print("for loop 2")
-    # now, fit spots and again check for bad spots 
+    # now, fit spots and again check for bad spots
     refined_spot_locs = np.zeros(spot_locs.shape)
     for i in range(P1640params.num_spots):
         images = refined_masked_cubes[i]
@@ -607,15 +600,13 @@ def get_single_cube_spot_positions(cube, rotated_spots=False):
                                                           centers[chan], 
                                                           loc=fixed_spot_locs[i,chan])
             spot_fits[i][chan] = g
-    print("for loop 3")
     # check bad spots again
     for i in range(P1640params.num_spots):
         rad_spots = np.linalg.norm(refined_spot_locs[i] - centers, 
                                    axis=-1)
         bad_channels = check_bad_channels(rad_spots)
         while len(list(bad_channels)) != 0:
-            print("while loop 2")
-            refined_spot_locs[i] = fix_bad_channels(refined_spot_locs[i], 
+            refined_spot_locs[i] = fix_bad_channels(refined_spot_locs[i],
                                                     centers, bad_channels)
             # update radial spot distances to check they've all been corrected
             rad_spots = np.linalg.norm(refined_spot_locs[i] - centers,
@@ -636,15 +627,10 @@ def get_single_file_spot_positions(fitsfile, rotated_spots=False):
     """
     Wrapper for get_single_cube_spot_positions
     """
-    print('at single file')
     hdulist = fits.open(fitsfile)
-    print("opened")
     cube = hdulist[0].data
-    print("data")
     spot_positions = get_single_cube_spot_positions(cube, rotated_spots)
-    print('called cube spot')
     hdulist.close()
-    print("closed")
     return spot_positions
 
 
@@ -796,7 +782,7 @@ def get_star_positions(spot_array):
     
     # find the pairs of opposite spots
     # sorry for the confusing python shorthand
-    spot_list = range(num_spots)
+    spot_list = list(range(num_spots))
     pairs=[]
     pair1 = 0
     pairs.append([pair1, np.linalg.norm(spot_array[pair1] - spot_array, axis=-1).mean(axis=-1).argmax()])

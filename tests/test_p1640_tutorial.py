@@ -41,9 +41,7 @@ def test_p1640_tutorial():
     spot_filesuffix = '-spot'
     spot_fileext = 'csv'
     for test_file in good_cubes:
-        print("get single file pos")
         spot_positions = P1640spots.get_single_file_spot_positions(test_file, rotated_spots=False)
-        print("writing")
         P1640spots.write_spots_to_file(test_file, spot_positions, spot_filepath,
                                       spotid=spot_filesuffix, ext=spot_fileext,  overwrite=False)
     
@@ -62,7 +60,7 @@ def test_p1640_tutorial():
     dataset = P1640.P1640Data(filelist, spot_directory="shared_spot_folder/")
     parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsections=4, movement=3, numbasis=[1,20,100], calibrate_flux=False, mode="SDI")
 
-    p1640_globbed = glob.glob("output/")
+    p1640_globbed = glob.glob("output/*")
     assert(len(p1640_globbed) == 4)
 
 
