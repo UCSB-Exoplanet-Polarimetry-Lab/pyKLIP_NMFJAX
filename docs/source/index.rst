@@ -69,9 +69,8 @@ Contents
    bka
    fmmf_gpi
    diskfm_gpi
-   developing
+   developing/index
    pyklip
-   delevoping/index
 
 
 
