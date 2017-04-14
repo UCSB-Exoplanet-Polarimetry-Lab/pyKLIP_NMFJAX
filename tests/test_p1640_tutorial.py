@@ -35,8 +35,8 @@ def test_p1640_tutorial():
     #Fit grid spots
     # fit_grid_spots_path = os.getcwd() + os.path.sep + '..'
     # sys.path.append(fit_grid_spots_path)
-    sys.path.append("..")
-    import P1640spots
+    # sys.path.append("..")
+    import pyklip.P1640spots as P1640spots
     spot_filepath = 'shared_spot_folder/'
     spot_filesuffix = '-spot'
     spot_fileext = 'csv'
@@ -52,7 +52,7 @@ def test_p1640_tutorial():
     #capital Y and N. 
 
     #run KLIP in SDI mode
-    sys.path.append(os.path.join('..','..','..','..'))
+    # sys.path.append(os.path.join('..','..','..','..'))
     # run_KLIP_path = os.getcwd() + os.path.sep + os.path.join('..','..','..','..')
     # sys.path.append(run_KLIP_path)
     import pyklip.instruments.P1640 as P1640
