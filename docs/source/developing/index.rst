@@ -13,7 +13,6 @@ Here you will find everything you need to know about Docker for pyKLIP.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Using Docker
 
    setup
    using
@@ -25,7 +24,6 @@ Here we will lay out the testing infrastructure used for pyKLIP.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Testing Infrastructure
 
    coverage
    automated
