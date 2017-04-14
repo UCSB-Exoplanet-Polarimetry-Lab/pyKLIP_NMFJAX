@@ -19,7 +19,8 @@ import numpy as np
 import pandas as pd
 from scipy import interpolate
 
-
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
