@@ -1038,7 +1038,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     #all of the image centers are now at aligned_center
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
-
+    print("1", aligned_center)
 
     if save_aligned:
         aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape, dtype=dtype)
@@ -1364,6 +1364,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         totwvs = np.size(unique_wvs)
         dataset.output = []
         dataset.aligned_and_scaled = []
+
+        # because for ADI we are passing in a copy of dataset.centers due to the [thiswv] indexing
+        # klip_funciton doens't update the centers properly
+        if aligned_center is None:
+            aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
+
         for wvindex,unique_wv in enumerate(unique_wvs):
             if totwvs > 1:
                 print("Running KLIP ADI on slice {0}/{1}: {2:.3f} um".format(wvindex+1, totwvs, unique_wv))
@@ -1373,11 +1379,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 restored_aligned_thiswv = restored_aligned[np.where(unique_wv == unique_wvs)]
             else:
                 restored_aligned_thiswv = None
-
-            # because for ADI we are passing in a copy of dataset.centers due to the [thiswv] indexing
-            # klip_funciton doens't update the centers properly
-            if aligned_center is None:
-                aligned_center = [np.mean(centers[thiswv][:,0]), np.mean(centers[thiswv][:,1])]
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                     dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
@@ -1394,9 +1395,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             else:
                 dataset.output.append(klip_output)
 
-            # repropogate centering since again, klip_function doesn't save the centers due to pass by value
-            dataset.centers[thiswv][:,0] = aligned_center[0]
-            dataset.centers[thiswv][:,1] = aligned_center[1]
+        # repropogate centering since again, klip_function doesn't save the centers due to pass by value
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         dataset.output = np.array(dataset.output)
         dataset.aligned_and_scaled = np.array(dataset.aligned_and_scaled)
@@ -1427,6 +1428,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Derotating Images...")
         rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                                hdrs=dataset.wcs, new_center=aligned_center)
+
+        print("2", flattened_centers[0:10], aligned_center)
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
