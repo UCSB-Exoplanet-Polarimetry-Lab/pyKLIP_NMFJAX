@@ -1373,6 +1373,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 restored_aligned_thiswv = restored_aligned[np.where(unique_wv == unique_wvs)]
             else:
                 restored_aligned_thiswv = None
+
+            # because for ADI we are passing in a copy of dataset.centers due to the [thiswv] indexing
+            # klip_funciton doens't update the centers properly
+            if aligned_center is None:
+                aligned_center = [np.mean(centers[thiswv][:,0]), np.mean(centers[thiswv][:,1])]
+
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                     dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                     movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
@@ -1382,13 +1388,15 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                     save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
                                     dtype=dtype)
 
-
-
             if save_aligned:
                 dataset.output.append(klip_output[0])
                 dataset.aligned_and_scaled.append(klip_output[1][0])
             else:
                 dataset.output.append(klip_output)
+
+            # repropogate centering since again, klip_function doesn't save the centers due to pass by value
+            dataset.centers[thiswv][:,0] = aligned_center[0]
+            dataset.centers[thiswv][:,1] = aligned_center[1]
 
         dataset.output = np.array(dataset.output)
         dataset.aligned_and_scaled = np.array(dataset.aligned_and_scaled)
