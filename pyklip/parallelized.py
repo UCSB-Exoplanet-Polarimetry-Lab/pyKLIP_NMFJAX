@@ -1377,7 +1377,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # because for ADI we are passing in a copy of dataset.centers due to the [thiswv] indexing
             # klip_funciton doens't update the centers properly
             if aligned_center is None:
-                aligned_center = [np.mean(centers[thiswv][:,0]), np.mean(centers[thiswv][:,1])]
+                aligned_center = [np.mean(dataset.centers[thiswv][:,0]), np.mean(dataset.centers[thiswv][:,1])]
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                     dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
