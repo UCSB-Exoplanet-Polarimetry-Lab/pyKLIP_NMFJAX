@@ -15,11 +15,14 @@ Docker images are created from a set of commands in a dockerfile. What goes on t
 1. Create a file and name it dockerfile. There are three basic commands that go on a dockerfile.
     - FROM <Repository>:<Build> - This command will tell docker that this image is based off of another image. You can specify which build to use. To use the most up-to-date version of the image, use "latest" for build. 
     - RUN <Command> - This will run commands in a new layer and creates a new image. Typically used for installing necessary packages. You can have multiple RUN statements.
-    - CMD <Command> - This is the default command that will run once the image environment has been set up. You can only have ONE CMD statement. 
+    - CMD <Command> - This is the default command that will run once the image environment has been set up. You can only have ONE CMD statement.
+
     For more information on RUN vs CMD here is a `useful link <http://goinbigdata.com/docker-run-vs-cmd-vs-entrypoint/>`__.
+
 2. After you've made your file run the following command to create your image ::
     
         $ docker build -t <Image Name> <Path to Directory of Dockerfile>
+
 The ``-t`` flag lets you name the image. 
 
 For example, the docker file used for the pyklip image I set up above (under the "Using Docker" section) is made using a dockerfile with the following content: ::
@@ -59,6 +62,7 @@ Check that the image has been tagged ::
         REPOSITORY              TAG                 IMAGE ID            CREATED             SIZE
         pyklip-pipeline         latest              e9a584c685bb        13 days ago         2.37 GB
         simonko/pyklip          latest              e9a584c685bb        13 days ago         2.37 GB
+
 5. Login to Docker on terminal ::
         
         $ docker login
