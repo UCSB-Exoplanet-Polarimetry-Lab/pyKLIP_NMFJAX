@@ -29,7 +29,7 @@ from matplotlib.colors import LogNorm
 from astropy.io import fits
 from photutils import aperture_photometry, CircularAperture
 
-import P1640cores
+from . import P1640cores
 
 def calc_contrast_single_file(filename, core_info=None, chans='all'):
     """

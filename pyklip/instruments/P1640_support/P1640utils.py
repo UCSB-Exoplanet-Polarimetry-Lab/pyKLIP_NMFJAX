@@ -2,8 +2,8 @@
 
 import numpy as np
 
-import P1640cores
-import P1640contrast
+from . import P1640cores
+from . import P1640contrast
 
 """
 Various useful functions specific to the P1640 data

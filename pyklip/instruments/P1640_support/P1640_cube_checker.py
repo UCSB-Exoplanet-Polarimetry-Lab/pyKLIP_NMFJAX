@@ -36,13 +36,10 @@ if sys.version_info < (3,0):
 else:
     import configparser as ConfigParser
 
-sys.path.append(".")
-import P1640spots
-
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
 
-#plt.ion()
+# plt.ion()
 
 
 # use multiple threads - one for drawing the figure, and another for handling user input
