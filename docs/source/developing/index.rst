@@ -27,5 +27,3 @@ Here we will lay out the testing infrastructure used for pyKLIP.
 
    tests
    coverage
-   automated
-   writing
