@@ -643,7 +643,6 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         # theta = covert_pa_to_image_polar(pa, astr_hdr)
         x = sep*np.cos(np.radians(theta)) + center[0]
         y = sep*np.sin(np.radians(theta)) + center[1]
-        print(x,y)
         # calculate the flux
         flux, fwhm, xfit, yfit = gaussfit2d(frame, x, y, searchrad=searchrad, guessfwhm=guessfwhm, guesspeak=guesspeak, refinefit=refinefit)
         measured.append((flux, xfit, yfit, fwhm))

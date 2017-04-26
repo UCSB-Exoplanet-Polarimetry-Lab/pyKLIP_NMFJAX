@@ -24,13 +24,15 @@ you can use the reduced Beta Pic datacubes from the
 `GPI Public Data Release <https://www.gemini.edu/sciops/instruments/gpi/public-data>`_.
 
 Once you have reduced some data, we need to identify and parse through the GPI data from GPI specific information
-to standardized information for pyKLIP::
+to standardized information for pyKLIP
+
+.. code-block:: python
 
     import glob
     import pyklip.instruments.GPI as GPI
 
-    filelist = glob.glob("path/to/dataset/*.fits", highpass=True)
-    dataset = GPI.GPIData(filelist)
+    filelist = glob.glob("path/to/dataset/*.fits")
+    dataset = GPI.GPIData(filelist, highpass=True)
 
 This returns ``dataset``, an implementation of the abstract class :py:class:`pyklip.instruments.Instrument.Data` with standardized fields
 that are needed to perform the KLIP subtraction, none of which are instrument specific.
@@ -51,7 +53,8 @@ Running KLIP
 
 Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of the easily parallelizable computation, we will use the
 :mod:`pyklip.parallelized` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code
-::
+
+.. code-block:: python
 
     import pyklip.parallelized as parallelized
 
@@ -84,7 +87,11 @@ Geometry
 We have divided the image into 9 annuli and each annuli into 4
 sectors (which do not rotate with the sky) and run KLIP independently on each sector.
 Picking the geometry depends on the structure of the PSF, but we have
-found this to be pretty good for GPI data. 
+found this to be pretty good for GPI data.
+
+``annuli_spacing``
+""""""""""""""""""
+By default we break up the image into equal sized annuli (except for the last one that emcompasses the rest of the image), but sometimes we want smaller annuli closer in, since the stellar PSF changes rapidly there. In that case, we suggest setting ``annuli_spacing="log"`` so the widths of the annuli increases logarithmatically.
 
 "Aggressiveness"
 ^^^^^^^^^^^^^^^^
