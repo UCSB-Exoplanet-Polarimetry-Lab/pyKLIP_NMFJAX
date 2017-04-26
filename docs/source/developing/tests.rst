@@ -5,17 +5,17 @@
 Testing
 #######
 
-Here we will go over how we test and what our testing framework looks like at pyKLIP.
+Here we will go over how we test and what our testing infrastructure looks like at pyKLIP.
 
 All of our tests can be found in the ``tests`` directory. In the directory, each module or feature gets it's own test
 file, and inside every file each function is a different tests for the module/feature.
 
-The testing framework for pyKLIP can be broken down into the following steps:
+The testing workflow for pyKLIP can be broken down into the following steps:
 
 * Creating the tests
 * Documenting the tests
 * Running the tests
-* Adding the tests
+
 
 Creating Tests
 ==============
@@ -59,6 +59,9 @@ Docstring for tests should follow this format::
         Error: Exception.
     """
 
+Use the `following link <http://google.github.io/styleguide/pyguide.html?showone=Comments#Comments>`__ for more info on
+docstrings as well as python style in general.
+
 Running Tests
 =============
 All of our tests are run using pytest on the test directory on a docker anaconda image of our bitbucket pipeline. If
@@ -71,7 +74,7 @@ Here is a simple overview of the steps involved in running the tests in our pipe
 2. Creates a docker image of the latest continuum anaconda3.
 3. Git clones the pyklip repository inside image.
 4. Installs all necessary packages.
-5. Runs tests using pytest
+5. Runs tests using pytest on the test directory.
 6. Runs coverage analysis on our tests.
 7. Submits coverage report.
 
@@ -79,4 +82,13 @@ To simply run a single test you can either call the file directly using::
 
     $ python <Test file name>.py
 
-Otherwise we can also use pytest for more flexibility.
+Otherwise we can also use pytest for more flexibility::
+
+    $ python -m pytest [args]
+    $ pytest [args]
+
+The above line will invoke pytest through the Python interpreter and add the current directory to sys.path. Otherwise
+the second line is equivalent to the first.
+There are many arguments and many different ways to use pytest. To run a single test simply enter the path to the test
+file to run, to test all files in a directly use the path to the directory instead of a single file.
+For more information on how to use pytest and some of its various usages, visit `this link <https://docs.pytest.org/en/latest/usage.html#>`__.
