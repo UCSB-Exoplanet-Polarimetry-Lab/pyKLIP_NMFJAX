@@ -18,11 +18,10 @@ import argparse
 #for handling different python versions
 if sys.version_info < (3,0):
     import ConfigParser
-    from P1640spots import get_single_cube_star_positions
 else:
     import configparser as ConfigParser
-    from .P1640spots import get_single_cube_star_positions
 
+from pyklip.instruments.P1640_support.P1640spots import get_single_cube_star_positions
 from multiprocessing import Pool, Process, Queue
 
 import numpy as np
