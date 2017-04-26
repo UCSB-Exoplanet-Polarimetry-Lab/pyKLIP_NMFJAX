@@ -39,9 +39,10 @@ file can be found `here <https://coverage.readthedocs.io/en/coverage-4.3.4/confi
 file you can specify lines to skip, ignoring specific errors, where to output the coverage report, etc.
 
 .. note::
-    When running multiple coverage reports or using the multi-thread option, the command ``coverage combine`` is very
-    useful in that it will combine all the reports into one. Note that all the reports must be in the same directory
-    when running the command.
+    When running multiple coverage reports or using the multi-thread option, the command ``coverage combine`` is useful
+    in that it will combine all the reports into one. Multi-threading will spawn multiple processes which will each
+    have their own report so combining is very important for getting an accurate report. Note that all the reports must
+    be in the same directory when running the command.
 
 
 As a final note, I'd like to point out that, although code coverage is a great tool to have and use, it is not by itself
