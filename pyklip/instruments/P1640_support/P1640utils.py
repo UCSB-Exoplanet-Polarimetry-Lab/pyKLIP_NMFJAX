@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from . import P1640cores
-from . import P1640contrast
+import pyklip.instruments.P1640_support.P1640cores
+import pyklip.instruments.P1640_support.P1640contrast
 
 """
 Various useful functions specific to the P1640 data

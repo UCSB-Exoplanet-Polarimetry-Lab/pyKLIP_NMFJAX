@@ -19,8 +19,6 @@ import numpy as np
 import pandas as pd
 from scipy import interpolate
 
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib.colors import LogNorm
@@ -29,7 +27,7 @@ from matplotlib.colors import LogNorm
 from astropy.io import fits
 from photutils import aperture_photometry, CircularAperture
 
-from . import P1640cores
+import pyklip.instruments.P1640_support.P1640cores
 
 def calc_contrast_single_file(filename, core_info=None, chans='all'):
     """

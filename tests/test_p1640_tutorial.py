@@ -1,6 +1,8 @@
 import os
 import glob
 from time import time
+import matplotlib
+matplotlib.use('Agg')
 
 
 def test_p1640_tutorial():
