@@ -1,4 +1,4 @@
-.. _docker-stuff:
+.. _developing-label:
 
 Developing for pyKLIP
 =====================
@@ -25,6 +25,7 @@ Here we will lay out the testing infrastructure used for pyKLIP.
 .. toctree::
    :maxdepth: 2
 
+   tests
    coverage
    automated
    writing
