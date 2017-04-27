@@ -118,6 +118,7 @@ class MatchedFilter(NoFM):
 
         x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
         psfs_func_list = []
+        self.input_psfs[np.where(np.isnan(self.input_psfs))] = 0
         import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -133,6 +134,8 @@ class MatchedFilter(NoFM):
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
         self.stamp_PSF_mask[np.where(r_PSF_stamp < 7.)] = np.nan
+        # self.stamp_PSF_mask[np.where(r_PSF_stamp < 4.)] = np.nan
+
 
     # def alloc_interm(self, max_sector_size, numsciframes):
     #     """Allocates shared memory array for intermediate step
@@ -319,7 +322,6 @@ class MatchedFilter(NoFM):
             # 4/ Calculate the FM
             # 5/ Calculate dot product (matched filter)
             for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),row_id_list,col_id_list):
-
                 # 1/ Inject a fake at one pa and sep in the science image
                 model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv,
                                                          radstart, radend, phistart, phiend, padding, ref_center,
@@ -361,26 +363,41 @@ class MatchedFilter(NoFM):
                 #             0: dot product
                 #             1: square of the norm of the model
                 #             2: Local estimated variance of the data
-                sky = np.mean(klipped[where_background,N_KL_id])
+                sky = np.nanmean(klipped[where_background,N_KL_id])
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
                 klipped_sub_finite = np.where(np.isfinite(klipped_sub))
-                if np.sum(np.isfinite(klipped_sub))/np.size(klipped_sub)<=0.75:
-                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                # klipped_sub_nan = np.where(np.isnan(klipped_sub))
+                postklip_psf[N_KL_id,np.where(np.isnan(klipped))[0]] = np.nan
+                if float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub))<=0.75:
+                    dot_prod = np.nan
                 else:
-                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.sum(klipped_sub[klipped_sub_finite]*postklip_psf[N_KL_id,where_fk][klipped_sub_finite])
-                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = \
-                                        np.sum(postklip_psf[N_KL_id,where_fk][klipped_sub_finite]*postklip_psf[N_KL_id,where_fk][klipped_sub_finite])
-                if np.sum(np.isfinite(klipped[where_background,N_KL_id]))/np.size(klipped[where_background,N_KL_id])<=0.75:
-                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                    dot_prod = np.nansum(klipped_sub*postklip_psf[N_KL_id,where_fk])
+                model_norm = np.nansum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
+                klipped_rm_pl = klipped[:,N_KL_id]-sky-(dot_prod/model_norm)*postklip_psf[N_KL_id,:]
+                if float(np.sum(np.isfinite(klipped_rm_pl[where_background])))/float(np.size(klipped_rm_pl[where_background]))<=0.75:
+                    variance = np.nan
                 else:
-                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.var(klipped[where_background,N_KL_id][klipped_sub_finite])
+                    variance = np.nanvar(klipped_rm_pl[where_background])
+
+                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
+                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = model_norm
+                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = variance
 
                 # Plot sector, klipped and FM model for debug only
-                if 0:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
-                    print(sep_fk,pa_fk,row_id,col_id)
+                if 0 and row_id>=10:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
                     #if 0:
+                    # print(klipped_sub)
+                    # print(np.isfinite(klipped_sub))
+                    # print(np.size(klipped_sub))
+                    # print(float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub)))
+                    # print(float(np.sum(np.isfinite(klipped[where_background,N_KL_id])))/float(np.size(klipped[where_background,N_KL_id])))
+                    print(sep_fk,pa_fk,row_id,col_id)
+                    print(dot_prod,model_norm,variance)
+                    print(np.nanmean(klipped-sky),sky,dot_prod,model_norm,np.nanmean((dot_prod/model_norm)*postklip_psf[N_KL_id,:]))
+                    print(klipped.shape,postklip_psf[N_KL_id,:].shape)
+                    print(float(np.sum(np.isfinite(klipped_rm_pl[where_background]))),float(np.size(klipped_rm_pl[where_background])))
                     blackboard1 = np.zeros((self.ny,self.nx))
                     blackboard2 = np.zeros((self.ny,self.nx))
                     blackboard3 = np.zeros((self.ny,self.nx))
@@ -395,7 +412,8 @@ class MatchedFilter(NoFM):
                     plt.colorbar()
                     plt.subplot(1,3,2)
                     blackboard2.shape = [input_img_shape[0] * input_img_shape[1]]
-                    blackboard2[section_ind[0][where_fk]] = klipped[where_fk,N_KL_id]
+                    # blackboard2[section_ind[0][where_fk]] = klipped[where_fk,N_KL_id]
+                    blackboard2[section_ind[0]] = klipped_rm_pl
                     blackboard2.shape = [input_img_shape[0],input_img_shape[1]]
                     plt.imshow(blackboard2)
                     plt.colorbar()
@@ -499,15 +517,19 @@ class MatchedFilter(NoFM):
         l = int(round(psf_centx + ref_center[0]))
         k = int(round(psf_centy + ref_center[1]))
         # recenter coordinate system about the location of the planet
-        x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
-        y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+        # x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
+        # y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+        x_vec_stamp_centered = x_grid[0, np.max([(l-col_m),0]):np.min([(l+col_p),nx])]-psf_centx
+        y_vec_stamp_centered = y_grid[np.max([(k-row_m),0]):np.min([(k+row_p),ny]), 0]-psf_centy
         # rescale to account for the align and scaling of the refernce PSFs
         # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
         x_vec_stamp_centered /= (ref_wv/wv)
         y_vec_stamp_centered /= (ref_wv/wv)
 
         # use intepolation spline to generate a model PSF and write to temp img
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+        # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+        #         self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+        whiteboard[np.max([(k-row_m),0]):np.min([(k+row_p),ny]), np.max([(l-col_m),0]):np.min([(l+col_p),nx])] = \
                 self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
@@ -518,14 +540,19 @@ class MatchedFilter(NoFM):
         # Define the masks for where the planet is and the background.
         r_grid = abs(x_grid +y_grid*1j)
         th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
-        thstart = (np.radians(pa_fk)- float(padding)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
-        thend = (np.radians(pa_fk) + float(padding)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        w = self.stamp_PSF_mask.shape[0]//2
+        thstart = (np.radians(pa_fk)- float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        thend = (np.radians(pa_fk) + float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         if thstart < thend:
-            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & (th_grid >= thstart) & (th_grid < thend))
+            where_mask = np.where((r_grid>=(sep_fk-w)) & (r_grid<(sep_fk+w)) & (th_grid >= thstart) & (th_grid < thend))
         else:
-            where_mask = np.where((r_grid>=(sep_fk-padding)) & (r_grid<(sep_fk+padding)) & ((th_grid >= thstart) | (th_grid < thend)))
+            where_mask = np.where((r_grid>=(sep_fk-w)) & (r_grid<(sep_fk+w)) & ((th_grid >= thstart) | (th_grid < thend)))
         whiteboard[where_mask] = 1
-        whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
+        #TODO check the modification I did to these lines
+        whiteboard = np.pad(whiteboard,((row_m,row_p),(col_m,col_p)),mode="constant",constant_values=0)
+        # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
+        whiteboard[(k):(k+row_m+row_p), (l):(l+col_m+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
+        whiteboard = np.ascontiguousarray(whiteboard[row_m:row_m+input_img_shape[0],col_m:col_m+input_img_shape[1]])
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
         mask = whiteboard[section_ind]
 
@@ -536,7 +563,7 @@ class MatchedFilter(NoFM):
             whiteboard.shape = (input_img_shape[0], input_img_shape[1])
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
-            blackboard[section_ind] = 1#segment_with_model
+            blackboard[section_ind] = segment_with_model
             blackboard.shape = [input_img_shape[0],input_img_shape[1]]
             plt.figure(1)
             plt.subplot(1,3,1)
