@@ -25,7 +25,6 @@ def test_p1640_tutorial():
     # time it
     t1 = time()
 
-    # os.chdir(directory)
     os.system(tarball_get)
     os.system(tarball_command)
     filelist = glob.glob("*Occulted*fits")
