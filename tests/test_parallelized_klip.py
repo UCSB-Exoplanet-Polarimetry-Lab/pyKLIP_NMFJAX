@@ -12,8 +12,14 @@ import pyklip.parallelized as parallelized
 import pyklip.instruments.GPI as GPI
 import pyklip.fakes as fakes
 
-import unittest.mock as mock
-from unittest.mock import patch
+import sys
+if sys.version_info < (3,3):
+    import mock
+    from mock import patch
+else:
+    import unittest.mock as mock
+    from unittest.mock import patch
+
 
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
@@ -196,3 +202,4 @@ def test_mock_SDI(mock_klip_parallelized):
 
 if __name__ == "__main__":
     test_exmaple_gpi_klip_dataset()
+    test_mock_SDI()
