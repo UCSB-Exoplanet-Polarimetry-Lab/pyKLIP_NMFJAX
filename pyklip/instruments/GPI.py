@@ -1049,6 +1049,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
                     channels = 1
                 wvs = [0,]*channels
+                wv_indices = [0,]*channels
                 spot_fluxes = [0,]*channels
                 center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']],]*channels
                 spots_xloc = [0,]*channels
