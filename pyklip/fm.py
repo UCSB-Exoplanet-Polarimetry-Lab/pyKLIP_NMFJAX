@@ -839,16 +839,6 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     else:
         section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
 
-    ## JB debug
-    #print (radstart,radend)
-    #print (phistart/np.pi*180,phiend/np.pi*180)
-    #phi_rotate[section_ind] = np.nan
-    #phi_rotate.shape = (input_shape[0],input_shape[1])
-    #plt.subplot(121)
-    #plt.imshow(phi_rotate/np.pi*180)
-    #plt.colorbar()
-
-
     return section_ind
 
 
