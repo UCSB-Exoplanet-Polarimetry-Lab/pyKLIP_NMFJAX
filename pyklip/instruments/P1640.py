@@ -560,8 +560,10 @@ class P1640Data(Data):
             hdulist.append(fits.ImageHDU(header=ext, name="Data_{0:02d}".format(i)))
 
 
-        
-        hdulist.writeto(filepath, overwrite=True)
+        try:
+            hdulist.writeto(filepath, overwrite=True)
+        except TypeError:
+            hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
     def calibrate_output(self, units="contrast"):

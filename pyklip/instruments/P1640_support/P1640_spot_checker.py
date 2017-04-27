@@ -15,8 +15,13 @@ import glob
 import warnings
 
 import argparse
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
+from pyklip.instruments.P1640_support.P1640spots import get_single_cube_star_positions
 from multiprocessing import Pool, Process, Queue
 
 import numpy as np
@@ -26,9 +31,6 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import CirclePolygon
 
 from astropy.io import fits
-
-sys.path.append(".")
-from P1640spots import get_single_cube_star_positions
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 

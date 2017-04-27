@@ -80,7 +80,7 @@ or from the command line with
 ``wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data.tar.gz``
 Download the tarball and unpack the fits files into the
 ``tutorial/data`` folder with the command
-``tar -xvf data/P1640_tutorial_data.tar.gz``
+``tar -xvf P1640_tutorial_data.tar.gz``
 
 Living On The Edge Version
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,7 +107,7 @@ Easy-peasy.
 
     :::python
         import glob
-        filelist=glob.glob("data/*Occulted*fits")
+        filelist=glob.glob("*Occulted*fits")
 
 Vet the datacubes
 ~~~~~~~~~~~~~~~~~
@@ -164,7 +164,7 @@ read in the grid spot positions from a file.
 
 First, re-assemble your handy list of P1640 data.
 
-Grid spots MUST exist, and (for now) the MUST be in the normal
+Grid spots MUST exist, and (for now) they MUST be in the normal
 orientation. If this isn't true, then the code will hang.
 
 In order to fit the spots, we need the P1640spots module:
