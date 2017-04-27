@@ -50,7 +50,9 @@ class FMMF(KPPSuperClass):
                  keepPrefix = None,
                  compact_date_func = None,
                  filter_name_func = None,
-                 pix2as=None):
+                 pix2as=None,
+                 highpass = None,
+                 padding = None):
         """
         Define the general parameters of the matched filter.
 
@@ -109,7 +111,7 @@ class FMMF(KPPSuperClass):
                         not exactly the overlap of two real 2D PSF for a given instrument but it will behave similarly.
             mvt: minimum amount of movement (in pixels) of an astrophysical source
                       to consider using that image for a refernece PSF
-            OWA: if defined, the outer working angle for pyklip. Otherwise, it will pick it as the cloest distance to a
+            OWA: (disabled) if defined, the outer working angle for pyklip. Otherwise, it will pick it as the cloest distance to a
                 nan in the first frame
             N_pix_sector: Rough number of pixels in a sector. Overwriting subsections and making it sepration dependent.
                       The number of subsections is defined such that the number of pixel is just higher than N_pix_sector.
@@ -148,6 +150,8 @@ class FMMF(KPPSuperClass):
             filter_name_func: lambda function returning the name of the filter (e.g. "H", "J","K1"...) of the
                                 observation to be used in the output filename if keepPrefix is False.
             pix2as: Platescale (arcsec per pixel). (Used if fakes_only is True)
+            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                      can also be a number specifying FWHM of box in pixel units
 
         Return: instance of FMMF.
         """
@@ -166,6 +170,8 @@ class FMMF(KPPSuperClass):
         self.mute_progression = mute_progression
         self.SpT_file_csv = SpT_file_csv
         self.spectrum = spectrum
+
+        self.highpass = highpass
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -187,7 +193,11 @@ class FMMF(KPPSuperClass):
         self.PSF_cube_wvs = PSF_cube_wvs
 
         self.save_per_sector = None
-        self.padding = 10
+        if padding is None:
+            self.padding = 10
+        else:
+            self.padding = padding
+
         self.save_klipped = True
         self.true_fakes_pos = true_fakes_pos
 
@@ -213,7 +223,7 @@ class FMMF(KPPSuperClass):
             self.mvt = None
 
 
-        self.OWA = OWA
+        # self.OWA = OWA
         self.N_pix_sector = N_pix_sector
 
         if subsections is None:
@@ -477,7 +487,7 @@ class FMMF(KPPSuperClass):
             self.PSF_obj = self.PSF_read_func([self.PSF_cube_path])
             self.PSF_cube_arr = self.PSF_obj.input
             self.PSF_cube_wvs = self.PSF_obj.wvs
-            
+
         # read fakes from headers and give sepPa list to MatchedFilter
         if self.fakes_only:
             sep_list, pa_list = oi.get_pos_known_objects(self.fakeinfohdr,self.star_name,self.pix2as,OI_list_folder=None,
@@ -495,7 +505,7 @@ class FMMF(KPPSuperClass):
         for k,wv in enumerate(self.image_obj.wvs):
             aper_over_peak_ratio_tiled[k] = self.aper_over_peak_ratio[spec.find_nearest(self.PSF_cube_wvs,wv)[1]]
         # Summed DN flux of the star in the entire dataset calculated from dn_per_contrast
-        self.star_flux = np.sum(aper_over_peak_ratio_tiled*self.dn_per_contrast)
+        self.star_flux = np.nansum(aper_over_peak_ratio_tiled*self.dn_per_contrast)
         self.fake_contrast = 1. # ratio of flux of the planet/flux of the star (broad band flux)
         # normalize the spectra to unit contrast.
         self.spectrum_vec = self.spectrum_vec/np.sum(self.spectrum_vec)*self.star_flux*self.fake_contrast
@@ -551,6 +561,30 @@ class FMMF(KPPSuperClass):
             final_cube_modes: Classic klipped cubes for each # of KL modes.
         """
 
+        # high pass filter?
+        from pyklip.fm import high_pass_filter_imgs
+        if isinstance(self.highpass, bool):
+            if self.highpass:
+                self.image_obj.input = high_pass_filter_imgs(self.image_obj.input, numthreads=self.N_threads)
+        else:
+            # should be a number
+            if isinstance(self.highpass, (float, int)):
+                highpass = float(self.highpass)
+                fourier_sigma_size = (self.image_obj.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+                self.image_obj.input = high_pass_filter_imgs(self.image_obj.input, numthreads=self.N_threads, filtersize=fourier_sigma_size)
+
+        # import matplotlib.pyplot as plt
+        # plt.figure(1)
+        # plt.plot(self.image_obj.wvs,self.spectrum_vec)
+        # plt.figure(2)
+        # plt.plot(self.image_obj.wvs,self.host_star_spec)
+        # plt.figure(3)
+        # plt.plot(self.image_obj.wvs,self.star_sp)
+        # plt.show()
+        # #todo to remove
+        # self.spectrum_vec=self.spectrum_vec/self.spectrum_vec
+
+
         # Run KLIP with the forward model matched filter
         sub_imgs, fmout,tmp = fm.klip_parallelized(self.image_obj.input, self.image_obj.centers, self.image_obj.PAs, self.image_obj.wvs, self.image_obj.IWA, self.fm_class,
                                    numbasis=self.numbasis,
@@ -564,7 +598,7 @@ class FMMF(KPPSuperClass):
                                    padding = self.padding,
                                    N_pix_sector=self.N_pix_sector,
                                    save_klipped = self.save_klipped,
-                                   OWA = self.OWA,
+                                   OWA = self.image_obj.OWA,
                                    mute_progression = self.mute_progression,
                                    flipx = self.image_obj.flipx)
 
@@ -625,7 +659,6 @@ class FMMF(KPPSuperClass):
                           "KPPMAXNB":self.maxnumbasis,
                           "KPPFLXOV":str(self.flux_overlap),
                           "KPP_MVT":str(self.mvt),
-                          "KPP_OWA":str(self.OWA),
                           "KPPNPIXS":self.N_pix_sector,
                           "KPPSUBSE":str(self.subsections),
                           "KPPANNUL":str(self.annuli),
