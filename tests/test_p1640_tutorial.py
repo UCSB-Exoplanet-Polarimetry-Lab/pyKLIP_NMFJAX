@@ -1,11 +1,20 @@
 import os
+import sys
 import glob
 from time import time
+import numpy as np
+
+if sys.version_info < (3, 3):
+    from mock import patch
+else:
+    from unittest.mock import patch
+
 import matplotlib
 matplotlib.use('Agg')
 
-
-def test_p1640_tutorial():
+#sets up a patch object to mock.
+@patch('pyklip.parallelized.klip_parallelized')
+def test_p1640_tutorial(mock_klip_parallelized):
     """
     Tests P1640 support by running through the P1640 tutorial without the interactive parts.
      
@@ -16,6 +25,10 @@ def test_p1640_tutorial():
     The test also ignores all interactive modes such as vetting the cubes and grid spots. 
     
     """
+
+    #create a mocked klip parallelized
+    mock_klip_parallelized.return_value = np.zeros((3, 96, 281, 281))
+
     directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', 'pyklip', 'instruments',
                                                                                         'P1640_support', 'tutorial')
     tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data' \
