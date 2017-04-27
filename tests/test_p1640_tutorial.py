@@ -25,7 +25,7 @@ def test_p1640_tutorial():
     # time it
     t1 = time()
 
-    os.chdir(directory)
+    # os.chdir(directory)
     os.system(tarball_get)
     os.system(tarball_command)
     filelist = glob.glob("*Occulted*fits")
@@ -39,7 +39,7 @@ def test_p1640_tutorial():
 
     # Fit grid spots
     import pyklip.instruments.P1640_support.P1640spots as P1640spots
-    spot_filepath = 'shared_spot_folder/'
+    spot_filepath = directory + os.path.sep + 'shared_spot_folder/'
     spot_filesuffix = '-spot'
     spot_fileext = 'csv'
     for test_file in good_cubes:
@@ -54,11 +54,12 @@ def test_p1640_tutorial():
     # run KLIP in SDI mode
     import pyklip.instruments.P1640 as P1640
     import pyklip.parallelized as parallelized
-    dataset = P1640.P1640Data(filelist, spot_directory="shared_spot_folder/")
-    parallelized.klip_dataset(dataset, outputdir="output/", fileprefix="woohoo", annuli=5, subsections=4, movement=3,
+    dataset = P1640.P1640Data(filelist, spot_directory=spot_filepath)
+    output = directory + os.path.sep + "output/"
+    parallelized.klip_dataset(dataset, outputdir=output, fileprefix="woohoo", annuli=5, subsections=4, movement=3,
                               numbasis=[1, 20, 100], calibrate_flux=False, mode="SDI")
     # should have 4 outputted files
-    p1640_globbed = glob.glob("output/*")
+    p1640_globbed = glob.glob(output + "*")
     assert (len(p1640_globbed) == 4)
 
     print("{0} seconds to run".format(time() - t1))
