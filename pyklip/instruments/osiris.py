@@ -38,7 +38,10 @@ class Ifs_single_cube(Data):
     # class initialization
 
     # Coonstructor
-    def __init__(self, data_cube, telluric_cube, psf_cube_size=21, coaddslices=None, nan_mask_boxsize=0,median_filter_boxsize = 0,recalculate_center=False,badpix2nan=False):
+    def __init__(self, data_cube, telluric_cube,
+                 guess_center=None,recalculate_center=False,
+                 psf_cube_size=21,
+                 coaddslices=None, nan_mask_boxsize=0,median_filter_boxsize = 0,badpix2nan=False):
         super(Ifs_single_cube, self).__init__()
 
         # read in the data
@@ -53,13 +56,14 @@ class Ifs_single_cube(Data):
             self.filenames = [os.path.basename(data_cube),]*self.input.shape[0]
             self.nwvs = self.input.shape[0]
             # centers are at dim/2
-            #Hard-coded
-            # sep_planet = 0.950 #c
-            sep_planet = -1.724 #b
-            self._centers = np.array([[img.shape[1]/2.-sep_planet/ 0.02, img.shape[0]/2.] for img in self.input])
             init_wv = self.prihdr["CRVAL1"]/1000. # wv for first slice in mum
             dwv = self.prihdr["CDELT1"]/1000. # wv interval between 2 slices in mum
             self.wvs = np.arange(init_wv,init_wv+dwv*self.input.shape[0],dwv)
+
+        if guess_center is None:
+            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+        else:
+            self._centers = np.array([guess_center,]*self.input.shape[0])
 
         # TODO set the PAs right?
         self.PAs = np.zeros(self.wvs.shape)
@@ -115,7 +119,7 @@ class Ifs_single_cube(Data):
             self.psfs = np.zeros((psfs.shape[0],psf_cube_size,psf_cube_size))
             for k,im in enumerate(psfs):
                 corrflux, fwhm, spotx, spoty = gaussfit2d(im, center_guess[0], center_guess[1], searchrad=5, guessfwhm=3, guesspeak=np.nanmax(im), refinefit=True)
-                spotx, spoty = center_guess
+                #spotx, spoty = center_guess
                 psfs_centers.append((spotx, spoty))
                 self.star_peaks.append(corrflux)
 
@@ -210,6 +214,7 @@ class Ifs_single_cube(Data):
 
         if median_filter_boxsize != 0:
             self.input = median_filter(self.input,size=(1,median_filter_boxsize,median_filter_boxsize))
+            self.psfs = median_filter(self.psfs,size=(1,median_filter_boxsize,median_filter_boxsize))
 
         if nan_mask_boxsize != 0:
             # zeros are nans, and anything adjacient to a pixel less than zero is 0.
@@ -231,7 +236,7 @@ class Ifs_single_cube(Data):
         self.object_name = "HR8799"#self.prihdr["OBJECT"]
 
         if recalculate_center:
-            xcen0,ycen0 = (img.shape[1]/2.-sep_planet/ 0.02, img.shape[0]/2.)
+            xcen0,ycen0 = (self.input.shape[2]/2.-sep_planet/ 0.02, self.input.shape[1]/2.)
             range_list = [100,10,1]
             samples = 10
             for it,width in enumerate(range_list):
@@ -254,6 +259,13 @@ class Ifs_single_cube(Data):
 
                 xcen0 = xcen_grid.ravel()[np.argmin(cost_func)]
                 ycen0 = ycen_grid.ravel()[np.argmin(cost_func)]
+
+                # import matplotlib.pyplot as plt
+                # print(self.input.shape[2]/2.,sep_planet/ 0.02)
+                # print(self.input.shape[2]/2.-sep_planet/ 0.02, self.input.shape[1]/2.,xcen0,ycen0)
+                # cost_func.shape = (samples,samples)
+                # plt.imshow(cost_func,interpolation="nearest")
+                # plt.show()
 
         # else:
         #     # from scipy.optimize import leastsq
