@@ -17,7 +17,11 @@ from astropy.modeling import models, fitting
 
 from photutils import aperture_photometry, CircularAperture
 
-import ConfigParser
+if sys.version_info < (3,0):
+    # python 2.7 behavior
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
 class P1640params:
     num_spots = 4
