@@ -110,7 +110,7 @@ class Ifs_single_cube(Data):
             # Change center index order to match y,x convention
             psfs_centers = [(cent[1],cent[0]) for cent in psfs_centers]
             psfs_centers = np.array(psfs_centers)
-            center_guess = np.median(psfs_centers,axis=0)
+            center0 = np.median(psfs_centers,axis=0)
 
             # TODO Calculate precise centroid
             from pyklip.fakes import gaussfit2d
@@ -118,8 +118,8 @@ class Ifs_single_cube(Data):
             self.star_peaks = []
             self.psfs = np.zeros((psfs.shape[0],psf_cube_size,psf_cube_size))
             for k,im in enumerate(psfs):
-                corrflux, fwhm, spotx, spoty = gaussfit2d(im, center_guess[0], center_guess[1], searchrad=5, guessfwhm=3, guesspeak=np.nanmax(im), refinefit=True)
-                #spotx, spoty = center_guess
+                corrflux, fwhm, spotx, spoty = gaussfit2d(im, center0[0], center0[1], searchrad=5, guessfwhm=3, guesspeak=np.nanmax(im), refinefit=True)
+                #spotx, spoty = center0
                 psfs_centers.append((spotx, spoty))
                 self.star_peaks.append(corrflux)
 
@@ -236,7 +236,11 @@ class Ifs_single_cube(Data):
         self.object_name = "HR8799"#self.prihdr["OBJECT"]
 
         if recalculate_center:
-            xcen0,ycen0 = (self.input.shape[2]/2.-sep_planet/ 0.02, self.input.shape[1]/2.)
+            if guess_center is None:
+                xcen0,ycen0 = self.input.shape[2]/2., self.input.shape[1]/2.
+            else:
+                xcen0,ycen0 = guess_center
+
             range_list = [100,10,1]
             samples = 10
             for it,width in enumerate(range_list):
@@ -266,6 +270,8 @@ class Ifs_single_cube(Data):
                 # cost_func.shape = (samples,samples)
                 # plt.imshow(cost_func,interpolation="nearest")
                 # plt.show()
+            self.centers = np.array([(xcen0,ycen0),]*self.input.shape[0])
+
 
         # else:
         #     # from scipy.optimize import leastsq
@@ -479,7 +485,10 @@ def casdi_residual(xcen,ycen,input,wvs,nan2zero = False):
     #     # print(k,np.size(wvs))
     #     input_sub[k,:,:] = input_scaled[k,:,:] - np.nanmedian(input_scaled[np.max([0,k-lib_size]):np.min([np.size(wvs),k+lib_size]),:,:],axis=0)
 
-    input_sub = input_scaled - np.nanmedian(input_scaled,axis=0)[None,:,:]
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        input_sub = input_scaled - np.nanmedian(input_scaled,axis=0)[None,:,:]
 
     if nan2zero:
         input_sub[np.where(np.isnan(input_sub))] = 0
