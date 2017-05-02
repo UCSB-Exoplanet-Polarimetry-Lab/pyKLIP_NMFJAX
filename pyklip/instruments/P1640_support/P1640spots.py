@@ -19,7 +19,6 @@ from photutils import aperture_photometry, CircularAperture
 
 #for handling different python versions
 if sys.version_info < (3,0):
->>>>>>> 27646fced01f641e0396ebcebdccbd588dfe3475
     import ConfigParser
 else:
     import configparser as ConfigParser
