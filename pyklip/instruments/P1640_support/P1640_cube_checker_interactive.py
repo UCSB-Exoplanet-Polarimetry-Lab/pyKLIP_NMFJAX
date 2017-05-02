@@ -13,12 +13,11 @@ import warnings
 import glob
 
 import argparse
+#for handling different python versions
 if sys.version_info < (3,0):
-    # python 2.7 behavior
     import ConfigParser
 else:
     import configparser as ConfigParser
-
 
 import matplotlib as mpl
 try:

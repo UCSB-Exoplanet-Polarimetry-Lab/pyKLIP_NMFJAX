@@ -9,12 +9,15 @@ import os
 import glob
 import re
 
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
 import numpy as np
 import pandas as pd
 from scipy import interpolate
-
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -24,7 +27,7 @@ from matplotlib.colors import LogNorm
 from astropy.io import fits
 from photutils import aperture_photometry, CircularAperture
 
-import P1640cores
+import pyklip.instruments.P1640_support.P1640cores
 
 def calc_contrast_single_file(filename, core_info=None, chans='all'):
     """

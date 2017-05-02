@@ -30,12 +30,12 @@ class FMPlanetPSF(NoFM):
             dflux: guess for delta flux of planet averaged across band w.r.t star
             input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
             input_wvs: the wavelegnths that correspond to the input psfs
+                (doesn't need to be tiled to match the dimension of the input data of the instrument class)
             flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast. 
                              If None, assumes dflux is the ratio between the planet flux and tthe input_psfs flux
-            wavelengths: wavelengths of data. Can just be a string like 'H' for H-band
-            spectrallib: if not None, a list of spectra
+            spectrallib: if not None, a list of spectra based on input_wvs
             star_spt: star spectral type, if None default to some random one
-            refine_fit: refine the separation and pa supplied
+            refine_fit: (NOT implemented) refine the separation and pa supplied
         """
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)

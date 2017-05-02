@@ -30,8 +30,8 @@ from astropy.io import fits
 from astropy import units
 
 import argparse
+#for handling different python versions
 if sys.version_info < (3,0):
-    # python 2.7 behavior
     import ConfigParser
 else:
     import configparser as ConfigParser
@@ -39,12 +39,12 @@ else:
 # needed to import from outside this folder
 base_dir = os.path.dirname(__file__) or '.'
 sys.path.append(base_dir)
-import P1640spots
+import pyklip.instruments.P1640_support.P1640spots
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
 
-#plt.ion()
+# plt.ion()
 
 
 # use multiple threads - one for drawing the figure, and another for handling user input
