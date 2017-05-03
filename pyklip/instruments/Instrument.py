@@ -435,7 +435,10 @@ class GenericData(Data):
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-        hdulist.writeto(filepath, overwrite=True)
+        try:
+            hdulist.writeto(filepath, overwrite=True)
+        except TypeError:
+            hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
     def calibrate_output(self, img, spectral=False):
