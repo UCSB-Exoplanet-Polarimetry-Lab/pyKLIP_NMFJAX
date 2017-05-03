@@ -18,7 +18,7 @@ class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, star_spt=None, refine_fit=False):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False):
         """
         Defining the planet to characterizae
 
@@ -27,13 +27,14 @@ class FMPlanetPSF(NoFM):
             numbasis: 1d numpy array consisting of the number of basis vectors to use
             sep: separation of the planet
             pa: position angle of the planet
-            dflux: guess for delta flux of planet averaged across band w.r.t star
+            dflux: guess for contrast of planet averaged across band w.r.t star
             input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
             input_wvs: the wavelegnths that correspond to the input psfs
                 (doesn't need to be tiled to match the dimension of the input data of the instrument class)
             flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast. 
                              If None, assumes dflux is the ratio between the planet flux and tthe input_psfs flux
             spectrallib: if not None, a list of spectra based on input_wvs
+            spectrallib_units: can be either "flux"" or "contrast". Flux units requires dividing by the flux of the star to get contrast 
             star_spt: star spectral type, if None default to some random one
             refine_fit: (NOT implemented) refine the separation and pa supplied
         """
@@ -45,6 +46,9 @@ class FMPlanetPSF(NoFM):
         self.sep = sep
         self.pa = pa
         self.dflux = dflux
+
+        if spectrallib_units.lower() != "flux" and spectrallib_units.lower() != "contrast":
+            raise ValueError("spectrallib_units needs to be either 'flux' or 'contrast', not {0}".format(spectrallib_units))
 
         # only need spectral info if not broadband
         numwvs = np.size(input_wvs)
@@ -58,7 +62,9 @@ class FMPlanetPSF(NoFM):
 
             # TODO: calibrate to contrast units
             # calibrate spectra to DN
-            self.spectrallib = [spectrum/(specmanage.get_star_spectrum(input_wvs, star_type=star_spt)[1]) for spectrum in self.spectrallib]
+            if spectrallib_units.lower() == "flux":
+                # need to divide by flux of the star to get contrast units
+                self.spectrallib = [spectrum/(specmanage.get_star_spectrum(input_wvs, star_type=star_spt)[1]) for spectrum in self.spectrallib]
             self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
         else:
             self.spectrallib = [np.array([1])]
