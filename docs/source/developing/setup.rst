@@ -9,12 +9,12 @@ Installation
 ^^^^^^^^^^^^
 We will be using the community edition of Docker.
 
-For Windows and Mac, installation instructions and requirements can be found `here <https://docs.docker.com/engine/installation/>`__.
-
 For Ubuntu Linux ::
 
         sudo apt-get update
         sudo apt-get install docker-ce
+
+For all other OSes, installation instructions and requirements can be found `here <https://docs.docker.com/engine/installation/>`__.
 
 
 Setup
@@ -43,7 +43,7 @@ This is usually combined into the flag ``-it``. If you don't specify a tag, it'l
         $ docker run -it simonko/pyklip:latest /bin/bash
 
 4. When you're done with the container, simply type ``exit`` and your session will end. If you get the message that
-states there is a process running, simply type exit again and it'll exit the session.
+states there is a process running, simply type ``exit`` again and it'll exit the session.
 5. After you've made your container you should be able to see it with ::
         
         $ docker ps -a
@@ -56,4 +56,4 @@ the interactive shell. ::
         $ docker start <container name>
         $ docker attach <container name>
 
-For a very basic tutorial on Docker and how to use it, check out the docker docs and their tutorials `here <https://docs.docker.com/engine/getstarted/step_three/#step-2-run-the-whalesay-image>`__. There are a lot of helpful tutorials and information there. 
+For a very basic tutorial on Docker and how to use it, check out the Docker docs and tutorials `here <https://docs.docker.com/engine/getstarted/step_three/#step-2-run-the-whalesay-image>`__. There are a lot of helpful tutorials and information there. 
