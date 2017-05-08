@@ -175,9 +175,12 @@ class MatchedFilter(NoFM):
                             2: Local estimated variance of the data
 
         """
-        fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
+        # fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
+        # fmout = mp.Array(self.mp_data_type, fmout_size)
+        # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
         fmout = mp.Array(self.mp_data_type, fmout_size)
-        fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
 
         return fmout, fmout_shape
 
@@ -330,6 +333,7 @@ class MatchedFilter(NoFM):
                 model_sci = model_sci*self.spectrallib[spec_id][input_img_num]
                 where_fk = np.where(mask==2)[0]
                 where_background = np.where(mask>=1)[0] # Caution: it includes where the fake is...
+                where_background_strict = np.where(mask==1)[0]
 
                 # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
                 # references rotate.
@@ -363,7 +367,7 @@ class MatchedFilter(NoFM):
                 #             0: dot product
                 #             1: square of the norm of the model
                 #             2: Local estimated variance of the data
-                sky = np.nanmean(klipped[where_background,N_KL_id])
+                sky = np.nanmean(klipped[where_background_strict,N_KL_id])
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
@@ -378,12 +382,15 @@ class MatchedFilter(NoFM):
                 klipped_rm_pl = klipped[:,N_KL_id]-sky-(dot_prod/model_norm)*postklip_psf[N_KL_id,:]
                 if float(np.sum(np.isfinite(klipped_rm_pl[where_background])))/float(np.size(klipped_rm_pl[where_background]))<=0.75:
                     variance = np.nan
+                    npix = np.nan
                 else:
                     variance = np.nanvar(klipped_rm_pl[where_background])
+                    npix = np.sum(np.isfinite(klipped_rm_pl[where_background]))
 
                 fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = model_norm
                 fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = variance
+                fmout[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = npix
 
                 # Plot sector, klipped and FM model for debug only
                 if 0 and row_id>=10:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
