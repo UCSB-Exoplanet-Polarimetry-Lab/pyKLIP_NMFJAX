@@ -370,6 +370,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         model_sci: array of size p corresponding to the PSF of the science frame
         input_spectrum: array of size wv with the assumed spectrum of the model
 
+    If delta_KL_nospec does NOT include a spectral dimension or if inputflux is not None:
     Returns:
         fm_psf: array of shape (b,p) showing the forward modelled PSF
                 Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
@@ -377,6 +378,11 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
         Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
               (shape of b,p)
+
+    If inputflux = None and if delta_KL_nospec include a spectral dimension:
+    Returns:
+        klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (size(numbasis),Npix)
+        klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
     """
     if np.size(numbasis) == 1:
         return calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = inputflux)
@@ -497,6 +503,7 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         model_sci: array of size p corresponding to the PSF of the science frame
         input_spectrum: array of size wv with the assumed spectrum of the model
 
+    If delta_KL_nospec does NOT include a spectral dimension or if inputflux is not None:
     Returns:
         fm_psf: array of shape (b,p) showing the forward modelled PSF
                 Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
@@ -504,6 +511,12 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
         Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
               (shape of b,p)
+
+    If inputflux = None and if delta_KL_nospec include a spectral dimension:
+    Returns:
+        klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (size(numbasis),Npix)
+        klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+
     """
     max_basis = original_KL.shape[0]
     if numbasis[0]==None:
