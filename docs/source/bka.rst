@@ -69,6 +69,12 @@ forward model the PSF of a planet through KLIP.
 
 First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward model the planet in our data.
 
+For GPI, we are using normalized copies of the satellite spots as our input PSFs, and because of that, we need to pass in
+a flux conversion value, ``dn_per_contrast``, that allows us to scale our ``guessflux`` in contrast units to data units. If
+you are not using normalized PSFs, ``dn_per_contrast`` should be the factor that scales your input PSF to the flux of the 
+unocculted star. If your input PSF is already scaled to the flux of the stellar PSF, ``dn_per_contrast`` is optional 
+and should not actually be passed into the function.
+
 .. code-block:: python
 
     # setup FM guesses
@@ -77,7 +83,7 @@ First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward mo
     guesssep = 30.1 # estimate of separation in pixels
     guesspa = 212.2 # estimate of position angle, in degrees
     guessflux = 5e-5 # estimated contrast
-    dn_per_contrast = your_flux_conversion # DN/contrast ratio. For GPI, this is dataset.dn_per_contrast
+    dn_per_contrast = your_flux_conversion # factor to scale PSF to star PSF. For GPI, this is dataset.dn_per_contrast
     guessspec = your_spectrum # should be 1-D array with number of elements = np.size(np.unique(dataset.wvs))
 
     # initialize the FM Planet PSF class
