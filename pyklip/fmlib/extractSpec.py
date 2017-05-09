@@ -408,12 +408,29 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
 
     # If 'dataset' does not already have psf model, generate them. 
     if hasattr(dataset, "psfs"):
+        print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
         radial_psfs = dataset.psfs / \
             (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
     else:
-        dataset.generate_psf_cube(20)
-        radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+        try:
+            print "Using generate_psfs to make psf model, this is probably GPI data."
+            dataset.generate_psf_cube(20)
+            radial_psfs = dataset.psfs / \
+                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
+        except:
+            # If this dataset does not have a working generate_psfs method, just make a gaussian psf
+            print "generate_psfs failed... Generating Gaussian PSFs..."
+            fwhm = lam/D
+            # Gaussian standard deviation
+            sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
+
+            #centered in the array
+            y,x = np.indices([stamp, stamp])
+            y -= stamp // 2
+            x -= stamp // 2
+            nl = len(np.unique(data.wvs))
+            radial_psfs = np.zeros((nl, stamp, stamp))
+            psf = amplitude * np.exp(-(x**2. + y**2.) / (2. * sigma**2)
 
     fm_class = ExtractSpec(dataset.input.shape,
                                   numbasis,
@@ -452,7 +469,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
     #                                           maxnumbasis=maxnumbasis)
     return dataset.fmout
 
-def invert_spect_fmodel(fmout, dataset, method = "JB"):
+def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     """
     A. Greenbaum Nov 2016
     
@@ -461,6 +478,10 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
                [numbasis, n_frames, n_frames+1, npix]
         dataset: from GPI.GPIData(filelist) -- typically set highpass=True also
         method: "JB" or "LP" to try the 2 different inversion methods (JB's or Laurent's)
+        units: "DN" means raw data number units (not converted to contrast)
+               "CONTRAST" is normalized to contrast units. You can only use this if
+                          spot fluxes are saved in dataset.spot_flux
+               default is 'DN' require user to do their own calibration for contrast.
     Returns:
         A spectrum! (In contrast units), size (numbasis, nwav)
     """
@@ -524,6 +545,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
     # We will convert the spectrum to contrast and flux, if a stellar spectrum is provided
     wavs = dataset.wvs[:nl]
 
+    '''
     # JB's normalization terms:
     dataset.generate_psf_cube(20)
     PSF_cube = copy(dataset.psfs)
@@ -536,15 +558,20 @@ def invert_spect_fmodel(fmout, dataset, method = "JB"):
         sat_spot_flux_for_calib = sat_spot_flux_for_calib + \
                                   np.nansum(dataset.spot_flux[k*nl:(k+1)*nl])*aper_over_peak_ratio
     sat_spot_flux_for_calib = sat_spot_flux_for_calib/N_cubes
+    '''
 
-    # Alex's normalization terms:
-    # Avg spot ratio
-    spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
-    spot_to_star_ratio = dataset.spot_ratio[dataset.band]
-    normfactor = spot_flux_spectrum / spot_to_star_ratio
-    spec_unit = "CONTRAST"
+    if units == 'CONTRAST':
+        # Alex's normalization terms:
+        # Avg spot ratio
+        spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+        spot_to_star_ratio = dataset.spot_ratio[dataset.band]
+        normfactor = spot_flux_spectrum / spot_to_star_ratio
+        spec_unit = "CONTRAST"
 
-    return estim_spec / normfactor
+        return estim_spec / normfactor
+    else:
+        spec_unit = "DN"
+        return estim_spec
 
 
 def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3):
