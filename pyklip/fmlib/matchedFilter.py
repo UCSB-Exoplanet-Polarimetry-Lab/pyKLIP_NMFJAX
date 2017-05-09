@@ -86,6 +86,9 @@ class MatchedFilter(NoFM):
         self.nx = self.inputs_shape[2]
         self.N_frames = self.inputs_shape[0]
 
+        if filter_name is None:
+            filter_name = "H"
+
         self.fakes_sepPa_list = fakes_sepPa_list
         if disable_FM is None:
             self.disable_FM = False
@@ -173,6 +176,7 @@ class MatchedFilter(NoFM):
                             0: dot product
                             1: square of the norm of the model
                             2: Local estimated variance of the data
+                            3: Number of pixels used in the matched filter
 
         """
         # fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
