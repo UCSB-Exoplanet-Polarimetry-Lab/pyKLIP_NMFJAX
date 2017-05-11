@@ -676,8 +676,8 @@ class GPIData(Data):
                     xarr_spot = np.round(spotx)
                     yarr_spot = np.round(spoty)
                     # Extract a stamp around the sat spot
-                    stamp = cleaned[(yarr_spot-np.floor(boxw/2.0)):(yarr_spot+np.ceil(boxw/2.0)),\
-                                    (xarr_spot-np.floor(boxw/2.0)):(xarr_spot+np.ceil(boxw/2.0))]
+                    stamp = cleaned[int(yarr_spot-np.floor(boxw/2.0)):int(yarr_spot+np.ceil(boxw/2.0)),\
+                                    int(xarr_spot-np.floor(boxw/2.0)):int(xarr_spot+np.ceil(boxw/2.0))]
                     # Define coordinates grids for the stamp
                     stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=np.float32), np.arange(boxw, dtype=np.float32))
                     # Calculate the shift of the sat spot centroid relative to the closest pixel.
