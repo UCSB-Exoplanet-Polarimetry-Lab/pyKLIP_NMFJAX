@@ -166,22 +166,21 @@ def get_specType(object_name,SpT_file_csv = None):
 
         return spec_type
 
-def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = None):
+def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mute = None):
     """
     Get the spectrum of a star with given spectral type interpolating in the pickles database.
-    The sampling is the one of pipeline reduced cubes.
     The spectrum is normalized to unit mean.
     Work only for type V star.
 
     Inputs:
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'
+        wvs_or_filter_name: list of wavelengths or GPI filter 'H', 'J', 'K1', 'K2', 'Y'.
         star_type: 'A5','F4',... Is ignored if temperature is defined.
                 If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
 
     Output:
         (wavelengths, spectrum) where
-            wavelengths: is the gpi sampling of the considered band in mum.
+            wavelengths: Sampling in mum.
             spectrum: is the spectrum of the star for the given band.
     """
 
@@ -191,12 +190,18 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
         mute = False
 
     # sampling_pip = get_gpi_wavelength_sampling(filter_name)
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
+    if isinstance(wvs_or_filter_name, str):
+        w_start, w_end, N_sample = band_sampling[wvs_or_filter_name]
+        dw = (w_end-w_start)/N_sample
+        sampling_wvs = np.arange(w_start,w_end,dw)
+    else:
+        sampling_wvs = wvs_or_filter_name
+
+    sampling_wvs_unique = np.unique(sampling_wvs)
+
 
     if star_type is None:
-        return sampling_pip,None
+        return sampling_wvs,None
 
     if len(star_type) > 2:
         star_type_selec = star_type[0:2]
@@ -212,7 +217,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
         except:
             if not mute:
                 print("Returning None. Couldn't parse spectral type.")
-            return sampling_pip,None
+            return sampling_wvs,None
 
     # Sory hard-coded type...
     if star_type_selec == "K8":
@@ -244,7 +249,7 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
         except:
             if not mute:
                 print("Returning None. Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
-            return sampling_pip,None
+            return sampling_wvs,None
     else:
         target_temp = temperature
 
@@ -303,33 +308,17 @@ def get_star_spectrum(filter_name,star_type = None, temperature = None,mute = No
     # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
     lower_spec = np.array(lower_spec)*delta_wave
 
+    sampling_wvs_unique0 = np.insert(sampling_wvs_unique[:-1],0,sampling_wvs_unique[0])
+    sampling_wvs_unique1 = np.insert(sampling_wvs_unique[1::],-1,sampling_wvs_unique[-1])
+    upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
+    lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
 
-    upper_counts_per_bin, bin_edges = np.histogram(upper_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=upper_spec)
-    lower_counts_per_bin, bin_edges = np.histogram(lower_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=lower_spec)
-    N_samples_per_bin, bin_edges = np.histogram(upper_wave, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=None)
+    spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
 
-    upper_spec_pip = upper_counts_per_bin/N_samples_per_bin
-    lower_spec_pip = lower_counts_per_bin/N_samples_per_bin
+    f = interp1d(sampling_wvs_unique, spec_pip_unique)
+    spec_pip = f(sampling_wvs)
 
-    spec_pip = ((target_temp-lower_temp)*upper_spec_pip+(upper_temp-target_temp)*lower_spec_pip)/(upper_temp-lower_temp)
-
-    # if 0:
-    #     plt.figure(1)
-    #     plt.plot(upper_wave,upper_spec,'r')
-    #     plt.plot(lower_wave,lower_spec,'g')
-    #     plt.plot(spec_pip,spec_pip,'b')
-    #
-    #     plt.figure(2)
-    #     print(lower_temp,target_temp,upper_temp)
-    #     where_gpi_band = np.where((upper_wave < w_end) * (upper_wave > w_start) )
-    #     plt.plot(upper_wave[where_gpi_band],upper_spec[where_gpi_band],'r')
-    #     plt.plot(lower_wave[where_gpi_band],lower_spec[where_gpi_band],'g')
-    #     plt.plot(sampling_pip,upper_spec_pip,'r--')
-    #     plt.plot(sampling_pip,lower_spec_pip,'g--')
-    #     plt.plot(sampling_pip,spec_pip,'b--')
-    #     plt.show()
-
-    return (sampling_pip,spec_pip/np.nanmean(spec_pip))
+    return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
 
 def get_planet_spectrum(filename,wavelength):
     """

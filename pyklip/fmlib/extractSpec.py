@@ -401,12 +401,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     N_cubes = len(dataset.exthdrs) # ? what attribute has this info?
     nl = N_frames / N_cubes
 
-    print "===================================="
-    print "planet separation, pa:", pars
-    print "numbasis:", numbasis
-    print "movement:", mv
-    print "===================================="
-    print "Generating forward model..."
+    print("====================================")
+    print("planet separation, pa: {0}".format(pars))
+    print("numbasis: {0}".format(numbasis))
+    print("movement: {0}".format(mv))
+    print("====================================")
+    print("Generating forward model...")
 
     planet_sep, planet_pa = pars
 
@@ -450,12 +450,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
         radial_psfs /= np.mean(radial_psfs.sum(axis=0)
 
     fm_class = ExtractSpec(dataset.input.shape,
-                                  numbasis,
-                                  planet_sep,
-                                  planet_pa,
-                                  radial_psfs,
-                                  np.unique(dataset.wvs),
-                                  stamp_size = stamp_size)
+                           numbasis,
+                           planet_sep,
+                           planet_pa,
+                           radial_psfs,
+                           np.unique(dataset.wvs),
+                           stamp_size = stamp_size)
 
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
@@ -523,7 +523,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
         for k in range(N_cubes):
             klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
-        print klipped_coadd.shape
+        print(klipped_coadd.shape)
         klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
         FM_noSpec = fmout[ii, :,:N_frames, :]
 
@@ -556,7 +556,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             estim_spec[ii,:] = np.dot(np.linalg.inv(A), b)
 
         else:
-            print "method not understood. Choose either JB or LP."
+            print("method not understood. Choose either JB or LP.")
 
     # Ok now we want to normalize by the right values to give the spectrum in the right units
     # We will convert the spectrum to contrast and flux, if a stellar spectrum is provided
@@ -591,7 +591,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         return estim_spec
 
 
-def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3):
+def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False):
     """
     Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
      The steps here:
@@ -608,6 +608,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
         - klip movement (how aggressive?), default=1.0 pixel
         - stamp size, default=10 pixels
         - numbasis - K-L cuttoff
+        - contrast [False] True: units of contrast. False: units of DN
     Returns:
         A dictionary containg the extracted spectrum from both matrix inversion 
         styles (FLUX_JB, FLUX_LP), and measured errors (ERR_JB, ERR_LP)
@@ -618,9 +619,9 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     if not hasattr(numbasis, "__iter__"):
         num_k_klip = 1
     else:
-        print hasattr(numbasis, "__iter__")
-        print type(numbasis)
-        print numbasis
+        print(hasattr(numbasis, "__iter__"))
+        print(type(numbasis))
+        print(numbasis)
         num_k_klip = len(numbasis)
     fmout = gen_fm(dataset, location, numbasis=numbasis, \
                       mv=movement, stamp=stamp)
@@ -640,7 +641,10 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     N_cubes = len(dataset.exthdrs)
     nl = int(N_frames / N_cubes)
     # Factor to convert contrast spectrum back to data number PER FRAME
-    contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
+    # Jonathan hack
+    contrast2DN = np.ones_like(dataset.spot_flux)
+    if contrast == True:
+        contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
     # generate a psf model
     sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
     PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]

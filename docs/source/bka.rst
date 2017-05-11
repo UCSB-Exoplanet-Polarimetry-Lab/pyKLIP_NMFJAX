@@ -34,7 +34,9 @@ You also need the following pieces of data to forward model the data.
 
 Generating instrumental PSFs for GPI
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-A quick aside for GPI spectral mode data, here is how to generate the instrumental PSF from the satellite spots::
+A quick aside for GPI spectral mode data, here is how to generate the instrumental PSF from the satellite spots.
+
+.. code-block:: python
 
     import glob
     import numpy as np
@@ -65,7 +67,15 @@ With an estimate of the planet position, the instrumental PSF, and, if applicabl
 we can use the :py:mod:`pyklip.fm` implementation of KLIP-FM and :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` extension to
 forward model the PSF of a planet through KLIP.
 
-First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward model the planet in our data::
+First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward model the planet in our data.
+
+For GPI, we are using normalized copies of the satellite spots as our input PSFs, and because of that, we need to pass in
+a flux conversion value, ``dn_per_contrast``, that allows us to scale our ``guessflux`` in contrast units to data units. If
+you are not using normalized PSFs, ``dn_per_contrast`` should be the factor that scales your input PSF to the flux of the 
+unocculted star. If your input PSF is already scaled to the flux of the stellar PSF, ``dn_per_contrast`` is optional 
+and should not actually be passed into the function.
+
+.. code-block:: python
 
     # setup FM guesses
     # You should change these to be suited to your data!
@@ -73,13 +83,13 @@ First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward mo
     guesssep = 30.1 # estimate of separation in pixels
     guesspa = 212.2 # estimate of position angle, in degrees
     guessflux = 5e-5 # estimated contrast
-    dn_per_contrast = your_flux_conversion # DN/contrast ratio. For GPI, this is dataset.dn_per_contrast
+    dn_per_contrast = your_flux_conversion # factor to scale PSF to star PSF. For GPI, this is dataset.dn_per_contrast
     guessspec = your_spectrum # should be 1-D array with number of elements = np.size(np.unique(dataset.wvs))
 
     # initialize the FM Planet PSF class
     import pyklip.fmlib.fmpsf as fmpsf
     fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
-                                 np.unique(dataset.wvs), dn_per_contrast, star_spt='A6', wavelengths='J',
+                                 np.unique(dataset.wvs), dn_per_contrast, star_spt='A6',
                                  spectrallib=[guessspec])
 
 .. note::
@@ -90,7 +100,9 @@ First, let us initalize :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` to forward mo
 Next we will run KLIP-FM with the :py:mod:`pyklip.fm` module. Before we run it, we will need to pick our
 PSF subtraction parameters (see the :ref:`basic-tutorial-label` for more details on picking KLIP parameters).
 For our zones, we will run KLIP only on one zone: an annulus centered on the guessed location of the planet with
-a width of 30 pixels. The width just needs to be big enough that you see the entire planet PSF.::
+a width of 30 pixels. The width just needs to be big enough that you see the entire planet PSF.
+
+.. code-block:: python
 
     # PSF subtraction parameters
     # You should change these to be suited to your data!
@@ -102,7 +114,7 @@ a width of 30 pixels. The width just needs to be big enough that you see the ent
     movement = 4 # we are using an conservative exclusion criteria of 4 pixels
 
     # run KLIP-FM
-    import pykip.fm as fm
+    import pyklip.fm as fm
     fm.klip_dataset(dataset, fm_class, outputdir=outputdir, fileprefix=prefix, numbasis=numbasis,
                     annuli=annulus_bounds, subsections=subsections, padding=padding, movement=movement)
 
@@ -118,7 +130,9 @@ using Gaussian processes to model the correlated noise and MCMC to sample the po
 
 First, let's read in the data from our previous forward modelling. We will take the collapsed
 KL mode cubes, and select the KL mode cutoff we want to use. For the example, we will use
-7 KL modes to model and subtract off the stellar PSF.::
+7 KL modes to model and subtract off the stellar PSF.
+
+.. code-block:: python
 
     import os
     import astropy.io.fits as fits
@@ -145,7 +159,9 @@ We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that we handle 
 The first thing we will do is create this object, and feed it in the data and forward model. It will use them to
 generate stamps of the data and forward model which can be accessed using ``fma.data_stmap`` and ``fma.fm_stamp``
 respectively. When reading in the data, it will also generate a noise map for the data stamp by computing the standard
-deviation around an annulus, with the planet masked out::
+deviation around an annulus, with the planet masked out
+
+.. code-block:: python
 
     import pyklip.fitpsf as fitpsf
     # create FM Astrometry object
@@ -164,7 +180,9 @@ Next we need to choose the Gaussian process kernel. We currently only support th
 and square exponential kernel, so we will pick the Matern kernel here. Note that there is the option
 to add a diagonal (i.e. read/photon noise) term to the kernel, but we have chosen not to use it in this
 example. If you are not dominated by speckle noise (i.e. around fainter stars or further out from the star),
-you should enable the read noies term.::
+you should enable the read noies term.
+
+.. code-block:: python
 
     # set kernel, no read noise
     corr_len_guess = 3.
@@ -177,7 +195,9 @@ will be flat in log space, since they are scale paramters. In the following func
 of the priors. The first two values are for x/y and they basically say how far away (in pixels) from the
 guessed position of the planet can the chains wander. For the rest of the parameters, the values say how many ordres
 of magnitude can the chains go from the guessed value (e.g. a value of 1 means we allow a factor of 10 variation
-in the value).::
+in the value).
+
+.. code-block:: python
 
     # set bounds
     x_range = 1.5 # pixels
@@ -190,7 +210,9 @@ Finally, we are set to run the MCMC sampler (using the emcee package). Here we h
 set up the likelihood and prior. All we want to do is specify the number of walkers, number of steps each walker takes,
 and the number of production steps the walkers take. We also can specify the number of threads to use.
 If you have not turned BLAS and MKL off, you probably only want one or a few threads, as MKL/BLAS automatically
-parallelizes the likelihood calculation, and trying to parallelize on top of that just creates extra overhead.::
+parallelizes the likelihood calculation, and trying to parallelize on top of that just creates extra overhead.
+
+.. code-block:: python
 
     # run MCMC fit
     fma.fit_astrometry(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
@@ -210,7 +232,9 @@ Here are some fields to access this information:
 The RA offset and Dec offset are what we are interested in for the purposes of astrometry. The flux scaling
 paramter (α) and the correlation length (l) are hyperparameters we marginalize over. First,
 we want to check to make sure all of our chains have converged by plotting them. As long as they have
-settled down (no large scale movements), then the chains have probably converged::
+settled down (no large scale movements), then the chains have probably converged.
+
+.. code-block:: python
 
     import matplotlib.pylab as plt
     fig = plt.figure(figsize=(10,8))
@@ -246,7 +270,9 @@ Here is an example using three cubes of public GPI data on beta Pic.
 
 .. image:: imgs/betpic_j_bka_chains.png
 
-We can also plot the corner plot to look at our posterior distribution and correlation between parameters::
+We can also plot the corner plot to look at our posterior distribution and correlation between parameters.
+
+.. code-block:: python
 
     fig = plt.figure()
     fig = fma.make_corner_plot(fig=fig)
@@ -257,7 +283,9 @@ Hopefully the corner plot does not contain too much structure (the posteriors sh
 In the example figure from three cubes of GPI data on beta Pic, the residual speckle noise has not been
 very whitened, so there is some asymmetry in the posterior, which represents the local strucutre of
 the speckle noise. These posteriors should become more Gaussian as we add more data and whiten the speckle noise.
-And finally, we can plot the visual comparison of our data, best fitting model, and residuals to the fit::
+And finally, we can plot the visual comparison of our data, best fitting model, and residuals to the fit.
+
+.. code-block:: python
 
     fig = plt.figure()
     fig = fma.best_fit_and_residuals(fig=fig)
@@ -272,7 +300,9 @@ best fit values for the astrometry of this epoch. Remember that the 1-sigma valu
 uncertainity on the location of the planet. You will need to include more uncertainties such as the location of the
 star and astrometric calibration uncertainties to obtain your full astrometric error bar. The flux values should in
 theory measure the flux of the planet, but that is out of the scope of this tutorial. Here, we print out our confidence
-on just the location of the planet in the image::
+on just the location of the planet in the image.
+
+.. code-block:: python
 
     print("Planet RA offset is at {0} with a 1-sigma range of {1}".format(fma.RA_offset, fma.RA_offset_1sigma))
     print("Planet Dec offset is at {0} with a 1-sigma range of {1}".format(fma.Dec_offset, fma.Dec_offset_1sigma))

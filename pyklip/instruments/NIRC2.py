@@ -372,7 +372,10 @@ class NIRC2Data(Data):
             for hdr_key in more_keywords:
                 hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
-        hdulist.writeto(filepath, clobber=True)
+        try:
+            hdulist.writeto(filepath, overwrite=True)
+        except TypeError:
+            hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
     def calibrate_data(self, units="contrast"):
@@ -523,7 +526,7 @@ def measure_star_flux(img, star_x, star_y):
 
     flux, fwhm, xfit, yfit = gaussfit2d(img, star_x, star_y, refinefit=False)
     if flux == np.inf: flux == np.nan
-    print flux, fwhm, xfit, yfit
+    print(flux, fwhm, xfit, yfit)
 
     return flux
 

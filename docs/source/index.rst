@@ -30,7 +30,7 @@ Features
 * Parallelized with both a quick memory-intensive mode and a slower memory-lite mode
 * Modularized to support data from multiple instruments. Currently there are interfaces to
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
-  `GPI <http://planetimager.org/>`_, and NIRC2.
+  `GPI <http://planetimager.org/>`_, SPHERE, MagAO/VisAO, and Keck/NIRC2.
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
 * Version 1.1 - see :ref:`release-notes` for update notes
 
@@ -42,8 +42,7 @@ submit bugs and new feature requests. Anyone is able to open issues.
 
 Attribution
 -----------------------
-The development of pyKLIP is led by Jason Wang with contributions made by Jonathan Aguilar, JB Ruffio,
-Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, and Laurent Pueyo. If you use this code, please
+The development of pyKLIP is led by Jason Wang with contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, Kate Follette, Maxwell Millar-Blanchaer, Alexandra Greenbaum, Simon Ko, Tom Esposito, Elijah Spiro, and Laurent Pueyo. If you use this code, please
 cite cite the Astrophysical Source Code Library record of it (`ASCL <http://ascl.net/1506.001>`_ or
 `ADS <http://adsabs.harvard.edu/abs/2015ascl.soft06001W>`_)
 
@@ -65,13 +64,12 @@ Contents
    :caption: Tutorials
 
    klip_gpi
+   p1640
    contrast_curves
    bka
-   p1640
    fmmf_gpi
-   pyklip
    diskfm_gpi
-
+   pyklip
  
 
 

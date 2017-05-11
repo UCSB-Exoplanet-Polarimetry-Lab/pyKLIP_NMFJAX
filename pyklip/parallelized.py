@@ -547,7 +547,10 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
         # lazy hack around the fact that wcs objects don't preserve wcs.cd fields when sent to other processes
         # so let's just do it manually outside of the rotation
         if not disable_wcs_rotation:
-            [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx) for angle, astr_hdr in zip(angles, hdrs)]
+            for angle, astr_hdr in zip(angles, hdrs):
+                if astr_hdr is None:
+                    continue
+                klip._rotate_wcs_hdr(astr_hdr, angle, flipx=flipx)
 
     # reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
@@ -721,7 +724,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs), maxtasksperchild=50)
+                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, None, None), maxtasksperchild=50)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
@@ -1036,7 +1039,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     centers[:,0] = aligned_center[0]
     centers[:,1] = aligned_center[1]
 
-
     if save_aligned:
         aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape, dtype=dtype)
         return sub_imgs, aligned_and_scaled
@@ -1151,6 +1153,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             # should be a number
             if isinstance(highpass, (float, int)):
+                highpass = float(highpass)
                 fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
                 dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
 
@@ -1228,14 +1231,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # parallelized rotate images
         print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                                hdrs=dataset.wcs, new_center=aligned_center)
 
         # reconstruct datacubes, need to obtain wavelength dimension size
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
-        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+        rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
 
         # save modified data and centers
         dataset.output = rot_imgs
@@ -1257,8 +1260,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # broadband flux calibration for KL mode cube
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                          zaxis=numbasis)
 
         # for each KL mode, collapse in time to examine spectra
@@ -1305,7 +1309,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if dataset.wcs is not None:
             print("Derotating Images...")
             rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads,
-                                   flipx=True,
+                                   flipx=dataset.flipx,
                                    hdrs=dataset.wcs, new_center=aligned_center)
             # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
             rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
@@ -1330,8 +1334,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # broadband photometry calibration
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
         num_wvs = np.size(np.unique(dataset.wvs))  # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
@@ -1357,6 +1363,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         totwvs = np.size(unique_wvs)
         dataset.output = []
         dataset.aligned_and_scaled = []
+
+        # because for ADI we are passing in a copy of dataset.centers due to the [thiswv] indexing
+        # klip_funciton doens't update the centers properly
+        if aligned_center is None:
+            aligned_center = [np.mean(dataset.centers[:,0]), np.mean(dataset.centers[:,1])]
+
         for wvindex,unique_wv in enumerate(unique_wvs):
             if totwvs > 1:
                 print("Running KLIP ADI on slice {0}/{1}: {2:.3f} um".format(wvindex+1, totwvs, unique_wv))
@@ -1366,6 +1378,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 restored_aligned_thiswv = restored_aligned[np.where(unique_wv == unique_wvs)]
             else:
                 restored_aligned_thiswv = None
+
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                     dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                     movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
@@ -1375,13 +1388,15 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                     save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
                                     dtype=dtype)
 
-
-
             if save_aligned:
                 dataset.output.append(klip_output[0])
                 dataset.aligned_and_scaled.append(klip_output[1][0])
             else:
                 dataset.output.append(klip_output)
+
+        # repropogate centering since again, klip_function doesn't save the centers due to pass by value
+        dataset.centers[:,0] = aligned_center[0]
+        dataset.centers[:,1] = aligned_center[1]
 
         dataset.output = np.array(dataset.output)
         dataset.aligned_and_scaled = np.array(dataset.aligned_and_scaled)
@@ -1410,8 +1425,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # parallelized rotate images
         print("Derotating Images...")
-        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=True,
+        rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                                hdrs=dataset.wcs, new_center=aligned_center)
+
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1], oldshape[2], oldshape[3])
@@ -1430,8 +1446,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
 
+        numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube", zaxis=numbasis)
+                         klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
         num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too

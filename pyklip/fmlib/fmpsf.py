@@ -18,7 +18,7 @@ class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_psfs_wvs, flux_conversion, wavelengths='H', spectrallib=None, star_spt=None, refine_fit=False):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False):
         """
         Defining the planet to characterizae
 
@@ -27,14 +27,16 @@ class FMPlanetPSF(NoFM):
             numbasis: 1d numpy array consisting of the number of basis vectors to use
             sep: separation of the planet
             pa: position angle of the planet
-            dflux: guess for delta flux of planet averaged across band w.r.t star
+            dflux: guess for contrast of planet averaged across band w.r.t star
             input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
-            input_psfs_wvs: the wavelegnths that correspond to the input psfs
-            flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast
-            wavelengths: wavelengths of data. Can just be a string like 'H' for H-band
-            spectrallib: if not None, a list of spectra
+            input_wvs: the wavelegnths that correspond to the input psfs
+                (doesn't need to be tiled to match the dimension of the input data of the instrument class)
+            flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast. 
+                             If None, assumes dflux is the ratio between the planet flux and tthe input_psfs flux
+            spectrallib: if not None, a list of spectra based on input_wvs
+            spectrallib_units: can be either "flux"" or "contrast". Flux units requires dividing by the flux of the star to get contrast 
             star_spt: star spectral type, if None default to some random one
-            refine_fit: refine the separation and pa supplied
+            refine_fit: (NOT implemented) refine the separation and pa supplied
         """
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
@@ -44,27 +46,41 @@ class FMPlanetPSF(NoFM):
         self.sep = sep
         self.pa = pa
         self.dflux = dflux
-        if spectrallib is not None:
-            self.spectrallib = spectrallib
-        else:
-            spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
-            spectra_files = [spectra_folder + "t650g18nc.flx", spectra_folder + "t800g100nc.flx"]
-            self.spectrallib = [specmanage.get_planet_spectrum(filename, wavelengths)[1] for filename in spectra_files]
 
-        # TODO: calibrate to contrast units
-        # calibrate spectra to DN
-        self.spectrallib = [spectrum/(specmanage.get_star_spectrum(wavelengths, star_type=star_spt)[1]) for spectrum in self.spectrallib]
-        self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
+        if spectrallib_units.lower() != "flux" and spectrallib_units.lower() != "contrast":
+            raise ValueError("spectrallib_units needs to be either 'flux' or 'contrast', not {0}".format(spectrallib_units))
+
+        # only need spectral info if not broadband
+        numwvs = np.size(input_wvs)
+        if numwvs  > 1:
+            if spectrallib is not None:
+                self.spectrallib = spectrallib
+            else:
+                spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
+                spectra_files = [spectra_folder + "t650g18nc.flx"]
+                self.spectrallib = [specmanage.get_planet_spectrum(filename, input_wvs)[1] for filename in spectra_files]
+
+            # TODO: calibrate to contrast units
+            # calibrate spectra to DN
+            if spectrallib_units.lower() == "flux":
+                # need to divide by flux of the star to get contrast units
+                self.spectrallib = [spectrum/(specmanage.get_star_spectrum(input_wvs, star_type=star_spt)[1]) for spectrum in self.spectrallib]
+            self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
+        else:
+            self.spectrallib = [np.array([1])]
 
         self.input_psfs = input_psfs
-        self.input_psfs_wvs = input_psfs_wvs
+        self.input_psfs_wvs = input_wvs
+
+        if flux_conversion is None:
+            flux_conversion = np.ones(inputs_shape[0])
         self.flux_conversion = flux_conversion
 
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.) - nx_psf//2, np.arange(ny_psf * 1.) - ny_psf//2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
@@ -78,9 +94,9 @@ class FMPlanetPSF(NoFM):
                 import matplotlib.pylab as plt
                 #print(x_psf_grid.shape)
                 #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
-                plt.figure(1)
+                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0]).transpose()
+                plt.figure()
                 plt.subplot(1,3,1)
-                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0])
                 plt.imshow(a,interpolation="nearest")
                 plt.colorbar()
                 ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
@@ -95,28 +111,6 @@ class FMPlanetPSF(NoFM):
         self.psfs_func_list = psfs_func_list
 
 
-    # def alloc_interm(self, max_sector_size, numsciframes):
-    #     """Allocates shared memory array for intermediate step
-    #
-    #     Intermediate step is allocated for a sector by sector basis
-    #
-    #     Args:
-    #         max_sector_size: number of pixels in this sector. Max because this can be variable. Stupid rotating sectors
-    #
-    #     Returns:
-    #         interm: mp.array to store intermediate products from one sector in
-    #         interm_shape:shape of interm array (used to convert to numpy arrays)
-    #
-    #     """
-    #
-    #     interm_size = max_sector_size * np.size(self.numbasis) * numsciframes * len(self.spectrallib)
-    #
-    #     interm = mp.Array(ctypes.c_double, interm_size)
-    #     interm_shape = [numsciframes, len(self.spectrallib), max_sector_size, np.size(self.numbasis)]
-    #
-    #     return interm, interm_shape
-
-
     def alloc_fmout(self, output_img_shape):
         """Allocates shared memory for the output of the shared memory
 
@@ -129,7 +123,7 @@ class FMPlanetPSF(NoFM):
             fmout_shape: shape of FM data array
 
         """
-        fmout_size = np.prod(output_img_shape)
+        fmout_size = int(np.prod(output_img_shape))
         fmout = mp.Array(ctypes.c_double, fmout_size)
         fmout_shape = output_img_shape
 
@@ -151,12 +145,12 @@ class FMPlanetPSF(NoFM):
 
         """
         perturbmag_shape = (output_img_shape[0], np.size(numbasis))
-        perturbmag = mp.Array(ctypes.c_double, np.prod(perturbmag_shape))
+        perturbmag = mp.Array(ctypes.c_double, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -171,6 +165,7 @@ class FMPlanetPSF(NoFM):
             ref_center: center of image
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
+            flipx: if True, flip x coordinate in final image
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -204,8 +199,12 @@ class FMPlanetPSF(NoFM):
             # find center of psf
             # to reduce calculation of sin and cos, see if it has already been calculated before
             if pa not in self.psf_centx_notscaled:
-                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - self.pa - pa))
-                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - self.pa - pa))
+                # flipx requires the opposite rotation
+                sign = -1.
+                if flipx:
+                    sign = 1.
+                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - sign*self.pa - pa))
+                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - sign*self.pa - pa))
             psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
             psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
@@ -214,8 +213,8 @@ class FMPlanetPSF(NoFM):
             l = int(round(psf_centx + ref_center[0]))
             k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
-            x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
-            y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            x_vec_stamp_centered = np.copy(x_grid[0, (l-col_m):(l+col_p)]) - psf_centx
+            y_vec_stamp_centered = np.copy(y_grid[(k-row_m):(k+row_p), 0]) - psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
             # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
@@ -232,6 +231,9 @@ class FMPlanetPSF(NoFM):
 
             models.append(segment_with_model)
 
+            # clean whiteboard
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0
+
 
         return np.array(models)
 
@@ -240,7 +242,7 @@ class FMPlanetPSF(NoFM):
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, flipx=True, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -279,17 +281,17 @@ class FMPlanetPSF(NoFM):
 
 
         # generate models for the PSF of the science image
-        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)[0]
+        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)[0]
         model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)
 
         # Calculate the spectra to determine the flux of each model reference PSF
         total_imgs = np.size(self.flux_conversion)
         num_wvs = self.spectrallib[0].shape[0]
-        input_spectrum = self.flux_conversion[:self.spectrallib[0].shape[0]] * self.spectrallib[0] * self.dflux
-        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs/num_wvs)))
+        input_spectrum = self.flux_conversion[:num_wvs] * self.spectrallib[0] * self.dflux
+        input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs//num_wvs)))
         input_spectrum = input_spectrum[ref_psfs_indicies]
         models_ref = models_ref * input_spectrum[:, None]
 
@@ -309,12 +311,16 @@ class FMPlanetPSF(NoFM):
 
         fmout_shape = fmout.shape
 
+        # nan the same pixels as the klipped image
+        klipped_nans = np.where(np.isnan(klipped))
+        postklip_psf[:, klipped_nans[0]] = np.nan
+
         # write forward modelled PSF to fmout (as output)
         # need to derotate the image in this step
         for thisnumbasisindex in range(np.size(numbasis)):
                 fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                                  fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=True)
+                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
 
 
 
@@ -371,7 +377,7 @@ class FMPlanetPSF(NoFM):
         # if there is more than one wavelength, save spectral cubes
         if np.size(np.unique(dataset.wvs)) > 1:
             numwvs = np.size(np.unique(dataset.wvs))
-            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]/numwvs, numwvs,
+            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
                                             fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
             # for each KL mode, collapse in time to examine spectra
