@@ -380,22 +380,26 @@ class ExtractSpec(NoFM):
 
         return fmout
 
-def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
-           stamp=10, numthreads=4,
-           spectra_template=None):
+def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
+           spectra_template=None, model_from_spots=True):
     """
     inputs: 
-    - pars      - tuple of planet position (sep (pixels), pa (deg)).
-    - numbasis  - can be a list or a single number
-    - mv        - klip movement
-    - stamp     - size of box around companion for FM
-    - numthreads (default=4)
-    - spectrum  - Can provide a template, default is None
+    - pars              - tuple of planet position (sep (pixels), pa (deg)).
+    - numbasis          - can be a list or a single number
+    - mv                - klip movement
+    - stamp             - size of box around companion for FM
+    - numthreads        (default=4)
+    - spectrum          - Can provide a template, default is None
+    - model_from_spots  - if True uses dataset.psfs or runs dataset.generate_psf_cube
+                          if False, calculates gaussian psfs from instrument file
     """
 
     maxnumbasis = 100 # set from JB's example
     movement = mv # movement
     stamp_size=stamp
+    N_frames = fmout.shape[2] - 1 # The last element in this axis is the klipped image
+    N_cubes = len(dataset.exthdrs) # ? what attribute has this info?
+    nl = N_frames / N_cubes
 
     print "===================================="
     print "planet separation, pa:", pars
@@ -406,31 +410,44 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0,
 
     planet_sep, planet_pa = pars
 
-    # If 'dataset' does not already have psf model, generate them. 
-    if hasattr(dataset, "psfs"):
-        print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
-        radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
-    else:
-        try:
-            print "Using generate_psfs to make psf model, this is probably GPI data."
-            dataset.generate_psf_cube(20)
+    if model_from_spots == True:
+        # If 'dataset' does not already have psf model, generate them. 
+        if hasattr(dataset, "psfs"):
+            print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
             radial_psfs = dataset.psfs / \
-                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/37,37]), axis=0)[:, None, None])
-        except:
-            # If this dataset does not have a working generate_psfs method, just make a gaussian psf
-            print "generate_psfs failed... Generating Gaussian PSFs..."
-            fwhm = lam/D
-            # Gaussian standard deviation
+                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+                 axis=0)[:, None, None])
+        else:
+            try:
+                print "Using generate_psfs to make psf model, this is probably GPI data."
+                dataset.generate_psf_cube(20)
+                radial_psfs = dataset.psfs / \
+                    (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+                     axis=0)[:, None, None])
+            except:
+                # If this dataset does not have a working generate_psfs method,
+                # just make a gaussian psf
+                model_from_spots = False
+                print "generate_psfs failed... Generating Gaussian PSFs..."
+    if model_from_spots == False:
+        uniqwvs = dataset.wvs[:nl]
+        radial_psfs = np.zeros((nl, stamp, stamp))
+        telD = dataset.config.get('observatory','primary_diam')
+        for wv, lam in enumerate(uniqwvs):
+            # Calculate lam/D in pixels - first convert wavelength to [m]
+            # lam[m] / D[m] is in radians -- convert to arcsec
+            fwhm_arcsec = ((lam*1.0e-6)/D) * (3600*180/np.pi)
+            # convert to pixels with ifs_lenslet_scale
+            fwhm = fwhm_arcsec/dataset.config.get('instrument','ifs_lenslet_scale')
+            # Gaussian standard deviation - from another routine
             sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
 
             #centered in the array
             y,x = np.indices([stamp, stamp])
             y -= stamp // 2
             x -= stamp // 2
-            nl = len(np.unique(data.wvs))
-            radial_psfs = np.zeros((nl, stamp, stamp))
-            psf = amplitude * np.exp(-(x**2. + y**2.) / (2. * sigma**2)
+            radial_psfs[wv,...] = np.exp(-(x**2. + y**2.) / (2. * sigma**2))
+        radial_psfs /= np.mean(radial_psfs.sum(axis=0)
 
     fm_class = ExtractSpec(dataset.input.shape,
                                   numbasis,
