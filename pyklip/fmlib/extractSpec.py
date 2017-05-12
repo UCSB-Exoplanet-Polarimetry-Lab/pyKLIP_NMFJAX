@@ -413,13 +413,13 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     if model_from_spots == True:
         # If 'dataset' does not already have psf model, generate them. 
         if hasattr(dataset, "psfs"):
-            print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
+            print("Using dataset attribute 'psfs' psf model, this is probably GPI data.")
             radial_psfs = dataset.psfs / \
                 (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
                  axis=0)[:, None, None])
         else:
             try:
-                print "Using generate_psfs to make psf model, this is probably GPI data."
+                print("Using generate_psfs to make psf model, this is probably GPI data.")
                 dataset.generate_psf_cube(20)
                 radial_psfs = dataset.psfs / \
                     (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
@@ -428,7 +428,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                 # If this dataset does not have a working generate_psfs method,
                 # just make a gaussian psf
                 model_from_spots = False
-                print "generate_psfs failed... Generating Gaussian PSFs..."
+                print("generate_psfs failed... Generating Gaussian PSFs...")
     if model_from_spots == False:
         uniqwvs = dataset.wvs[:nl]
         radial_psfs = np.zeros((nl, stamp, stamp))
@@ -631,8 +631,8 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     fmout = gen_fm(dataset, location, numbasis=numbasis, \
                       mv=movement, stamp=stamp)
     # contrast  spectrum
-    spectrum_jb = invert_spect_fmodel(fmout, dataset, method="JB")
-    spectrum_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+    spectrum_jb, fm_jb = invert_spect_fmodel(fmout, dataset, method="JB")
+    spectrum_lp, fm_lp = invert_spect_fmodel(fmout, dataset, method="LP")
 
     # 3:
     # zero spectrum
@@ -680,8 +680,8 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
                                 dataset.wcs, location[0], pa)
             fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
                            mv=movement, stamp=stamp)
-            fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
-            fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
+            fake_jb_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="JB")
+            fake_lp_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="LP")
         error_jb = np.std(fake_jb_spectra, axis=0)
         error_lp = np.std(fake_lp_spectra, axis=0)
     spectextract_dictionary = {"FLUX_JB":spectrum_jb, "FLUX_LP":spectrum_lp,\
