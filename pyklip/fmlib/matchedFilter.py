@@ -86,9 +86,6 @@ class MatchedFilter(NoFM):
         self.nx = self.inputs_shape[2]
         self.N_frames = self.inputs_shape[0]
 
-        if filter_name is None:
-            filter_name = "H"
-
         self.fakes_sepPa_list = fakes_sepPa_list
         if disable_FM is None:
             self.disable_FM = False
