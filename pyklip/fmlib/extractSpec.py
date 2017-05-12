@@ -459,8 +459,9 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
-                    annuli=[[planet_sep-10,planet_sep+10]],
-                    subsections=[[(planet_pa-10.)/180.*np.pi,(planet_pa+10.)/180.*np.pi]],
+                    annuli=[[planet_sep-stamp,planet_sep+stamp]],
+                    subsections=[[(planet_pa-stamp)/180.*np.pi,\
+                                  (planet_pa+stamp)/180.*np.pi]],
                     movement=movement,
                     #numbasis = np.array([numbasis]), 
                     numbasis = numbasis, 
@@ -518,6 +519,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
 
     # The first dimension in fmout is numbasis, and there can be multiple of these,
     # Especially if you want to see how the spectrum behaves when you change parameters.
+    fm_coadd_mat = np.zeros((len(fmout), nl*stamp_size_squared, nl))
     for ii in range(len(fmout)):
         klipped[ii, ...] = fmout[ii,:, -1,:]
         klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
@@ -540,6 +542,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
             pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
             estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(int(nl*stamp_size_squared),)))
+            fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
         elif method == "LP":
             #
             #LP's matrix inversion adds over frames and one wavelength axis, then inverts
@@ -547,6 +550,8 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             A = np.zeros((nl, nl))
             b = np.zeros(nl)
             fm = fm_noSpec_coadd.reshape(int(nl), int(stamp_size*stamp_size),int(nl))
+            fm_coadd_mat[ii,:, :] = \
+                fm_noSpec_coadd.reshape(int(nl*stamp_size_squared), int(nl))
             fm = np.rollaxis(fm, 2,0)
             fm = np.rollaxis(fm, 2,1)
             data = klipped_coadd.reshape(int(nl), int(stamp_size*stamp_size))
@@ -588,7 +593,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         return estim_spec / normfactor
     else:
         spec_unit = "DN"
-        return estim_spec
+        return estim_spec, fm_coadd_mat
 
 
 def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False):
@@ -650,12 +655,12 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
     inputpsfs = np.tile(PSF_cube,(N_cubes, 1, 1))
 
-   # Save the klipped data array (new attricbute of dataset:
+    # Save the klipped data array (new attricbute of dataset:
     klipped = fmout[:,:,-1,:]
-    klipped_coadd = np.zeros((num_k_klip, nl, 10*10))
+    klipped_coadd = np.zeros((num_k_klip, nl, stamp*stamp))
     for k in range(N_cubes):
         klipped_coadd = klipped_coadd + klipped[:, k*nl:(k+1)*nl, :]
-    klipped_coadd.shape = [num_k_klip, nl, int(10), int(10)]
+    klipped_coadd.shape = [num_k_klip, nl, int(stamp), int(stamp)]
     dataset.klipped = klipped_coadd
 
     # Where are we placing the fakes? Drop down 10 30 deg apart
