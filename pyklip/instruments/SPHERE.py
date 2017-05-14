@@ -13,11 +13,8 @@ class Ifs(Data):
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
-            If psf_cube is None: psf_cube = data_cube.replace("cube_coro","cube_psf")
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
-            If info_fits is None: info_fits = data_cube.replace("cube_coro","info")
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
-             If None, wavelength_info = data_cube.replace("cube_coro","wavelength")
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
@@ -44,32 +41,37 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube=None, info_fits=None, wavelength_info=None,keepslices=None,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info,keepslices=None,
                  psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15):
         super(Ifs, self).__init__()
-
-        if psf_cube is None:
-            psf_cube = data_cube.replace("cube_coro","cube_psf")
-        if info_fits is None:
-            info_fits = data_cube.replace("cube_coro","info")
-        if wavelength_info is None:
-            wavelength_info = data_cube.replace("cube_coro","wavelength")
 
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
-            self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
-            # collapse files with wavelengths
-            self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
-                                            self.input.shape[3])
-            # zeros are nans, and anything adjacient to a pixel less than zero is 0.
-            input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
-            self.input[np.where(input_minfilter <= 0)] = np.nan
+            if np.size(self.input.shape) == 4:
+                self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                self.nfiles = self.input.shape[0]
+                self.nwvs = self.input.shape[1]
+                # collapse files with wavelengths
+                self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                self.input.shape[3])
+                # zeros are nans, and anything adjacient to a pixel less than zero is 0.
+                input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+                self.input[np.where(input_minfilter <= 0)] = np.nan
+                # centers are at dim/2
+                self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 3: # If cube
+                self._filenums = np.zeros(self.input.shape[0])
+                self.nfiles = 1
+                self.nwvs = self.input.shape[0]
+                # centers are at dim/2
+                self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 2: # If image
+                self._filenums = 0
+                self.nfiles = 1
+                self.nwvs = 1
+                self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
 
-            # centers are at dim/2
-            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
@@ -112,6 +114,10 @@ class Ifs(Data):
         self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
         self.dn_per_contrast = np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs])
 
+        if np.size(self.input.shape) == 2:
+            self.wvs = 0
+            self.dn_per_contrast = 0
+
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
             self.nfiles = self.input.shape[0]
@@ -123,6 +129,7 @@ class Ifs(Data):
             self.filenames = self.filenames[keepslices]
             self.dn_per_contrast = self.dn_per_contrast[keepslices]
             self.wcs = self.wcs[keepslices]
+
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = os.path.basename(data_cube).split("_")[0]
@@ -350,29 +357,33 @@ class Irdis(Data):
                    "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube=None, info_fits=None, wavelength_str=None, psf_cube_size=21, IWA=0.2,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2,
                  keepslices=None):
         super(Irdis, self).__init__()
 
-        # Defining default values for psf_cube and info_fits because kpop doesn't handle reading several files.
-        if psf_cube is None:
-            psf_cube = data_cube.replace("cube_coro","cube_psf")
-        if info_fits is None:
-            info_fits = data_cube.replace("cube_coro","info")
-        if wavelength_str is None:
-            raise ValueError("In Irdis, wavelength_str should be defined (e.g. 'H2H3', 'K1K2')")
-
         # read in the data
         with fits.open(data_cube) as hdulist:
-            self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
-            self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
-            # collapse files with wavelengths
-            self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
-                                            self.input.shape[3])
-            # centers are at dim/2
-            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            if np.size(self.input.shape) == 4: # If 4D
+                self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+                self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                self.nfiles = self.input.shape[0]
+                self.nwvs = self.input.shape[1]
+                # collapse files with wavelengths
+                self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                self.input.shape[3])
+                # centers are at dim/2
+                self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 3: # If cube
+                self._filenums = np.zeros(self.input.shape[0])
+                self.nfiles = 1
+                self.nwvs = self.input.shape[0]
+                # centers are at dim/2
+                self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 2: # If image
+                self._filenums = 0
+                self.nfiles = 1
+                self.nwvs = 1
+                self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
@@ -414,6 +425,10 @@ class Irdis(Data):
         self.psfs_wvs = np.unique(self.wvs)
         self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
         self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+
+        if np.size(self.input.shape) == 2:
+            self.wvs = 0
+            self.dn_per_contrast = 0
 
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
