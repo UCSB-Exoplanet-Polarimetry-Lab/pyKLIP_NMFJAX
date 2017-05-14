@@ -4,15 +4,15 @@
 Klip POst Processing (KPOP)
 =====================================================
 Klip POst Processing (KPOP) is a module with tools to calculate:
-* matched filter maps,
-* SNR maps,
-* detection,
-* ROC curves,
-* contrast curves.
+
+    * matched filter maps,
+    * SNR maps,
+    * detection,
+    * ROC curves,
+    * contrast curves.
 
 We will go over these application in this tutorial.
-KPOP modules can be used as standalone functions but it its normalized class architecture allows an easy processing of
- surveys by simplifying some user tasks.
+KPOP modules can be used as standalone functions but it its normalized class architecture allows an easy processing of surveys by simplifying some user tasks.
 
 .. note::
     The ipython notebook ``pyklip.examples.kpop_tutorial.ipynb`` go through most of the applications with a GPI example
@@ -31,6 +31,14 @@ data living in the test directory of pyklip.
 
 FMMF
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+In signal processing, a matched filter is the linear filter maximizing the Signal to Noise Ratio (SNR) of a known signal in the presence of additive noise.
+
+Matched filters are used in Direct imaging to detect point sources using the expected shape of the planet Point Spread Function (PSF) as a template.
+
+The distortion makes the definition of the template somewhat challenging,the planet PSF doesn't look like the instrumental PSF, but reasonable results can be obtained by using approximations.
+
+Forward Model `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_
+
 .. code-block:: python
 
     import numpy as np
@@ -196,15 +204,16 @@ not be always implemented for all instruments. For now, both GPI and SPHERE clas
 it is always possible to use the KPOP functions by manually defining the inputs.
 These constraints are:
 
-* The instrument class should be able to read processed data saved using its savedata() method.
-    * This can involve saving the dn2contrast array in the fits file headers.
-* The calibrate_output() should be properly implemented.
-* A object_name attribute should be defined with the name of the star following Simbad syntax.
+    - The instrument class should be able to read processed data saved using its savedata() method.
+        - This can involve saving the dn2contrast array in the fits file headers.
+    - The calibrate_output() should be properly implemented.
+    - A object_name attribute should be defined with the name of the star following Simbad syntax.
 
 Architecture
 --------------------------
-Each task (i.e. calculate matched filter, calculate SNR, ...) is represented with an object.
-All KPOP inherit from the same object :py:class:`pyklip.kpp.utils.kppSuperClass`, which normalizes the function calls.
+Each KPOP module is a class ihnerited from :py:class:`pyklip.kpp.utils.kppSuperClass`.
+All KPOP inherit from the same object, which normalizes the function calls.
+
 The parameter of the task are defined when instantiating the object.
 The :meth:`pyklip.kpp.utils.kppSuperClass.initialize` method will then read the files and update the object's attributes.
 Then, :meth:`pyklip.kpp.utils.kppSuperClass.calculate()` will process the file(s) and return the final product.
@@ -214,20 +223,14 @@ The method :meth:`pyklip.kpp.utils.kppSuperClass.init_new_spectrum()` allows to 
 
 In order to simplify the reduction of survey data, the filenames are defined with wild characters.
 During the initialization, the object will read the file matching the filename pattern.
-When several files match the filename pattern, it is possible to simply call initialize() in sequence and the object will automatically read the matchign files one by one.
+When several files match the filename pattern, it is possible to simply call initialize() in sequence and the object will automatically read the matching files one by one.
 
 The function :meth:`pyklip.kpp.kpop_wrapper.kpop_wrapper()` will take a list of objects (ie tasks) and a list of spectra as an input and run all the
 task as many time as necessary to reduce all the matching files with all the spectra.
 
-Matched Filter and Planet Detection
+Using KPOP framework
 --------------------------
-In signal processing, a matched filter is the linear filter maximizing the Signal to Noise Ratio (SNR) of a known signal in the presence of additive noise.
-
-Matched filters are used in Direct imaging to detect point sources using the expected shape of the planet Point Spread Function (PSF) as a template.
-
-The distortion makes the definition of the template somewhat challenging,the planet PSF doesn't look like the instrumental PSF, but reasonable results can be obtained by using approximations.
-
-Forward Model `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_
+We refer the user to the ipython notebook in the pyklip/examples called kpop_tutorial.py.
 
 ROC Curves
 --------------------------
