@@ -16,7 +16,7 @@ class Detection(KPPSuperClass):
     """
     Class for detecting blobs in a image.
     """
-    def __init__(self,read_func,filename,
+    def __init__(self,read_func=None,filename=None,
                  mute=None,
                  overwrite = False,
                  mask_radius = None,
@@ -76,6 +76,8 @@ class Detection(KPPSuperClass):
 
         self.pix2as = pix2as
 
+        self.prefix = ""
+        self.filename_path = ""
 
     def  initialize(self,inputDir = None,
                          outputDir = None,
@@ -156,15 +158,25 @@ class Detection(KPPSuperClass):
         return file_exist and not self.overwrite
 
 
-    def calculate(self):
+    def calculate(self,image=None, center = None):
         """
         Find the brightest blobs in the image/cube.
+
+        Args:
+            image: Image from which to get the SNR map
+            center: center of the image (y_cen, x_cen)
 
         :return: Detection table..
         """
         if not self.mute:
-            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ Calculating "+self.__class__.__name__)
 
+        if image is not None:
+            self.image = image
+            if np.size(self.image.shape) == 2:
+                self.ny,self.nx = self.image.shape
+        if center is not None:
+            self.center = [center]
 
         # Make a copy of the criterion map because it will be modified in the following.
         # Local maxima are indeed masked out when checked
@@ -245,15 +257,30 @@ class Detection(KPPSuperClass):
         return self.candidate_table
 
 
-    def save(self):
+    def save(self,outputDir = None,folderName = None,prefix=None):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
         or if self.label and self.folderName are not None:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
+        Args:
+            outputDir: Output directory where to save the processed files.
+            folderName: subfolder of outputDir where to save the processed files. Set to "" to disable.
+            prefix: prefix of the filename to be saved
+
         :return: None
         """
+        if outputDir is not None:
+            self.outputDir = outputDir
+        if folderName is not None:
+            self.folderName = folderName
+        if prefix is not None:
+            self.prefix = prefix
+        if prefix == "":
+            self.prefix = "unknown"
+        if ~hasattr(self,"suffix"):
+            self.suffix = "Detec"
 
         if self.folderName is not None:
             if not os.path.exists(self.outputDir+os.path.sep+self.folderName):

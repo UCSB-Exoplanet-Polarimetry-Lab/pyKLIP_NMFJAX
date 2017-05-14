@@ -515,7 +515,7 @@ class Irdis(Data):
         Save SPHERE Data.
 
         Args:
-filepath: path to file to output
+            filepath: path to file to output
             data: 2D or 3D data to save
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")

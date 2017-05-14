@@ -91,6 +91,7 @@ class KPPSuperClass(object):
             self.N_threads = N_threads
 
         self.mute = mute
+        self.inputDir = None
 
     def spectrum_iter_available(self):
         """

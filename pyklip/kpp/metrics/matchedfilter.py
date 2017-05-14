@@ -20,7 +20,7 @@ class Matchedfilter(KPPSuperClass):
     """
     Class calculating the matched filter of a 2D image or a 3D cube.
     """
-    def __init__(self,read_func,filename,
+    def __init__(self,read_func=None,filename=None,
                  folderName = None,
                  mute=None,
                  N_threads=None,
@@ -153,6 +153,9 @@ class Matchedfilter(KPPSuperClass):
         self.compact_date_func = compact_date_func
         self.filter_name_func = filter_name_func
 
+        self.spectrum_name = ""
+        self.prefix = ""
+        self.filename_path = ""
 
     def spectrum_iter_available(self):
         """
@@ -405,15 +408,35 @@ class Matchedfilter(KPPSuperClass):
         return file_exist and not self.overwrite
 
 
-    def calculate(self):
+    def calculate(self,image=None, PSF=None,spectrum = None):
         """
         Perform a matched filter on the current loaded file.
 
+        Args:
+            image: image to get the cross correlation from.
+            PSF: Template for the cross correlation
+            spectrum: Spectrum to collapse the datacube if collapse has been set to true.
+
         Return: Processed images (matched filter, cross corr).
         """
+        if image is not None:
+            self.image = image
+            print(self.image.shape)
+            if np.size(self.image.shape) == 2:
+                self.ny,self.nx = self.image.shape
+            if np.size(self.image.shape) == 3:
+                self.nl,self.ny,self.nx = self.image.shape
+        if PSF is not None:
+            self.PSF_cube_arr = PSF
+            if np.size(self.PSF_cube_arr.shape) == 2:
+                self.ny_PSF,self.nx_PSF = self.PSF_cube_arr.shape
+            if np.size(self.PSF_cube_arr.shape) == 3:
+                self.nl_PSF,self.ny_PSF,self.nx_PSF = self.PSF_cube_arr.shape
+        if spectrum is not None:
+            self.spectrum_vec = spectrum
 
         if not self.mute:
-            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ Calculating "+self.__class__.__name__)
 
         if (len(self.image.shape) == 3):
             flat_cube = np.nanmean(self.image,axis=0)
@@ -497,13 +520,33 @@ class Matchedfilter(KPPSuperClass):
         return self.metricMap
 
 
-    def save(self):
+    def save(self,dataset=None,outputDir = None,folderName = None,prefix=None):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
+        Args:
+            dataset: Instrument object. Needs the savedata() method.
+            outputDir: Output directory where to save the processed files.
+            folderName: subfolder of outputDir where to save the processed files. Set to "" to disable.
+            prefix: prefix of the filename to be saved
+
         :return: None
         """
+
+        if outputDir is not None:
+            self.outputDir = outputDir
+        if folderName is not None:
+            self.folderName = folderName
+        if prefix is not None:
+            self.prefix = prefix
+        if prefix == "":
+            self.prefix = "unknown"
+        if ~hasattr(self,"suffix"):
+            self.suffix = ""
+        if dataset is not None:
+            self.image_obj = dataset
+
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 

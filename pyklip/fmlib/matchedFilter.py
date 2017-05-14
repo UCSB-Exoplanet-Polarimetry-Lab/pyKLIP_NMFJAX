@@ -18,6 +18,7 @@ import astropy.io.fits as pyfits
 
 from time import time
 import matplotlib.pyplot as plt
+
 debug = False
 
 
@@ -77,9 +78,9 @@ class MatchedFilter(NoFM):
 
         if save_per_sector is not None:
             self.fmout_dir = save_per_sector
-            self.save_fmout = True
+            self.save_raw_fmout = True
         else:
-            self.save_fmout = False
+            self.save_raw_fmout = False
 
         self.N_numbasis =  np.size(numbasis)
         self.ny = self.inputs_shape[1]
@@ -446,10 +447,69 @@ class MatchedFilter(NoFM):
         Save the fmout object at the end of each sector if save_per_sector was defined when initializing the class.
         """
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-        if self.save_fmout:
+        if self.save_raw_fmout:
             hdu = pyfits.PrimaryHDU(fmout)
             hdulist = pyfits.HDUList([hdu])
             hdulist.writeto(self.fmout_dir,clobber=True)
+        return
+
+    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
+                   spectrum=None):
+        """
+        Saves the fmout data to disk following the instrument's savedata function
+
+        Args:
+            dataset: Instruments.Data instance. Will use its dataset.savedata() function to save data
+            fmout: the fmout data passed from fm.klip_parallelized which is passed as the output of cleanup_fmout
+            outputdir: output directory
+            fileprefix: the fileprefix to prepend the file name
+            numbasis: KL mode cutoffs used
+            klipparams: string with KLIP-FM parameters
+            calibrate_flux: if True, flux calibrate the data (if applicable)
+            spectrum: if not None, the spectrum to weight the data by. Length same as dataset.wvs
+        """
+
+        #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        fmout[np.where(fmout==0)] = np.nan
+
+        # The mf.MatchedFilter class calculate the projection of the FM on the data for each pixel and images.
+        # The final combination to form the cross  cross correlation, matched filter and contrast maps is done right
+        # here.
+        FMCC_map = np.nansum(fmout[0,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:],axis=2))
+        FMCC_map[np.where(FMCC_map==0)]=np.nan
+        self.FMCC_map = FMCC_map
+
+        FMMF_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2))
+        FMMF_map[np.where(FMMF_map==0)]=np.nan
+        self.FMMF_map = FMMF_map
+
+        contrast_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
+                        / np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2)
+        contrast_map[np.where(contrast_map==0)]=np.nan
+        self.contrast_map = contrast_map
+
+        self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map]
+
+
+        for k in range(np.size(self.numbasis)):
+            # Save the outputs (matched filter, shape map and klipped image) as fits files
+            suffix = "FMMF-KL{0}".format(self.numbasis[k])
+            dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                             self.FMMF_map[0,k,:,:],
+                             filetype=suffix)
+
+            suffix = "FMCont-KL{0}".format(self.numbasis[k])
+            dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                             self.contrast_map[0,k,:,:],
+                             filetype=suffix)
+
+            suffix = "FMCC-KL{0}".format(self.numbasis[k])
+            dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                             self.FMCC_map[0,k,:,:],
+                             filetype=suffix)
+
         return
 
     def generate_model_sci(self, input_img_shape, section_ind, pa, wv, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk, flipx):

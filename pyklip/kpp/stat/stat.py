@@ -15,7 +15,7 @@ class Stat(KPPSuperClass):
     """
     Class for SNR calculation on a per pixel basis.
     """
-    def __init__(self,read_func,filename,
+    def __init__(self,read_func=None,filename=None,
                  folderName = None,
                  mute=None,
                  N_threads=None,
@@ -140,6 +140,8 @@ class Stat(KPPSuperClass):
 
         self.pix2as = pix2as
 
+        self.prefix = ""
+        self.filename_path = ""
 
     def initialize(self,inputDir = None,
                          outputDir = None,
@@ -282,38 +284,52 @@ class Stat(KPPSuperClass):
         return file_exist and not self.overwrite
 
 
-    def calculate(self):
+    def calculate(self,image=None,image_without_planet=None,center=None):
         """
         Calculate SNR map of the current image/cube.
+
+        Args:
+            image: Image from which to get the SNR map
+            image_without_planet: Image in which the real signal has been masked
+            center: center of the image (y_cen, x_cen)
 
         :return: Processed image.
         """
         if not self.mute:
-            print("~~ Calculating "+self.__class__.__name__+" with parameters " + self.suffix+" ~~")
+            print("~~ Calculating "+self.__class__.__name__)
 
-        if self.rm_edge is not None:
-            # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
-            IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center[0])
-            conv_kernel = np.ones((self.rm_edge,self.rm_edge))
-            wider_mask = correlate2d(outer_mask,conv_kernel,mode="same")
-            self.image[np.where(np.isnan(wider_mask))] = np.nan
+        if image is None and image_without_planet is None:
+            if self.rm_edge is not None:
+                # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
+                IWA,OWA,inner_mask,outer_mask = get_occ(self.image, centroid = self.center[0])
+                conv_kernel = np.ones((self.rm_edge,self.rm_edge))
+                wider_mask = correlate2d(outer_mask,conv_kernel,mode="same")
+                self.image[np.where(np.isnan(wider_mask))] = np.nan
 
-        if self.OI_list_folder is not None:
-            try:
-                MJDOBS = self.prihdr.header['MJD-OBS']
-            except:
-                raise ValueError("Could not find MJDOBS. Probably because non GPI data. Code needs to be improved")
+            if self.OI_list_folder is not None:
+                try:
+                    MJDOBS = self.prihdr.header['MJD-OBS']
+                except:
+                    raise ValueError("Could not find MJDOBS. Probably because non GPI data. Code needs to be improved")
+            else:
+                MJDOBS = None
+
+            if self.filename_noPlanets is not None:
+                self.image_without_planet = mask_known_objects(self.image_noPlanets,self.fakeinfohdr_noPlanets,self.star_name,
+                                                               self.pix2as,self.center[0],MJDOBS=MJDOBS,
+                                                               OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
+            else:
+                self.image_without_planet =  mask_known_objects(self.image,self.fakeinfohdr,self.star_name,self.pix2as,
+                                                                self.center[0],MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder,
+                                                                mask_radius = self.mask_radius)
         else:
-            MJDOBS = None
+            self.image = image
+            if image_without_planet is not None:
+                self.image_without_planet = image_without_planet
+            else:
+                self.image_without_planet = self.image
+            self.center = [center]
 
-        if self.filename_noPlanets is not None:
-            self.image_without_planet = mask_known_objects(self.image_noPlanets,self.fakeinfohdr_noPlanets,self.star_name,
-                                                           self.pix2as,self.center[0],MJDOBS=MJDOBS,
-                                                           OI_list_folder=self.OI_list_folder, mask_radius = self.mask_radius)
-        else:
-            self.image_without_planet =  mask_known_objects(self.image,self.fakeinfohdr,self.star_name,self.pix2as,
-                                                            self.center[0],MJDOBS=MJDOBS,OI_list_folder=self.OI_list_folder,
-                                                            mask_radius = self.mask_radius)
 
         if np.size(self.image.shape) == 3:
             # Not tested
@@ -374,13 +390,32 @@ class Stat(KPPSuperClass):
         return self.stat_cube_map
 
 
-    def save(self):
+    def save(self,dataset=None,outputDir = None,folderName = None,prefix=None):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
+        Args:
+            dataset: Instrument object. Needs the savedata() method.
+            outputDir: Output directory where to save the processed files.
+            folderName: subfolder of outputDir where to save the processed files. Set to "" to disable.
+            prefix: prefix of the filename to be saved
+
         :return: None
         """
+
+        if outputDir is not None:
+            self.outputDir = outputDir
+        if folderName is not None:
+            self.folderName = folderName
+        if prefix is not None:
+            self.prefix = prefix
+        if prefix == "":
+            self.prefix = "unknown"
+        if ~hasattr(self,"suffix"):
+            self.suffix = "SNR"
+        if dataset is not None:
+            self.image_obj = dataset
 
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)

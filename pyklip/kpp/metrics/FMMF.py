@@ -21,7 +21,7 @@ class FMMF(KPPSuperClass):
     """
     Class calculating the Forward model matched filter of a dataset.
     """
-    def __init__(self,read_func, filename,
+    def __init__(self,read_func = None, filename = None,
                  folderName = None,
                  mute=None,
                  N_threads=None,
@@ -256,9 +256,15 @@ class FMMF(KPPSuperClass):
             self.keepPrefix = True
             
         self.compact_date_func = compact_date_func
+        self.compact_date = ""
         self.filter_name_func = filter_name_func
 
         self.pix2as = pix2as
+
+        self.spectrum_name = ""
+        self.spectrum_filename = ""
+        self.PSF_cube_path = ""
+        self.prefix = None
 
     def spectrum_iter_available(self):
         """
@@ -550,9 +556,18 @@ class FMMF(KPPSuperClass):
         return file_exist and not self.overwrite
 
 
-    def calculate(self):
+    def calculate(self,dataset=None,spectrum=None,fm_class=None):
         """
         Perform a matched filter on the current loaded file.
+
+        Args:
+            dataset: Instance of an instrument class.
+            spectrum: Transmission corrected spectrum to be used in reference library selection.
+            fm_class: Instance of the fmlib.MatchedFilter class.
+                    (Note: the parameters defined in the definition of the FMMF class meant for the MatchedFilter class
+                    won't be taken into account in this case)
+
+
 
         Return: [self.FMMF_map,self.FMCC_map,self.contrast_map,self.final_cube_modes]
             FMMF_map: Forward model matched filter map
@@ -560,6 +575,14 @@ class FMMF(KPPSuperClass):
             contrast_map: Forward model estimated contrast map
             final_cube_modes: Classic klipped cubes for each # of KL modes.
         """
+        if dataset is not None:
+            self.image_obj = dataset
+
+        if spectrum is not None:
+            self.spectrum_vec = spectrum
+
+        if fm_class is not None:
+            self.fm_class = fm_class
 
         # high pass filter?
         from pyklip.fm import high_pass_filter_imgs
@@ -580,9 +603,15 @@ class FMMF(KPPSuperClass):
         # plt.plot(self.image_obj.wvs,self.host_star_spec)
         # plt.figure(3)
         # plt.plot(self.image_obj.wvs,self.star_sp)
+        # plt.figure(4)
+        # print(self.image_obj.input.shape)
+        # # plt.plot(self.image_obj.wvs,np.sum(self.image_obj.input[:,33:35,9:11],axis=(1,2)))
+        # plt.plot(self.image_obj.wvs,np.nansum(self.image_obj.input[:,32:36,8:12],axis=(1,2)))
         # plt.show()
-        # #todo to remove
+        #todo to remove
+        # self.spectrum_vec = np.nansum(self.image_obj.input[:,32:36,8:12],axis=(1,2))
         # self.spectrum_vec=self.spectrum_vec/self.spectrum_vec
+
 
 
         # Run KLIP with the forward model matched filter
@@ -642,13 +671,28 @@ class FMMF(KPPSuperClass):
         return self.metricMap
 
 
-    def save(self):
+    def save(self,outputDir = None,folderName = None,prefix=None):
         """
         Save the processed files as:
         #user_outputDir#+os.path.sep+"kpop_"+self.label+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+self.suffix+'.fits'
 
+        Args:
+            outputDir: Output directory where to save the processed files.
+            folderName: subfolder of outputDir where to save the processed files. Set to "" to disable.
+            prefix: prefix of the filename to be saved
+
         :return: None
         """
+
+        if outputDir is not None:
+            self.outputDir = outputDir
+        if folderName is not None:
+            self.folderName = folderName
+        if prefix is not None:
+            self.prefix = prefix
+        if prefix == "":
+            self.prefix = "unknown"
+
         if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
             os.makedirs(self.outputDir+os.path.sep+self.folderName)
 
