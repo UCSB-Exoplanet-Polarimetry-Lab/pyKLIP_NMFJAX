@@ -85,7 +85,8 @@ the companion signal is in there.::
 
     import matplotlib.pyplot as plt
     plt.figure()
-    plt.imshow(dataset.klipped, interpolation="nearest")
+    # pick a wavelength slice slc
+    plt.imshow(dataset.klipped[slc], interpolation="nearest")
     plt.show()
 
 2) You can compare the klipped PSF to the forward model::
@@ -94,13 +95,12 @@ the companion signal is in there.::
     # fm_matrix has shape (n_k_klip, npix, nwav)
     # spectrum has shape (n_k_klip, nwav)
     # To get the FM for kth element of numbasis:
-    fm_image_k = np.dot(fm_matrix[k,:,:], spectrum[k]).reshape(nl, stamp, stamp)
+    fm_image_k = np.dot(fm_matrix[k,:,:], spectrum[k].transpose()).reshape(nl, stamp, stamp)
     fm_image_combined = np.zeros((stamp, stamp))
-    for l in range(len(nl)):
-        fm_image_combined += fm_image_k[l,:,:]
 
     plt.figure()
-    plt.imshow(fm_image_combined, interpolation="nearest")
+    # compared the same wavelength slice slc
+    plt.imshow(fm_image_combined[slc], interpolation="nearest")
     plt.show()
 
 Do the two look the same? If yes -- this is a good sign. If not, something went wrong.
