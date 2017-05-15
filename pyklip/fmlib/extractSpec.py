@@ -676,8 +676,14 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
                                 dataset.wcs, location[0], pa)
             fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
                            mv=movement, stamp=stamp, model_from_spots=model_from_spots)
-            fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
-            fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
+            try:
+                fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
+            except:
+                fake_jb_spectra[p, :] = np.nan
+            try:
+                fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
+            except:
+                fake_lp_spectra[p, :] = np.nan
         error_jb = np.std(fake_jb_spectra, axis=0)
         error_lp = np.std(fake_lp_spectra, axis=0)
     spectextract_dictionary = {"FLUX_JB":spectrum_jb, "FLUX_LP":spectrum_lp,\
