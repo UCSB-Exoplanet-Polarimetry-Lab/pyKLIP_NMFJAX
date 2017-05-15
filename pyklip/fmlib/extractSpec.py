@@ -637,8 +637,10 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     # 3:
     # zero spectrum
     zeroloc = (location[0], (location[1]+180)%360)
-    zero_jb = invert_spect_fmodel(fmout, dataset, method="JB")
-    zero_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+    zfmout = gen_fm(dataset, zeroloc, numbasis=numbasis, \
+                      mv=movement, stamp=stamp)
+    zero_jb, zero_fmjb = invert_spect_fmodel(fmout, dataset, method="JB")
+    zero_lp, zero_fmlp = invert_spect_fmodel(fmout, dataset, method="LP")
 
     # 2:
     # useful values
