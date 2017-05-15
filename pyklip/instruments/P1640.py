@@ -425,8 +425,10 @@ class P1640Data(Data):
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
 
-    def savedata(self, filepath, data, klipparams = None, filetype = 'PSF Subtracted Spectral Cube', zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,):
+    def savedata(self, filepath, data, klipparams = None, filetype = 'PSF Subtracted Spectral Cube',
+                 zaxis = None, center=None, astr_hdr=None, fakePlparams = None, more_keywords=None,
+                 user_prihdr = None, user_exthdr = None, extra_exthdr_keywords = None,
+                 extra_prihdr_keywords = None ):
         """
         Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
         For now, the Primary HDU contains the KLIP parameters, scaling, and centering. This may later change 
