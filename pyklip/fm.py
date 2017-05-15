@@ -103,7 +103,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         max_basis = np.max(numbasis) + 1
 
         # calculate eigenvectors/values of covariance matrix
-        evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-max_basis, tot_basis-1))
+        evals, evecs = la.eigh(covar_psfs, eigvals = (int(tot_basis-max_basis), int(tot_basis-1)))
         evals = np.copy(evals[::-1])
         evecs = np.copy(evecs[:,::-1])
 
@@ -122,7 +122,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
         # run KLIP on this sector and subtract the stellar PSF
         inner_products = np.dot(sci_rows_selected, KL_basis.T)
-        inner_products[0,max_basis::]=0
+        inner_products[0,int(max_basis)::]=0
 
         klip = np.dot(inner_products, KL_basis)
 
