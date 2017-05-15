@@ -413,13 +413,13 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     if model_from_spots == True:
         # If 'dataset' does not already have psf model, generate them. 
         if hasattr(dataset, "psfs"):
-            print "Using dataset attribute 'psfs' psf model, this is probably GPI data."
+            print("Using dataset attribute 'psfs' psf model, this is probably GPI data.")
             radial_psfs = dataset.psfs / \
                 (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
                  axis=0)[:, None, None])
         else:
             try:
-                print "Using generate_psfs to make psf model, this is probably GPI data."
+                print("Using generate_psfs to make psf model, this is probably GPI data.")
                 dataset.generate_psf_cube(20)
                 radial_psfs = dataset.psfs / \
                     (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
@@ -428,7 +428,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                 # If this dataset does not have a working generate_psfs method,
                 # just make a gaussian psf
                 model_from_spots = False
-                print "generate_psfs failed... Generating Gaussian PSFs..."
+                print("generate_psfs failed... Generating Gaussian PSFs...")
     if model_from_spots == False:
         uniqwvs = dataset.wvs[:nl]
         radial_psfs = np.zeros((nl, stamp, stamp))
@@ -459,8 +459,9 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
-                    annuli=[[planet_sep-10,planet_sep+10]],
-                    subsections=[[(planet_pa-10.)/180.*np.pi,(planet_pa+10.)/180.*np.pi]],
+                    annuli=[[planet_sep-stamp,planet_sep+stamp]],
+                    subsections=[[(planet_pa-stamp)/180.*np.pi,\
+                                  (planet_pa+stamp)/180.*np.pi]],
                     movement=movement,
                     #numbasis = np.array([numbasis]), 
                     numbasis = numbasis, 
@@ -518,6 +519,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
 
     # The first dimension in fmout is numbasis, and there can be multiple of these,
     # Especially if you want to see how the spectrum behaves when you change parameters.
+    fm_coadd_mat = np.zeros((len(fmout), nl*stamp_size_squared, nl))
     for ii in range(len(fmout)):
         klipped[ii, ...] = fmout[ii,:, -1,:]
         klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
@@ -540,6 +542,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
             pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
             estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(int(nl*stamp_size_squared),)))
+            fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
         elif method == "LP":
             #
             #LP's matrix inversion adds over frames and one wavelength axis, then inverts
@@ -547,6 +550,8 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             A = np.zeros((nl, nl))
             b = np.zeros(nl)
             fm = fm_noSpec_coadd.reshape(int(nl), int(stamp_size*stamp_size),int(nl))
+            fm_coadd_mat[ii,:, :] = \
+                fm_noSpec_coadd.reshape(int(nl*stamp_size_squared), int(nl))
             fm = np.rollaxis(fm, 2,0)
             fm = np.rollaxis(fm, 2,1)
             data = klipped_coadd.reshape(int(nl), int(stamp_size*stamp_size))
@@ -588,7 +593,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         return estim_spec / normfactor
     else:
         spec_unit = "DN"
-        return estim_spec
+        return estim_spec, fm_coadd_mat
 
 
 def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False, model_from_spots=True):
@@ -627,14 +632,16 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     fmout = gen_fm(dataset, location, numbasis=numbasis, \
                       mv=movement, stamp=stamp)
     # contrast  spectrum
-    spectrum_jb = invert_spect_fmodel(fmout, dataset, method="JB")
-    spectrum_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+    spectrum_jb, fm_jb = invert_spect_fmodel(fmout, dataset, method="JB")
+    spectrum_lp, fm_lp = invert_spect_fmodel(fmout, dataset, method="LP")
 
     # 3:
     # zero spectrum
     zeroloc = (location[0], (location[1]+180)%360)
-    zero_jb = invert_spect_fmodel(fmout, dataset, method="JB")
-    zero_lp = invert_spect_fmodel(fmout, dataset, method="LP")
+    zfmout = gen_fm(dataset, zeroloc, numbasis=numbasis, \
+                      mv=movement, stamp=stamp)
+    zero_jb, zero_fmjb = invert_spect_fmodel(fmout, dataset, method="JB")
+    zero_lp, zero_fmlp = invert_spect_fmodel(fmout, dataset, method="LP")
 
     # 2:
     # useful values
@@ -651,12 +658,12 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
     inputpsfs = np.tile(PSF_cube,(N_cubes, 1, 1))
 
-   # Save the klipped data array (new attricbute of dataset:
+    # Save the klipped data array (new attricbute of dataset:
     klipped = fmout[:,:,-1,:]
-    klipped_coadd = np.zeros((num_k_klip, nl, 10*10))
+    klipped_coadd = np.zeros((num_k_klip, nl, stamp*stamp))
     for k in range(N_cubes):
         klipped_coadd = klipped_coadd + klipped[:, k*nl:(k+1)*nl, :]
-    klipped_coadd.shape = [num_k_klip, nl, int(10), int(10)]
+    klipped_coadd.shape = [num_k_klip, nl, int(stamp), int(stamp)]
     dataset.klipped = klipped_coadd
 
     # Where are we placing the fakes? Drop down 10 30 deg apart
@@ -676,14 +683,8 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
                                 dataset.wcs, location[0], pa)
             fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
                            mv=movement, stamp=stamp, model_from_spots=model_from_spots)
-            try:
-                fake_jb_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="JB")
-            except:
-                fake_jb_spectra[p, :] = np.nan
-            try:
-                fake_lp_spectra[p, :] = invert_spect_fmodel(fmtmp, dataset, method="LP")
-            except:
-                fake_lp_spectra[p, :] = np.nan
+            fake_jb_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="JB")
+            fake_lp_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="LP")
         error_jb = np.std(fake_jb_spectra, axis=0)
         error_lp = np.std(fake_lp_spectra, axis=0)
     spectextract_dictionary = {"FLUX_JB":spectrum_jb, "FLUX_LP":spectrum_lp,\

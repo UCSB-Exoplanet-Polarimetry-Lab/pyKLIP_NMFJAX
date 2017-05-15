@@ -37,12 +37,12 @@ gen_fm usage::
     # numthreads is specific to your machine
     # spectra_template is default None
 
-    spectrum = es.invert_spect_fmodel(fmarr, dataset, method="JB")
+    spectrum, fm_matrix = es.invert_spect_fmodel(fmarr, dataset, method="JB")
     # method indicates which matrix inversion method to use,
     # "JB" matrix inversion adds up over all exposures, then inverts
     # "LP" inversion adds over frames and one wavelength axis, then inverts
 
-One way to calculate a spectrum with errorbars::
+One way to calculate a spectrum with errorbars (we are getting rid of this though?)::
 
     import glob
     import pyklip.instruments.GPI as GPI
@@ -61,3 +61,49 @@ One way to calculate a spectrum with errorbars::
                                                    stamp=10, numbasis=3)
     
     
+Some diagnostics you can run to check the FM
+--------------------------------------------
+1) First step is to look at the postage stamp of the klipped data and make sure
+the companion signal is in there.::
+
+    
+    # useful values
+    N_frames = len(dataset.input)
+    N_cubes = len(dataset.exthdrs)
+    nl = int(N_frames / N_cubes)
+    num_k_klip = len(numbasis)
+
+    fmarr = es.gen_fm(dataset, pars, numbasis=20, mv=2.0, stamp=10, numthreads=4,
+                      spectra_template=None)
+    klipped_data = fmarr[:,:,-1, :]
+    klipped_coadd = np.zeros((num_k_klip, nl, stamp*stamp))
+    for k in range(N_cubes):
+        klipped_coadd = klipped_coadd + klipped[:, k*nl:(k+1)*nl, :]
+    klipped_coadd.shape = [num_k_klip, nl, int(stamp), int(stamp)]
+    # you can save this as an attribute of dataset...
+    dataset.klipped = klipped_coadd
+
+    import matplotlib.pyplot as plt
+    plt.figure()
+    # pick a wavelength slice slc
+    plt.imshow(dataset.klipped[slc], interpolation="nearest")
+    plt.show()
+
+2) You can compare the klipped PSF to the forward model::
+
+    spectrum, fm_matrix = es.invert_spect_fmodel(fmarr, dataset, method="JB")
+    # fm_matrix has shape (n_k_klip, npix, nwav)
+    # spectrum has shape (n_k_klip, nwav)
+    # To get the FM for kth element of numbasis:
+    fm_image_k = np.dot(fm_matrix[k,:,:], spectrum[k].transpose()).reshape(nl, stamp, stamp)
+    fm_image_combined = np.zeros((stamp, stamp))
+
+    plt.figure()
+    # compared the same wavelength slice slc
+    plt.imshow(fm_image_combined[slc], interpolation="nearest")
+    plt.show()
+
+Do the two look the same? If yes -- this is a good sign. If not, something went wrong.
+
+
+
