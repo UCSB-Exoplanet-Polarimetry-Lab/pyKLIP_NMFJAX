@@ -30,7 +30,7 @@ Features
 * Parallelized with both a quick memory-intensive mode and a slower memory-lite mode
 * Modularized to support data from multiple instruments. Currently there are interfaces to
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
-  `GPI <http://planetimager.org/>`_, and NIRC2.
+  `GPI <http://planetimager.org/>`_, SPHERE, MagAO/VisAO, and Keck/NIRC2.
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
 * Version 1.1 - see :ref:`release-notes` for update notes
 

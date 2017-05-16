@@ -222,6 +222,7 @@ class GPIData(Data):
     ###############
     ### Methods ###
     ###############
+
     def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
@@ -381,7 +382,7 @@ class GPIData(Data):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
-        Inputs:
+        Args:
             filepath: path to file to output
             data: 2D or 3D data to save
             klipparams: a string of klip parameters
@@ -527,7 +528,10 @@ class GPIData(Data):
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
                 hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-        hdulist.writeto(filepath, overwrite=True)
+        try:
+            hdulist.writeto(filepath, overwrite=True)
+        except TypeError:
+            hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
@@ -565,7 +569,6 @@ class GPIData(Data):
     def generate_psfs(self, boxrad=7):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
-        Currently hard coded assuming 37 spectral channels!!!
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)

@@ -30,15 +30,21 @@ from astropy.io import fits
 from astropy import units
 
 import argparse
-import ConfigParser
+#for handling different python versions
+if sys.version_info < (3,0):
+    import ConfigParser
+else:
+    import configparser as ConfigParser
 
-sys.path.append(".")
-import P1640spots
+# needed to import from outside this folder
+base_dir = os.path.dirname(__file__) or '.'
+sys.path.append(base_dir)
+import pyklip.instruments.P1640_support.P1640spots
 
 dnah_spot_directory = '/data/p1640/data/users/spot_positions/jonathan/'
 
 
-#plt.ion()
+# plt.ion()
 
 
 # use multiple threads - one for drawing the figure, and another for handling user input
@@ -144,6 +150,7 @@ def plot_airmass_and_seeing(fitsfiles):
     axes[1].set_title("Airmass")
     plt.draw()
 
+    
 
 def run_checker(fitsfiles):
     """
@@ -192,7 +199,7 @@ def run_checker(fitsfiles):
                         print("\ty: keep")
                         print("\tn: discard")
                         print("\tr: flag for re-extraction")
-                        keep_cube = raw_input("\tChoose y/n/r: ").lower()[0]
+                        keep_cube = input("\tChoose y/n/r: ").lower()[0]
                     except IndexError:
                         continue
                 good_cubes[ff] = keep_cube
@@ -203,7 +210,7 @@ def run_checker(fitsfiles):
 #            proc_cube_stats.terminate()
 #            proc_cube_stats.join()
             plt.close('all')
-            repeat = raw_input("Finished viewing cubes. Return list and quit? (n to loop again) Y/n: ").lower()[0]
+            repeat = input("Finished viewing cubes. Return list and quit? (n to loop again) Y/n: ").lower()[0]
             if repeat == 'y':
                 repeat = False
             else:
@@ -355,7 +362,7 @@ def run_spot_checker(files=None, config=None, spot_path=None):
             keep_cube = None
             while keep_cube not in ['y', 'n']:
                 try:
-                    keep_cube = raw_input('\t\tKeep? y/n: ').lower()[0]
+                    keep_cube = input('\t\tKeep? y/n: ').lower()[0]
                 except IndexError:
                     continue
             good_cubes[ff] = keep_cube
