@@ -19,10 +19,10 @@ The testing workflow for pyKLIP can be broken down into the following steps:
 
 Creating Tests
 ==============
-All tests for pyKLIP can be found in the ``tests`` directory. We use pytest to run all of our tests in this directory. All
- tests should be named "test_<module/purpose>", and within the test files, each function should be named "test_<function
- name>" to give an idea of what the test is for. The docstring for the function will go into detail as to what the test
- is testing and a summary of how it works.
+All tests for pyKLIP can be found in the ``tests`` directory. We use pytest to run all of our tests in this directory.
+All tests should be named "test_<module/purpose>", and within the test files, each function should be named "test_<function
+name>" to give an idea of what the test is for. The docstring for the function will go into detail as to what the test
+is testing and a summary of how it works.
 
 Our testing framework is organized so that each file tests an individual module or feature, and each function inside
 each test file tests different aspects of the module/feature.
