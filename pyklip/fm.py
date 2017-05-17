@@ -169,6 +169,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
+# @profile
 def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
