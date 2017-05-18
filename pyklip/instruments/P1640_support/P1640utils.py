@@ -1,6 +1,8 @@
 #!/usr/bin/env
 
 import numpy as np
+import os
+import glob
 
 import pyklip.instruments.P1640_support.P1640cores
 import pyklip.instruments.P1640_support.P1640contrast
@@ -23,7 +25,22 @@ def set_zeros_to_nan(data):
     data[zeros] = np.nan
     return data
 
-#################################################################
+
+
+##############################################################
+# Spots
+##############################################################
+def get_spot_files(fitsfile, spot_file_dir):
+    """
+    Search in spot_file_dir for the spot files associated with fitsfile
+    Return spot files if they are found, otherwise return an empty list
+    """
+    spot_file_re = os.path.splitext(os.path.basename(fitsfile))[0]+"-spot[0-3].csv"
+    spot_files = glob.glob(os.path.join(spot_file_dir, spot_file_re))
+    return spot_files
+
+
+##############################################################
 # Bad Pixel Filtering
 ##############################################################
 def find_bad_pix(img, median_img, std_img, thresh=3):
