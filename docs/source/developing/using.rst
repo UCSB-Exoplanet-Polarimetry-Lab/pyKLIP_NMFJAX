@@ -7,7 +7,7 @@ Here you will learn how some basics on working with Docker.
 
 Using Local Files
 ^^^^^^^^^^^^^^^^^
-Once you have your image, you can cp over local files into the container. To do this you have to use the ``attach`` command and ``-d`` flag like so ::
+Once you have your image, you can `cp` over local files into the container. To do this you have to use the ``attach`` command and ``-d`` flag like so ::
 
         $ docker run -it -d simonko/pyklip:latest 
 
@@ -23,7 +23,7 @@ It should be noted that if the specified destination does not exist, it will cre
         
         $ docker cp <somefile/directory> zealous_goldwasser:/pyklip
 
-inside the `zealous_goldwasser` container and it did not already have a pyklip directory, docker would create the directory for me and place the file in it, just like the normal cp command. 
+inside the `zealous_goldwasser` container and it did not already have a pyklip directory, docker would create the directory for me and place the file in it, just like the normal `cp` command.
 
 
 Deleting Images and Containers
@@ -46,12 +46,12 @@ To delete multiple containers at once use the filter flag. For example, if you w
 
         $ docker rm $(docker ps -a -f status=exited -q)
 
-You can also find all containers all exited containers using just the command in the parenthesis without the -q flag. This is particularly useful if there are many exited containers and you don't remember which ones you wanted to delete. 
+You can also find all containers all exited containers using just the command in the parenthesis without the `-q` flag. This is particularly useful if there are many exited containers and you don't remember which ones you wanted to delete.
 
 `Deleting Images`
 """""""""""""""""
 
-To delete your images first you must find which ones you wish to delete. It should also be noted that to delete an image, there can be no containers attached to it. ::
+To delete your images first you must find which ones you wish to delete. It should also be noted that to delete an image, there can be no containers associated with it. You must delete all containers from the image before deleting the image. ::
 
 
         $ docker images
