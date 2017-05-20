@@ -380,8 +380,14 @@ def generate_dataset_with_fakes(dataset,
             pa_shift = 0.0
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
-        annuli = 8
-        dr = 15.
+        try:
+            annuli = fake_position_dict["annuli"]
+        except:
+            annuli = 8
+        try:
+            dr = fake_position_dict["dr"]
+        except:
+            dr = 15.
         delta_th = 90
 
         # Get parallactic angle of where to put fake planets
