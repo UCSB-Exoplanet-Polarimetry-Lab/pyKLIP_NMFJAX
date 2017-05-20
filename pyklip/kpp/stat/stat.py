@@ -412,7 +412,7 @@ class Stat(KPPSuperClass):
             self.prefix = prefix
         if prefix == "":
             self.prefix = "unknown"
-        if ~hasattr(self,"suffix"):
+        if not hasattr(self,"suffix"):
             self.suffix = "SNR"
         if dataset is not None:
             self.image_obj = dataset

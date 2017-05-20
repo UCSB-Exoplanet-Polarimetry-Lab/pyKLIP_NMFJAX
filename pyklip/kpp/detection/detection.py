@@ -17,6 +17,7 @@ class Detection(KPPSuperClass):
     Class for detecting blobs in a image.
     """
     def __init__(self,read_func=None,filename=None,
+                 folderName = None,
                  mute=None,
                  overwrite = False,
                  mask_radius = None,
@@ -36,6 +37,10 @@ class Detection(KPPSuperClass):
             filename: Filename of the file to process.
                         It should be the complete path unless inputDir is used in initialize().
                         It can include wild characters. The files will be reduced as given by glob.glob().
+            folderName: foldername used in the definition of self.outputDir (where files shoudl be saved) in initialize().
+                        folderName could be the name of the spectrum used for the reduction for e.g.
+                        Default folder name is "default_out".
+                        Convention is self.outputDir = #outputDir#/kpop_#labe#/#folderName#/
             mute: If True prevent printed log outputs.
             overwrite: Boolean indicating whether or not files should be overwritten if they exist.
                        See check_existence().
@@ -49,7 +54,7 @@ class Detection(KPPSuperClass):
         """
         # allocate super class
         super(Detection, self).__init__(read_func,filename,
-                                     folderName = None,
+                                     folderName = folderName,
                                      mute=mute,
                                      N_threads=None,
                                      label=None,
@@ -279,7 +284,7 @@ class Detection(KPPSuperClass):
             self.prefix = prefix
         if prefix == "":
             self.prefix = "unknown"
-        if ~hasattr(self,"suffix"):
+        if not hasattr(self,"suffix"):
             self.suffix = "Detec"
 
         if self.folderName is not None:
