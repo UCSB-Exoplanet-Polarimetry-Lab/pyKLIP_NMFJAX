@@ -36,7 +36,7 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
     '''
     # Read the image using the user defined reading function
     image_obj = read_func([glob(nofakes_filename)[0]])
-    metric_image = image_obj.input[0,:,:]
+    metric_image = np.squeeze(image_obj.input)
     try:
         star_name = image_obj.object_name.replace(" ","_")
     except:
@@ -56,7 +56,7 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
 
     for fakes_filename in fakes_filename_list:
         image_fakes_obj = read_func([glob(fakes_filename)[0]])
-        metric_image_fakes = image_fakes_obj.input[0,:,:]
+        metric_image_fakes = np.squeeze(image_fakes_obj.input)
         hdulist = pyfits.open(glob(fakes_filename)[0])
         fakeinfohdr = None
         try:
@@ -177,7 +177,7 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
         for fakes_SNR_filename in fakes_SNR_filename_list:
             SNR_map_fakes_obj = read_func([glob(fakes_SNR_filename)[0]])
 
-            SNR_map_fakes = SNR_map_fakes_obj.input[0,:,:]
+            SNR_map_fakes = np.squeeze(SNR_map_fakes_obj.input)
             hdulist = pyfits.open(glob(fakes_SNR_filename)[0])
             fakeinfohdr_SNR = None
             try:
