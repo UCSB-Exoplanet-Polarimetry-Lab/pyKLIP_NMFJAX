@@ -652,6 +652,8 @@ class FMMF(KPPSuperClass):
         contrast_map[np.where(contrast_map==0)]=np.nan
         self.contrast_map = contrast_map
 
+        self.N_pix_mf = np.nansum(fmout[3,:,:,:,:,:],axis=2)
+
         # Update the wcs headers to indicate North up
         if self.image_obj.wcs[0] is not None:
             [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.image_obj.PAs, self.image_obj.wcs)]
@@ -750,6 +752,12 @@ class FMMF(KPPSuperClass):
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.FMCC_map[0,k,:,:],
+                             filetype=suffix,
+                             more_keywords = extra_keywords)
+            suffix = presuffix+"FMNpix-KL{0}".format(self.numbasis[k])+susuffix
+            extra_keywords["KPPSUFFI"]=suffix
+            self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
+                             self.N_pix_mf[0,k,:,:],
                              filetype=suffix,
                              more_keywords = extra_keywords)
             suffix = "speccube-KL{0}".format(self.numbasis[k])+susuffix
