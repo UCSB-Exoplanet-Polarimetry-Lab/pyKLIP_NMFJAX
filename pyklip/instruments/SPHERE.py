@@ -48,6 +48,7 @@ class Ifs(Data):
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+            self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4:
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
@@ -103,8 +104,17 @@ class Ifs(Data):
         # I have no idea
         self.IWA = IWA / Ifs.platescale # 0.15" IWA
 
-        # We aren't doing WCS info for SPHERE
-        self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+        # Creating WCS info for SPHERE
+        self.wcs = []
+        for vert_angle in self.PAs:
+            w = wcs.WCS()
+            vert_angle = np.radians(vert_angle)
+            pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+            cdmatrix = pc * self.platescale /3600.
+            w.wcs.cd = cdmatrix
+            self.wcs.append(w)
+        self.wcs = np.array(self.wcs)
+        # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
 
         self._output = None
 
@@ -112,7 +122,7 @@ class Ifs(Data):
         # But it works with keepslices
         self.psfs_wvs = np.unique(self.wvs)
         self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
-        self.dn_per_contrast = np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs])
+        self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
 
         if np.size(self.input.shape) == 2:
             self.wvs = 0
@@ -120,8 +130,8 @@ class Ifs(Data):
 
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
+            self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+            self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
             self.filenums = self.filenums[keepslices]
             self.centers = self.centers[keepslices]
             self.wvs = self.wvs[keepslices]
@@ -229,7 +239,7 @@ class Ifs(Data):
         
         """
         hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(data=data))
+        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
 
         # save all the files we used in the reduction
         # we'll assume you used all the input files
@@ -262,6 +272,10 @@ class Ifs(Data):
             hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # write z axis units if necessary
         if zaxis is not None:
@@ -316,6 +330,18 @@ class Ifs(Data):
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
+        if units == "contrast":
+            if spectral:
+                # spectral cube, each slice needs it's own calibration
+                numwvs = img.shape[0]
+                print(self.dn_per_contrast.shape)
+                print(img.shape)
+                img /= self.dn_per_contrast[:numwvs, None, None]
+            else:
+                # broadband image
+                img /= np.nanmean(self.dn_per_contrast)
+            self.flux_units = "contrast"
+
         return img
 
 
@@ -432,8 +458,8 @@ class Irdis(Data):
 
         if keepslices is not None:
             self.input = self.input[keepslices,:,:]
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
+            self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+            self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
             self.filenums = self.filenums[keepslices]
             self.centers = self.centers[keepslices]
             self.wvs = self.wvs[keepslices]
@@ -573,6 +599,10 @@ class Irdis(Data):
             hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # write z axis units if necessary
         if zaxis is not None:
