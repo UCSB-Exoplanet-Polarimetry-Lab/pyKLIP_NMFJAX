@@ -853,16 +853,6 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     else:
         section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
 
-    ## JB debug
-    #print (radstart,radend)
-    #print (phistart/np.pi*180,phiend/np.pi*180)
-    #phi_rotate[section_ind] = np.nan
-    #phi_rotate.shape = (input_shape[0],input_shape[1])
-    #plt.subplot(121)
-    #plt.imshow(phi_rotate/np.pi*180)
-    #plt.colorbar()
-
-
     return section_ind
 
 
@@ -1010,7 +1000,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                   I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
                   Warning: There is a bug if N_pix_sector is too big for the first annulus. The annulus is defined from
                             0 to 2pi which create a bug later on. It is probably in the way pa_start and pa_end are
-                            defined in fm_from_eigen(). (I am taking about matched filter by the way)
+                            defined in fm_from_eigen().
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
@@ -1246,7 +1236,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #print(np.shape(section_ind))
         #print(radstart, radend, phistart, phiend)
 
-        if fm_class.skip_section(radstart, radend, phistart, phiend):
+        if fm_class.skip_section(radstart, radend, phistart, phiend,flipx=flipx):
+            print("SKIPPING")
             continue
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
@@ -1415,7 +1406,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
-    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_nanpix = np.where(np.isnan(ref_psfs_mean_sub))
     ref_psfs_mean_sub[ref_nanpix] = 0
 
@@ -1426,9 +1420,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     covar_psfs = np.cov(ref_psfs_mean_sub)
     #also calculate correlation matrix since we'll use that to select reference PSFs
     covar_diag_sqrt = np.sqrt(np.diag(covar_psfs))
-    covar_diag_sqrt_inverse = 1./covar_diag_sqrt
+    covar_diag_sqrt_inverse = np.zeros(covar_diag_sqrt.shape)
+    where_zeros = np.where(covar_diag_sqrt != 0)
+    covar_diag_sqrt_inverse[where_zeros] = 1./covar_diag_sqrt[where_zeros]
     # any image where the diagonal is 0 is all NaNs and shouldn't be infinity
-    covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
+    # covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
     covar_diag = np.diagflat(covar_diag_sqrt_inverse)
     
     corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
@@ -1644,7 +1640,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     if spectrum is not None:
         if spectrum.lower() == "methane":
             pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
             spectrum_wvs = spectrum_dat[:,1]
             spectrum_fluxes = spectrum_dat[:,3]
             spectrum_interpolation = sinterp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')

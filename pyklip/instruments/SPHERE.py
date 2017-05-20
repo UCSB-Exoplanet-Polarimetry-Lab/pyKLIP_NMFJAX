@@ -41,24 +41,38 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, psf_cube_size=21, nan_mask_boxsize=9,
-                 IWA=0.15):
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info,keepslices=None,
+                 psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15):
         super(Ifs, self).__init__()
+
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
-            self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
-            # collapse files with wavelengths
-            self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
-                                            self.input.shape[3])
-            # zeros are nans, and anything adjacient to a pixel less than zero is 0.
-            input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
-            self.input[np.where(input_minfilter <= 0)] = np.nan
+            self.prihdr = hdulist[0].header
+            if np.size(self.input.shape) == 4:
+                self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                self.nfiles = self.input.shape[0]
+                self.nwvs = self.input.shape[1]
+                # collapse files with wavelengths
+                self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                self.input.shape[3])
+                # zeros are nans, and anything adjacient to a pixel less than zero is 0.
+                input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+                self.input[np.where(input_minfilter <= 0)] = np.nan
+                # centers are at dim/2
+                self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 3: # If cube
+                self._filenums = np.zeros(self.input.shape[0])
+                self.nfiles = 1
+                self.nwvs = self.input.shape[0]
+                # centers are at dim/2
+                self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 2: # If image
+                self._filenums = 0
+                self.nfiles = 1
+                self.nwvs = 1
+                self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
 
-            # centers are at dim/2
-            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
@@ -90,11 +104,45 @@ class Ifs(Data):
         # I have no idea
         self.IWA = IWA / Ifs.platescale # 0.15" IWA
 
-        # We aren't doing WCS info for SPHERE
-        self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+        # Creating WCS info for SPHERE
+        self.wcs = []
+        for vert_angle in self.PAs:
+            w = wcs.WCS()
+            vert_angle = np.radians(vert_angle)
+            pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+            cdmatrix = pc * self.platescale /3600.
+            w.wcs.cd = cdmatrix
+            self.wcs.append(w)
+        self.wcs = np.array(self.wcs)
+        # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
 
         self._output = None
 
+        # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+        # But it works with keepslices
+        self.psfs_wvs = np.unique(self.wvs)
+        self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+        self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+
+        if np.size(self.input.shape) == 2:
+            self.wvs = 0
+            self.dn_per_contrast = 0
+
+        if keepslices is not None:
+            self.input = self.input[keepslices,:,:]
+            self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+            self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
+            self.filenums = self.filenums[keepslices]
+            self.centers = self.centers[keepslices]
+            self.wvs = self.wvs[keepslices]
+            self.PAs = self.PAs[keepslices]
+            self.filenames = self.filenames[keepslices]
+            self.dn_per_contrast = self.dn_per_contrast[keepslices]
+            self.wcs = self.wcs[keepslices]
+
+
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = os.path.basename(data_cube).split("_")[0]
 
     ################################
     ### Instance Required Fields ###
@@ -181,7 +229,7 @@ class Ifs(Data):
         Save SPHERE Data.
 
         Args:
-filepath: path to file to output
+            filepath: path to file to output
             data: 2D or 3D data to save
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
@@ -191,7 +239,7 @@ filepath: path to file to output
         
         """
         hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(data=data))
+        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
 
         # save all the files we used in the reduction
         # we'll assume you used all the input files
@@ -224,6 +272,10 @@ filepath: path to file to output
             hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # write z axis units if necessary
         if zaxis is not None:
@@ -278,6 +330,18 @@ filepath: path to file to output
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
+        if units == "contrast":
+            if spectral:
+                # spectral cube, each slice needs it's own calibration
+                numwvs = img.shape[0]
+                print(self.dn_per_contrast.shape)
+                print(img.shape)
+                img /= self.dn_per_contrast[:numwvs, None, None]
+            else:
+                # broadband image
+                img /= np.nanmean(self.dn_per_contrast)
+            self.flux_units = "contrast"
+
         return img
 
 
@@ -288,7 +352,9 @@ class Irdis(Data):
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
+            If None, psf_cube = data_cube.replace("cube_coro","cube_psf")
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
+            If None, info_fits = data_cube.replace("cube_coro","info")
         wavelength_str: string to specifiy the band (e.g. "H2H3", "K1K2")
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         IWA: inner working angle of the data in arcsecs
@@ -317,19 +383,33 @@ class Irdis(Data):
                    "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2):
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2,
+                 keepslices=None):
         super(Irdis, self).__init__()
+
         # read in the data
         with fits.open(data_cube) as hdulist:
-            self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
-            self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
-            self.nfiles = self.input.shape[0]
-            self.nwvs = self.input.shape[1]
-            # collapse files with wavelengths
-            self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
-                                            self.input.shape[3])
-            # centers are at dim/2
-            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            if np.size(self.input.shape) == 4: # If 4D
+                self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+                self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                self.nfiles = self.input.shape[0]
+                self.nwvs = self.input.shape[1]
+                # collapse files with wavelengths
+                self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                self.input.shape[3])
+                # centers are at dim/2
+                self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 3: # If cube
+                self._filenums = np.zeros(self.input.shape[0])
+                self.nfiles = 1
+                self.nwvs = self.input.shape[0]
+                # centers are at dim/2
+                self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+            elif np.size(self.input.shape) == 2: # If image
+                self._filenums = 0
+                self.nfiles = 1
+                self.nwvs = 1
+                self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
@@ -366,6 +446,30 @@ class Irdis(Data):
 
         self._output = None
 
+        # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+        # But it works with keepslices
+        self.psfs_wvs = np.unique(self.wvs)
+        self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+        self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+
+        if np.size(self.input.shape) == 2:
+            self.wvs = 0
+            self.dn_per_contrast = 0
+
+        if keepslices is not None:
+            self.input = self.input[keepslices,:,:]
+            self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+            self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
+            self.filenums = self.filenums[keepslices]
+            self.centers = self.centers[keepslices]
+            self.wvs = self.wvs[keepslices]
+            self.PAs = self.PAs[keepslices]
+            self.filenames = self.filenames[keepslices]
+            self.dn_per_contrast = self.dn_per_contrast[keepslices]
+            self.wcs = self.wcs[keepslices]
+
+        # Required for automatically querying Simbad for the spectral type of the star.
+        self.object_name = os.path.basename(data_cube).split("_")[0]
 
     ################################
     ### Instance Required Fields ###
@@ -452,7 +556,7 @@ class Irdis(Data):
         Save SPHERE Data.
 
         Args:
-filepath: path to file to output
+            filepath: path to file to output
             data: 2D or 3D data to save
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
@@ -495,6 +599,10 @@ filepath: path to file to output
             hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # write z axis units if necessary
         if zaxis is not None:
@@ -548,4 +656,15 @@ filepath: path to file to output
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
+        # return img
+        if units == "contrast":
+            if spectral:
+                # spectral cube, each slice needs it's own calibration
+                numwvs = img.shape[0]
+                img /= self.dn_per_contrast[:numwvs, None, None]
+            else:
+                # broadband image
+                img /= np.nanmean(self.dn_per_contrast)
+            self.flux_units = "contrast"
+
         return img

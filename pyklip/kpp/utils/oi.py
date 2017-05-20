@@ -6,10 +6,37 @@ from copy import copy
 from  glob import glob
 import csv
 import os
-import pyklip.kpp.utils.GPIimage as gpiim
 
-def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 7,
-                          include_speckles = False):
+def mask_known_objects(cube,fakeinfohdr,object_name,pix2as,center,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
+                          include_speckles = False,IWA=None,OWA=None, mask_radius = 7):
+    """
+
+    Mask point sources in cube with an NaN aperture.
+
+    Args:
+        cube: Image or cube to be masked.
+        fakeinfohdr: fits file header containing the injected planets related keywords.
+        object_name: Name of the star being observed.
+        pix2as: platescale.
+        center: Center of the image.
+        MJDOBS: Julian date of the observation. (needed when OI_list_folder is not None)
+        OI_list_folder: List of Object of Interest (OI) that should be masked from any standard deviation
+                        calculation. See the online documentation for instructions on how to define it.
+        xy: Boolean. Returns the planets coordinate with x,y coordinates in pixels
+        pa_sep: Boolean. Returns the planets coordinates as position angle (in arcsec), separation (in pix)
+        ignore_fakes: Don't return fake planets.
+        fakes_only: Returns only fake planets.
+        include_speckles: Include speckles from the list of object of interest (OI_list_folder)
+        IWA: Inner working angle (in pixels).
+        OWA: Outer working angle (in pixels).
+        mask_radius: Radius of the mask in pixels. (default = 7 pixels)
+
+    Return: Masked cube.
+    """
+
+    row_vec,col_vec = get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=center,MJDOBS=MJDOBS,OI_list_folder=OI_list_folder,
+                          xy = False,pa_sep = False,ignore_fakes = ignore_fakes,fakes_only = fakes_only,
+                          include_speckles = include_speckles,IWA=IWA,OWA=OWA)
 
     cube_cpy = copy(cube)
 
@@ -26,114 +53,46 @@ def mask_known_objects(cube,prihdr,exthdr,GOI_list_folder = None, mask_radius = 
     r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
     stamp_mask[np.where(r_stamp < mask_radius)] = np.nan
 
-    try:
-        # OBJECT: keyword in the primary header with the name of the star.
-        object_name = prihdr['OBJECT'].strip().replace (" ", "_")
-    except:
-        object_name = "UNKNOWN_OBJECT"
-
-    # Get center of the image (star position)
-    try:
-        # Retrieve the center of the image from the fits headers.
-        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-    except:
-        # If the keywords could not be found the center is defined as the middle of the image
-        print("Couldn't find PSFCENTX and PSFCENTY keywords.")
-        center = [(nx-1)/2,(ny-1)/2]
-
-    #Julian Day OBServation
-    MJDOBS_fits = prihdr['MJD-OBS']
-
     row_m = int(np.floor(width/2.0))
     row_p = int(np.ceil(width/2.0))
     col_m = int(np.floor(width/2.0))
     col_p = int(np.ceil(width/2.0))
 
-    if GOI_list_folder is not None:
-        object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
-
-        if len(glob(object_GOI_filename)) != 0:
-            with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
-                GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
-                GOI_csv_as_list = list(GOI_list_reader)
-                N_objects = len(GOI_csv_as_list)-1
-                attrib_name = GOI_csv_as_list[0]
-                GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
-
-                pa_id = attrib_name.index("PA")
-                sep_id = attrib_name.index("SEP")
-                MJDOBS_id = attrib_name.index("MJDOBS")
-                STATUS_id = attrib_name.index("STATUS")
-
-                MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
-                MJDOBS_unique = np.unique(MJDOBS_arr)
-                MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
-                MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
-                #Check that the closest MJDOBS is closer than 2 hours
-                if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
-                    # Skip if we couldn't find a matching date.
-                    return np.squeeze(cube_cpy)
-
-                for obj_id in np.where(MJDOBS_arr == MJDOBS_closest)[0]:
-                    try:
-                        pa = float(GOI_list[obj_id,pa_id])
-                        radius = gpiim.as2pix(float(GOI_list[obj_id,sep_id]))
-                        status = str(GOI_list[obj_id,STATUS_id])
-                        if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
-                            x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-                            y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-                            col_centroid = x_max_pos+center[0]
-                            row_centroid = y_max_pos+center[1]
-                            k = int(round(row_centroid))
-                            l = int(round(col_centroid))
-
-                            cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-
-                    except:
-                        print("Missing data in GOI database for {0}".format(object_name))
-
-    for fake_id in range(100):
-        try:
-            pa = exthdr["FKPA{0:02d}".format(fake_id)]
-            radius = exthdr["FKSEP{0:02d}".format(fake_id)]
-        except:
-            continue
-
-        x_max_pos = float(radius)*np.cos(np.radians(90+pa))
-        y_max_pos = float(radius)*np.sin(np.radians(90+pa))
-        col_centroid = x_max_pos+center[0]
-        row_centroid = y_max_pos+center[1]
-        k = int(round(row_centroid))
-        l = int(round(col_centroid))
+    for row,col in zip(row_vec,col_vec):
+        k = int(round(row))
+        l = int(round(col))
 
         cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = np.tile(stamp_mask,(nl,1,1)) * cube_cpy[:,(k-row_m):(k+row_p), (l-col_m):(l+col_p)]
-
 
     return np.squeeze(cube_cpy)
 
 
-def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
+def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
                           include_speckles = False,IWA=None,OWA=None):
+    """
+    
+    Return the position of real and/or simulated planets in an image based on its headers.
 
+    Args:
+        fakeinfohdr: fits file header containing the injected planets related keywords.
+        object_name: Name of the star being observed.
+        pix2as: platescale.
+        center: Center of the image (not needed if pa_sep = True).
+        MJDOBS: Julian date of the observation. (needed when OI_list_folder is not None)
+        OI_list_folder: List of Object of Interest (OI) that should be masked from any standard deviation
+                        calculation. See the online documentation for instructions on how to define it.
+        xy: Boolean. Returns the planets coordinate with x,y coordinates in pixels
+        pa_sep: Boolean. Returns the planets coordinates as position angle (in arcsec), separation (in pix)
+        ignore_fakes: Don't return fake planets.
+        fakes_only: Returns only fake planets.
+        include_speckles: Include speckles from the list of object of interest (OI_list_folder)
+        IWA: Inner working angle (in pixels).
+        OWA: Outer working angle (in pixels).
 
-    try:
-        # OBJECT: keyword in the primary header with the name of the star.
-        object_name = prihdr['OBJECT'].strip().replace (" ", "_")
-    except:
-        object_name = "UNKNOWN_OBJECT"
-
-    # Get center of the image (star position)
-    try:
-        # Retrieve the center of the image from the fits headers.
-        center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
-    except:
-        center = [np.nan,np.nan]
-
-    #Julian Day OBServation
-    MJDOBS_fits = prihdr['MJD-OBS']
-
-
-
+    Return: (sep_vec,pa_vec) or (x_vec,y_vec) or (row_vec,col_vec) (default)
+        Objects coordinates (real/fakes/others). For e.g., sep_vec,pa_vec are vectors and (sep_vec[0],pa_vec[0]) is the
+        coordinate of the first object and so on...
+    """
     x_vec = []
     y_vec = []
     col_vec = []
@@ -141,9 +100,14 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
     pa_vec = []
     sep_vec = []
 
-    if not fakes_only:
-        if GOI_list_folder is not None:
-            object_GOI_filename = GOI_list_folder+os.path.sep+object_name+'_GOI.csv'
+    if center is None:
+        center=(np.nan,np.nan)
+
+    if object_name is not None:
+        object_name = object_name.replace(" ","_")
+
+        if not fakes_only and MJDOBS is not None and OI_list_folder is not None:
+            object_GOI_filename = OI_list_folder+os.path.sep+object_name+'_GOI.csv'
             if len(glob(object_GOI_filename)) != 0:
                 with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
                     GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
@@ -158,10 +122,10 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
 
                     MJDOBS_arr = np.array([ float(it) for it in GOI_list[:,MJDOBS_id]])
                     MJDOBS_unique = np.unique(MJDOBS_arr)
-                    MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS_fits))
+                    MJDOBS_closest_id = np.argmin(np.abs(MJDOBS_unique-MJDOBS))
                     MJDOBS_closest = MJDOBS_unique[MJDOBS_closest_id]
                     #Check that the closest MJDOBS is closer than 2 hours
-                    if abs(MJDOBS_closest-MJDOBS_fits) > 2./24.:
+                    if abs(MJDOBS_closest-MJDOBS) > 2./24.:
                         # Skip if we couldn't find a matching date.
                         return [],[]
 
@@ -170,18 +134,18 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
                             pa = float(GOI_list[obj_id,pa_id])
                             radius = float(GOI_list[obj_id,sep_id])
                             if IWA is not None:
-                                if gpiim.as2pix(radius) < IWA:
+                                if 1./pix2as*radius < IWA:
                                     continue
                             if OWA is not None:
-                                if gpiim.as2pix(radius) > OWA:
+                                if 1./pix2as*radius > OWA:
                                     continue
                             status = str(GOI_list[obj_id,STATUS_id])
                             # print(status, include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]))
                             if include_speckles or (status in ["Planet","Background","Candidate","Unknown","Brown Dwarf"]):
                                 pa_vec.append(pa)
                                 sep_vec.append(radius)
-                                x_max_pos = float(gpiim.as2pix(radius))*np.cos(np.radians(90+pa))
-                                y_max_pos = float(gpiim.as2pix(radius))*np.sin(np.radians(90+pa))
+                                x_max_pos = float(1./pix2as*radius)*np.cos(np.radians(90+pa))
+                                y_max_pos = float(1./pix2as*radius)*np.sin(np.radians(90+pa))
                                 x_vec.append(x_max_pos)
                                 y_vec.append(y_max_pos)
                                 row_vec.append(y_max_pos+center[1])
@@ -192,18 +156,18 @@ def get_pos_known_objects(prihdr,exthdr,GOI_list_folder=None,xy = False,pa_sep =
     if not ignore_fakes:
         for fake_id in range(100):
             try:
-                pa = exthdr["FKPA{0:02d}".format(fake_id)]
-                radius = gpiim.pix2as(exthdr["FKSEP{0:02d}".format(fake_id)])
+                pa = fakeinfohdr["FKPA{0:02d}".format(fake_id)]
+                radius = pix2as*fakeinfohdr["FKSEP{0:02d}".format(fake_id)]
                 if IWA is not None:
-                    if gpiim.as2pix(radius) < IWA:
+                    if 1./pix2as*radius < IWA:
                         continue
                 if OWA is not None:
-                    if gpiim.as2pix(radius) > OWA:
+                    if 1./pix2as*radius > OWA:
                         continue
                 pa_vec.append(pa)
                 sep_vec.append(radius)
-                x_max_pos = float(gpiim.as2pix(radius))*np.cos(np.radians(90+pa))
-                y_max_pos = float(gpiim.as2pix(radius))*np.sin(np.radians(90+pa))
+                x_max_pos = float(1./pix2as*radius)*np.cos(np.radians(90+pa))
+                y_max_pos = float(1./pix2as*radius)*np.sin(np.radians(90+pa))
                 x_vec.append(x_max_pos)
                 y_vec.append(y_max_pos)
                 row_vec.append(y_max_pos+center[1])
@@ -224,9 +188,9 @@ def make_GOI_list(outputDir,GOI_list_csv,GPI_TID_csv):
     """
     Generate the GOI files from the GOI table and the TID table (queried from the database).
 
-    :param outputDir: Output directory in which to save the GOI files.
-    :param GOI_list_csv: Table with the list of GOIs (including separation, PA...)
-    :param GPI_TID_csv: Table giving the TID code for a given object name.
+    outputDir: Output directory in which to save the GOI files.
+    GOI_list_csv: Table with the list of GOIs (including separation, PA...)
+    GPI_TID_csv: Table giving the TID code for a given object name.
     :return: One .csv file per target for which at list one GOI exists.
             The filename follows: [object]_GOI.csv. For e.g. c_Eri_GOI.csv.
     """

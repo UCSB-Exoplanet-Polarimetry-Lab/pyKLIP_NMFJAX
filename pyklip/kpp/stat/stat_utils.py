@@ -29,6 +29,33 @@ def get_image_stat_map(image,
                         Dr = None,
                         type = "SNR",
                         image_wide = None):
+    """
+    Calculate the SNR, the standard deviation or the probability (tail distribution) of a given image using annuli.
+
+    Args:
+        image: The image or cubes for which one wants the statistic.
+        image_without_planet: Same as image but where real signal has been masked out. The code will actually use
+                                    map to calculate the standard deviation or the PDF.
+        IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
+                    statistic is calculated.
+                    If None, kpp.utils.GPIimage.get_IOWA() is used.
+        N: Defines the width of the ring by the number of pixels it has to include.
+                The width of the annuli will therefore vary with sepration. Default is N=3000.
+        centroid: (x_cen,y_cen) Define the center of the image.
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
+        r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
+        mute: Won't print any logs.
+        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        type: Indicate the type of statistic to be calculated.
+                    If "SNR" (default) simple stddev calculation and returns SNR.
+                    If "stddev" returns the pure standard deviation map.
+                    If "proba" triggers proba calculation with pdf fitting.
+        image_wide: Don't divide the image in annuli or sectors when computing the statistic.
+                    Use the entire image directly. Not available if "pixel based: is defined,
+
+    Return:
+        The statistic map for image.
+    """
 
     if image_wide is None:
         image_wide = False
@@ -139,6 +166,29 @@ def get_image_stat_map(image,
 
 
 def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
+    """
+    Calculate the PDF of a given image using annuli.
+
+    Args:
+        image: The image or cubes for which one wants the statistic.
+        IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
+                    statistic is calculated.
+                    If None, kpp.utils.GPIimage.get_IOWA() is used.
+        N: Defines the width of the ring by the number of pixels it has to include.
+                The width of the annuli will therefore vary with sepration. Default is N=3000.
+        centroid: (x_cen,y_cen) Define the center of the image.
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
+        r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
+        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        image_wide: Don't divide the image in annuli or sectors when computing the statistic.
+                    Use the entire image directly. Not available if "pixel based: is defined,
+
+    Return:
+        pdf_list: List of PDF values for each annulus. The sampling of each PDF can be found in sampling_list.
+        cdf_list: CDF values for each annulus. The sampling of each CDF can be found in sampling_list.
+        sampling_list: Sampling for the PDF and the CDF.
+        annulus_radii_list: List of ((r_min+r_max)/2.,r_min,r_max) with r_min,r_max the boundaries of an annulus.
+    """
     if image_wide is None:
         image_wide = False
     IWA,OWA = IOWA
@@ -171,7 +221,7 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
     image_mask[np.where(np.isnan(image))] = 0
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -269,6 +319,30 @@ def get_image_stddev(image,
                      Dr=2,
                      image_wide = None,
                      resolution = None):
+    """
+    Calculate the standard deviation of a given image using annuli.
+
+    Args:
+        image: The image or cubes for which one wants the statistic.
+        IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
+                    statistic is calculated.
+                    If None, kpp.utils.GPIimage.get_IOWA() is used.
+        N: Defines the width of the ring by the number of pixels it has to include.
+                The width of the annuli will therefore vary with sepration. Default is N=3000.
+        centroid: (x_cen,y_cen) Define the center of the image.
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
+        r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
+        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        image_wide: Don't divide the image in annuli or sectors when computing the statistic.
+                    Use the entire image directly. Not available if "pixel based: is defined,
+        resolution: Diameter of the resolution elements (in pix) used to do do the small sample statistic.
+                For e.g., FWHM of the PSF.
+                /!\ I am not sure the implementation is correct. We should probably do better.
+
+    Return:
+        stddev_list: standard deviation values at the center of each
+        annulus_radii_list: List of ((r_min+r_max)/2.,r_min,r_max) with r_min,r_max the boundaries of an annulus.
+    """
     if image_wide is None:
         image_wide = False
 
@@ -284,7 +358,7 @@ def get_image_stddev(image,
     image_mask[np.where(np.isnan(image))] = 0
 
     if centroid is None :
-        x_cen = np.ceil((nx-1)/2) ; y_cen = np.ceil((ny-1)/2)
+        x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
     else:
         x_cen, y_cen = centroid
 
@@ -331,7 +405,7 @@ def get_image_stddev(image,
 
         if resolution is not None and np.size(data) != 0:
             N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
-            sigma = sigma*np.sqrt(1+1/N_res_elt)
+            sigma = sigma*np.sqrt(1+1./N_res_elt)
         stddev_list.append(sigma)
         annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
 
@@ -345,10 +419,12 @@ def get_cdf_model(data,interupt_plot = False,pure_gauss=False):
     /!\ This function is for some reason still a work in progress. JB could never decide what the best option was.
     But it should work even if the code is a mess.
 
-    :param data: arrays of samples from a random variable
-    :param interupt_plot: Plot the histogram and model fit. It
-    :param pure_gauss: Assume gaussian statistic. Do not fit exponential tails.
-    :return: (cdf_model,new_sampling,im_histo, center_bins) with:
+    Args:
+        data: arrays of samples from a random variable
+        interupt_plot: Plot the histogram and model fit. It
+        pure_gauss: Assume gaussian statistic. Do not fit exponential tails.
+
+    Return: (cdf_model,new_sampling,im_histo, center_bins) with:
                 cdf_model: The cdf model = np.cumsum(pdf_model)
                 pdf_model: The pdf model
                 sampling: sampling of pdf/cdf_model
@@ -366,10 +442,12 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
     /!\ This function is for some reason still a work in progress. JB could never decide what the best option was.
     But it should work even if the code is a mess.
 
-    :param data: arrays of samples from a random variable
-    :param interupt_plot: Plot the histogram and model fit. It
-    :param pure_gauss: Assume gaussian statistic. Do not fit exponential tails.
-    :return: (pdf_model,new_sampling,im_histo, center_bins) with:
+    Args:
+        data: arrays of samples from a random variable
+        interupt_plot: Plot the histogram and model fit. It
+        pure_gauss: Assume gaussian statistic. Do not fit exponential tails.
+
+    Return: (pdf_model,new_sampling,im_histo, center_bins) with:
                 pdf_model: The pdf model
                 new_sampling: sampling of pdf_model
                 im_histo: histogram from original data
