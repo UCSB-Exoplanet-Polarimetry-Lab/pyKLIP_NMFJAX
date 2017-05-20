@@ -1235,7 +1235,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #print(np.shape(section_ind))
         #print(radstart, radend, phistart, phiend)
 
-        if fm_class.skip_section(radstart, radend, phistart, phiend):
+        if fm_class.skip_section(radstart, radend, phistart, phiend,flipx=flipx):
+            print("SKIPPING")
             continue
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary

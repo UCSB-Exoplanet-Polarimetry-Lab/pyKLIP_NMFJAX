@@ -186,7 +186,7 @@ class MatchedFilter(NoFM):
 
         return fmout, fmout_shape
 
-    def skip_section(self, radstart, radend, phistart, phiend):
+    def skip_section(self, radstart, radend, phistart, phiend,flipx=True):
         """
         Returns a boolean indicating if the section defined by (radstart, radend, phistart, phiend) should be skipped.
         When True is returned the current section in the loop in klip_parallelized() is skipped.
@@ -196,6 +196,7 @@ class MatchedFilter(NoFM):
             radend: maximum radial distance of sector [pixels]
             phistart: minimum azimuthal coordinate of sector [radians]
             phiend: maximum azimuthal coordinate of sector [radians]
+            flipx: if True, flip x coordinate in final image
 
         Returns:
             Boolean: False so by default it never skips.
@@ -206,8 +207,12 @@ class MatchedFilter(NoFM):
         if self.fakes_sepPa_list is not None:
             skipSectionBool = True
             for sep_it,pa_it in self.fakes_sepPa_list:
-                paend= ((2*np.pi-phistart +np.pi/2)% (2.0 * np.pi))
-                pastart = ((2*np.pi-phiend +np.pi/2)% (2.0 * np.pi))
+                if flipx:
+                    paend= ((-phistart + np.pi/2.)% (2.0 * np.pi))
+                    pastart = ((-phiend + np.pi/2.)% (2.0 * np.pi))
+                else:
+                    pastart = ((phistart - np.pi/2.)% (2.0 * np.pi))
+                    paend= ((phiend - np.pi/2.)% (2.0 * np.pi))
                 # Normal case when there are no 2pi wrap
                 if pastart < paend:
                     if (radstart-margin_sep<=sep_it<=radend+margin_sep) and ((pa_it%360)/180.*np.pi >= pastart-margin_phi) & ((pa_it%360)/180.*np.pi < paend+margin_phi):
