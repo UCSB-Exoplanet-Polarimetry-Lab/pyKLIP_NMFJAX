@@ -14,7 +14,13 @@
 
 import sys
 import os
-import mock
+
+#for handling different python versions
+if sys.version_info < (3,0):
+    import mock
+else:
+    import unittest.mock as mock
+
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
