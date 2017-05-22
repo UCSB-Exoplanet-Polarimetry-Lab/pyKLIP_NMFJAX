@@ -19,7 +19,7 @@ KPOP modules can be used as standalone functions but it its normalized class arc
     based on the beta Pictoris test files in tests/data.
 
 .. note::
-    KPOP is the framework developped in the context of Ruffio et al. (2017) (include arkiv link).
+    KPOP is the framework developped in the context of `Ruffio et al. (2016) <https://arxiv.org/pdf/1705.05477.pdf>`_.
 
 PyKLIP can be installed following :ref:`install-label`.
 It has only been tested with python 2.7 even though it should work for python 3.
