@@ -637,7 +637,7 @@ class P1640Data(Data):
             for wv, lam in enumerate(uniqwvs):
                 # Calculate lam/D in pixels - first convert wavelength to [m]
                 # lam[m] / D[m] is in radians -- convert to arcsec
-                fwhm_arcsec = ((lam*1.0e-6)/telD) * (3600*180/np.pi)
+                fwhm_arcsec = 1.22*((lam*1.0e-6)/telD) * (3600*180/np.pi)
                 # convert to pixels with ifs_lenslet_scale
                 fwhm = fwhm_arcsec/self.config.getfloat('instrument','ifs_lenslet_scale')
                 # Gaussian standard deviation - from another routine
