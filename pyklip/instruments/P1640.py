@@ -607,13 +607,14 @@ class P1640Data(Data):
             self._core_psf = star_psf
 
 
-    def generate_psfs(self, boxrad=7, gauss=True):
+    def generate_psfs(self, boxrad=7, gauss=True, mirror_adjust=1.0):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
             # spotyx: Ncube x Nchan x 4 x 2 array of spot (row, col) positions
             gauss [False]: if True, use a gaussian PSF
+            mirror_adjust [1.0]: multiply mirror diameter by this factor to adjust for Lyot stop
         Returns:
             saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
@@ -632,6 +633,7 @@ class P1640Data(Data):
             nl = uniqwvs.size
             radial_psfs = np.zeros((nl, stamp, stamp))
             telD = self.config.getfloat('observatory','primary_diam')
+            telD *= mirror_adjust # undersize by 10% for Lyot stop
             for wv, lam in enumerate(uniqwvs):
                 # Calculate lam/D in pixels - first convert wavelength to [m]
                 # lam[m] / D[m] is in radians -- convert to arcsec
