@@ -64,7 +64,7 @@ Contents
    :caption: Tutorials
 
    klip_gpi
-   p1640
+   instruments/index
    contrast_curves
    bka
    fmmf

@@ -198,6 +198,14 @@ class GenericData(Data):
     """
     Basic class to interface with a basic direct imaging dataset
 
+    Args:
+        input_data: either a 1-D list of filenames to read in, or a 3-D cube of all data (N, y, x)
+        centers: array of shape (N,2) for N centers in the format [x_cent, y_cent]
+        parangs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
+        wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
+        IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -208,17 +216,8 @@ class GenericData(Data):
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
-
-
-    Args:
-        input_data: either a 1-D list of filenames to read in, or a 3-D cube of all data (N, y, x)
-        centers: array of shape (N,2) for N centers in the format [x_cent, y_cent]
-        parangs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
-        wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
-        IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
-        filenames: Array of size N for the actual filepath of the file that corresponds to the data
     """
-    # Coonstructor
+    # Constructor
     def __init__(self, input_data, centers, parangs=None, wvs=None, IWA=0, filenames=None):
         super(GenericData, self).__init__()
         # read in the data
