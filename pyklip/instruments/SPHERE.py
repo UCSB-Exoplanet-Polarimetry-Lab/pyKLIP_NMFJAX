@@ -316,7 +316,7 @@ class Ifs(Data):
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
         """
-       Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
+        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.
 
         Args:
@@ -642,7 +642,7 @@ class Irdis(Data):
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
         """
-       Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
+        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.
 
         Args:

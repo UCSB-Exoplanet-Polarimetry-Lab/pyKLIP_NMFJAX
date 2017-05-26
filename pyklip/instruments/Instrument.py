@@ -205,7 +205,7 @@ class GenericData(Data):
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
-        
+
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
