@@ -15,3 +15,6 @@ KLIP reductions, but may not work for the more sophisticated forward modelling l
    p1640
    sphere
    generic_data
+
+
+If you want to write a new interface into pyKLIP, follow the :ref:`addinstrument-label` guide for making your own interface. 

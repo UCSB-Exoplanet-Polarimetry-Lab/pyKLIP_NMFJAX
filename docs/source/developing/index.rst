@@ -3,6 +3,17 @@
 Developing for pyKLIP
 =====================
 
+Adding Modules
+~~~~~~~~~~~~~~
+pyKLIP is fairly modular and allow you to add modules for various functionality like support for different instruments or different
+forward modelling methods. Here's some guides on how to make your own.
+
+.. toctree::
+   :maxdepth: 1
+
+   add_instrument
+
+
 Docker
 ~~~~~~
 One very useful tool to have is a local build environment of the pyKLIP package for testing and validation purposes.
