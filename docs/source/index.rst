@@ -70,6 +70,7 @@ Contents
    fmmf
    kpop_gpi
    diskfm_gpi
+   rdi
    developing/index
    pyklip
 
