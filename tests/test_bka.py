@@ -119,10 +119,10 @@ def test_fmastrometry():
 
     print("{0} seconds to run".format(time.time()-t1))
 
-    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
+    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
 
-    assert(np.abs(fma.RA_offset.bestfit - -0.2272) < 0.005)
-    assert(np.abs(fma.Dec_offset.bestfit - -0.3611) < 0.005)
+    assert(np.abs(fma.RA_offset.bestfit - -227.2) < 0.005)
+    assert(np.abs(fma.Dec_offset.bestfit - -361.1) < 0.005)
 
 
     fma.best_fit_and_residuals()
