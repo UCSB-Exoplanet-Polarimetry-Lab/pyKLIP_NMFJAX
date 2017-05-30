@@ -463,6 +463,107 @@ class FMAstrometry(object):
 
         return fig
 
+    def propogate_errs(self, star_center_err=None, platescale=None, platescale_err=None, pa_offset=None, pa_uncertainty=None):
+        """
+        Propogate astrometric error. 
+
+        Args:
+            star_center_err (float): uncertainity of the star location (pixels)
+            platescale (float): mas/pix conversion to angular coordinates 
+            platescale_err (float): mas/pix error on the platescale
+            pa_offset (float): Offset, in the same direction as position angle, to set North up (degrees)
+            pa_uncertainity (float): Error on position angle/true North calibration (Degrees)
+        """
+        # ensure numpy arrays
+        x_mcmc = self.sampler.chain[:,:,0].flatten()
+        y_mcmc = self.sampler.chain[:,:,0].flatten()
+
+        # calcualte statistial errors in x and y
+        x_best = np.median(x_mcmc)
+        y_best = np.median(y_mcmc)
+        x_1sigma_raw = (np.percentile(x_mcmc, [84,16]) - x_best)
+        y_1sigma_raw = (np.percentile(y_mcmc, [84,16]) - y_best)
+
+        print("Raw X/Y Centroid = ({0}, {1}) with statistical error of {2} pix in X and {3} pix in Y".format(x_best, y_best, x_1sigma_raw, y_1sigma_raw))
+
+        # calculate sep and pa from x/y separation
+        sep_mcmc = np.sqrt((x_mcmc)**2 + (y_mcmc)**2)
+        pa_mcmc = (np.degrees(np.arctan2(y_mcmc, -x_mcmc)) - 90) % 360
+
+        # calculate sep and pa statistical errors
+        sep_best = np.median(sep_mcmc)
+        pa_best = np.median(pa_mcmc)
+        sep_1sigma_raw = (np.percentile(sep_mcmc, [84,16]) - sep_best)
+        pa_1sigma_raw = (np.percentile(pa_mcmc, [84,16]) - pa_best)
+
+        print("Raw Sep/PA Centroid = ({0}, {1}) with statistical error of {2} pix in Sep and {3} pix in PA".format(sep_best, pa_best, sep_1sigma_raw, pa_1sigma_raw))
+
+        if star_center_err is None:
+            print("Skipping star center uncertainity...")
+            star_center_err = 0
+        else:
+            print("Adding in star center uncertainity")
+
+        sep_err_pix = (sep_1sigma_raw**2) + star_center_err**2
+        sep_err_pix = np.sqrt(sep_err_pix)
+
+        if platescale is not None:
+            print("Converting pixels to milliarcseconds")
+            if platescale_err is None:
+                print("Skipping plate scale uncertainity...")
+                platescale_err = 0
+            else:
+                print("Adding in plate scale error")
+            sep_err_mas = np.sqrt((sep_err_pix * platescale)**2 + (platescale_err * sep_best)**2)
+
+        if pa_offset is not None:
+            print("Adding in a PA/North angle offset")
+            pa_mcmc = (pa_mcmc + pa_offset) % 360
+
+        if pa_uncertainty is None:
+            print("Skipping PA/North uncertainity...")
+            pa_uncertainty = 0
+        else:
+            print("Adding in PA uncertainity")
+
+        pa_err = np.radians(pa_1sigma_raw)**2 + (star_center_err/sep_best)**2 + np.radians(pa_uncertainty)**2
+        pa_err = np.sqrt(pa_err)
+        pa_err_deg = np.degrees(pa_err)
+
+        sep_err_pix_avg = np.mean(np.abs(sep_err_pix))
+        pa_err_deg_avg = np.mean(np.abs(pa_err_deg))
+
+        print("Sep = {0} +/- {1} ({2}) pix, PA = {3} +/- {4} ({5}) degrees".format(sep_best, sep_err_pix_avg, sep_err_pix, pa_best, pa_err_deg_avg, pa_err_deg))
+
+        if platescale is not None:
+            sep_err_mas_avg = np.mean(np.abs(sep_err_mas))
+            print("Sep = {0} +/- {1} ({2}) mas, PA = {3} +/- {4} ({5}) degrees".format(sep_best*platescale, sep_err_mas_avg, sep_err_mas, pa_best, pa_err_deg_avg, pa_err_deg))
+
+        # convert PA errors back into x y (RA/Dec)
+        ra_mcmc = -sep_mcmc * np.cos(np.radians(pa_mcmc+90))
+        dec_mcmc = sep_mcmc * np.sin(np.radians(pa_mcmc+90))
+
+        # ra/dec statistical errors
+        ra_best = np.median(ra_mcmc)
+        dec_best = np.median(dec_mcmc)
+        ra_1sigma_raw = np.percentile(ra_mcmc, [84,16]) - ra_best
+        dec_1sigma_raw = np.percentile(dec_mcmc, [84,16]) - dec_best
+
+        ra_err_full_pix = np.sqrt((ra_1sigma_raw**2)  + (star_center_err)**2 + (dec_best * np.radians(pa_uncertainty))**2 )
+        dec_err_full_pix = np.sqrt((dec_1sigma_raw**2)  + (star_center_err)**2 + (ra_best * np.radians(pa_uncertainty))**2 )
+
+        print("RA offset = {0} +/- {1} pix".format(ra_best, ra_err_full_pix))
+        print("Dec offset = {0} +/- {1} pix".format(dec_best, dec_err_full_pix))
+
+        if platescale is not None:
+            ra_err_full_mas = np.sqrt((ra_err_full_pix*platescale)**2 + (platescale_err * ra_best)**2)
+            dec_err_full_mas = np.sqrt((dec_err_full_pix*platescale)**2 + (platescale_err * dec_best)**2)
+            print("RA offset = {0} +/- {1} mas".format(ra_best * platescale, ra_err_full_mas))
+            print("Dec offset = {0} +/- {1} mas".format(dec_best * platescale, dec_err_full_mas))
+
+
+
+
 
 def lnprior(fitparams, bounds):
     """
