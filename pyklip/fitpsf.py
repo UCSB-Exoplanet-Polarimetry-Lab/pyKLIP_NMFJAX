@@ -17,18 +17,18 @@ import emcee
 class FMAstrometry(object):
     """
     Base class to perform astrometry on direct imaging data_stamp using MCMC and GP regression
+
+    Args:
+        guess_sep: the guessed separation (pixels)
+        guess_pa: the guessed position angle (degrees)
+        fitboxsize: fitting box side length (pixels)
+
+    Fields:
+
     """
     def __init__(self, guess_sep, guess_pa, fitboxsize):
         """
         Initilaizes the FMAstrometry class
-
-        Args:
-            guess_sep: the guessed separation (pixels)
-            guess_pa: the guessed position angle (degrees)
-            fitboxsize: fitting box side length (pixels)
-
-        Returns:
-
         """
         # store initailization
         self.guess_sep = guess_sep
@@ -65,14 +65,18 @@ class FMAstrometry(object):
         self.sampler = None
 
         # best fit
+        self.raw_RA_offset = None
+        self.raw_Dec_offset = None
+        self.raw_flux = None
+        self.covar_params = None
+        # best fit infered parameters
+        self.raw_sep = None
+        self.raw_PA = None
         self.RA_offset = None
-        self.RA_offset_1sigma = None
         self.Dec_offset = None
-        self.Dec_offset_1sigma = None
-        self.flux = None
-        self.flux_1sigma = None
-        self.covar_param_bestfits = None
-        self.covar_param_1sigma = None
+        self.sep = None
+        self.PA = None
+
 
     def generate_fm_stamp(self, fm_image, fm_center=None, fm_wcs=None, extract=True, padding=5):
         """
@@ -364,14 +368,10 @@ class FMAstrometry(object):
         # save best fit values
         # percentiles has shape [ndims, 3]
         percentiles = np.swapaxes(np.percentile(sampler.flatchain, [16, 50, 84], axis=0), 0, 1)
-        self.RA_offset = percentiles[0][1]
-        self.RA_offset_1sigma = np.array([percentiles[0][0], percentiles[0][2]])
-        self.Dec_offset = percentiles[1][1]
-        self.Dec_offset_1sigma = np.array([percentiles[1][0], percentiles[1][2]])
-        self.flux = percentiles[2][1]
-        self.flux_1sigma = (percentiles[2][0], percentiles[2][2])
-        self.covar_param_bestfits = [thispercentile[1] for thispercentile in percentiles[3:]]
-        self.covar_param_1sigma = [(thispercentile[0], thispercentile[2]) for thispercentile in percentiles[3:]]
+        self.raw_RA_offset = ParamRange(percentiles[0][1], np.array([percentiles[0][2], percentiles[0][0]] - percentiles[0][1]))
+        self.raw_Dec_offset = ParamRange(percentiles[1][1], np.array([percentiles[1][2], percentiles[1][0]] - percentiles[1][1]))
+        self.raw_flux =  ParamRange(percentiles[2][1], np.array([percentiles[2][2], percentiles[2][0]] - percentiles[2][1]))
+        self.covar_params = [ParamRange(thispercentile[1], np.array([thispercentile[2], thispercentile[0]])) for thispercentile in percentiles[3:]]
 
         if save_chain:
             pickle_file = open(chain_output, 'wb')
@@ -419,10 +419,10 @@ class FMAstrometry(object):
             fig = plt.figure(figsize=(12, 4))
 
         # create best fit FM
-        dx = -(self.RA_offset - self.data_stamp_RA_offset_center)
-        dy = self.Dec_offset - self.data_stamp_Dec_offset_center
+        dx = -(self.raw_RA_offset.bestfit - self.data_stamp_RA_offset_center)
+        dy = self.raw_Dec_offset.bestfit - self.data_stamp_Dec_offset_center
 
-        fm_bestfit = self.flux * sinterp.shift(self.fm_stamp, [dy, dx])
+        fm_bestfit = self.raw_flux.bestfit * sinterp.shift(self.fm_stamp, [dy, dx])
         if self.padding > 0:
             fm_bestfit = fm_bestfit[self.padding:-self.padding, self.padding:-self.padding]
 
@@ -465,7 +465,7 @@ class FMAstrometry(object):
 
     def propogate_errs(self, star_center_err=None, platescale=None, platescale_err=None, pa_offset=None, pa_uncertainty=None):
         """
-        Propogate astrometric error. 
+        Propogate astrometric error. Stores results in its own fields
 
         Args:
             star_center_err (float): uncertainity of the star location (pixels)
@@ -476,7 +476,7 @@ class FMAstrometry(object):
         """
         # ensure numpy arrays
         x_mcmc = self.sampler.chain[:,:,0].flatten()
-        y_mcmc = self.sampler.chain[:,:,0].flatten()
+        y_mcmc = self.sampler.chain[:,:,1].flatten()
 
         # calcualte statistial errors in x and y
         x_best = np.median(x_mcmc)
@@ -497,7 +497,15 @@ class FMAstrometry(object):
         pa_1sigma_raw = (np.percentile(pa_mcmc, [84,16]) - pa_best)
 
         print("Raw Sep/PA Centroid = ({0}, {1}) with statistical error of {2} pix in Sep and {3} pix in PA".format(sep_best, pa_best, sep_1sigma_raw, pa_1sigma_raw))
+        
+        # store the raw sep and PA values
+        self.raw_sep = ParamRange(sep_best, sep_1sigma_raw)
+        self.raw_PA = ParamRange(pa_best, pa_1sigma_raw)
 
+        # Now let's start propogating error terms if they are supplied. 
+        # We do them in Sep/PA space first since it's more natural here
+
+        # star center error
         if star_center_err is None:
             print("Skipping star center uncertainity...")
             star_center_err = 0
@@ -507,6 +515,7 @@ class FMAstrometry(object):
         sep_err_pix = (sep_1sigma_raw**2) + star_center_err**2
         sep_err_pix = np.sqrt(sep_err_pix)
 
+        # plate scale error
         if platescale is not None:
             print("Converting pixels to milliarcseconds")
             if platescale_err is None:
@@ -516,10 +525,12 @@ class FMAstrometry(object):
                 print("Adding in plate scale error")
             sep_err_mas = np.sqrt((sep_err_pix * platescale)**2 + (platescale_err * sep_best)**2)
 
+        # PA Offset
         if pa_offset is not None:
             print("Adding in a PA/North angle offset")
             pa_mcmc = (pa_mcmc + pa_offset) % 360
-
+        
+        # PA Uncertainity
         if pa_uncertainty is None:
             print("Skipping PA/North uncertainity...")
             pa_uncertainty = 0
@@ -535,9 +546,15 @@ class FMAstrometry(object):
 
         print("Sep = {0} +/- {1} ({2}) pix, PA = {3} +/- {4} ({5}) degrees".format(sep_best, sep_err_pix_avg, sep_err_pix, pa_best, pa_err_deg_avg, pa_err_deg))
 
+        # Store sep/PA (excluding platescale) values
+        self.sep = ParamRange(sep_best, sep_err_pix)
+        self.PA = ParamRange(pa_best, pa_err_deg)
+
         if platescale is not None:
             sep_err_mas_avg = np.mean(np.abs(sep_err_mas))
             print("Sep = {0} +/- {1} ({2}) mas, PA = {3} +/- {4} ({5}) degrees".format(sep_best*platescale, sep_err_mas_avg, sep_err_mas, pa_best, pa_err_deg_avg, pa_err_deg))
+            # overwrite sep values with values converted to milliarcseconds
+            self.sep = ParamRange(sep_best*platescale, sep_err_mas)
 
         # convert PA errors back into x y (RA/Dec)
         ra_mcmc = -sep_mcmc * np.cos(np.radians(pa_mcmc+90))
@@ -552,15 +569,23 @@ class FMAstrometry(object):
         ra_err_full_pix = np.sqrt((ra_1sigma_raw**2)  + (star_center_err)**2 + (dec_best * np.radians(pa_uncertainty))**2 )
         dec_err_full_pix = np.sqrt((dec_1sigma_raw**2)  + (star_center_err)**2 + (ra_best * np.radians(pa_uncertainty))**2 )
 
-        print("RA offset = {0} +/- {1} pix".format(ra_best, ra_err_full_pix))
-        print("Dec offset = {0} +/- {1} pix".format(dec_best, dec_err_full_pix))
+        # Store error propgoated RA/Dec values (excluding platescale)
+        self.RA_offset = ParamRange(ra_best, ra_err_full_pix)
+        self.Dec_offset = ParamRange(dec_best, dec_err_full_pix)
+
+        print("RA offset = {0} +/- {1} ({2}) pix".format(self.RA_offset.bestfit, self.RA_offset.error, self.RA_offset.error_2sided))
+        print("Dec offset = {0} +/- {1} ({2}) pix".format(self.Dec_offset.bestfit, self.Dec_offset.error, self.Dec_offset.error_2sided))
 
         if platescale is not None:
             ra_err_full_mas = np.sqrt((ra_err_full_pix*platescale)**2 + (platescale_err * ra_best)**2)
             dec_err_full_mas = np.sqrt((dec_err_full_pix*platescale)**2 + (platescale_err * dec_best)**2)
-            print("RA offset = {0} +/- {1} mas".format(ra_best * platescale, ra_err_full_mas))
-            print("Dec offset = {0} +/- {1} mas".format(dec_best * platescale, dec_err_full_mas))
+            
+            # Overwrite with calibrated RA/Dec converted to milliarcsecs
+            self.RA_offset = ParamRange(ra_best*platescale, ra_err_full_mas)
+            self.Dec_offset = ParamRange(dec_best*platescale, dec_err_full_mas)
 
+            print("RA offset = {0} +/- {1} ({2}) mas".format(self.RA_offset.bestfit, self.RA_offset.error, self.RA_offset.error_2sided))
+            print("Dec offset = {0} +/- {1} ({2}) mas".format(self.Dec_offset.bestfit, self.Dec_offset.error, self.Dec_offset.error_2sided))
 
 
 
@@ -659,3 +684,25 @@ def lnprob(fitparams, fma, bounds, cov_func):
     return lp + lnlike(fitparams, fma, cov_func)
 
 
+class ParamRange(object):
+    """
+    Stores the best fit value and uncertainities for a parameter in a neat fasion
+
+    Args:
+        bestfit (float): the bestfit value
+        err_range: either a float or a 2-element tuple (+val1, -val2) and gives the 1-sigma range
+
+    Fieds:
+        bestfit (float): the bestfit value
+        error (float): the average 1-sigma error
+        error_2sided (np.array): [+error1, -error2] 2-element array with asymmetric errors
+    """
+    def __init__(self, bestfit, err_range):
+        self.bestfit = bestfit
+
+        if isinstance(err_range, (int, float)):
+            self.error = err_range
+            self.error_2sided = np.array([err_range, -err_range])
+        elif len(err_range) == 2:
+            self.error_2sided = np.array(err_range)
+            self.error = np.mean(np.abs(err_range))
