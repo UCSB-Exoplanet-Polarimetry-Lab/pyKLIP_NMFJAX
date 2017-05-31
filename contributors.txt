@@ -25,3 +25,5 @@ Simon Ko: adding coverage reports to the continuous integration
 Elijah Spiro: helped develop the MagAO interface
 
 Laurent Pueyo: helped with optimizing the algorithm and provided very useful advice
+
+Pauline Arriaga: wrote disk forward modelling code
