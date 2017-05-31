@@ -23,7 +23,27 @@ class FMAstrometry(object):
         guess_pa: the guessed position angle (degrees)
         fitboxsize: fitting box side length (pixels)
 
-    Fields:
+    Attributes:
+        guess_sep (float): (initialization) guess separation for planet [pixels]
+        guess_pa (float): (initialization) guess PA for planet [degrees]
+        guess_RA_offset (float): (initialization) guess RA offset [pixels]
+        guess_Dec_offset (float): (initialization) guess Dec offset [pixels]
+        raw_RA_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_Dec_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_flux (:py:class:`pyklip.fitpsf.ParamRange`): (result) factor to scale the FM to match the flux of the data
+        covar_params (list of :py:class:`pyklip.fitpsf.ParamRange`): (result) hyperparameters for the Gaussian process
+        raw_sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [pixels]
+        raw_PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [degrees]
+        RA_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the RA offset of the planet that includes all astrometric errors [pixels or mas]
+        Dec_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the Dec offset of the planet that includes all astrometric errors [pixels or mas]
+        sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the separation of the planet that includes all astrometric errors [pixels or mas]
+        PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the PA of the planet that includes all astrometric errors [degrees]
+        fm_stamp (np.array): (fitting) The 2-D stamp of the forward model (centered at the nearest pixel to the guessed location)
+        data_stamp (np.array): (fitting) The 2-D stamp of the data (centered at the nearest pixel to the guessed location)
+        noise_map (np.array): (fitting) The 2-D stamp of the noise for each pixel the data computed assuming azimuthally similar noise
+        padding (int): amount of pixels on one side to pad the data/forward model stamp
+        sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. See emcee docs for more details. 
+    
 
     """
     def __init__(self, guess_sep, guess_pa, fitboxsize):
@@ -692,7 +712,7 @@ class ParamRange(object):
         bestfit (float): the bestfit value
         err_range: either a float or a 2-element tuple (+val1, -val2) and gives the 1-sigma range
 
-    Fieds:
+    Attributes:
         bestfit (float): the bestfit value
         error (float): the average 1-sigma error
         error_2sided (np.array): [+error1, -error2] 2-element array with asymmetric errors
