@@ -33,7 +33,7 @@ else:
 
 from pyklip.instruments.P1640_support import P1640spots
 from pyklip.instruments.P1640_support import P1640utils
-from pyklip.instruments.P1640_support import P1640_cube_checker
+# from pyklip.instruments.P1640_support import P1640_cube_checker
 
 from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
