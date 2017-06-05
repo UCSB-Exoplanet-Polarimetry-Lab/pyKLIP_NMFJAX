@@ -280,13 +280,13 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
 
     return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
 
-def get_planet_spectrum(filename,wavelength):
+def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
     """
     Get the normalized spectrum of a planet for a GPI spectral band or any wavelengths array.
     Spectra are extraced from .flx files from Mark Marley et al's models.
 
     Args:
-        filename: Path of the .flx file containing the spectrum.
+        spectrum: Path of the .flx file containing the spectrum.
         wavelength: array of wavelenths in microns (or string with GPI band 'H', 'J', 'K1', 'K2', 'Y').
                 (When using GPI spectral band wavelength samples are linearly spaced between the first and the last
                 wavelength of the band.)
@@ -297,24 +297,32 @@ def get_planet_spectrum(filename,wavelength):
     """
 
 
-    spec_data = []
-    with open(filename, 'r') as f:
-        for line in f:
-            splitted_line = line.split()
-            # splitted_line[0]: index
-            # splitted_line[1]: wavelength (mum)
-            # splitted_line[2]: T_brt
-            # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
+    if isinstance(spectrum, str):
+        spec_data = []
+        with open(spectrum, 'r') as f:
+            for line in f:
+                splitted_line = line.split()
+                # splitted_line[0]: index
+                # splitted_line[1]: wavelength (mum)
+                # splitted_line[2]: T_brt
+                # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
 
-            try:
-                spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
-            except:
-                break
+                try:
+                    spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+                except:
+                    break
 
-    spec_data = np.array(spec_data)
-    N_samp = spec_data.shape[0]
-    wave = spec_data[:,1]
-    spec = spec_data[:,3]
+        spec_data = np.array(spec_data)
+        N_samp = spec_data.shape[0]
+        wave = spec_data[:,1]
+        spec = spec_data[:,3]
+
+    # Interpolate the spectrum on GPI sampling and convert F_nu to F_lambda
+        spec = spec/wave**2
+    else:
+        wave = ori_wvs
+        spec = spectrum
+
 
     # todo: check that it matches the actual sampling
     if isinstance(wavelength, str):
