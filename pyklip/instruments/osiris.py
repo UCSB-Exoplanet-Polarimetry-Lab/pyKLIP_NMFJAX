@@ -8,12 +8,12 @@ from scipy.ndimage.filters import median_filter
 from pyklip.instruments.Instrument import Data
 import pyklip.klip as klip
 
-class Ifs_single_cube(Data):
+class Ifs(Data):
     """
     A spectral cube of Osiris IFS Data.
 
     Args:
-        data_cube: single FITS file with a 3D-cube (Nwvs, Ny, Nx) with an osiris IFS data
+        data_cube: FITS file list with 3D-cubes (Nwvs, Ny, Nx) with an osiris IFS data
         telluric_cube: single telluric reference FITS file with a 3D-cube (Nwvs, Ny, Nx) with an osiris IFS data.
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         coaddslices: if not None, combine (addition) slices together to reduce the size of the spectral cube.
@@ -38,32 +38,51 @@ class Ifs_single_cube(Data):
     # class initialization
 
     # Coonstructor
-    def __init__(self, data_cube, telluric_cube,
-                 guess_center=None,recalculate_center=False,
+    def __init__(self, data_cube_list, telluric_cube,
+                 guess_center=None,recalculate_center_cadi=False, centers = None,
                  psf_cube_size=21,
                  coaddslices=None, nan_mask_boxsize=0,median_filter_boxsize = 0,badpix2nan=False):
-        super(Ifs_single_cube, self).__init__()
+        super(Ifs, self).__init__()
+
+        self.nfiles = len(data_cube_list)
 
         # read in the data
-        with fits.open(data_cube) as hdulist:
-            print("Reading "+data_cube)
-            self._input = hdulist[0].data # 3D cube, Nwvs, Ny, Nx
-            self.prihdr = hdulist[0].header
-            # Move dimensions of input array to match pyklip conventions
-            self.input = np.rollaxis(np.rollaxis(self.input,2),2,1)
-            self._filenums = np.ones(self.input.shape[0])
-            self.nfiles = 1
-            self.filenames = [os.path.basename(data_cube),]*self.input.shape[0]
-            self.nwvs = self.input.shape[0]
-            # centers are at dim/2
-            init_wv = self.prihdr["CRVAL1"]/1000. # wv for first slice in mum
-            dwv = self.prihdr["CDELT1"]/1000. # wv interval between 2 slices in mum
-            self.wvs = np.arange(init_wv,init_wv+dwv*self.input.shape[0],dwv)
+        self.filenums = []
+        self.filenames = []
+        self.prihdrs = []
+        self.wvs = []
+        self.centers = []
+        for k,data_cube in enumerate(data_cube_list):
+            with fits.open(data_cube) as hdulist:
+                print("Reading "+data_cube)
+                tmp_input = np.rollaxis(np.rollaxis(hdulist[0].data,2),2,1)
+                self.nwvs = tmp_input.shape[0]
+                try:
+                    self.input = np.concatenate((self.input,tmp_input),axis=0) # 3D cube, Nwvs, Ny, Nx
+                except:
+                    self.input = tmp_input
+                self.prihdrs.append(hdulist[0].header)
+                # Move dimensions of input array to match pyklip conventions
+                self.filenums.extend(np.ones(self.nwvs)*k)
+                self.filenames.extend([os.path.basename(data_cube),]*self.nwvs)
+                # centers are at dim/2
+                init_wv = self.prihdrs[k]["CRVAL1"]/1000. # wv for first slice in mum
+                dwv = self.prihdrs[k]["CDELT1"]/1000. # wv interval between 2 slices in mum
+                self.wvs.extend(np.arange(init_wv,init_wv+dwv*self.nwvs,dwv))
 
-        if guess_center is None:
-            self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-        else:
-            self._centers = np.array([guess_center,]*self.input.shape[0])
+
+                if guess_center is None:
+                    self.centers.extend(np.array([[img.shape[1]/2., img.shape[0]/2.] for img in tmp_input]))
+                else:
+                    self.centers.extend(np.array([guess_center,]*self.nwvs))
+
+        if centers is not None:
+            self.centers = []
+            for x,y in centers:
+                self.centers.extend([[x,y],]*self.nwvs)
+
+        self.wvs = np.array(self.wvs)
+        self.centers = np.array(self.centers)
 
         # TODO set the PAs right?
         self.PAs = np.zeros(self.wvs.shape)
@@ -91,6 +110,11 @@ class Ifs_single_cube(Data):
         #     # plt.colorbar()
         #     plt.show()
 
+        # import matplotlib.pyplot as plt
+        # for k in range(self.nwvs):
+        #     plt.imshow(self.input[50*k,::-1,:])
+        #     plt.colorbar()
+        #     plt.show()
         # read in the psf cube
         with fits.open(telluric_cube) as hdulist:
             psfs = hdulist[0].data # Nwvs, Ny, Nx
@@ -99,7 +123,7 @@ class Ifs_single_cube(Data):
 
             # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
             # But it works with keepslices
-            self.psfs_wvs = np.arange(init_wv,init_wv+dwv*self.input.shape[0],dwv)
+            self.psfs_wvs = np.arange(init_wv,init_wv+dwv*self.nwvs,dwv)
 
             # trim the cube
             pixelsbefore = psf_cube_size//2
@@ -191,20 +215,46 @@ class Ifs_single_cube(Data):
         self._output = None
 
         if coaddslices is not None:
-            N_chunks = self.input.shape[0]//coaddslices
 
-            self.input = np.array([np.nanmean(self.input[k*coaddslices:(k+1)*coaddslices,:,:],axis=0) for k in range(N_chunks)])
-            self.wvs = np.array([np.nanmean(self.wvs[k*coaddslices:(k+1)*coaddslices],axis=0) for k in range(N_chunks)])
+            N_chunks = self.psfs.shape[0]//coaddslices
             self.psfs = np.array([np.nanmean(self.psfs[k*coaddslices:(k+1)*coaddslices,:,:],axis=0) for k in range(N_chunks)])
-            self.psfs_wvs = np.array([np.nanmean(self.psfs_wvs[k*coaddslices:(k+1)*coaddslices],axis=0) for k in range(N_chunks)])
+            self.psfs_wvs = np.array([np.nanmean(self.psfs_wvs[k*coaddslices:(k+1)*coaddslices]) for k in range(N_chunks)])
 
-            self.nwvs = self.input.shape[0]
-            self.filenums = np.array([self.filenums[k*coaddslices] for k in range(N_chunks)])
-            self.centers = np.array([np.nanmean(self.centers[k*coaddslices:(k+1)*coaddslices,:],axis=0) for k in range(N_chunks)])
-            self.PAs = np.array([self.PAs[k*coaddslices] for k in range(N_chunks)])
-            self.filenames = np.array([self.filenames[k*coaddslices] for k in range(N_chunks)])
-            self.dn_per_contrast = np.array([np.nanmean(self.dn_per_contrast[k*coaddslices:(k+1)*coaddslices]) for k in range(N_chunks)])
-            self.wcs = np.array([self.wcs[k*coaddslices] for k in range(N_chunks)])
+            new_wvs = []
+            new_filenums = []
+            new_centers = []
+            new_PAs = []
+            new_filenames = []
+            new_dn_per_contrast = []
+            new_wcs = []
+            for k in range(self.nfiles):
+                tmp_input = copy(self.input[k*self.nwvs:(k+1)*self.nwvs,:,:])
+                tmp_input = np.array([np.nanmean(tmp_input[l*coaddslices:(l+1)*coaddslices,:,:],axis=0) for l in range(N_chunks)])
+                try:
+                    new_input = np.concatenate((new_input,tmp_input),axis=0) # 3D cube, Nwvs, Ny, Nx
+                except:
+                    new_input = tmp_input
+                new_nwvs = tmp_input.shape[0]
+
+                new_wvs.extend(np.array([np.nanmean(self.wvs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices:(l+1)*coaddslices]) for l in range(N_chunks)]))
+                new_filenums.extend(np.array([self.filenums[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)]))
+                new_centers.extend([np.nanmean(self.centers[k*self.nwvs:(k+1)*self.nwvs,:][l*coaddslices:(l+1)*coaddslices,:],axis=0) for l in range(N_chunks)])
+                new_PAs.extend([self.PAs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+                new_filenames.extend([self.filenames[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+                new_dn_per_contrast.extend([np.nanmean(self.dn_per_contrast[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices:(l+1)*coaddslices]) for l in range(N_chunks)])
+                new_wcs.extend([self.wcs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+
+
+            self.input = new_input
+            self.wvs = np.array(new_wvs)
+            self.nwvs = new_nwvs
+            self.filenums = np.array(new_filenums)
+            self.centers = np.array(new_centers)
+            self.PAs = np.array(new_PAs)
+            self.filenames = new_filenames
+            self.dn_per_contrast = np.array(new_dn_per_contrast)
+            self.wcs = new_wcs
+
 
         # import matplotlib.pyplot as plt
         # for k in range(self.nwvs):
@@ -228,49 +278,63 @@ class Ifs_single_cube(Data):
         #     plt.show()
         # import matplotlib.pyplot as plt
         # for k in range(self.nwvs):
-        #     plt.imshow(self.input[k,::-1,:])
+        #     plt.imshow(self.input[10*k,::-1,:])
         #     plt.colorbar()
         #     plt.show()
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = "HR8799"#self.prihdr["OBJECT"]
 
-        if recalculate_center:
-            if guess_center is None:
-                xcen0,ycen0 = self.input.shape[2]/2., self.input.shape[1]/2.
-            else:
-                xcen0,ycen0 = guess_center
+        if recalculate_center_cadi:
+            for k in range(self.nfiles):
+                tmp_input = copy(self.input[k*self.nwvs:(k+1)*self.nwvs,:,:])
+                if guess_center is None:
+                    xcen0,ycen0 = tmp_input.shape[2]/2., tmp_input.shape[1]/2.
+                else:
+                    xcen0,ycen0 = guess_center
 
-            range_list = [100,10,1]
-            samples = 10
-            for it,width in enumerate(range_list):
-                x_list,y_list = np.linspace(xcen0-width/2.,xcen0+width/2.,samples),np.linspace(ycen0-width/2.,ycen0+width/2.,samples)
-                # print(x_list,y_list)
-                xcen_grid,ycen_grid = np.meshgrid(x_list,y_list)
-                cost_func  = np.zeros(xcen_grid.shape)
-                cost_func.shape = [np.size(cost_func)]
+                range_list = [100,20,4,1]
+                samples = 10
+                for it,width in enumerate(range_list):
+                    x_list,y_list = np.linspace(xcen0-width/2.,xcen0+width/2.,samples),np.linspace(ycen0-width/2.,ycen0+width/2.,samples)
+                    # print(x_list,y_list)
+                    xcen_grid,ycen_grid = np.meshgrid(x_list,y_list)
+                    cost_func  = np.zeros(xcen_grid.shape)
+                    cost_func.shape = [np.size(cost_func)]
 
-                import multiprocessing as mp
-                import itertools
-                self.N_threads = mp.cpu_count()
-                pool = mp.Pool(processes=self.N_threads)
-                #multitask this
-                outputs_list = pool.map(casdi_residual_star, itertools.izip(xcen_grid.ravel(),ycen_grid.ravel(),itertools.repeat(self.input),itertools.repeat(self.wvs)))
+                    import multiprocessing as mp
+                    import itertools
+                    self.N_threads = mp.cpu_count()
+                    pool = mp.Pool(processes=self.N_threads)
+                    #multitask this
+                    outputs_list = pool.map(casdi_residual_star, itertools.izip(xcen_grid.ravel(),
+                                                                                ycen_grid.ravel(),
+                                                                                itertools.repeat(tmp_input),
+                                                                                itertools.repeat(self.wvs[k*self.nwvs:(k+1)*self.nwvs])))
 
-                for k,out in enumerate(outputs_list):
-                    cost_func[k] = out
-                pool.close()
+                    for l,out in enumerate(outputs_list):
+                        cost_func[l] = out
+                    pool.close()
 
-                xcen0 = xcen_grid.ravel()[np.argmin(cost_func)]
-                ycen0 = ycen_grid.ravel()[np.argmin(cost_func)]
+                    xcen0 = xcen_grid.ravel()[np.argmin(cost_func)]
+                    ycen0 = ycen_grid.ravel()[np.argmin(cost_func)]
 
-                # import matplotlib.pyplot as plt
-                # print(self.input.shape[2]/2.,sep_planet/ 0.02)
-                # print(self.input.shape[2]/2.-sep_planet/ 0.02, self.input.shape[1]/2.,xcen0,ycen0)
-                # cost_func.shape = (samples,samples)
-                # plt.imshow(cost_func,interpolation="nearest")
-                # plt.show()
-            self.centers = np.array([(xcen0,ycen0),]*self.input.shape[0])
+                    # import matplotlib.pyplot as plt
+                    # cost_func.shape = (samples,samples)
+                    # plt.figure(1)
+                    # plt.subplot(2,1,1)
+                    # plt.imshow(xcen_grid[::-1,:],interpolation="nearest")
+                    # plt.colorbar()
+                    # plt.subplot(2,1,2)
+                    # plt.imshow(ycen_grid[::-1,:],interpolation="nearest")
+                    # plt.colorbar()
+                    # plt.figure(2)
+                    # plt.imshow(cost_func[::-1,:],interpolation="nearest")
+                    # plt.figure(3)
+                    # plt.plot(self.wvs[k*self.nwvs:(k+1)*self.nwvs])
+                    # plt.show()
+                    # print(k,xcen0,ycen0)
+                self.centers[k*self.nwvs:(k+1)*self.nwvs,:] = np.array([(xcen0,ycen0),]*tmp_input.shape[0])
 
 
         # else:
@@ -365,13 +429,15 @@ class Ifs_single_cube(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data,center=None, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
 
         Args:
             filepath: path to file to output
             data: 2D or 3D data to save
+            center: center of the image to be saved in the header as the keywords PSFCENTX and PSFCENTY in pixels.
+                The first pixel has coordinates (0,0)
             klipparams: a string of klip parameters
             filetype: filetype of the object (e.g. "KL Mode Cube", "PSF Subtracted Spectral Cube")
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
@@ -380,7 +446,7 @@ class Ifs_single_cube(Data):
         
         """
         hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
+        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdrs[0]))
 
         # save all the files we used in the reduction
         # we'll assume you used all the input files
@@ -425,10 +491,13 @@ class Ifs_single_cube(Data):
                 hdulist[0].header['CD3_3'] = 1.
 
 
-        center = self.centers[0]
-        hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
-        hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
-        hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+        #use the dataset center if none was passed in
+        if center is None:
+            center = self.centers[0]
+        if center is not None:
+            hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
+            hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
+            hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
         hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
