@@ -1343,7 +1343,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # if we actually have spectral cubes, let's save those too
         if num_wvs > 1:
             # oldshape = dataset.output.shape # oldshape has already been set and used to reshape output, so this causes a bug
-            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1] / num_wvs, num_wvs, oldshape[2], oldshape[3])
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1] // num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 # calibrate spectral cube if needed
