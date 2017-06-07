@@ -273,6 +273,15 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
     upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
     lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
 
+    # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
+    # When this happens we don't average out the spectra and takes the nearest available sample
+    for k in range(np.size(upper_spec_unique)):
+        if np.isnan(upper_spec_unique[k]):
+            upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
+    for k in range(np.size(lower_spec_unique)):
+        if np.isnan(lower_spec_unique[k]):
+            lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+
     spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
 
     f = interp1d(sampling_wvs_unique, spec_pip_unique)
@@ -337,7 +346,7 @@ def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
 
     if 0:
         import matplotlib.pyplot as plt
-        print()
+        print((sampling_pip,spec_pip/np.nanmean(spec_pip)))
         plt.figure(2)
         wave_range = np.where((wave<sampling_pip[-1]) & (wave>sampling_pip[0]))
         plt.plot(wave[wave_range],spec[wave_range]/np.nanmean(spec[wave_range]),'r')
