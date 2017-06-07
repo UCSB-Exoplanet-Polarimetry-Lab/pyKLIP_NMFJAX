@@ -453,7 +453,8 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
         num_samples = int(np.floor(2*np.pi*sep/resolution))
 
         # find 5 sigma flux using student-t statistics
-        fpf_flux = t.ppf(0.99999971334, num_samples-1, loc=noise_mean, scale=noise_std)
+        # Correction based on Mawet et al. 2014
+        fpf_flux = t.ppf(0.99999971334, num_samples-1, scale=noise_std) * np.sqrt(1 + 1./num_samples) + noise_mean
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)
