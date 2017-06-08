@@ -436,7 +436,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
         for wv, lam in enumerate(uniqwvs):
             # Calculate lam/D in pixels - first convert wavelength to [m]
             # lam[m] / D[m] is in radians -- convert to arcsec
-            fwhm_arcsec = ((lam*1.0e-6)/telD) * (3600*180/np.pi)
+            fwhm_arcsec = 1.22*((lam*1.0e-6)/telD) * (3600*180/np.pi)
             # convert to pixels with ifs_lenslet_scale
             fwhm = fwhm_arcsec/float(dataset.config.get('instrument','ifs_lenslet_scale'))
             # Gaussian standard deviation - from another routine
@@ -583,11 +583,23 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     '''
 
     if units == 'CONTRAST':
+        # From JB's code, normalize by sum / peak ratio:
+        # First set up the PSF model and sums
+        sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
+        PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
+        sat_spot_spec = np.nanmax(PSF_cube, axis=(1,2))
+        # Now devide the sum by the peak for each wavelength slice
+        aper_over_peak_ratio = np.zeros(nl)
+        for l_id in range(PSF_cube.shape[0]):
+            aper_over_peak_ratio[l_id] = \
+                np.nansum(PSF_cube[l_id,:,:]) / sat_spot_spec[l_id]
+
         # Alex's normalization terms:
         # Avg spot ratio
+        band = prihdrs[0]['APODIZER'].split('_')[1]
         spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
-        spot_to_star_ratio = dataset.spot_ratio[dataset.band]
-        normfactor = spot_flux_spectrum / spot_to_star_ratio
+        spot_to_star_ratio = dataset.spot_ratio[band]
+        normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
         spec_unit = "CONTRAST"
 
         return estim_spec / normfactor
