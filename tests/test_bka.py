@@ -99,10 +99,10 @@ def test_fmastrometry():
     fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
 
     # set kernel, no read noise
-    fma.set_kernel("matern32", [3.], [r"$l$"])
+    fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
 
     # set bounds
-    fma.set_bounds(1.5, 1.5, 1, [1.])
+    fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_RA_offset, fma.guess_Dec_offset)
     print(fma.bounds)
