@@ -389,8 +389,9 @@ class Irdis(Data):
 
         # read in the data
         with fits.open(data_cube) as hdulist:
+            self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+            self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
-                self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
                 self.nwvs = self.input.shape[1]
@@ -439,11 +440,19 @@ class Irdis(Data):
         self.flipx = False
 
         # I have no idea
-        self.IWA = IWA / Ifs.platescale # 0.2" IWA
+        self.IWA = IWA / Irdis.platescale # 0.2" IWA
 
-        # We aren't doing WCS info for SPHERE
+        # Creating WCS info for SPHERE
+        self.wcs = []
+        for vert_angle in self.PAs:
+            w = wcs.WCS()
+            vert_angle = np.radians(vert_angle)
+            pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+            cdmatrix = pc * self.platescale /3600.
+            w.wcs.cd = cdmatrix
+            self.wcs.append(w)
+        self.wcs = np.array(self.wcs)
         self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
-
         self._output = None
 
         # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
