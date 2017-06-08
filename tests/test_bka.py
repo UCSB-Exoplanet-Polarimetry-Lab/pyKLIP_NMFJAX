@@ -98,7 +98,7 @@ def test_fmastrometry():
     # generate data_stamp stamp
     fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
 
-    # set kernel, no read noise
+    # set kernel, with read noise
     fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
 
     # set bounds
@@ -110,7 +110,7 @@ def test_fmastrometry():
     mod_bounds = np.copy(fma.bounds)
     mod_bounds[2:] = np.log(mod_bounds[2:])
     print(mod_bounds)
-    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3)), fma, mod_bounds, fma.covar)
+    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
     print(lnpos, np.nanmean(data_frame), np.nanmean(fm_frame), np.nanmean(fma.data_stamp), np.nanmean(fma.fm_stamp))
     assert lnpos > -np.inf
 

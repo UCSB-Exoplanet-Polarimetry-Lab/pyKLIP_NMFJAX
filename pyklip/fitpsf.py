@@ -328,7 +328,7 @@ class FMAstrometry(object):
             if np.size(read_noise_bounds) == 2:
                 self.bounds.append(read_noise_bounds)
             else:
-                self.bounds.append([10**read_noise_bounds, 1])
+                self.bounds.append([self.covar_param_guesses[-1]/10**read_noise_bounds, 1])
 
 
     def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
@@ -631,12 +631,6 @@ def lnprior(fitparams, bounds, readnoise=False):
         if (param >= bound[1]) | (param < bound[0]):
             prior *= -np.inf
             break
-    
-    if readnoise:
-        # read noise relative amplitude can't be greater than 1
-        readnoise_param = np.exp(fitparams[-1])
-        if readnoise_param > 1:
-            prior = -np.inf
 
     return prior
 
@@ -663,7 +657,7 @@ def lnlike(fitparams, fma, cov_func, readnoise=False):
 
     if readnoise:
         # last hyperparameter is a diagonal noise term. Separate it out
-        readnoise_amp = hyperparms_trial[-1]
+        readnoise_amp = np.exp(hyperparms_trial[-1])
         hyperparms_trial = hyperparms_trial[:-1]
 
     # get trial parameters out of log space
@@ -685,12 +679,16 @@ def lnlike(fitparams, fma, cov_func, readnoise=False):
 
     if readnoise:
         # add a diagonal term
-        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(fma.noise_map.ravel() )
+        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(fma.noise_map.ravel()**2 )
 
     # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
     # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
-    (L_cov, lower_cov) = linalg.cho_factor(cov)
-    cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
+    try:
+        (L_cov, lower_cov) = linalg.cho_factor(cov)
+        cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
+    except: 
+        cov_inv = np.linalg.inv(cov)
+        cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
     residuals = diff_ravel.dot(cov_inv_dot_diff)
 
     # compute log(det(Cov))
