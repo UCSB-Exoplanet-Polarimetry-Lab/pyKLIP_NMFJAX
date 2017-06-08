@@ -366,7 +366,7 @@ class FMAstrometry(object):
 
         global lnprob
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(self, sampler_bounds, self.covar),
-                                        threads=numthreads)
+                                        kwargs={'readnoise' : self.include_readnoise}, threads=numthreads)
 
         # burn in
         print("Running burn in")
@@ -610,7 +610,7 @@ class FMAstrometry(object):
 
 
 
-def lnprior(fitparams, bounds):
+def lnprior(fitparams, bounds, readnoise=False):
     """
     Bayesian prior
 
@@ -619,6 +619,7 @@ def lnprior(fitparams, bounds):
 
         bounds: array of (N,2) with corresponding lower and upper bound of params
                 bounds[i,0] <= fitparams[i] < bounds[i,1]
+        readnoise: boolean. If True, the last fitparam fits for diagonal noise
 
     Returns:
         prior: 0 if inside bound ranges, -inf if outside
@@ -630,11 +631,17 @@ def lnprior(fitparams, bounds):
         if (param >= bound[1]) | (param < bound[0]):
             prior *= -np.inf
             break
+    
+    if readnoise:
+        # read noise relative amplitude can't be greater than 1
+        readnoise_param = np.exp(fitparams[-1])
+        if readnoise_param > 1:
+            prior = -np.inf
 
     return prior
 
 
-def lnlike(fitparams, fma, cov_func):
+def lnlike(fitparams, fma, cov_func, readnoise=False):
     """
     Likelihood function
     Args:
@@ -644,11 +651,20 @@ def lnlike(fitparams, fma, cov_func):
         fma (FMAstrometry): a FMAstrometry object that has been fully set up to run
         cov_func (function): function that given an input [x,y] coordinate array returns the covariance matrix
                   e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
+        readnoise: boolean. If True, the last fitparam fits for diagonal noise
 
     Returns:
         likeli: log of likelihood function (minus a constant factor)
     """
-    dRA_trial, dDec_trial, f_trial, hyperparms_trial = fitparams
+    dRA_trial = fitparams[0]
+    dDec_trial = fitparams[1]
+    f_trial = fitparams[2]
+    hyperparms_trial = fitparams[3:]
+
+    if readnoise:
+        # last hyperparameter is a diagonal noise term. Separate it out
+        readnoise_amp = hyperparms_trial[-1]
+        hyperparms_trial = hyperparms_trial[:-1]
 
     # get trial parameters out of log space
     f_trial = math.exp(f_trial)
@@ -667,6 +683,9 @@ def lnlike(fitparams, fma, cov_func):
     cov = cov_func(fma.data_stamp_RA_offset.ravel(), fma.data_stamp_Dec_offset.ravel(), fma.noise_map.ravel(),
                    hyperparms_trial)
 
+    if readnoise:
+        # add a diagonal term
+        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(fma.noise_map.ravel() )
 
     # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
     # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
@@ -681,7 +700,7 @@ def lnlike(fitparams, fma, cov_func):
     return -0.5 * (residuals + constant)
 
 
-def lnprob(fitparams, fma, bounds, cov_func):
+def lnprob(fitparams, fma, bounds, cov_func, readnoise=False):
     """
     Function to compute the relative posterior probabiltiy. Product of likelihood and prior
     Args:
@@ -693,15 +712,16 @@ def lnprob(fitparams, fma, bounds, cov_func):
                 bounds[i,0] <= fitparams[i] < bounds[i,1]
         cov_func: function that given an input [x,y] coordinate array returns the covariance matrix
                   e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
+        readnoise: boolean. If True, the last fitparam fits for diagonal noise
 
     Returns:
 
     """
-    lp = lnprior(fitparams, bounds)
+    lp = lnprior(fitparams, bounds, readnoise=readnoise)
 
     if not np.isfinite(lp):
         return -np.inf
-    return lp + lnlike(fitparams, fma, cov_func)
+    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise)
 
 
 class ParamRange(object):
