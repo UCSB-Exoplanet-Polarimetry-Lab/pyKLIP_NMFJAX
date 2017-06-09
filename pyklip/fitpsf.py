@@ -388,10 +388,10 @@ class FMAstrometry(object):
         # save best fit values
         # percentiles has shape [ndims, 3]
         percentiles = np.swapaxes(np.percentile(sampler.flatchain, [16, 50, 84], axis=0), 0, 1)
-        self.raw_RA_offset = ParamRange(percentiles[0][1], np.array([percentiles[0][2], percentiles[0][0]] - percentiles[0][1]))
-        self.raw_Dec_offset = ParamRange(percentiles[1][1], np.array([percentiles[1][2], percentiles[1][0]] - percentiles[1][1]))
-        self.raw_flux =  ParamRange(percentiles[2][1], np.array([percentiles[2][2], percentiles[2][0]] - percentiles[2][1]))
-        self.covar_params = [ParamRange(thispercentile[1], np.array([thispercentile[2], thispercentile[0]])) for thispercentile in percentiles[3:]]
+        self.raw_RA_offset = ParamRange(percentiles[0][1], np.array([percentiles[0][2], percentiles[0][0]]) - percentiles[0][1])
+        self.raw_Dec_offset = ParamRange(percentiles[1][1], np.array([percentiles[1][2], percentiles[1][0]]) - percentiles[1][1])
+        self.raw_flux =  ParamRange(percentiles[2][1], np.array([percentiles[2][2], percentiles[2][0]]) -  percentiles[2][1])
+        self.covar_params = [ParamRange(thispercentile[1], np.array([thispercentile[2], thispercentile[0]]) - thispercentile[1] ) for thispercentile in percentiles[3:]]
 
         if save_chain:
             pickle_file = open(chain_output, 'wb')
