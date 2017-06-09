@@ -12,6 +12,7 @@ class Ifs(Data):
 
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
+            Also read spectral cubes and 2D images that have been saved using savedata().
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
@@ -47,7 +48,9 @@ class Ifs(Data):
 
         # read in the data
         with fits.open(data_cube) as hdulist:
-            self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+            self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx
+            # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
+            # parameters or for the the location of injected planets.
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4:
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
@@ -61,13 +64,15 @@ class Ifs(Data):
                 self.input[np.where(input_minfilter <= 0)] = np.nan
                 # centers are at dim/2
                 self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 3: # If cube
+            elif np.size(self.input.shape) == 3:
+                # If spectral data cube.
                 self._filenums = np.zeros(self.input.shape[0])
                 self.nfiles = 1
                 self.nwvs = self.input.shape[0]
                 # centers are at dim/2
                 self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 2: # If image
+            elif np.size(self.input.shape) == 2:
+                # If 2D images like SNR maps.
                 self._filenums = 0
                 self.nfiles = 1
                 self.nwvs = 1
@@ -351,6 +356,7 @@ class Irdis(Data):
 
     Args:
         data_cube: FITS file with a 4D-cube (Nfiles, Nwvs, Ny, Nx) with all IFS coronagraphic data
+            Also read spectral cubes and 2D images that have been saved using savedata().
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
             If None, psf_cube = data_cube.replace("cube_coro","cube_psf")
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
@@ -390,6 +396,8 @@ class Irdis(Data):
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # 4D cube, Nfiles, Nwvs, Ny, Nx
+            # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
+            # parameters or for the the location of injected planets.
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
@@ -400,13 +408,15 @@ class Irdis(Data):
                                                 self.input.shape[3])
                 # centers are at dim/2
                 self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 3: # If cube
+            elif np.size(self.input.shape) == 3:
+                # If spectral data cube. 
                 self._filenums = np.zeros(self.input.shape[0])
                 self.nfiles = 1
                 self.nwvs = self.input.shape[0]
                 # centers are at dim/2
                 self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 2: # If image
+            elif np.size(self.input.shape) == 2:
+                # If 2D images like SNR maps.
                 self._filenums = 0
                 self.nfiles = 1
                 self.nwvs = 1
