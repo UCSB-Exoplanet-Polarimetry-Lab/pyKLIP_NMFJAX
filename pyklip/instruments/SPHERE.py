@@ -452,7 +452,8 @@ class Irdis(Data):
             w.wcs.cd = cdmatrix
             self.wcs.append(w)
         self.wcs = np.array(self.wcs)
-        self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+        # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+
         self._output = None
 
         # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
