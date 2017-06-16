@@ -293,7 +293,7 @@ class P1640Data(Data):
                 # check if all the spot files exist, if so, read them in
                 exist = np.all([os.path.isfile(f) for f in spot_filepaths])
                 assert(exist is not False)
-                print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+                # print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
                 spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                            for f in spot_filepaths])
                 return spot_locations
