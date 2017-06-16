@@ -381,7 +381,7 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           spectra_template=None, model_from_spots=True):
+           spectra_template=None, model_from_spots=True, aligned_center=None):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
@@ -392,6 +392,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     - spectrum          - Can provide a template, default is None
     - model_from_spots  - if True uses dataset.psfs or runs dataset.generate_psf_cube
                           if False, calculates gaussian psfs from instrument file
+    - aligned_center    - pass to klip_dataset
     """
 
     maxnumbasis = 100 # set from JB's example
@@ -413,7 +414,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     if model_from_spots == True:
         # If 'dataset' does not already have psf model, generate them. 
         if hasattr(dataset, "psfs"):
-            print("Using dataset attribute 'psfs' psf model, this is probably GPI data.")
+            print("Using dataset attribute 'psfs' psf model") #, this is probably GPI data.")
             radial_psfs = dataset.psfs / \
                 (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
                  axis=0)[:, None, None])
@@ -456,7 +457,6 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                            radial_psfs,
                            np.unique(dataset.wvs),
                            stamp_size = stamp_size)
-
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
                     annuli=[[planet_sep-stamp,planet_sep+stamp]],
@@ -468,7 +468,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=None,
-                    save_klipped=False, highpass=True)
+                    save_klipped=False, highpass=True,
+                    aligned_center=aligned_center)
 
     #sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
     #                                           dataset.centers,
@@ -623,7 +624,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
         - klip dataset
         - location of planet (sep, pa) to center the stamp on
         - klip movement (how aggressive?), default=1.0 pixel
-        - stamp size, default=10 pixels
+        - stamp sgen_ize, default=10 pixels
         - numbasis - K-L cuttoff
         - contrast [False] True: units of contrast. False: units of DN
         - model_from_spots [True]: use spots as PSF models, or [False] use gaussians
