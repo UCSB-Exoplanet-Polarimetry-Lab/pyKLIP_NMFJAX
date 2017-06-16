@@ -87,7 +87,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     # calculate the total number of KL basis we need based on the number of reference PSFs and number requested
     tot_basis = covar_psfs.shape[0]
 
-    if numbasis[0] == None:
+    if numbasis[0] is None:
         evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-np.min([100,tot_basis-1]), tot_basis-1))
         evals = np.copy(evals[::-1])
         evecs = np.copy(evecs[:,::-1])
@@ -142,7 +142,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         lower_tri = np.tril(np.ones([max_basis,max_basis]))
         inner_products = inner_products * lower_tri
 
-        if numbasis[0] == None:
+        if numbasis[0] is None:
             klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
         else:
             klip = np.dot(inner_products[numbasis,:], KL_basis)
@@ -389,7 +389,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         return calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = inputflux)
 
     max_basis = original_KL.shape[0]
-    if numbasis[0]==None:
+    if numbasis[0] is None:
         numbasis_index = [max_basis-1]
     else:
         numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
@@ -520,7 +520,7 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
 
     """
     max_basis = original_KL.shape[0]
-    if numbasis[0]==None:
+    if numbasis[0] is None:
         numbasis_index = [max_basis-1]
     else:
         numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
@@ -1069,14 +1069,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         if spectrum is None:
             movement = 3
 
-    if numbasis[0]==None:
+    if numbasis[0] is None:
         if np.size(numbasis)>1:
             print("numbasis should have only one element if numbasis[0] = 0.")
             return None
 
     if maxnumbasis is None and numbasis[0] is not None:
         maxnumbasis = np.max(numbasis)
-    elif maxnumbasis is None and numbasis[0]==None:
+    elif maxnumbasis is None and numbasis[0] is None:
         maxnumbasis = 100
 
     if numthreads is None:
