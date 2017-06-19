@@ -190,6 +190,13 @@ class P1640Data(Data):
         self._filenames = newval
 
     @property
+    def configfile(self):
+        return self._configfile
+    @configfile.setter
+    def configfile(self, newval):
+        self._configfile = newval
+
+    @property
     def PAs(self):
         return self._PAs
     @PAs.setter
@@ -240,11 +247,11 @@ class P1640Data(Data):
         self._scale_factors = newval
 
     @property
-    def spot_positions(self):
-        return self._spot_positions
-    @spot_positions.setter
-    def spot_positions(self, newval):
-        self._spot_positions = newval
+    def spot_locations(self):
+        return self._spot_locations
+    @spot_locations.setter
+    def spot_locations(self, newval):
+        self._spot_locations = newval
 
     @property
     def spot_directory(self):
@@ -296,7 +303,7 @@ class P1640Data(Data):
                 # print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
                 spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                            for f in spot_filepaths])
-                return spot_locations
+                # return spot_locations
             except AssertionError:
                 # if they haven't already been written to file, calculate them
                 spot_locations = P1640spots.get_single_cube_spot_positions(cube)
@@ -385,7 +392,7 @@ class P1640Data(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-        spot_locations = np.array(spot_locations).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
+        spot_locations = np.rollaxis(np.array(spot_locations), -2, 1).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
         # for the spot scalings factors, take the mean for each wavelength
         spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
         # Not used by P1640
@@ -993,7 +1000,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
             spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
             spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
-            spot_filepaths = glob.glob(spot_fullpath+'*')
+            spot_filepaths = sorted(glob.glob(spot_fullpath+'*'))
 
             # check if all the spot files exist, if so, read them in
             exist = np.all([os.path.isfile(f) for f in spot_filepaths])
