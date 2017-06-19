@@ -43,7 +43,7 @@ class Ifs(Data):
 
     # Coonstructor
     def __init__(self, data_cube, psf_cube, info_fits, wavelength_info,keepslices=None,
-                 psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15):
+                 psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15, object_name = None, disable_minimum_filter = False):
         super(Ifs, self).__init__()
 
         # read in the data
@@ -60,8 +60,9 @@ class Ifs(Data):
                 self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
                                                 self.input.shape[3])
                 # zeros are nans, and anything adjacient to a pixel less than zero is 0.
-                input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
-                self.input[np.where(input_minfilter <= 0)] = np.nan
+                if not disable_minimum_filter:
+                    input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+                    self.input[np.where(input_minfilter <= 0)] = np.nan
                 # centers are at dim/2
                 self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
             elif np.size(self.input.shape) == 3:
@@ -147,7 +148,8 @@ class Ifs(Data):
 
 
         # Required for automatically querying Simbad for the spectral type of the star.
-        self.object_name = os.path.basename(data_cube).split("_")[0]
+        self.object_name = object_name
+        # self.object_name = os.path.basename(data_cube).split("-")[0].split("_")[0]
 
     ################################
     ### Instance Required Fields ###
@@ -409,7 +411,7 @@ class Irdis(Data):
                 # centers are at dim/2
                 self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
             elif np.size(self.input.shape) == 3:
-                # If spectral data cube. 
+                # If spectral data cube.
                 self._filenums = np.zeros(self.input.shape[0])
                 self.nfiles = 1
                 self.nwvs = self.input.shape[0]
