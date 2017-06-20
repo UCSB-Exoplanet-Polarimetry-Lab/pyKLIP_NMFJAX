@@ -662,13 +662,16 @@ class P1640Data(Data):
                 #now make a psf
                 spotpsf = generate_psf(frame, spots, boxrad=boxrad)
                 self.psfs.append(spotpsf)
-                self.psfs = np.array(self.psfs)
-                self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
-                                                   self.psfs.shape[1], self.psfs.shape[2]))
+            self.psfs = np.array(self.psfs)
+            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
+                                               self.psfs.shape[1], self.psfs.shape[2]))
             self.psfs = np.mean(self.psfs, axis=0)
 
+def generate_psf_cube(self, boxw=14):
+    return generate_psfs(int(np.floor(boxw//2)))
+    """
     def generate_psf_cube(self, boxw=14):
-        """
+        \"""
         # P1640 - use unocculted files
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -684,7 +687,7 @@ class P1640Data(Data):
 
         Returns:
             A cube of shape Nchan*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
-        """
+        \"""
 
         n_frames,ny,nx = self.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(ny), np.arange(nx))
@@ -802,7 +805,7 @@ class P1640Data(Data):
             plt.show()
 
         self.psfs = PSF_cube
-
+    """
     def get_radial_psf(self,save = None):
         """
         Return a pure radial PSF by averaging the original psf. The new PSF is invariant by rotation.
