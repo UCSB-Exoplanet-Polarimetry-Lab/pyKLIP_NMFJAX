@@ -431,6 +431,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                 model_from_spots = False
                 print("generate_psfs failed... Generating Gaussian PSFs...")
     if model_from_spots == False:
+        print("Warning: Generating PSF model using Gaussians.")
+        print(" This may not track AO performance and could introducing color effects into your spectrum.")
         uniqwvs = dataset.wvs[:nl]
         radial_psfs = np.zeros((nl, stamp, stamp))
         telD = float(dataset.config.get('observatory','primary_diam'))
