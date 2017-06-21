@@ -67,7 +67,7 @@ def mask_known_objects(cube,fakeinfohdr,object_name,pix2as,center,MJDOBS=None,OI
     return np.squeeze(cube_cpy)
 
 
-def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
+def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center,MJDOBS=None,OI_list_folder=None,xy = False,pa_sep = False,ignore_fakes = False,fakes_only = False,
                           include_speckles = False,IWA=None,OWA=None):
     """
     
@@ -100,8 +100,6 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
     pa_vec = []
     sep_vec = []
 
-    if center is None:
-        center=(np.nan,np.nan)
 
     if object_name is not None:
         object_name = object_name.replace(" ","_")
