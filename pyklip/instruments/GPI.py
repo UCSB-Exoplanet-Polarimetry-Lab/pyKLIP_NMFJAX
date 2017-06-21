@@ -1015,6 +1015,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spots_xloc.append(this_frame_spot_x_locs)
                 spots_yloc.append(this_frame_spot_y_locs)
 
+            # if the data is a pyklip reduced spectral cube, PSFCENTX/Y should be used to define the center of the image
+            if prihdr["PSFSUB"].strip() == "pyKLIP":
+                center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']],]*len(center)
+
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
             inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
