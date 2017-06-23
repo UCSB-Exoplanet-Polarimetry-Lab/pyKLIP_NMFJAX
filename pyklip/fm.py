@@ -170,7 +170,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
 # @profile
-def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False):
+def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False, refs_mean_subbed = False):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
@@ -192,8 +192,9 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_per
     N_ref = refs.shape[0]
     N_pix = original_KL.shape[1]
 
-    refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
-    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+    if refs_mean_subbed is False:
+        refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
+        refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
     models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0

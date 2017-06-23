@@ -44,6 +44,7 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
+        self.imgs_mean_subbed = False
         
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
@@ -185,7 +186,7 @@ class DiskFM(NoFM):
             original_KL = self.klmodes_dict[key]
             evals = self.evals_dict[key]
             evecs = self.evecs_dict[key]
-            ref_psfs_indicies = self.ref_psfs_indicies_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
             
             parallel = False 
         
@@ -287,6 +288,10 @@ class DiskFM(NoFM):
 
 
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
+        self.aligned_imgs_np = self.aligned_imgs_np - np.nanmean(self.aligned_imgs_np)
+        self.aligned_imgs_np[np.where(np.isnan(self.aligned_imgs_np))] = 0
+        self.imgs_mean_subbed = True
+
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
 
