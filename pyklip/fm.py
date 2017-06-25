@@ -834,16 +834,24 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
     phi = np.arctan2(y - img_center[1], x - img_center[0])
 
-    # incorporate padding
-    #JB debug
-    #print(padding,IWA,OWA)
+    if phistart < phiend:
+        deltaphi = phiend - phistart + 2 * padding/np.mean([radstart, radend])
+    else:
+        deltaphi = (2*np.pi - (phistart - phiend))  + 2 * padding/np.mean([radstart, radend])
+
+    # If the length or the arc is higher than 2*pi, simply pick the entire circle.
+    if deltaphi >= 2*np.pi:
+        phistart = 0
+        phiend = 2*np.pi
+    else:
+        phistart = ((phistart)- padding/np.mean([radstart, radend])) % (2.0 * np.pi)
+        phiend = ((phiend) + padding/np.mean([radstart, radend])) % (2.0 * np.pi)
+
     radstart = np.max([radstart-padding,IWA])
     if OWA is not None:
         radend = np.min([radend+padding,OWA])
     else:
         radend = radend+padding
-    phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
-    phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
 
     # grab the pixel location of the section we are going to anaylze
     phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
@@ -1121,10 +1129,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     else:
         iterator_sectors=[]
         for [r_min,r_max] in rad_bounds:
-            curr_sep_subsections = int(np.pi*(r_max**2-r_min**2)/N_pix_sector) # equivalent to using floor but casting as well
+            curr_sep_N_subsections = np.max([int(np.pi*(r_max**2-r_min**2)/N_pix_sector),1]) # equivalent to using floor but casting as well
             # divide annuli into subsections
-            dphi = 2 * np.pi / curr_sep_subsections
-            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_subsections)]
+            dphi = 2 * np.pi / curr_sep_N_subsections
+            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_N_subsections)]
             phi_bounds_list[-1][1] = 2 * np.pi
             # for phi_bound in phi_bounds_list:
             #     print(((r_min,r_max),phi_bound) )
