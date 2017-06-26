@@ -52,7 +52,8 @@ class FMMF(KPPSuperClass):
                  filter_name_func = None,
                  pix2as=None,
                  highpass = None,
-                 padding = None):
+                 padding = None,
+                 PSF_size = None):
         """
         Define the general parameters of the matched filter.
 
@@ -265,6 +266,7 @@ class FMMF(KPPSuperClass):
         self.spectrum_filename = ""
         self.PSF_cube_path = ""
         self.prefix = None
+        self.PSF_size = PSF_size
 
     def spectrum_iter_available(self):
         """
@@ -493,6 +495,29 @@ class FMMF(KPPSuperClass):
             self.PSF_obj = self.PSF_read_func([self.PSF_cube_path])
             self.PSF_cube_arr = self.PSF_obj.input
             self.PSF_cube_wvs = self.PSF_obj.wvs
+
+        if self.PSF_size is not None:
+            old_shape = self.PSF_cube_arr.shape
+            if old_shape[1] != old_shape[2]:
+                raise Exception("PSF cube must be square")
+            w1 = self.PSF_size
+            w0 = old_shape[1]
+            PSF_cube_arr_new = np.zeros((old_shape[0],self.PSF_size,self.PSF_size))
+            dw = w1-w0
+            if dw >= 0:
+                if (dw % 2) == 0:
+                    print((dw//2),(dw//2+w0),dw//2,(dw//2+w0))
+                    PSF_cube_arr_new[:,(dw//2):(dw//2+w0),dw//2:(dw//2+w0)] = self.PSF_cube_arr
+                else:
+                    print((dw//2 + (w0 % 2)),(dw//2 + (w0 % 2)+w0),(dw//2 + (w1 % 2)),(dw//2 + (w1 % 2)+w0))
+                    PSF_cube_arr_new[:,(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0),(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0)] = self.PSF_cube_arr
+            else:
+                dw = -dw
+                if (dw % 2) == 0:
+                    PSF_cube_arr_new = self.PSF_cube_arr[:,(dw//2):(dw//2+w1),dw//2:(dw//2+w1)]
+                else:
+                    PSF_cube_arr_new = self.PSF_cube_arr[:,(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1),(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1)]
+            self.PSF_cube_arr = PSF_cube_arr_new
 
         # read fakes from headers and give sepPa list to MatchedFilter
         if self.fakes_only:

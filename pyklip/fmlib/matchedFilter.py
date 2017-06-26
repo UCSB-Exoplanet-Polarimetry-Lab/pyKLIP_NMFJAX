@@ -131,10 +131,12 @@ class MatchedFilter(NoFM):
         self.psfs_func_list = psfs_func_list
 
         ny_PSF,nx_PSF = input_psfs.shape[1:]
+        if ny_PSF < 8 or nx_PSF < 8:
+            raise Exception("PSF cube is too small. It needs a stamp width bigger than 8 pixels.")
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF//2,np.arange(0,ny_PSF,1)-ny_PSF//2)
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
-        self.stamp_PSF_mask[np.where(r_PSF_stamp < 7.)] = np.nan
+        self.stamp_PSF_mask[np.where(r_PSF_stamp < np.min([ny_PSF,nx_PSF])*7./20.)] = np.nan
         # self.stamp_PSF_mask[np.where(r_PSF_stamp < 4.)] = np.nan
 
 
@@ -399,8 +401,31 @@ class MatchedFilter(NoFM):
                 fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = variance
                 fmout[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = npix
 
+                if 0:
+                    print(dot_prod,model_norm,variance,npix)
+
                 # Plot sector, klipped and FM model for debug only
-                if 0 and row_id>=10:# and np.nansum(klipped[where_fk,N_KL_id]) != 0:
+                if 0: # and row_id>=10 and col_id > 5 # and np.nansum(klipped[where_fk,N_KL_id]) != 0:
+                    # plt.figure(1)
+                    # blackboard = np.zeros((self.ny,self.nx))
+                    # blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                    # blackboard[section_ind] = klipped
+                    # blackboard.shape = [input_img_shape[0],input_img_shape[1]]
+                    # plt.imshow(blackboard,interpolation="nearest")
+                    # plt.colorbar()
+                    # plt.figure(2)
+                    # for k in range(numbasis[0]):
+                    #     blackboard = np.zeros((self.ny,self.nx))
+                    #     blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                    #     blackboard[section_ind] = klmodes[k,:]
+                    #     blackboard.shape = [input_img_shape[0],input_img_shape[1]]
+                    #     plt.subplot(1,numbasis[0],k+1)
+                    #     plt.imshow(blackboard[::-1,:],interpolation="nearest")
+                    #     plt.title("KL{0}".format(k))
+                    #     plt.colorbar()
+                    # plt.show()
+
+
                     #if 0:
                     # print(klipped_sub)
                     # print(np.isfinite(klipped_sub))
@@ -408,10 +433,10 @@ class MatchedFilter(NoFM):
                     # print(float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub)))
                     # print(float(np.sum(np.isfinite(klipped[where_background,N_KL_id])))/float(np.size(klipped[where_background,N_KL_id])))
                     print(sep_fk,pa_fk,row_id,col_id)
-                    print(dot_prod,model_norm,variance)
-                    print(np.nanmean(klipped-sky),sky,dot_prod,model_norm,np.nanmean((dot_prod/model_norm)*postklip_psf[N_KL_id,:]))
-                    print(klipped.shape,postklip_psf[N_KL_id,:].shape)
-                    print(float(np.sum(np.isfinite(klipped_rm_pl[where_background]))),float(np.size(klipped_rm_pl[where_background])))
+                    # print(dot_prod,model_norm,variance)
+                    # print(np.nanmean(klipped-sky),sky,dot_prod,model_norm,np.nanmean((dot_prod/model_norm)*postklip_psf[N_KL_id,:]))
+                    # print(klipped.shape,postklip_psf[N_KL_id,:].shape)
+                    # print(float(np.sum(np.isfinite(klipped_rm_pl[where_background]))),float(np.size(klipped_rm_pl[where_background])))
                     blackboard1 = np.zeros((self.ny,self.nx))
                     blackboard2 = np.zeros((self.ny,self.nx))
                     blackboard3 = np.zeros((self.ny,self.nx))
@@ -427,7 +452,7 @@ class MatchedFilter(NoFM):
                     plt.subplot(1,3,2)
                     blackboard2.shape = [input_img_shape[0] * input_img_shape[1]]
                     # blackboard2[section_ind[0][where_fk]] = klipped[where_fk,N_KL_id]
-                    blackboard2[section_ind[0]] = klipped_rm_pl
+                    blackboard2[section_ind[0]] = klipped#klipped_rm_pl
                     blackboard2.shape = [input_img_shape[0],input_img_shape[1]]
                     plt.imshow(blackboard2)
                     plt.colorbar()
