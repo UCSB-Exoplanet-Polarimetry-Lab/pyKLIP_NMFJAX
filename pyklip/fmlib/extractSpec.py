@@ -381,7 +381,7 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           spectra_template=None, model_from_spots=True):
+           maxnumbasis = 100, spectra_template=None, manual_psfs=None):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
@@ -390,11 +390,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     - stamp             - size of box around companion for FM
     - numthreads        (default=4)
     - spectrum          - Can provide a template, default is None
-    - model_from_spots  - if True uses dataset.psfs or runs dataset.generate_psf_cube
-                          if False, calculates gaussian psfs from instrument file
+    - manual_psfs       - If dataset does not have attribute "psfs" will look for 
+                        manual input of psf model. 
+                    
     """
 
-    maxnumbasis = 100 # set from JB's example
+    maxnumbasis = maxnumbasis # set from JB's example
     movement = mv # movement
     stamp_size=stamp
     N_frames = len(dataset.input)
@@ -410,45 +411,21 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     planet_sep, planet_pa = pars
 
-    if model_from_spots == True:
-        # If 'dataset' does not already have psf model, generate them. 
-        if hasattr(dataset, "psfs"):
-            print("Using dataset attribute 'psfs' psf model, this is probably GPI data.")
-            radial_psfs = dataset.psfs / \
-                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
-                 axis=0)[:, None, None])
-        else:
-            try:
-                print("Using generate_psfs to make psf model, this is probably GPI data.")
-                dataset.generate_psf_cube(20)
-                radial_psfs = dataset.psfs / \
-                    (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
-                     axis=0)[:, None, None])
-            except:
-                # If this dataset does not have a working generate_psfs method,
-                # just make a gaussian psf
-                model_from_spots = False
-                print("generate_psfs failed... Generating Gaussian PSFs...")
-    if model_from_spots == False:
-        uniqwvs = dataset.wvs[:nl]
-        radial_psfs = np.zeros((nl, stamp, stamp))
-        telD = float(dataset.config.get('observatory','primary_diam'))
-        for wv, lam in enumerate(uniqwvs):
-            # Calculate lam/D in pixels - first convert wavelength to [m]
-            # lam[m] / D[m] is in radians -- convert to arcsec
-            fwhm_arcsec = 1.22*((lam*1.0e-6)/telD) * (3600*180/np.pi)
-            # convert to pixels with ifs_lenslet_scale
-            fwhm = fwhm_arcsec/float(dataset.config.get('instrument','ifs_lenslet_scale'))
-            # Gaussian standard deviation - from another routine
-            sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
-
-            #centered in the array
-            y,x = np.indices([stamp, stamp])
-            y -= stamp // 2
-            x -= stamp // 2
-            radial_psfs[wv,...] = np.exp(-(x**2. + y**2.) / (2. * sigma**2))
-        radial_psfs /= np.mean(radial_psfs.sum(axis=0))
-
+    # If 'dataset' does not already have psf model, generate them. 
+    if hasattr(dataset, "psfs"):
+        print("Using dataset PSF model.")
+        # What is this normalization? Not sure it matters (see line 82).
+        radial_psfs = dataset.psfs / \
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+             axis=0)[:, None, None])
+    elif: manual_psfs is not None:
+        radial_psfs = manual_psfs
+    else:
+        raise AttributeError("dataset has no psfs attribute. \n"+\
+              "Either run dataset.generate_psfs before gen_fm or"+\
+              "provide psf models in keyword manual_psfs. \n"+\
+              "examples/FM_spectral_extraction_tutorial.py for example.")
+        
     fm_class = ExtractSpec(dataset.input.shape,
                            numbasis,
                            planet_sep,
@@ -463,28 +440,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                     subsections=[[(planet_pa-stamp)/180.*np.pi,\
                                   (planet_pa+stamp)/180.*np.pi]],
                     movement=movement,
-                    #numbasis = np.array([numbasis]), 
                     numbasis = numbasis, 
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=None,
                     save_klipped=False, highpass=True)
 
-    #sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
-    #                                           dataset.centers,
-    #                                           dataset.PAs,
-    #                                           dataset.wvs,
-    #                                           dataset.IWA,
-    #                                           fm_class,
-    #                                           numbasis=numbasis,
-    #                                           movement=movement,
-    #                                           #spectrum=spectra_template,
-    #                                           spectrum=None,
-    #                                           annuli=[[planet_sep-10,planet_sep+10]],
-    #                                           subsections=[[(planet_pa-10.)/180.*np.pi,\
-    #                                                         (planet_pa+10.)/180.*np.pi]],
-    #                                           numthreads=numthreads,
-    #                                           maxnumbasis=maxnumbasis)
     return dataset.fmout
 
 def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
@@ -596,13 +557,13 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
 
         # Alex's normalization terms:
         # Avg spot ratio
-        band = prihdrs[0]['APODIZER'].split('_')[1]
+        band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
         spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
         spot_to_star_ratio = dataset.spot_ratio[band]
         normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
         spec_unit = "CONTRAST"
 
-        return estim_spec / normfactor
+        return estim_spec / normfactor, fm_coadd_mat
     else:
         spec_unit = "DN"
         return estim_spec, fm_coadd_mat
@@ -678,7 +639,7 @@ def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numba
     dataset.klipped = klipped_coadd
 
     # Where are we placing the fakes? Drop down 10 30 deg apart
-    pas = np.linspace(location[1]+30, (location[1]+(30*11))%360, num=11)
+    pas = np.linspace(location[1]+30, (location[1]+(30*11)), num=11)%360
 
     flux_jb = copy(dataset.spot_flux)
     flux_lp = copy(dataset.spot_flux)
