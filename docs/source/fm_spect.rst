@@ -37,28 +37,58 @@ gen_fm usage::
     # numthreads is specific to your machine
     # spectra_template is default None
 
+    # You may want to hold on to the klipped psf for later
+    klipped = fmout[:,:,-1,:]
+    klipped_coadd = np.zeros((num_k_klip, nl, stamp*stamp))
+    dataset.klipped = klipped_coadd
+
     spectrum, fm_matrix = es.invert_spect_fmodel(fmarr, dataset, method="JB")
     # method indicates which matrix inversion method to use,
     # "JB" matrix inversion adds up over all exposures, then inverts
+    # "leastsq" uses a leastsq solver.
     # "LP" inversion adds over frames and one wavelength axis, then inverts
+    # (LP is not recommended)
 
-One way to calculate a spectrum with errorbars (we are getting rid of this though?)::
+One way to calculate a spectrum with errorbars after running the above::
 
-    import glob
-    import pyklip.instruments.GPI as GPI
-    import pyklip.fmlib.extractSpec as es
+    # This will take a long time - it is running the fm for multiple fakes
+    N_frames = len(dataset.input)
+    N_cubes = len(dataset.exthdrs)
+    nl = N_frames/N_cubes
 
-    files = glob.glob("path/to/dataset/*.fits")
-    dataset = GPI.GPIData(files, highpass=True)
-    dataset.generate_psf_cube(20)
+    # generate a psf model
+    sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
+    PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
+    inputpsfs = np.tile(PSF_cube, (N_cubes, 1, 1))
 
-    pars = (45, 222) # separation and pa
-    # optional parameters shown w/ default values
-    # This will take a long time - it is running the fm for 11 fake injections
-    # and inverting the matrix by two different methods. It returns a dictionary
-    # containing the spectrum by each method, and the measured error.
-    spectrum_dict = es.get_spectrum_with_errorbars(dataset, pars, movement=1.0,
-                                                   stamp=10, numbasis=3)
+    # Define a set of PAs to put in fake sources
+    npas = 11
+    pas = (np.linspace(loc[1], loc[1]+360, num=npas+2)%360)[1:-1]
+
+    # array to store fkae source fluxes
+    flux = copy(dataset.spot_flux)
+    # Loop through number of numbasis
+    for ii in range(fmout.shape[0]):
+        # store the extracted spectrum into the fake flux array
+        for k in range(N_cubes):
+            flux[k*nl:(k+1)*nl] = estim_spec[ii, ...]
+        fake_spectra= np.zeros((len(pas), estim_spec.shape[1]))
+        for p, pa in enumerate(pas):
+            print "Fake # ({0}, {1}/{2}".format(ii, p+1, len(pas))
+            print "flux:",fluxjb
+            psf_inject = inputpsfs*(flux)[:,None,None]
+            # Create a temporary dataset so things don't get reset
+            tmp_dataset = setup_data(filelist)
+            fakes.inject_planet(tmp_dataset.input, tmp_dataset.centers, psf_inject,\
+                                tmp_dataset.wcs, loc[0], pa)
+            fmtmp = es.gen_fm(tmp_dataset, (loc[0], pa), numbasis=numbasis[ii],\
+                              mv=args.movement, stamp=10, numthreads=8)
+            fake_spectra[p,:], fakefm = es.invert_spect_fmodel(fmtmp, tmp_dataset, method="JB")
+            del tmp_dataset
+            del fmtmp
+
+    # Get the error of your fakes (here just taking standard deviation)
+    error = np.std(fake_spectra, axis=0)
     
     
 Some diagnostics you can run to check the FM
