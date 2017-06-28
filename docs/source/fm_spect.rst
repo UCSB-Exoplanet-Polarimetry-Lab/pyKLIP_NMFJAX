@@ -49,6 +49,8 @@ gen_fm usage::
     # "LP" inversion adds over frames and one wavelength axis, then inverts
     # (LP is not recommended)
 
+Calculating Errobars
+--------------------
 One way to calculate a spectrum with errorbars after running the above::
 
     # This will take a long time - it is running the fm for multiple fakes
@@ -65,8 +67,9 @@ One way to calculate a spectrum with errorbars after running the above::
     npas = 11
     pas = (np.linspace(loc[1], loc[1]+360, num=npas+2)%360)[1:-1]
 
-    # array to store fkae source fluxes
+    # array to store fake source fluxes
     flux = copy(dataset.spot_flux)
+    error = np.zeros(fmout.shape[0])
     # Loop through number of numbasis
     for ii in range(fmout.shape[0]):
         # store the extracted spectrum into the fake flux array
@@ -87,9 +90,15 @@ One way to calculate a spectrum with errorbars after running the above::
             del tmp_dataset
             del fmtmp
 
-    # Get the error of your fakes (here just taking standard deviation)
-    error = np.std(fake_spectra, axis=0)
-    
+        # Get the error of your fakes (here just taking standard deviation)
+        error[ii] = np.std(fake_spectra, axis=0)
+
+You may also want to look at the "bias" -- 
+are your fake spectra evenly distributed around the recovered spectrum?::
+
+    offset[ii] = estim_spec[ii] - np.median(fake_spectra, axis=0)
+
+how does this offset change with numbasis & movement?
     
 Some diagnostics you can run to check the FM
 --------------------------------------------
