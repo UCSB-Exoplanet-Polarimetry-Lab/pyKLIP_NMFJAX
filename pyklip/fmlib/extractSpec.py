@@ -418,7 +418,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
         radial_psfs = dataset.psfs / \
             (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
              axis=0)[:, None, None])
-    elif: manual_psfs is not None:
+    elif manual_psfs is not None:
         radial_psfs = manual_psfs
     else:
         raise AttributeError("dataset has no psfs attribute. \n"+\
