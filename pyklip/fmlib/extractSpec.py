@@ -588,7 +588,6 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         spec_unit = "DN"
         return estim_spec, fm_coadd_mat
 
-
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
     """
     Calculate annulus boundaries of a particular annuli. Useful for figuring out annuli boundaries when just giving an
