@@ -131,7 +131,7 @@ class DiskFM(NoFM):
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
+        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False, refs_mean_subbed = self.aligned_imgs_np)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
         for thisnumbasisindex in range(np.size(numbasis)):
