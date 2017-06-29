@@ -667,8 +667,8 @@ class P1640Data(Data):
                                                self.psfs.shape[1], self.psfs.shape[2]))
             self.psfs = np.mean(self.psfs, axis=0)
 
-def generate_psf_cube(self, boxw=14):
-    return generate_psfs(int(np.floor(boxw//2)))
+    def generate_psf_cube(self, boxw=14):
+        return generate_psfs(int(np.floor(boxw//2)))
     """
     def generate_psf_cube(self, boxw=14):
         \"""
