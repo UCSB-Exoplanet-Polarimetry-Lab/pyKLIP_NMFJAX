@@ -1164,7 +1164,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if spectrum is not None:
         if spectrum.lower() == "methane":
             pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
             spectrum_wvs = spectrum_dat[:,1]
             spectrum_fluxes = spectrum_dat[:,3]
             spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
@@ -1235,7 +1235,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                hdrs=dataset.wcs, new_center=aligned_center)
 
         # reconstruct datacubes, need to obtain wavelength dimension size
-        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+        num_wvs = int(np.size(np.unique(dataset.wvs))) # assuming all datacubes are taken in same band
 
         # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
         rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
@@ -1339,11 +1339,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
-        num_wvs = np.size(np.unique(dataset.wvs))  # assuming all datacubes are taken in same band
+        num_wvs = int(np.size(np.unique(dataset.wvs)))  # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
         if num_wvs > 1:
             # oldshape = dataset.output.shape # oldshape has already been set and used to reshape output, so this causes a bug
-            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1] / num_wvs, num_wvs, oldshape[2], oldshape[3])
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1] // num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 # calibrate spectral cube if needed
@@ -1450,11 +1450,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube", zaxis=numbasis)
 
-        num_wvs = np.size(np.unique(dataset.wvs)) # assuming all datacubes are taken in same band
+        num_wvs = int(np.size(np.unique(dataset.wvs))) # assuming all datacubes are taken in same band
         # if we actually have spectral cubes, let's save those too
         if num_wvs > 1:
             oldshape = dataset.output.shape
-            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1]/num_wvs, num_wvs, oldshape[2], oldshape[3])
+            wv_imgs = dataset.output.reshape(oldshape[0], oldshape[1] // num_wvs, num_wvs, oldshape[2], oldshape[3])
             KLmode_spectral_cubes = np.nanmean(wv_imgs, axis=1)
 
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):

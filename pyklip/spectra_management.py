@@ -12,52 +12,6 @@ import os
 import csv
 
 
-# First and last wavelength of each band
-band_sampling = {'Z' : (0.9444, 1.1448, 37),
-                'Y' : (0.9444, 1.1448, 37),
-                'J' : (1.1108, 1.353, 37),
-                'H' : (1.4904, 1.8016, 37),
-                'K1' : (1.8818, 2.1994, 37),
-                'K2' : (2.1034, 2.4004, 37)}
-
-def get_gpi_filter(filter_name):
-    """
-    Extract the spectrum of a given gpi filter with the sampling of pipeline reduced cubes.
-
-    Inputs:
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'
-
-    Output:
-        (wavelengths, spectrum) where
-            wavelengths: is the gpi sampling of the considered band in mum.
-            spectrum: is the transmission spectrum of the filter for the given band.
-    """
-
-    # get the path to the file containing the spectrum in the pipeline directory
-    pykliproot = os.path.dirname(os.path.realpath(__file__))
-    filename = pykliproot+os.path.sep+"filters"+os.path.sep+"GPI-filter-"+filter_name+".fits"
-
-    # load the fits array
-    hdulist = pyfits.open(filename)
-    cube = hdulist[1].data
-    wavelengths = cube[0][0]
-    spectrum = cube[0][1]
-
-
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    dw = (w_end-w_start)/N_sample
-    sampling_pip = np.arange(w_start,w_end,dw)
-
-    counts_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=spectrum)
-    N_samples_per_bin, bin_edges = np.histogram(wavelengths, bins=N_sample, range=(w_start-dw/2.,w_end+dw/2.), weights=None)
-
-    # if 0:
-    #     plt.figure(1)
-    #     plt.plot(wavelengths,spectrum,'b')
-    #     plt.plot(sampling_pip,counts_per_bin/N_samples_per_bin,'r')
-    #     plt.show()
-
-    return (sampling_pip,counts_per_bin/N_samples_per_bin)
 
 
 def find_upper_nearest(array,value):
@@ -102,35 +56,40 @@ def find_nearest(array,value):
 
 def get_specType(object_name,SpT_file_csv = None):
     """
-    Return the spectral type for a target based on the table in SpT_file
+    Return the spectral type for a target based on Simbad or on the table in SpT_file
 
     :param object_name: Name of the target: ie "c_Eri"
     :param SpT_file: Filename (.csv) of the table containing the target names and their spectral type.
-                    Can be generated from bu quering Simbad.
+                    Can be generated from quering Simbad.
                     If None (default), the function directly tries to query Simbad.
     :return: Spectral type
     """
-
     # Hard-coded spectral type for some targets. Not ideal but I don't want to think about it right now.
     if object_name == "iot_Cen":
         return "A1"
     if object_name == "IK_Peg":
         return "A8"
 
-
     if SpT_file_csv is None:
         import urllib
 
         object_name = object_name.replace('_','+')
 
-        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('%S'):
-                spec_type = line.split(" ")[1]
+            # if line.startswith('Spectral type:'):
+            if line.find('Spectral type:') != -1:
+                # print(line)
+                spec_type =line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
+
         try:
             return spec_type
         except:
+            print("Couldn't find {0} in Simbad.".format(object_name))
             return None
 
     with open(SpT_file_csv, 'rb') as csvfile_TID:
@@ -139,6 +98,7 @@ def get_specType(object_name,SpT_file_csv = None):
         TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
         target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
         specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+
 
     try:
         return specTypes[target_names.index(object_name)]
@@ -150,11 +110,13 @@ def get_specType(object_name,SpT_file_csv = None):
         target_names.append(object_name)
         object_name = object_name.replace('_','+')
 
-        url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('%S'):
-                spec_type = line.split(" ")[1]
+            if line.startswith('Spectral type:'):
+                spec_type =line.replace("Spectral type: ","").split(" ")[0]
         specTypes.append(spec_type)
 
 
@@ -168,12 +130,14 @@ def get_specType(object_name,SpT_file_csv = None):
 
 def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mute = None):
     """
-    Get the spectrum of a star with given spectral type interpolating in the pickles database.
+    Get the spectrum of a star with given spectral type interpolating the pickles database.
     The spectrum is normalized to unit mean.
-    Work only for type V star.
+    It assumes type V star.
 
     Inputs:
-        wvs_or_filter_name: list of wavelengths or GPI filter 'H', 'J', 'K1', 'K2', 'Y'.
+        wvs_or_filter_name: array of wavelenths in microns (or string with GPI band 'H', 'J', 'K1', 'K2', 'Y').
+                (When using GPI spectral band wavelength samples are linearly spaced between the first and the last
+                wavelength of the band.)
         star_type: 'A5','F4',... Is ignored if temperature is defined.
                 If star_type is longer than 2 characters it is truncated.
         temperature: temperature of the star. Overwrite star_type if defined.
@@ -184,16 +148,12 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
             spectrum: is the spectrum of the star for the given band.
     """
 
-    #filename_emamajek_lookup = "emamajek_star_type_lookup.txt" #/Users/jruffio/gpi/pyklip/emamajek_star_type_lookup.rtf
-
     if mute is None:
         mute = False
 
-    # sampling_pip = get_gpi_wavelength_sampling(filter_name)
     if isinstance(wvs_or_filter_name, str):
-        w_start, w_end, N_sample = band_sampling[wvs_or_filter_name]
-        dw = (w_end-w_start)/N_sample
-        sampling_wvs = np.arange(w_start,w_end,dw)
+        import pyklip.instruments.GPI as GPI
+        sampling_wvs = GPI.get_gpi_wavelength_sampling(wvs_or_filter_name)
     else:
         sampling_wvs = wvs_or_filter_name
 
@@ -313,6 +273,15 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
     upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
     lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
 
+    # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
+    # When this happens we don't average out the spectra and takes the nearest available sample
+    for k in range(np.size(upper_spec_unique)):
+        if np.isnan(upper_spec_unique[k]):
+            upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
+    for k in range(np.size(lower_spec_unique)):
+        if np.isnan(lower_spec_unique[k]):
+            lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+
     spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
 
     f = interp1d(sampling_wvs_unique, spec_pip_unique)
@@ -320,15 +289,16 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
 
     return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
 
-def get_planet_spectrum(filename,wavelength):
+def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
     """
     Get the normalized spectrum of a planet for a GPI spectral band or any wavelengths array.
     Spectra are extraced from .flx files from Mark Marley et al's models.
 
     Args:
-        filename: Path of the .flx file containing the spectrum.
-        wavelength: 'H', 'J', 'K1', 'K2', 'Y' or array of wavelenths in microns. When using GPI spectral band,
-                wavelength samples are linearly spaced between the first and the last wavelength of the band.
+        spectrum: Path of the .flx file containing the spectrum.
+        wavelength: array of wavelenths in microns (or string with GPI band 'H', 'J', 'K1', 'K2', 'Y').
+                (When using GPI spectral band wavelength samples are linearly spaced between the first and the last
+                wavelength of the band.)
 
     Return:
         wavelengths: is the gpi sampling of the considered band in micrometer.
@@ -336,29 +306,37 @@ def get_planet_spectrum(filename,wavelength):
     """
 
 
-    spec_data = []
-    with open(filename, 'r') as f:
-        for line in f:
-            splitted_line = line.split()
-            # splitted_line[0]: index
-            # splitted_line[1]: wavelength (mum)
-            # splitted_line[2]: T_brt
-            # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
+    if isinstance(spectrum, str):
+        spec_data = []
+        with open(spectrum, 'r') as f:
+            for line in f:
+                splitted_line = line.split()
+                # splitted_line[0]: index
+                # splitted_line[1]: wavelength (mum)
+                # splitted_line[2]: T_brt
+                # splitted_line[2]: flux in units of erg cm-2 sec-1 Hz-1 at the top of the planet's atmosphere
 
-            try:
-                spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
-            except:
-                break
+                try:
+                    spec_data.append([float(splitted_line[0]),float(splitted_line[1]),float(splitted_line[2]),float(splitted_line[3])])
+                except:
+                    break
 
-    spec_data = np.array(spec_data)
-    N_samp = spec_data.shape[0]
-    wave = spec_data[:,1]
-    spec = spec_data[:,3]
+        spec_data = np.array(spec_data)
+        N_samp = spec_data.shape[0]
+        wave = spec_data[:,1]
+        spec = spec_data[:,3]
+
+    # Interpolate the spectrum on GPI sampling and convert F_nu to F_lambda
+        spec = spec/wave**2
+    else:
+        wave = ori_wvs
+        spec = spectrum
+
 
     # todo: check that it matches the actual sampling
     if isinstance(wavelength, str):
-        w_start, w_end, N_sample = band_sampling[wavelength]
-        sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
+        import pyklip.instruments.GPI as GPI
+        sampling_pip = GPI.get_gpi_wavelength_sampling(wavelength)
     else:
         sampling_pip = wavelength
 
@@ -368,7 +346,7 @@ def get_planet_spectrum(filename,wavelength):
 
     if 0:
         import matplotlib.pyplot as plt
-        print()
+        print((sampling_pip,spec_pip/np.nanmean(spec_pip)))
         plt.figure(2)
         wave_range = np.where((wave<sampling_pip[-1]) & (wave>sampling_pip[0]))
         plt.plot(wave[wave_range],spec[wave_range]/np.nanmean(spec[wave_range]),'r')
@@ -377,23 +355,6 @@ def get_planet_spectrum(filename,wavelength):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
-
-def get_gpi_wavelength_sampling(filter_name):
-    """
-    Return GPI wavelength sampling for a given band.
-
-    Args:
-        filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
-                    Wavelength samples are linearly spaced between the first and the last wavelength of the band.
-
-    Return:
-        wavelengths: is the gpi sampling of the considered band in micrometer.
-    """
-
-    w_start, w_end, N_sample = band_sampling[filter_name]
-    sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
-
-    return sampling_pip
 
 
 
@@ -406,8 +367,8 @@ def place_model_PSF(PSF_template,x_cen,y_cen,output_shape, x_grid = None, y_grid
     x_grid = x_grid.astype(np.float)
     y_grid = y_grid.astype(np.float)
 
-    x_grid -= x_cen - nx_template/2
-    y_grid -= y_cen - ny_template/2
+    x_grid -= x_cen - nx_template//2
+    y_grid -= y_cen - ny_template//2
 
     return ndimage.map_coordinates(PSF_template, [y_grid,x_grid], mode='constant', cval=0.0)
 

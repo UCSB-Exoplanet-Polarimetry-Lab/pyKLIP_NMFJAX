@@ -296,17 +296,29 @@ And here is the example from the three frames of beta Pic b J-band GPI data:
 
 The data and best fit model should look pretty close, and the residuals hopefully do not show any obvious strcuture that
 was missed in the fit. The residual ampltidue should also be consistent with noise. If that is the case, we can use the
-best fit values for the astrometry of this epoch. Remember that the 1-sigma values given here are just the statistical
-uncertainity on the location of the planet. You will need to include more uncertainties such as the location of the
-star and astrometric calibration uncertainties to obtain your full astrometric error bar. The flux values should in
-theory measure the flux of the planet, but that is out of the scope of this tutorial. Here, we print out our confidence
-on just the location of the planet in the image.
+best fit values for the astrometry of this epoch. 
+
+The best fit values from the MCMC give us the raw RA and Dec offsets for the planet. We will still need to fold in uncertainties
+in the star location and calibration uncertainties. To do this, we use :py:meth:`pyklip.fitpsf.FMAstrometry.propogate_errs` to 
+include these terms and obtain our final astrometric values. All of the infered parameters and the raw fit parameters are fields 
+that can be accessed (see :py:class:`pyklip.fitpsf.FMAstrometry`) and each field is a :py:class:`pyklip.fitpsf.ParamRange` object
+that stores the best fit value and 1-sigma range (both average error, and 2-sided uncertainites are included). 
 
 .. code-block:: python
 
-    print("Planet RA offset is at {0} with a 1-sigma range of {1}".format(fma.RA_offset, fma.RA_offset_1sigma))
-    print("Planet Dec offset is at {0} with a 1-sigma range of {1}".format(fma.Dec_offset, fma.Dec_offset_1sigma))
+    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
 
 
+    # show what the raw uncertainites are on the location of the planet
+    print("\nPlanet Raw RA offset is {0} +/- {1}, Raw Dec offset is {2} +/- {3}".format(fma.raw_RA_offset.bestfit, fma.raw_RA_offset.error,
+                                                                                        fma.raw_Dec_offset.bestfit, fma.raw_Dec_offset.error)) 
+    
+    # Full error budget included
+    print("Planet RA offset is at {0} with a 1-sigma uncertainity of {1}".format(fma.RA_offset.bestfit, fma.RA_offset.error))
+    print("Planet Dec offset is at {0} with a 1-sigma uncertainity of {1}".format(fma.Dec_offset.bestfit, fma.Dec_offset.error))
+
+    # Propogate errors into separation and PA space
+    print("Planet separation is at {0} with a 1-sigma uncertainity of {1}".format(fma.sep.bestfit, fma.sep.error))
+    print("Planet PA at {0} with a 1-sigma uncertainity of {1}".format(fma.PA.bestfit, fma.PA.error))
 
 

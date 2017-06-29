@@ -11,11 +11,6 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import random as rd
 
-import multiprocessing as mp
-
-import pyklip.kpp.utils.GOI as goi
-import pyklip.spectra_management as spec
-import pyklip.fakes as fakes
 
 #different imports depending on if python2.7 or python3
 import sys
@@ -37,10 +32,6 @@ from pyklip.instruments.P1640_support import P1640utils
 
 from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
-from pyklip.fakes import gaussfit2d
-from pyklip.fakes import gaussfit2dLSQ
-from pyklip.fakes import PSFcubefit
-import pyklip.spectra_management as spec
 
 class P1640Data(Data):
     """
