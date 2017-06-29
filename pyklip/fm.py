@@ -1691,19 +1691,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression)
 
     klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
-    
-    # save outputs to the dataset object
-    # save klipped, reformat wavelengths if necessary
-    if np.size(np.unique(dataset.wvs)) > 1:
-        numwvs = np.size(np.unique(dataset.wvs))
-        dataset.output = klipped.reshape([klipped.shape[0], klipped.shape[1] / numwvs, numwvs,
-                                            klipped.shape[2], klipped.shape[3]])  # (b, N_cube, wvs, y, x)
-    else:
-        dataset.output = klipped
-    # save fm outputs
-    dataset.fmout = fmout
-    dataset.perturbmag = perturbmag
-
 
     # write fmout
     fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
