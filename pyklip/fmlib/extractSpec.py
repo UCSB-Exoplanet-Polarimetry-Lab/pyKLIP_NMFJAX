@@ -390,7 +390,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     - stamp             - size of box around companion for FM
     - numthreads        (default=4)
     - spectrum          - Can provide a template, default is None
-    - model_from_spots  - if True uses dataset.psfs or runs dataset.generate_psf_cube
+    - model_from_spots  - if [True] uses dataset.psfs or runs dataset.generate_psf_cube
                           if False, calculates gaussian psfs from instrument file
     - aligned_center    - pass to klip_dataset
     """
