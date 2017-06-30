@@ -47,11 +47,11 @@ A quick aside for GPI spectral mode data, here is how to generate the instrument
     dataset = GPI.GPIData(filelist)
 
     # generate instrumental PSF
-    boxsize = 25 # we want a 25x25 pixel box centered on the instrumental PSF
+    boxsize = 17 # we want a 17x17 pixel box centered on the instrumental PSF
     dataset.generate_psfs(boxrad=boxsize//2) # this function extracts the satellite spots from the data
     # now dataset.psfs contains a 37x25x25 spectral cube with the instrumental PSF
     # normalize the instrumental PSF so the peak flux is unity
-    dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] / 37, 37]),
+    dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] // 37, 37]),
                              axis=0)[:, None, None])
 
 
