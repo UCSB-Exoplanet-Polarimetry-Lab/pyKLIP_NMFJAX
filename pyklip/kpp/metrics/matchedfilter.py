@@ -32,11 +32,11 @@ class Matchedfilter(KPPSuperClass):
                  PSF_read_func = None,
                  PSF_cube = None,
                  spectrum = None,
-                 sky_aper_radius = None,
                  add2prefix = None,
                  keepPrefix = None,
                  compact_date_func = None,
-                 filter_name_func = None):
+                 filter_name_func = None,
+                 PSF_size=None):
         """
         Define the general parameters of the matched filter.
 
@@ -99,7 +99,6 @@ class Matchedfilter(KPPSuperClass):
                                         from Mark Marley or one following the same convention.
                                         Spectrum will be corrected for transmission.
                         - ndarray: 1D array with a user defined spectrum. Spectrum will be corrected for transmission.
-            sky_aper_radius: Radius of the mask applied on the stamps to calculated the background value.
             add2prefix: Add user defined string to the prefix of the output filename.
             keepPrefix: (default = True) Keep the prefix of the input file instead of using the default:
                     self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+self.add2prefix
@@ -107,6 +106,7 @@ class Matchedfilter(KPPSuperClass):
                                 in the output filename if keepPrefix is False.
             filter_name_func: lambda function returning the name of the filter (e.g. "H", "J","K1"...) of the
                                 observation to be used in the output filename if keepPrefix is False.
+            PSF_size: Width of the PSF stamp to be used. Trim or pad with zeros the available PSF stamp.
 
         Return: instance of Matchedfilter.
         """
@@ -127,15 +127,10 @@ class Matchedfilter(KPPSuperClass):
         # The default value is defined later
         self.kernel_para = kernel_para
 
-        # Radius of the mask applied on the stamps to calculated the background value.
-        if sky_aper_radius is None:
-            self.sky_aper_radius = 2.5
-        else:
-            self.sky_aper_radius = sky_aper_radius
-
         if self.kernel_type == "PSF":
             self.PSF_cube = PSF_cube
         self.PSF_read_func = PSF_read_func
+        self.PSF_size = PSF_size
 
         if add2prefix is not None:
             self.add2prefix = "_"+add2prefix
@@ -357,6 +352,51 @@ class Matchedfilter(KPPSuperClass):
             else:
                 self.PSF_cube_arr = PSF
 
+
+        # Change size of the PSF stamp.
+        if self.PSF_size is not None:
+            if (len(self.image.shape) == 3):
+                old_shape = self.PSF_cube_arr.shape
+                if old_shape[1] != old_shape[2]:
+                    raise Exception("PSF cube must be square")
+                w1 = self.PSF_size
+                w0 = old_shape[1]
+                PSF_cube_arr_new = np.zeros((old_shape[0],self.PSF_size,self.PSF_size))
+                dw = w1-w0
+                if dw >= 0:
+                    if (dw % 2) == 0:
+                        PSF_cube_arr_new[:,(dw//2):(dw//2+w0),dw//2:(dw//2+w0)] = self.PSF_cube_arr
+                    else:
+                        PSF_cube_arr_new[:,(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0),(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0)] = self.PSF_cube_arr
+                else:
+                    dw = -dw
+                    if (dw % 2) == 0:
+                        PSF_cube_arr_new = self.PSF_cube_arr[:,(dw//2):(dw//2+w1),dw//2:(dw//2+w1)]
+                    else:
+                        PSF_cube_arr_new = self.PSF_cube_arr[:,(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1),(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1)]
+                self.PSF_cube_arr = PSF_cube_arr_new
+            else:
+                old_shape = self.PSF_cube_arr.shape
+                if old_shape[0] != old_shape[1]:
+                    raise Exception("PSF cube must be square")
+                w1 = self.PSF_size
+                w0 = old_shape[1]
+                PSF_cube_arr_new = np.zeros((self.PSF_size,self.PSF_size))
+                dw = w1-w0
+                if dw >= 0:
+                    if (dw % 2) == 0:
+                        PSF_cube_arr_new[(dw//2):(dw//2+w0),dw//2:(dw//2+w0)] = self.PSF_cube_arr
+                    else:
+                        PSF_cube_arr_new[(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0),(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0)] = self.PSF_cube_arr
+                else:
+                    dw = -dw
+                    if (dw % 2) == 0:
+                        PSF_cube_arr_new = self.PSF_cube_arr[(dw//2):(dw//2+w1),dw//2:(dw//2+w1)]
+                    else:
+                        PSF_cube_arr_new = self.PSF_cube_arr[(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1),(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1)]
+                self.PSF_cube_arr = PSF_cube_arr_new
+
+
         if (len(self.image.shape) == 3):
             self.nl_PSF, self.ny_PSF, self.nx_PSF = self.PSF_cube_arr.shape
         else:
@@ -470,10 +510,18 @@ class Matchedfilter(KPPSuperClass):
             print("Calculate the matched filter maps. It is done pixel per pixel so it might take a while...")
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,self.nx_PSF,1)-self.nx_PSF//2,
                                                          np.arange(0,self.ny_PSF,1)-self.ny_PSF//2)
+        aper_radius = np.min([self.ny_PSF,self.nx_PSF])*7./20.
         r_PSF_stamp = (stamp_PSF_x_grid)**2 +(stamp_PSF_y_grid)**2
-        where_mask = np.where(r_PSF_stamp < (self.sky_aper_radius**2))
-        stamp_PSF_mask = np.ones((self.ny_PSF,self.nx_PSF))
-        stamp_PSF_mask[where_mask] = np.nan
+        where_sky_mask = np.where(r_PSF_stamp < (aper_radius**2))
+        stamp_PSF_sky_mask = np.ones((self.ny_PSF,self.nx_PSF))
+        stamp_PSF_sky_mask[where_sky_mask] = np.nan
+        where_aper_mask = np.where(r_PSF_stamp > (aper_radius**2))
+        stamp_PSF_aper_mask = np.ones((self.ny_PSF,self.nx_PSF))
+        stamp_PSF_aper_mask[where_aper_mask] = np.nan
+        if (len(self.PSF_cube_arr.shape) == 3):
+            # Duplicate the mask to get a mask cube.
+            # Caution: No spectral widening implemented here
+            stamp_PSF_aper_mask = np.tile(stamp_PSF_aper_mask,(self.nl,1,1))
 
         N_pix = flat_cube_noNans_noEdges[0].size
         chunk_size = N_pix//self.N_threads
@@ -497,7 +545,8 @@ class Matchedfilter(KPPSuperClass):
                                                        chunks_col_indices,
                                                        itertools.repeat(self.image),
                                                        itertools.repeat(self.PSF_cube_arr),
-                                                       itertools.repeat(stamp_PSF_mask)))
+                                                       itertools.repeat(stamp_PSF_sky_mask),
+                                                       itertools.repeat(stamp_PSF_aper_mask)))
 
             for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
                 mf_map[(row_indices,col_indices)] = out[0]
@@ -509,7 +558,8 @@ class Matchedfilter(KPPSuperClass):
                                                        flat_cube_noNans_noEdges[1],
                                                        self.image,
                                                        self.PSF_cube_arr,
-                                                       stamp_PSF_mask)
+                                                       stamp_PSF_sky_mask,
+                                                       stamp_PSF_aper_mask)
 
             mf_map[flat_cube_noNans_noEdges] = out[0]
             cc_map[flat_cube_noNans_noEdges] = out[1]
@@ -556,8 +606,7 @@ class Matchedfilter(KPPSuperClass):
                          "KPPFOLDN":self.folderName,
                          "KPPLABEL":self.label,
                          "KPPKERTY":str(self.kernel_type),
-                         "KPPKERPA":str(self.kernel_para),
-                         "KPPSKYRA":self.sky_aper_radius}
+                         "KPPKERPA":str(self.kernel_para)}
 
         if (len(self.image.shape) == 3):
             extra_keywords["KPPSPNAM"] = str(self.spectrum_name)
@@ -610,7 +659,7 @@ def calculate_matchedfilter_star(params):
     """
     return calculate_matchedfilter(*params)
 
-def calculate_matchedfilter(row_indices,col_indices,image,PSF,stamp_PSF_mask, mute = True):
+def calculate_matchedfilter(row_indices,col_indices,image,PSF,stamp_PSF_sky_mask,stamp_PSF_aper_mask, mute = True):
     '''
     Calculate the matched filter, cross correlation and flux map on a given image or datacube for the pixels targeted by
     row_indices and col_indices.
@@ -628,10 +677,11 @@ def calculate_matchedfilter(row_indices,col_indices,image,PSF,stamp_PSF_mask, mu
                     PSF_cube /= np.sqrt(np.sum(PSF_cube**2))
         PSF: 2D or 3D PSF template used for calculated the metric. If nl,ny_PSF,nx_PSF = PSF_cube.shape, nl is the
                          number of wavelength samples, ny_PSF and nx_PSF are the spatial dimensions of the PSF_cube.
-        stamp_PSF_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
+        stamp_PSF_sky_mask: 2d mask of size (ny_PSF,nx_PSF) used to mask the central part of a stamp slice. It is used as
                             a type of a high pass filter. Before calculating the metric value of a stamp cube around a given
                             pixel the average value of the surroundings of each slice of that stamp cube will be removed.
                             The pixel used for calculating the average are the one equal to one in the mask.
+        stamp_PSF_aper_mask: 3d mask for the aperture.
         mute: If True prevent printed log outputs.
 
     Return: Vector of length row_indices.size with the value of the metric for the corresponding pixels.
@@ -673,14 +723,14 @@ def calculate_matchedfilter(row_indices,col_indices,image,PSF,stamp_PSF_mask, mu
         var_per_wv = np.zeros(nl)
         # Remove average value of the surrounding pixels in each slice of the stamp cube
         for slice_id in range(nl):
-            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
-            var_per_wv[slice_id] = np.nanvar(stamp_cube[slice_id,:,:]*stamp_PSF_mask)
+            stamp_cube[slice_id,:,:] -= np.nanmean(stamp_cube[slice_id,:,:]*stamp_PSF_sky_mask)
+            var_per_wv[slice_id] = np.nanvar(stamp_cube[slice_id,:,:]*stamp_PSF_sky_mask)
         try:
-            mf_map[id] = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None]) \
-                         /np.sqrt(np.nansum(PSF_cube**2/var_per_wv[:,None,None]))
-            cc_map[id] = np.nansum(PSF_cube*stamp_cube)/np.sqrt(np.nansum(PSF_cube**2))
-            flux_map[id] = np.nansum(PSF_cube*stamp_cube/var_per_wv[:,None,None]) \
-                         /np.nansum(PSF_cube**2/var_per_wv[:,None,None])
+            mf_map[id] = np.nansum((stamp_PSF_aper_mask*PSF_cube*stamp_cube)/var_per_wv[:,None,None]) \
+                         /np.sqrt(np.nansum((stamp_PSF_aper_mask*PSF_cube)**2/var_per_wv[:,None,None]))
+            cc_map[id] = np.nansum(stamp_PSF_aper_mask*PSF_cube*stamp_cube)/np.sqrt(np.nansum((stamp_PSF_aper_mask*PSF_cube)**2))
+            flux_map[id] = np.nansum((stamp_PSF_aper_mask*PSF_cube*stamp_cube)/var_per_wv[:,None,None]) \
+                         /np.nansum((stamp_PSF_aper_mask*PSF_cube)**2/var_per_wv[:,None,None])
         except:
             # In case ones divide by zero...
             mf_map[id] =  np.nan

@@ -25,7 +25,8 @@ class CrossCorr(KPPSuperClass):
                  kernel_para = None,
                  collapse = None,
                  spectrum = None,
-                 nans2zero = None):
+                 nans2zero = None,
+                 PSF_size = None):
         """
         Define the general parameters of the cross correlation:
             - cross correlation template
@@ -75,6 +76,7 @@ class CrossCorr(KPPSuperClass):
                                         Spectrum will be corrected for transmission.
                         - ndarray: 1D array with a user defined spectrum. Spectrum will be corrected for transmission.
             nans2zero: If True, replace all nans values with zeros.
+            PSF_size: Width of the PSF stamp to be used. Trim or pad with zeros the available PSF stamp.
 
 
         Return: instance of CrossCorr.
@@ -111,6 +113,7 @@ class CrossCorr(KPPSuperClass):
         self.spectrum_name = ""
         self.prefix = ""
         self.filename_path = ""
+        self.PSF_size = PSF_size
 
     def spectrum_iter_available(self):
         """
@@ -262,6 +265,28 @@ class CrossCorr(KPPSuperClass):
 
             self.PSF = self.PSF / np.sqrt(np.nansum(self.PSF**2))
 
+        # Change size of the PSF stamp. If the size is even, it will be changed to an even size in the next few lines
+        if self.PSF_size is not None:
+            old_shape = self.PSF.shape
+            if old_shape[0] != old_shape[1]:
+                raise Exception("PSF cube must be square")
+            w1 = self.PSF_size
+            w0 = old_shape[1]
+            PSF_cube_arr_new = np.zeros((self.PSF_size,self.PSF_size))
+            dw = w1-w0
+            if dw >= 0:
+                if (dw % 2) == 0:
+                    PSF_cube_arr_new[(dw//2):(dw//2+w0),dw//2:(dw//2+w0)] = self.PSF
+                else:
+                    PSF_cube_arr_new[(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0),(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0)] = self.PSF
+            else:
+                dw = -dw
+                if (dw % 2) == 0:
+                    PSF_cube_arr_new = self.PSF[(dw//2):(dw//2+w1),dw//2:(dw//2+w1)]
+                else:
+                    PSF_cube_arr_new = self.PSF[(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1),(dw//2 + (w1 % 2)):(dw//2 + (w1 % 2)+w1)]
+            self.PSF = PSF_cube_arr_new
+            self.ny_PSF,self.nx_PSF = self.PSF.shape
 
         if spectrum is not None:
             self.spectrum = spectrum

@@ -152,7 +152,8 @@ class FMMF(KPPSuperClass):
                                 observation to be used in the output filename if keepPrefix is False.
             pix2as: Platescale (arcsec per pixel). (Used if fakes_only is True)
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
-                      can also be a number specifying FWHM of box in pixel units
+                      can also be a number specifying FWHM of box in pixel units.
+            PSF_size: Width of the PSF stamp to be used. Trim or pad with zeros the available PSF stamp.
 
         Return: instance of FMMF.
         """
@@ -506,10 +507,8 @@ class FMMF(KPPSuperClass):
             dw = w1-w0
             if dw >= 0:
                 if (dw % 2) == 0:
-                    print((dw//2),(dw//2+w0),dw//2,(dw//2+w0))
                     PSF_cube_arr_new[:,(dw//2):(dw//2+w0),dw//2:(dw//2+w0)] = self.PSF_cube_arr
                 else:
-                    print((dw//2 + (w0 % 2)),(dw//2 + (w0 % 2)+w0),(dw//2 + (w1 % 2)),(dw//2 + (w1 % 2)+w0))
                     PSF_cube_arr_new[:,(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0),(dw//2 + (w0 % 2)):(dw//2 + (w0 % 2)+w0)] = self.PSF_cube_arr
             else:
                 dw = -dw
@@ -622,6 +621,8 @@ class FMMF(KPPSuperClass):
                 self.image_obj.input = high_pass_filter_imgs(self.image_obj.input, numthreads=self.N_threads, filtersize=fourier_sigma_size)
 
         # import matplotlib.pyplot as plt
+        # plt.imshow(self.PSF_cube_arr[10,:,:],interpolation="nearest")
+        # plt.show()
         # plt.figure(1)
         # plt.plot(self.image_obj.wvs,self.spectrum_vec)
         # plt.figure(2)
