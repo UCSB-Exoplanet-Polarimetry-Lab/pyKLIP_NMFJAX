@@ -550,9 +550,9 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
             fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
 
             # properly flatten
-            flat_klipped_coadd = reshape(klipped_coadd, (int(nl*stamp_size_squared),))
+            flat_klipped_coadd = np.reshape(klipped_coadd, (int(nl*stamp_size_squared),))
             # used leastsq solver
-            results = linalg.lstsq(fm_npSpec_coadd_mat, flat_klipped_coadd)
+            results = linalg.lstsq(fm_noSpec_coadd_mat, flat_klipped_coadd)
             # grab the spectrum, not using the other parts for now.
             estim_spec[ii,:], res, rank, s = results
 
