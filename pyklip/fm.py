@@ -1414,6 +1414,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
+    if np.sum(np.isfinite(aligned_imgs[img_num, section_ind[0]])) == 0:
+        print("section is full of NaNs ({0} pixels), skipping...".format(np.size(section_ind)))
+        return False
+
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
     import warnings
