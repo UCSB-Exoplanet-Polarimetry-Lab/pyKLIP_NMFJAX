@@ -21,7 +21,6 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
                        suffix=None,
                        spec_type=None,
                        fakes_SNR_filename_list=None,
-                       resolution=None,
                        conversion_break = None,
                        linfit = False,MJDOBS=None):
     '''
@@ -81,10 +80,13 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
                 real_contrast_list.append(fakeinfohdr["FKCONT{0:02d}".format(fake_id)])
             except:
                 continue
-        metric_fakes_val.extend([metric_image_fakes[int(np.round(row_real_object)),int(np.round(col_real_object))] \
-                                     for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
-        metric_nofakes_val.extend([metric_image[int(np.round(row_real_object)),int(np.round(col_real_object))] \
-                                     for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
+        for (row_real_object,col_real_object) in zip(row_real_object_list,col_real_object_list):
+            try:
+                metric_fakes_val.append(metric_image_fakes[int(np.round(row_real_object)),int(np.round(col_real_object))])
+                metric_nofakes_val.append(metric_image[int(np.round(row_real_object)),int(np.round(col_real_object))])
+            except:
+                metric_fakes_val.append(np.nan)
+                metric_nofakes_val.append(np.nan)
 
     metric_fakes_val =  np.array(metric_fakes_val) - np.array(metric_nofakes_val)
 
@@ -99,8 +101,7 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
                                                                      N = None,
                                                                      centroid = center,
                                                                      r_step = Dr/2,
-                                                                     Dr=Dr,
-                                                                     resolution=resolution)
+                                                                     Dr=Dr)
     metric_stddev_rSamp = np.array([r_tuple[0] for r_tuple in metric_stddev_rSamp])
     metric_1Dstddev = np.array(metric_1Dstddev)
     from  scipy.interpolate import interp1d
@@ -201,10 +202,15 @@ def calculate_contrast(read_func,nofakes_filename,fakes_filename_list,pix2as,
                     SNR_real_contrast_list.append(fakeinfohdr_SNR["FKCONT{0:02d}".format(fake_id)])
                 except:
                     continue
-            SNR_fakes.extend([np.nanmax(SNR_map_fakes[(int(np.round(row_real_object))-1):(int(np.round(row_real_object))+2),(int(np.round(col_real_object))-1):(int(np.round(col_real_object))+2)]) \
-                                         for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
-            # SNR_fakes.extend([SNR_map_fakes[np.round(row_real_object),np.round(col_real_object)] \
+            for (row_real_object,col_real_object) in zip(row_real_object_list,col_real_object_list):
+                try:
+                    SNR_fakes.append(SNR_map_fakes[int(np.round(row_real_object)),int(np.round(col_real_object))])
+                except:
+                    SNR_fakes.append(np.nan)
+            # SNR_fakes.extend([np.nanmax(SNR_map_fakes[(int(np.round(row_real_object))-1):(int(np.round(row_real_object))+2),(int(np.round(col_real_object))-1):(int(np.round(col_real_object))+2)]) \
             #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
+            # # SNR_fakes.extend([SNR_map_fakes[np.round(row_real_object),np.round(col_real_object)] \
+            # #                              for row_real_object,col_real_object in zip(row_real_object_list,col_real_object_list)])
 
         from scipy.interpolate import interp1d
         contrast_curve_interp = interp1d(pix2as*metric_stddev_rSamp,contrast_curve,kind="linear",bounds_error=False)

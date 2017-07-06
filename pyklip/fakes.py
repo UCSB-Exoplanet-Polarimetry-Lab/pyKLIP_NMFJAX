@@ -463,24 +463,28 @@ def generate_dataset_with_fakes(dataset,
                     break
             if too_close:
                 continue
-        if not mute:
-            print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
 
 
         spectrum_corr = spectrum_vec/np.sum(spectrum_vec)*star_flux*contrast
         inputpsfs = inputpsfs/np.nansum(inputpsfs,axis=(1,2))[:,None,None]
         inputpsfs = inputpsfs*spectrum_corr[:,None,None]
 
-        # inject fake planet at given radius,pa into dataset.input
-        inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
+        try:
+            if not mute:
+                print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+            # inject fake planet at given radius,pa into dataset.input
+            inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
 
-        # Save fake planet position in headers
-        extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
-        extra_keywords["FKSEP{0:02d}".format(fake_id)] = radius
-        extra_keywords["FKCONT{0:02d}".format(fake_id)] = contrast
-        extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
-        extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
-        extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
+            # Save fake planet position in headers
+            extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
+            extra_keywords["FKSEP{0:02d}".format(fake_id)] = radius
+            extra_keywords["FKCONT{0:02d}".format(fake_id)] = contrast
+            extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
+            extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
+            extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
+        except:
+            if not mute:
+                print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
 
     return dataset,extra_keywords
 

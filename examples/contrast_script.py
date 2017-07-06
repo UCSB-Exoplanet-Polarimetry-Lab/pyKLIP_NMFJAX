@@ -39,7 +39,6 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     overwrite = False # Force rewriting the files even if they already exist
 
     # contrast_range = [0.2,1.2] # Range of separation in arcsec for the contrast curve calculation
-    resolution = 3.5 # FWHM of the PSF used for the small sample statistic correction
     pa_shift_list = [0,180] # Position angle shift between the fakes in the different copies of the dataset
 
     ###########################################################################################
@@ -73,32 +72,35 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     # Define the function to read the PSF cube file.
     # You can choose to directly give an array as the PSF cube and not bother with this.
     PSF_read_func = lambda file_list:GPI.GPIData(file_list,highpass=False)
+    w_ann0 = 5
+    w_ann1 = 10
+    tmp = (np.arange(8.7,30,w_ann0)).tolist()\
+           + (np.arange(np.arange(8.7,30,w_ann0)[-1]+w_ann1,140,w_ann1)).tolist()
+    annuli = [(rho1,rho2) for rho1,rho2 in zip(tmp[0:-1],tmp[1::])]
     FMMFObj = FMMF(raw_read_func,filename = filename,
                    spectrum=reduc_spectrum,
                    PSF_read_func = PSF_read_func,
                    PSF_cube = PSF_cube,
                    PSF_cube_wvs = None,
-                   predefined_sectors = "1.0 as",
+                   subsections = 1,
+                   annuli = annuli,
                    label = "FMMF",
                    overwrite=overwrite,
                    numbasis=numbasis,
                    maxnumbasis = maxnumbasis,
                    mvt=mvt)
-
-    err_list = kpop_wrapper(inputDir,[FMMFObj],spectrum_list=[reduc_spectrum],mute_error = False)
-
     read_func = lambda file_list:GPI.GPIData(file_list,recalc_centers=False,recalc_wvs=False,highpass=False)
 
     # Definition of the SNR object
     filename = os.path.join("kpop_FMMF",reduc_spectrum,"*{0:0.2f}-FM*-KL{1}.fits".format(mvt,numbasis[0]))
     FMMF_snr_obj = Stat(read_func,filename,type="pixel based SNR",
-                   overwrite=overwrite,mute=mute,resolution=resolution,mask_radius=mask_radius,
+                   overwrite=overwrite,mute=mute,mask_radius=mask_radius,
                        pix2as = GPI.GPIData.lenslet_scale)
     filename = os.path.join("kpop_FMMF",reduc_spectrum,"*{0:0.2f}-FM*-KL{1}-SNRPerPixDr2.fits".format(mvt,numbasis[0]))
     FMMF_detec_obj = Detection(read_func,filename,mask_radius = None,threshold = 2,overwrite=overwrite,mute=mute,IWA=9,OWA=1./0.01414,
                        pix2as = GPI.GPIData.lenslet_scale)
 
-    err_list = kpop_wrapper(inputDir,[FMMF_snr_obj,FMMF_detec_obj],mute_error=False)
+    err_list = kpop_wrapper(inputDir,[FMMFObj,FMMF_snr_obj,FMMF_detec_obj],mute_error = False)
 
     ###########################################################################################
     ## Add Cross correlation and Matched Filter reductions
@@ -112,7 +114,7 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     filename = os.path.join("kpop_FMMF",reduc_spectrum,
                                        "*_{0:0.2f}-speccube-KL{1}-*gaussian.fits".format(mvt,numbasis[0]))
     klip_snr_obj = Stat(read_func,filename,type="pixel based SNR",
-                   overwrite=overwrite,mute=mute,resolution=resolution,mask_radius=mask_radius,
+                   overwrite=overwrite,mute=mute,mask_radius=mask_radius,
                        pix2as = GPI.GPIData.lenslet_scale)
     filename = os.path.join("kpop_FMMF",reduc_spectrum,
                                        "*_{0:0.2f}-speccube-KL{1}-*gaussian-SNRPerPixDr2.fits".format(mvt,numbasis[0]))
@@ -155,7 +157,7 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
         #Define the fakes position and contrast
         fake_flux_dict = dict(mode = "SNR",SNR=10,sep_arr = sep_bins_center, contrast_arr=approx_cont_curve)
         # fake_flux_dict = dict(mode = "contrast",contrast=5e-6)
-        fake_position_dict = dict(mode = "spirals",pa_shift=pa_shift)
+        fake_position_dict = dict(mode = "spirals",pa_shift=pa_shift,annuli=10)
 
         # Inject the fakes
         spdc_glob = glob(inputDir+os.path.sep+"S*_spdc_distorcorr.fits")
@@ -182,12 +184,10 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
                                  filetype="raw spectral cube with fakes", more_keywords =extra_keywords,
                                  user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
 
-
     ###########################################################################################
     ## Reduce the fake dataset
     ###########################################################################################
 
-    FMMFObj_4fakes = []
     # Object to reduce the fake dataset with FMMF
     raw_nohpf_read_func = lambda file_list:GPI.GPIData(file_list,
                                              meas_satspot_flux=True,
@@ -202,7 +202,8 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
                        PSF_read_func = PSF_read_func,
                        PSF_cube = PSF_cube,
                        PSF_cube_wvs = None,
-                       predefined_sectors = "1.0 as",
+                       subsections = 1,
+                       annuli = annuli,
                        label = "FMMF_PA{0:02d}".format(pa_shift),
                        overwrite=overwrite,
                        numbasis=numbasis,
@@ -215,7 +216,7 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
         filename = os.path.join("kpop_FMMF_PA{0:02d}".format(pa_shift),reduc_spectrum,"*{0:0.2f}-FM*-KL{1}.fits".format(mvt,numbasis[0]))
         filename_noPlanets = os.path.join(inputDir,"kpop_FMMF",reduc_spectrum,"*{0:0.2f}-FM*-KL{1}.fits".format(mvt,numbasis[0]))
         FMMF_snr_Obj_fk = Stat(read_func,filename,filename_noPlanets=filename_noPlanets,type="pixel based SNR",
-                       overwrite=overwrite,mute=mute,resolution=resolution,mask_radius=mask_radius,N_threads=-1,
+                       overwrite=overwrite,mute=mute,mask_radius=mask_radius,N_threads=-1,
                        pix2as = GPI.GPIData.lenslet_scale)
 
         err_list = kpop_wrapper(dir_fakes,[FMMFObj,FMMF_snr_Obj_fk],mute_error=False)
@@ -234,7 +235,7 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
         filename_noPlanets = os.path.join(inputDir,"kpop_FMMF",reduc_spectrum,
                                            "*_{0:0.2f}-speccube-KL{1}-*gaussian.fits".format(mvt,numbasis[0]))
         klip_snr_Obj_fk = Stat(read_func,filename,filename_noPlanets=filename_noPlanets,type="pixel based SNR",
-                       overwrite=overwrite,mute=mute,resolution=resolution,mask_radius=mask_radius,
+                       overwrite=overwrite,mute=mute,mask_radius=mask_radius,
                        pix2as = GPI.GPIData.lenslet_scale)
 
         err_list = kpop_wrapper(dir_fakes,[cc_Obj_fk,mf_Obj_fk,klip_snr_Obj_fk],mute_error=False)
@@ -254,6 +255,8 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     MJDOBS = None
 
     # For the 3 different metric, calculate the contrast curve using the fakes to calibrate the conversion factor.
+    separation_list = []
+    contrast_curve_list = []
     for FMMF_metric in ["FMMF-KL{0}".format(numbasis[0]),
                         "FMCC-KL{0}".format(numbasis[0]),
                         "FMCont-KL{0}".format(numbasis[0]),
@@ -271,11 +274,24 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
                                                GPI.GPIData.lenslet_scale,
                                                mask_radius=mask_radius,Dr=2,
                                                save_dir = os.path.join(inputDir,"kpop_FMMF",reduc_spectrum),
-                                               suffix=FMMF_metric,spec_type=fakes_spectrum,
-                                               fakes_SNR_filename_list=fakes_SNR_filename_list,
-                                               resolution=resolution,MJDOBS=MJDOBS)
+                                               suffix=FMMF_metric+"-mvt{0:0.2f}".format(mvt),spec_type=fakes_spectrum,
+                                               fakes_SNR_filename_list=fakes_SNR_filename_list,MJDOBS=MJDOBS)
+        separation_list.append(separation)
+        contrast_curve_list.append(contrast_curve)
 
 
+    if 0:
+        import matplotlib.pyplot as plt
+        plt.figure(1)
+        for separation,contrast_curve,FMMF_metric in zip(separation_list,contrast_curve_list,["FMMF-KL{0}".format(numbasis[0]),
+                            "FMCC-KL{0}".format(numbasis[0]),
+                            "FMCont-KL{0}".format(numbasis[0]),
+                            "speccube-KL{0}-crossCorrgaussian".format(numbasis[0]),
+                            "speccube-KL{0}-MF3Dgaussian".format(numbasis[0])]):
+            plt.plot(separation,contrast_curve,label=FMMF_metric)
+        plt.gca().set_yscale('log')
+        plt.legend()
+        plt.show()
     ###########################################################################################
     ## Remove the fake datasets because we don't need them anymore
     ###########################################################################################
