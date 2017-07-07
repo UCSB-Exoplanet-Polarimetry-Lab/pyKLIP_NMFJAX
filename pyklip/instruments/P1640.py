@@ -4,6 +4,9 @@ import subprocess
 import glob
 from copy import deepcopy
 
+import sys
+if sys.version_info.major >= 3:
+    from functools import reduce
 import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
@@ -52,6 +55,7 @@ class P1640Data(Data):
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
         spot_directory: (None) path to the directory where the spot positions are stored. Defaults to P1640.ini val
+        verbose: [False] if True, print more stuff
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -114,7 +118,7 @@ class P1640Data(Data):
     ### Constructors ###
     ####################
     def __init__(self, filepaths=None, skipslices=None, corefilepaths=None, spot_directory=None, highpass=True,
-                 numthreads=-1,PSF_cube=None):
+                 numthreads=-1, PSF_cube=None, verbose=False):
         """
         Initialization code for P1640Data
 
@@ -324,7 +328,7 @@ class P1640Data(Data):
         #self.spot_flux = cube_spot_fluxes
 
 
-    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True, numthreads=-1, PSF_cube=None):
+    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True, numthreads=-1, PSF_cube=None, verbose=False):
         """
         Method to open and read a list of P1640 data. Handles everything that can be done by
         reading directly from the P1640 header or cubes, no calculations. Scaling and Centering handled elsewhere
@@ -362,7 +366,8 @@ class P1640Data(Data):
         for index, filepath in enumerate(filepaths):
             cube, center, spot_scaling_single_cube, spot_locations_single_cube, pa, wv, \
             astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices, highpass=highpass, numthreads=numthreads)
+                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices,
+                                    highpass=highpass, numthreads=numthreads, verbose=verbose)
 
             data.append(cube)
             centers.append(center)
@@ -376,7 +381,7 @@ class P1640Data(Data):
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
             filenames.append([filepath for i in range(pa.shape[0])])
-
+        if verbose == False: print("{N} files processed from {p} (verbose = False).".format(N=len(filepaths), p=os.path.commonpath(filepaths)))
 
 
         #convert everything into numpy arrays
@@ -629,6 +634,7 @@ class P1640Data(Data):
 
         # spots initially have shape (Ncube x Nchan x Nspots x 2)
         nframes = reduce(lambda x,y: x*y, self.spot_locations.shape[:-2])
+
         spot0 = self.spot_locations[..., 0,:].reshape(nframes, 2)
         spot1 = self.spot_locations[..., 1,:].reshape(nframes, 2)
         spot2 = self.spot_locations[..., 2,:].reshape(nframes, 2)
@@ -663,7 +669,7 @@ class P1640Data(Data):
                 spotpsf = generate_psf(frame, spots, boxrad=boxrad)
                 self.psfs.append(spotpsf)
             self.psfs = np.array(self.psfs)
-            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
+            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//self.nchannels_all, self.nchannels_all,
                                                self.psfs.shape[1], self.psfs.shape[2]))
             self.psfs = np.mean(self.psfs, axis=0)
 
@@ -929,7 +935,7 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions,
     return
 
 def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass=True,
-                        numthreads=-1, psfs_func_list=None):
+                        numthreads=-1, psfs_func_list=None, verbose=False):
     """
     Method to open and parse a P1640 file
 
@@ -941,7 +947,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
                   can also be a number specifying FWHM of box in pixel units
         numthreads: : Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
-            PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        verbose [False]: if True, print more stuff
     Returns: (using z as size of 3rd dimension, z=32 for spec including all wavelengths)
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
@@ -956,7 +963,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         prihdr: primary header of the FITS file NOT USED
         exthdr: 1st extention header of the FITS file
     """
-    print("Reading File: {0}".format(filepath))
+    if verbose == True: print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
         #grab the data and headers
@@ -997,7 +1004,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         try:
             if spot_directory is not None:
                 spot_filedir = spot_directory
-                print(spot_filedir)
+                if verbose == True: print("Spot directory: {s}".format(s=spot_filedir))
             else: # use the default set in P1640.ini
                 spot_filedir = P1640Data.config.get("spots","spot_file_path")
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
@@ -1008,7 +1015,7 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
             # check if all the spot files exist, if so, read them in
             exist = np.all([os.path.isfile(f) for f in spot_filepaths])
             assert(exist is not False)
-            print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+            if verbose == True: print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
             spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                        for f in spot_filepaths])
         except AssertionError:
