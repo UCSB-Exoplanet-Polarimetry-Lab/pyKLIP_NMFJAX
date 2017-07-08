@@ -44,6 +44,7 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
+        self.imgs_mean_subbed = False
         
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
@@ -130,7 +131,7 @@ class DiskFM(NoFM):
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
+        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False, refs_mean_subbed = self.aligned_imgs_np)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
         for thisnumbasisindex in range(np.size(numbasis)):
@@ -185,7 +186,7 @@ class DiskFM(NoFM):
             original_KL = self.klmodes_dict[key]
             evals = self.evals_dict[key]
             evecs = self.evecs_dict[key]
-            ref_psfs_indicies = self.ref_psfs_indicies_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
             
             parallel = False 
         
@@ -287,8 +288,15 @@ class DiskFM(NoFM):
 
 
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
+        self.aligned_imgs_np = self.aligned_imgs_np - np.nanmean(self.aligned_imgs_np)
+        self.aligned_imgs_np[np.where(np.isnan(self.aligned_imgs_np))] = 0
+        self.imgs_mean_subbed = True
+
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
+
+        #Don't need to save the bases again! 
+        self.save_basis = False
 
         # Delete global variables so it can pickle
         del pa_imgs
@@ -484,40 +492,42 @@ class DiskFM(NoFM):
         perturbmag = perturbmag_imgs
         perturbmag_shape = perturbmag_imgs_shape
 
+    #@profile
+    # @jit
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
-                         new_center=None):
+                             new_center=None):
         """
-        Rotate and save sector in output image at desired ranges. Need my own version of this that doesn't use a global variable (maybe?0
-        
+        Rotate and save sector in output image at desired ranges
+
         Args:
-        input_shape: shape of input_image
-        sector: data in the sector to save to output_img
-        sector_ind: index into input img (corresponding to input_shape) for the original sector
-        output_img: the array to save the data to
-        output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
-        skipping bookkeeping
-        angle: angle that the sector needs to rotate (I forget the convention right now)
-        
-        The next 6 parameters define the sector geometry in input image coordinates
-        radstart: radius from img_center of start of sector
-        radend: radius from img_center of end of sector
-        phistart: azimuthal start of sector
-        phiend: azimuthal end of sector
-        padding: amount of padding around each sector
-        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
-        It defines the separation interva in which klip will be run.
-        img_center: center of image in input image coordinate
-        
-        flipx: if true, flip the x coordinate to switch coordinate handiness
-        new_center: if not none, center of output_img. If none, center stays the same
+            input_shape: shape of input_image
+            sector: data in the sector to save to output_img
+            sector_ind: index into input img (corresponding to input_shape) for the original sector
+            output_img: the array to save the data to
+            output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
+                                   skipping bookkeeping
+            angle: angle that the sector needs to rotate (I forget the convention right now)
+
+            The next 6 parameters define the sector geometry in input image coordinates
+            radstart: radius from img_center of start of sector
+            radend: radius from img_center of end of sector
+            phistart: azimuthal start of sector
+            phiend: azimuthal end of sector
+            padding: amount of padding around each sector
+            IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                    It defines the separation interva in which klip will be run.
+            img_center: center of image in input image coordinate
+d
+            flipx: if true, flip the x coordinate to switch coordinate handiness
+            new_center: if not none, center of output_img. If none, center stays the same
         """
         # convert angle to radians
         angle_rad = np.radians(angle)
-        
+
         #wrap phi
         phistart %= 2 * np.pi
         phiend %= 2 * np.pi
-        
+
         #incorporate padding
         IWA,OWA = IOWA
         radstart_padded = np.max([radstart-padding,IWA])
@@ -566,45 +576,48 @@ class DiskFM(NoFM):
                                 ((phip >= phistart_padded) | (phip < phiend_padded)))
         rot_sector_pix = np.where(in_padded_sector)
 
-        # only padding
-        # check to see if without padding, the phi coordinate wraps
-        if phiend >=  phistart:
-            # no wrap
-            in_only_padding = np.where(((rp < radstart) | (rp >= radend) | (phip < phistart) | (phip >= phiend))
-                                       & in_padded_sector)
-        else:
-            # wrap
-            in_only_padding = np.where(((rp < radstart) | (rp >= radend) | ((phip < phistart) & (phip > phiend_padded))
-                                    | ((phip >= phiend) & (phip < phistart_padded))) & in_padded_sector)
-        rot_sector_pix_onlypadding = np.where(in_only_padding)
-        
+        # do NaN detection by defining any pixel in the new coordiante system (xp, yp) as a nan
+        # if any one of the neighboring pixels in the original image is a nan
+        # e.g. (xp, yp) = (120.1, 200.1) is nan if either (120, 200), (121, 200), (120, 201), (121, 201)
+        # is a nan
+        dims = input_shape
         blank_input = np.zeros(dims[1] * dims[0])
         blank_input[sector_ind] = sector
         blank_input.shape = [dims[0], dims[1]]
 
-        # resample image based on new coordinates
-        # scipy uses y,x convention when meshgrid uses x,y
-        # stupid scipy functions can't work with masked arrays (NANs)
-        # and trying to use interp2d with sparse arrays is way to slow
-        # hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-        # then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
-        minval = np.min([np.nanmin(blank_input), 0.0])
+        xp_floor = np.clip(np.floor(xp).astype(int), 0, xp.shape[1]-1)[rot_sector_pix]
+        xp_ceil = np.clip(np.ceil(xp).astype(int), 0, xp.shape[1]-1)[rot_sector_pix]
+        yp_floor = np.clip(np.floor(yp).astype(int), 0, yp.shape[0]-1)[rot_sector_pix]
+        yp_ceil = np.clip(np.ceil(yp).astype(int), 0, yp.shape[0]-1)[rot_sector_pix]
+        rotnans = np.where(np.isnan(blank_input[yp_floor.ravel(), xp_floor.ravel()]) | 
+                           np.isnan(blank_input[yp_floor.ravel(), xp_ceil.ravel()]) |
+                           np.isnan(blank_input[yp_ceil.ravel(), xp_floor.ravel()]) |
+                           np.isnan(blank_input[yp_ceil.ravel(), xp_ceil.ravel()]))
+
+        # resample image based on new coordinates, set nan values as median
         nanpix = np.where(np.isnan(blank_input))
         medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
         input_copy = np.copy(blank_input)
-        input_copy[nanpix] = minval * 5.0
-        rot_sector_mask = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=minval * 5.0)
         input_copy[nanpix] = medval
         rot_sector = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
-        rot_sector[np.where(rot_sector_mask < minval)] = np.nan
+
+        # mask nans
+        rot_sector[rotnans] = np.nan
+        sector_validpix = np.where(~np.isnan(rot_sector))
+
+        # need to define only where the non nan pixels are, so we can store those in the output image
+        blank_output = np.zeros([dims[0], dims[1]]) * np.nan
+        blank_output[rot_sector_pix] = rot_sector
+        blank_output.shape = (dims[0], dims[1])
+        rot_sector_validpix_2d = np.where(~np.isnan(blank_output))
 
         # save output sector. We need to reshape the array into 2d arrays to save it
         output_img.shape = [self.outputs_shape[1], self.outputs_shape[2]]
-        output_img[rot_sector_pix] = np.nansum([output_img[rot_sector_pix], rot_sector], axis=0)
+        output_img[rot_sector_validpix_2d] = np.nansum([output_img[rot_sector_pix][sector_validpix], rot_sector[sector_validpix]], axis=0)
         output_img.shape = [self.outputs_shape[1] * self.outputs_shape[2]]
 
         # Increment the numstack counter if it is not None
         if output_img_numstacked is not None:
             output_img_numstacked.shape = [self.outputs_shape[1], self.outputs_shape[2]]
-            output_img_numstacked[rot_sector_pix] += 1
+            output_img_numstacked[rot_sector_validpix_2d] += 1
             output_img_numstacked.shape = [self.outputs_shape[1] *  self.outputs_shape[2]]

@@ -14,11 +14,6 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import random as rd
 
-import multiprocessing as mp
-
-import pyklip.kpp.utils.GOI as goi
-import pyklip.spectra_management as spec
-import pyklip.fakes as fakes
 
 #different imports depending on if python2.7 or python3
 import sys
@@ -40,10 +35,6 @@ from pyklip.instruments.P1640_support import P1640utils
 
 from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
-from pyklip.fakes import gaussfit2d
-from pyklip.fakes import gaussfit2dLSQ
-from pyklip.fakes import PSFcubefit
-import pyklip.spectra_management as spec
 
 class P1640Data(Data):
     """
@@ -381,7 +372,9 @@ class P1640Data(Data):
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
             filenames.append([filepath for i in range(pa.shape[0])])
-        if verbose == False: print("{N} files processed from {p} (verbose = False).".format(N=len(filepaths), p=os.path.commonpath(filepaths)))
+        if verbose == False:
+            print("{N} files processed from {p} (verbose = False).".format(N=len(filepaths),
+                                                                           p=os.path.commonprefix(filepaths)))
 
 
         #convert everything into numpy arrays
@@ -963,7 +956,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         prihdr: primary header of the FITS file NOT USED
         exthdr: 1st extention header of the FITS file
     """
-    if verbose == True: print("Reading File: {0}".format(filepath))
+    if verbose == True:
+        print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
         #grab the data and headers
@@ -1004,7 +998,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         try:
             if spot_directory is not None:
                 spot_filedir = spot_directory
-                if verbose == True: print("Spot directory: {s}".format(s=spot_filedir))
+                if verbose == True:
+                    print("Spot directory: {s}".format(s=spot_filedir))
             else: # use the default set in P1640.ini
                 spot_filedir = P1640Data.config.get("spots","spot_file_path")
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
@@ -1015,7 +1010,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
             # check if all the spot files exist, if so, read them in
             exist = np.all([os.path.isfile(f) for f in spot_filepaths])
             assert(exist is not False)
-            if verbose == True: print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+            if verbose == True:
+                print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
             spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                        for f in spot_filepaths])
         except AssertionError:

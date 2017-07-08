@@ -6,6 +6,10 @@ import scipy.interpolate as interp
 from scipy.optimize import minimize
 from copy import copy
 
+import os
+import glob
+import pyklip.spectra_management as spec
+from scipy.interpolate import interp1d
 
 def convert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -207,6 +211,282 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             stampsize = int(np.ceil(stampsize))
 
             _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm, stampsize=stampsize)
+
+
+def generate_dataset_with_fakes(dataset,
+                             fake_position_dict,
+                             fake_flux_dict,
+                             spectrum = None,
+                             PSF_cube = None,
+                             PSF_cube_wvs = None,
+                             star_type = None,
+                             mute = False,
+                             SpT_file_csv = None,
+                             real_planets_pos = None,
+                             sep_skip_real_pl = None,
+                             pa_skip_real_pl = None):
+    '''
+    Generate spectral datacubes with fake planets.
+    It will do a copy of the cubes read in GPIData after having injected fake planets in them.
+    This new set of cubes can then be reduced in the same manner as the campaign data.
+
+    Doesn't work with remove slice: assumes that the dataset is made of a list of similar datacubes or images.
+
+    Args:
+        dataset: An object of type GPIData.
+                The fakes are injected directly into dataset so you should make a copy of dataset prior to running this
+                function.
+                In order for the function to query simbad for the spectral type of the star, the attribute object_name needs
+                to be defined in dataset.
+        fake_position_dict:
+                Dictionary defining the way the fake planets are positionned
+                - fake_position_dict["mode"]="sector": Put a planet in each klip sector. Can actually generate several
+                        datasets in which the planets will be shifted in separation and position angle with respect to one
+                        another.
+                        It can be usefull for fake based contrast curve calculation.
+                        Several parameters needs to be defined.
+                        - fake_position_dict["annuli"]: Number of annulis in the image
+                        - fake_position_dict["subsections"]: Number of angular sections in the image
+                        - fake_position_dict["sep_shift"]: separation shift from the center of the sectors
+                        - fake_position_dict["pa_shift"]: position angle shift from the center of the sectors
+                - fake_position_dict["mode"]="custom": Put planets at given (separation, position angle).
+                        The following parameter needs to be defined
+                        - fake_position_dict["pa_sep_list"]: List of tuple [(r1,pa1),(r2,pa2),...] with each tuple giving
+                                the separation and position angle of each planet to be injected.
+                - fake_position_dict["mode"]="ROC": Generate fake for ROC curves calculation. Use hard-coded parameters.
+            fake_flux_dict:
+                Dictionary defining the way in which the flux of the fake is defined.
+                - fake_flux_dict["mode"]="contrast": Defines the contrast value of the fakes.
+                        - fake_flux_dict["contrast"]: Contrast of the fake planets
+                - fake_flux_dict["mode"]="SNR": Defines the brightness of the fakes relatively to the satellite spots.
+                        - fake_flux_dict["SNR"]: SNR wished for the fake planets.
+                        - fake_flux_dict["sep_arr"]: Separation sampling of the contrast curve in pixels.
+                        - fake_flux_dict["contrast_arr"]: 5 sigma contrast curve (planet to star ratio).
+        PSF_cube: the psf of the image. A numpy array with shape (wv, y, x)
+        PSF_cube_wvs: the wavelegnths that correspond to the input psfs
+        spectrum: spectrum name (string) or array
+                    - "host_star_spec": The spectrum from the star or the satellite spots is directly used.
+                                        It is derived from the inverse of the calibrate_output() output.
+                    - "constant": Use a constant spectrum np.ones(nl).
+                    - other strings: name of the spectrum file in #pykliproot#/spectra/*/ with pykliproot the
+                                    directory in which pyklip is installed. It that case it should be a spectrum
+                                    from Mark Marley or one following the same convention.
+                                    Spectrum will be corrected for transmission.
+                    - ndarray: 1D array with a user defined spectrum. Spectrum will be corrected for transmission.
+        star_type: Spectral type of the current star. If None, Simbad is queried.
+        mute: If True prevent printed log outputs.
+        suffix: Suffix to be added at the end of the filenames.
+        SpT_file_csv: Filename of the table (.csv) contaning the spectral type of the stars.
+        real_planets_pos: list of position of real point sources in the dataset that should be avoided when injecting fakes.
+                        [(sep1,pa1),(sep2,pa2),...] with the separation in pixels and the position angle in degrees.
+        sep_skip_real_pl: Limit in seperation of how close a fake can be injected of a known GOI.
+        pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
+
+    Return:
+    '''
+    import pyklip.kpp.utils.GPIimage as gpiim
+
+
+    if sep_skip_real_pl is None:
+        sep_skip_real_pl = 20
+    if pa_skip_real_pl is None:
+        pa_skip_real_pl = 90
+
+    try:
+        star_name = dataset.object_name.replace(" ","_")
+    except:
+        star_name = "noname"
+
+    nl,ny,nx = dataset.input.shape
+    dn_per_contrast = 1./dataset.calibrate_output(np.ones((nl,1,1)),spectral=True).squeeze()
+    host_star_spec = dn_per_contrast/np.mean(dn_per_contrast)
+
+    if star_type is None:
+        star_type = spec.get_specType(star_name,SpT_file_csv)
+    # Interpolate a spectrum of the star based on its spectral type/temperature
+    wv,star_sp = spec.get_star_spectrum(dataset.wvs,star_type)
+
+    # Define the output Foldername
+    if isinstance(spectrum, str):
+
+        # Do the best it can with the spectral information given in inputs.
+        if spectrum == "host_star_spec":
+            # If spectrum_filename is an empty string the function takes the sat spot spectrum by default.
+            if not mute:
+                print("Default host star specrum will be used.")
+            spectrum_vec = copy(host_star_spec)
+            spectrum_name = "host_star_spec"
+        elif spectrum == "constant":
+            if not mute:
+                print("Spectrum is not or badly defined so taking flat spectrum")
+            spectrum_vec = np.ones(nl)
+            spectrum_name = "constant"
+        else :
+            pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
+            spectrum_filename = os.path.abspath(glob.glob(os.path.join(pykliproot,"spectra","*",spectrum+".flx"))[0])
+            spectrum_name = spectrum_filename.split(os.path.sep)
+            spectrum_name = spectrum_name[len(spectrum_name)-1].split(".")[0]
+
+            # spectrum_filename is not empty it is assumed to be a valid path.
+            if not mute:
+                print("Spectrum model: "+spectrum_filename)
+            # Interpolate the spectrum of the planet based on the given filename
+            wv,planet_sp = spec.get_planet_spectrum(spectrum_filename,dataset.wvs)
+
+            # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+            spectrum_vec = (host_star_spec/star_sp)*planet_sp
+
+    elif isinstance(spectrum, np.ndarray):
+        planet_sp = spectrum
+        spectrum_name = "custom"
+
+        # Correct the ideal spectrum given in spectrum_filename for atmospheric and instrumental absorption.
+        spectrum_vec = (host_star_spec/star_sp)*planet_sp
+    else:
+        raise ValueError("Invalid spectrum: {0}".format(spectrum))
+
+    spectrum_vec = spectrum_vec/np.mean(spectrum_vec)
+
+
+    # Make sure the total flux of each PSF is unity for all wavelengths
+    # So the peak value won't be unity.
+    PSF_cube = PSF_cube/np.nansum(PSF_cube,axis=(1,2))[:,None,None]
+    # Get the conversion factor from peak spectrum to aperture based spectrum
+    aper_over_peak_ratio = 1/np.nanmax(PSF_cube,axis=(1,2))
+    aper_over_peak_ratio_tiled = np.zeros(nl)#wavelengths
+    for k,wv in enumerate(dataset.wvs):
+        aper_over_peak_ratio_tiled[k] = aper_over_peak_ratio[spec.find_nearest(PSF_cube_wvs,wv)[1]]
+    # Summed DN flux of the star in the entire dataset calculated from dn_per_contrast
+    star_flux = np.sum(aper_over_peak_ratio_tiled*dn_per_contrast)
+    nl_psf,ny_psf,nx_psf = PSF_cube.shape
+    inputpsfs = np.zeros((nl,ny_psf,nx_psf))
+    for k,wv in enumerate(dataset.wvs):
+        inputpsfs[k,:,:] = PSF_cube[spec.find_nearest(PSF_cube_wvs,wv)[1],:,:]
+
+
+    if real_planets_pos is not None:
+        sep_real_object_list = [sep for (sep,pa) in real_planets_pos] # in pixels
+        pa_real_object_list = [pa for (sep,pa) in real_planets_pos] # in degrees
+
+    # inputflux_is_def = False
+    # Build the list of separation and position angles for the fakes
+    if fake_position_dict["mode"] == "custom":
+        sep_pa_iter_list = fake_position_dict["pa_sep_list"]
+
+    if fake_position_dict["mode"] == "spirals":
+        try:
+            pa_shift = fake_position_dict["pa_shift"]
+        except:
+            pa_shift = 0.0
+        # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
+        # We want to inject one planet per section where klip is independently applied.
+        try:
+            annuli = fake_position_dict["annuli"]
+        except:
+            annuli = 8
+        try:
+            dr = fake_position_dict["dr"]
+        except:
+            dr = 15.
+        delta_th = 90
+
+        # Get parallactic angle of where to put fake planets
+        # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
+        # delta_pa = 180/np.pi*PSF_dist/radius
+        pa_list = np.arange(-180.,180.-0.01,delta_th) + pa_shift
+        radii_list = np.array([dr * annuli_it + dataset.IWA + 3.5 for annuli_it in range(annuli)])
+        pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
+        # for row_id in range(pa_grid.shape[0]):
+        #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
+        for col_id in range(radii_grid.shape[1]):
+            radii_grid[:,col_id] = radii_grid[:,col_id] + dr/4*np.mod(col_id,4)
+        pa_grid[range(1,annuli,3),:] += 30
+        pa_grid[range(2,annuli,3),:] += 60
+        pa_grid = pa_grid + 5
+
+        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+
+    if fake_position_dict["mode"] == "sector":
+        annuli = fake_position_dict["annuli"]
+        subsections = fake_position_dict["subsections"]
+        sep_shift = fake_position_dict["sep_shift"]
+        pa_shift = fake_position_dict["pa_shift"]
+
+        # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
+        # We want to inject one planet per section where klip is independently applied.
+        dims = dataset.input.shape
+        x_grid, y_grid = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
+        nanpix = np.where(np.isnan(dataset.input[0]))
+        OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
+        dr = float(OWA - dataset.IWA) / (annuli)
+        delta_th = 360./subsections
+
+        # Get parallactic angle of where to put fake planets
+        # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
+        # delta_pa = 180/np.pi*PSF_dist/radius
+        pa_list = np.arange(-180.,180.-0.01,delta_th) + pa_shift
+        radii_list = np.array([dr * annuli_it + dataset.IWA + dr/2.for annuli_it in range(annuli-1)]) + sep_shift
+        pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
+        pa_grid[range(1,annuli-1,2),:] += delta_th/2.
+
+        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+
+    # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
+    if (fake_flux_dict["mode"] == "contrast"):
+        if isinstance(fake_flux_dict["contrast"], list) or isinstance(fake_flux_dict["contrast"], np.ndarray):
+            planets_contrasts = fake_flux_dict["contrast"]
+        else:
+            planets_contrasts = [fake_flux_dict["contrast"],]*len(sep_pa_iter_list)
+    elif (fake_flux_dict["mode"] == "SNR"):
+        sep_arr = np.array(fake_flux_dict["sep_arr"])
+        cont_arr = np.array(fake_flux_dict["contrast_arr"])
+        f = interp1d(sep_arr[np.where(np.isfinite(cont_arr))], cont_arr[np.where(np.isfinite(cont_arr))],
+                     bounds_error=False,fill_value=np.nanmin(fake_flux_dict["contrast_arr"]))
+        planets_contrasts = [fake_flux_dict["SNR"]*f(sep)/5. for (sep,pa) in sep_pa_iter_list]
+
+    extra_keywords = {}
+    # Loop for injecting fake planets. One planet per section of the image.
+    for fake_id, ((radius,pa),contrast) in enumerate(zip(sep_pa_iter_list,planets_contrasts)):
+        x_max_pos = radius*np.cos(np.radians(90+pa))
+        y_max_pos = radius*np.sin(np.radians(90+pa))
+
+        # Not injecting the planet if too close to real object
+        if real_planets_pos is not None:
+            too_close = False
+            for sep_real_object,pa_real_object  in zip(sep_real_object_list,pa_real_object_list):
+                delta_angle = np.min([np.abs(np.mod(pa,360)-np.mod(pa_real_object,360)),
+                               np.min([np.mod(pa,360),np.mod(pa_real_object,360)])+360-np.max([np.mod(pa,360),np.mod(pa_real_object,360)])])
+                if np.abs(sep_real_object-radius) < sep_skip_real_pl and delta_angle < pa_skip_real_pl:
+                    too_close = True
+                    if not mute:
+                        print("Skipping planet. Real object too close.")
+                    break
+            if too_close:
+                continue
+
+
+        spectrum_corr = spectrum_vec/np.sum(spectrum_vec)*star_flux*contrast
+        inputpsfs = inputpsfs/np.nansum(inputpsfs,axis=(1,2))[:,None,None]
+        inputpsfs = inputpsfs*spectrum_corr[:,None,None]
+
+        try:
+            if not mute:
+                print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+            # inject fake planet at given radius,pa into dataset.input
+            inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
+
+            # Save fake planet position in headers
+            extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
+            extra_keywords["FKSEP{0:02d}".format(fake_id)] = radius
+            extra_keywords["FKCONT{0:02d}".format(fake_id)] = contrast
+            extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
+            extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
+            extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
+        except:
+            if not mute:
+                print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+
+    return dataset,extra_keywords
 
 
 def _construct_gaussian_disk(x0,y0, xsize,ysize, intensity, angle, fwhm=3.5):

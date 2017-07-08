@@ -21,25 +21,28 @@ How to use::
     dataset = GPI.GPIData(filelist)
     model = [some 2D image array]
 
-For a single run::
+
+If you would like to forward model multiple models on a dataset, then you will need to save the eigenvalues and eigenvectors::
+
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_filename = 'klip-basis.p', save_basis = True, load_from_basis = False)
+
+
+If you only need to forward model once and don't need the eigenvalues and eigenvectors more than once, you can omit the final keywords::
 
     diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1)
 
-If you would like to forward model multiple models on a dataset, then you will save the eigenvalues and eigenvectors::
+To run the forward modelling, run::
 
-    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_file_name = 'klip-basis.p', save_basis = True, load_from_basis = False)
+    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1, mode = 'ADI')
 
-In both cases you then run::
+Note that in the case that annuli = 1, you will need to set padding = 0 in klip_dataset
 
-    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis,
-    annuli = 2, subsections = 1, mode = 'ADI')
-
-Note that in the case that annuli = 1, you will need to set padding =
-0 in klip_dataset
-
-In order to forward model another disk::
+If you have saved the eigen vectors then you can load them in at any point with::
   
-    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_file_name = 'klip-basis.p', load_from_basis = True)
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1, basis_filename = 'klip-basis.p', load_from_basis = True, save_basis = False)
+
+Then, you can run new disks with::
+
     diskobj.update_disk(newmodel)
     fmout = diskobj.fm_parallelized()
 

@@ -10,7 +10,7 @@ from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 import pyklip.fakes as fakes
 
-from scipy import interpolate
+from scipy import interpolate, linalg
 from copy import copy
 
 #import matplotlib.pyplot as plt
@@ -381,22 +381,22 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           spectra_template=None, model_from_spots=True, aligned_center=None):
+           maxnumbasis = 100, spectra_template=None, manual_psfs=None, aligned_center=None):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
     - numbasis          - can be a list or a single number
-    - mv                - klip movement
+    - mv                - klip movement (pixels)
     - stamp             - size of box around companion for FM
     - numthreads        (default=4)
-    - spectrum          - Can provide a template, default is None
-    - model_from_spots  - if [True] uses dataset.psfs or runs dataset.generate_psf_cube
-                          if False, calculates gaussian psfs from instrument file
+    - spectra_template  - Can provide a template, default is None
+    - manual_psfs       - If dataset does not have attribute "psfs" will look for 
+                        manual input of psf model. 
     - aligned_center    - pass to klip_dataset
     """
 
-    maxnumbasis = 100 # set from JB's example
-    movement = mv # movement
+    maxnumbasis = maxnumbasis 
+    movement = mv 
     stamp_size=stamp
     N_frames = len(dataset.input)
     N_cubes = len(dataset.exthdrs)
@@ -411,47 +411,22 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     planet_sep, planet_pa = pars
 
-    if model_from_spots == True:
-        # If 'dataset' does not already have psf model, generate them. 
-        if hasattr(dataset, "psfs"):
-            print("Using dataset attribute 'psfs' psf model") #, this is probably GPI data.")
-            radial_psfs = dataset.psfs / \
-                (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
-                 axis=0)[:, None, None])
-        else:
-            try:
-                print("Using generate_psfs to make psf model, this is probably GPI data.")
-                dataset.generate_psf_cube(20)
-                radial_psfs = dataset.psfs / \
-                    (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
-                     axis=0)[:, None, None])
-            except:
-                # If this dataset does not have a working generate_psfs method,
-                # just make a gaussian psf
-                model_from_spots = False
-                print("generate_psfs failed... Generating Gaussian PSFs...")
-    if model_from_spots == False:
-        print("Warning: Generating PSF model using Gaussians.")
-        print(" This may not track AO performance and could introducing color effects into your spectrum.")
-        uniqwvs = dataset.wvs[:nl]
-        radial_psfs = np.zeros((nl, stamp, stamp))
-        telD = float(dataset.config.get('observatory','primary_diam'))
-        for wv, lam in enumerate(uniqwvs):
-            # Calculate lam/D in pixels - first convert wavelength to [m]
-            # lam[m] / D[m] is in radians -- convert to arcsec
-            fwhm_arcsec = 1.22*((lam*1.0e-6)/telD) * (3600*180/np.pi)
-            # convert to pixels with ifs_lenslet_scale
-            fwhm = fwhm_arcsec/float(dataset.config.get('instrument','ifs_lenslet_scale'))
-            # Gaussian standard deviation - from another routine
-            sigma = fwhm/(2.*np.sqrt(2*np.log(2)))
+    # If 'dataset' does not already have psf model, check if manual_psfs not None. 
+    if hasattr(dataset, "psfs"):
+        print("Using dataset PSF model.")
+        # What is this normalization? Not sure it matters (see line 82).
+        radial_psfs = dataset.psfs / \
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+             axis=0)[:, None, None])
+    elif manual_psfs is not None:
+        radial_psfs = manual_psfs
+    else:
+        raise AttributeError("dataset has no psfs attribute. \n"+\
+              "Either run dataset.generate_psfs before gen_fm or"+\
+              "provide psf models in keyword manual_psfs. \n"+\
+              "examples/FM_spectral_extraction_tutorial.py for example.")
 
-            #centered in the array
-            y,x = np.indices([stamp, stamp])
-            y -= stamp // 2
-            x -= stamp // 2
-            radial_psfs[wv,...] = np.exp(-(x**2. + y**2.) / (2. * sigma**2))
-        radial_psfs /= np.mean(radial_psfs.sum(axis=0))
-
+    # The forward model class
     fm_class = ExtractSpec(dataset.input.shape,
                            numbasis,
                            planet_sep,
@@ -459,35 +434,21 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                            radial_psfs,
                            np.unique(dataset.wvs),
                            stamp_size = stamp_size)
+
+    # Now run KLIP!
     fm.klip_dataset(dataset, fm_class,
                     fileprefix="fmspect",
                     annuli=[[planet_sep-stamp,planet_sep+stamp]],
                     subsections=[[(planet_pa-stamp)/180.*np.pi,\
                                   (planet_pa+stamp)/180.*np.pi]],
                     movement=movement,
-                    #numbasis = np.array([numbasis]), 
                     numbasis = numbasis, 
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
-                    spectrum=None,
-                    save_klipped=False, highpass=True,
+                    spectrum=spectra_template,
+                    save_klipped=False, highpass=True)
                     aligned_center=aligned_center)
 
-    #sub_imgs, fmout,tmp = fm.klip_parallelized(dataset.input,
-    #                                           dataset.centers,
-    #                                           dataset.PAs,
-    #                                           dataset.wvs,
-    #                                           dataset.IWA,
-    #                                           fm_class,
-    #                                           numbasis=numbasis,
-    #                                           movement=movement,
-    #                                           #spectrum=spectra_template,
-    #                                           spectrum=None,
-    #                                           annuli=[[planet_sep-10,planet_sep+10]],
-    #                                           subsections=[[(planet_pa-10.)/180.*np.pi,\
-    #                                                         (planet_pa+10.)/180.*np.pi]],
-    #                                           numthreads=numthreads,
-    #                                           maxnumbasis=maxnumbasis)
     return dataset.fmout
 
 def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
@@ -504,46 +465,62 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
                           spot fluxes are saved in dataset.spot_flux
                default is 'DN' require user to do their own calibration for contrast.
     Returns:
-        A spectrum! (In contrast units), size (numbasis, nwav)
+        A tuple containing the spectrum and the forward model
+        (spectrum, forwardmodel)
+        The spectrum:
+            default units=DN unless kwarg unit="CONTRAST"
+            spectrum shape:(len(numbasis), nwav)
+        The forward model:
+        
     """
-    N_frames = fmout.shape[2] - 1 # The last element in this axis is the klipped image
-    N_cubes = len(dataset.exthdrs) # ? what attribute has this info?
+    N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
+    N_cubes = len(dataset.exthdrs) # 
     nl = N_frames / N_cubes
     stamp_size_squared = fmout.shape[-1]
     stamp_size = np.sqrt(stamp_size_squared)
 
-    # Selection matrix
+    # Selection matrix (N_cubes, 1) shape
     spec_identity = np.identity(nl)
     selec = np.tile(spec_identity,(N_frames/nl,1))
 
-    # klipped image for each numbasis, n_frames x npix
+    # set up array for klipped image for each numbasis, n_frames x npix
     klipped = np.zeros((fmout.shape[0], fmout.shape[1], fmout.shape[3]))
     estim_spec = np.zeros((fmout.shape[0], nl))
 
     # The first dimension in fmout is numbasis, and there can be multiple of these,
     # Especially if you want to see how the spectrum behaves when you change parameters.
+    # We'll also set aside an array to store the forward model matrix
     fm_coadd_mat = np.zeros((len(fmout), nl*stamp_size_squared, nl))
     for ii in range(len(fmout)):
         klipped[ii, ...] = fmout[ii,:, -1,:]
+        # klipped_coadd will be coadded over N_cubes
         klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
         for k in range(N_cubes):
             klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
         print(klipped_coadd.shape)
         klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
+        # This is the 'raw' forward model, need to rearrange to solve FM*spec = klipped
         FM_noSpec = fmout[ii, :,:N_frames, :]
 
         # Move spectral dimension to the end (Effectively move pixel dimension to the middle)
         # [nframes, nframes, npix] -> [nframes, npix, nframes]
         FM_noSpec = np.rollaxis(FM_noSpec, 2, 1)
 
+        # S^T . FM[npix, nframes, nframes] . S
+        # essentially coadds over N_cubes via selection matrix
+        # reduces to [nwav, npix, nwav]
         fm_noSpec_coadd = np.dot(selec.T,np.dot(np.rollaxis(FM_noSpec,1,0),selec))
         if method == "JB":
             #
             #JBR's matrix inversion adds up over all exposures, then inverts
             #
+            #Back to a 2D array pixel array in the middle
             fm_noSpec_coadd.shape = [int(nl),int(stamp_size),int(stamp_size),int(nl)]
+            # Flatten over first 3 dims for the FM matrix to solve FM*spect = klipped
             fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
+            # Invert the FM matrix
             pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
+            # solve via FM^-1 . klipped_PSF (flattened) << both are coadded over N_cubes
             estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(int(nl*stamp_size_squared),)))
             fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
         elif method == "LP":
@@ -562,29 +539,29 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
                 A[q,:] = np.dot(fm[q,:].T,fm[q,:])[q,:]
                 b[q] = np.dot(fm[q,:].T,data[q])[q]
             estim_spec[ii,:] = np.dot(np.linalg.inv(A), b)
+        elif method == "leastsq":
+            # MF's suggestion of solving using a least sq function 
+            # instead of matrix inversions
+            
+            #Back to a 2D array pixel array in the middle
+            fm_noSpec_coadd.shape = [int(nl),int(stamp_size),int(stamp_size),int(nl)]
+            # Flatten over first 3 dims for the FM matrix to solve FM*spect = klipped
+            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
+            # Saving the coadded FM
+            fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
+
+            # properly flatten
+            flat_klipped_coadd = np.reshape(klipped_coadd, (int(nl*stamp_size_squared),))
+            # used leastsq solver
+            results = linalg.lstsq(fm_noSpec_coadd_mat, flat_klipped_coadd)
+            # grab the spectrum, not using the other parts for now.
+            estim_spec[ii,:], res, rank, s = results
 
         else:
-            print("method not understood. Choose either JB or LP.")
+            print("method not understood. Choose either JB, LP or leastsq.")
 
-    # Ok now we want to normalize by the right values to give the spectrum in the right units
-    # We will convert the spectrum to contrast and flux, if a stellar spectrum is provided
-    wavs = dataset.wvs[:nl]
-
-    '''
-    # JB's normalization terms:
-    dataset.generate_psf_cube(20)
-    PSF_cube = copy(dataset.psfs)
-    sat_spot_spec = np.nanmax(PSF_cube, axis=(1,2))
-    aper_over_peak_ratio = np.zeros(nl)
-    sat_spot_flux_for_calib = np.zeros(nl)
-    for l_id in range(PSF_cube.shape[0]):
-        aper_over_peak_ratio[l_id] = np.nansum(PSF_cube[l_id,:,:]) / sat_spot_spec[l_id]
-    for k in range(N_cubes):
-        sat_spot_flux_for_calib = sat_spot_flux_for_calib + \
-                                  np.nansum(dataset.spot_flux[k*nl:(k+1)*nl])*aper_over_peak_ratio
-    sat_spot_flux_for_calib = sat_spot_flux_for_calib/N_cubes
-    '''
-
+    # We can do a contrast conversion here if kwarg units = "CONTRAST"
+    # But the default is in raw data units, and it's probably best to stick to that.
     if units == 'CONTRAST':
         # From JB's code, normalize by sum / peak ratio:
         # First set up the PSF model and sums
@@ -599,114 +576,18 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
 
         # Alex's normalization terms:
         # Avg spot ratio
-        band = prihdrs[0]['APODIZER'].split('_')[1]
-        spot_flux_spectrum = np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+        band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
+        # CANNOT USE dataset.band !!! (always returns K1 for some reason)
+        spot_flux_spectrum = \
+            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
         spot_to_star_ratio = dataset.spot_ratio[band]
         normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
         spec_unit = "CONTRAST"
 
-        return estim_spec / normfactor
+        return estim_spec / normfactor, fm_coadd_mat
     else:
         spec_unit = "DN"
         return estim_spec, fm_coadd_mat
-
-
-def get_spectrum_with_errorbars(dataset, location, movement=3.0, stamp=10, numbasis=3, contrast=False, model_from_spots=True):
-    """
-    Alex's routine to actually calculate planet c,d,e spectra with errorbars one way.
-     The steps here:
-     1. calculate forward model at the planet location & invert for spectrum
-     2. Inject several fakes in anulus around planet location w/ measured
-        spectrum and calculate error
-     3. Another check on errors:
-        "zero flux" fake recovery with this method - recovered
-        spectrum should match the errors calculated in step # 2
-
-    Inputs:
-        - klip dataset
-        - location of planet (sep, pa) to center the stamp on
-        - klip movement (how aggressive?), default=1.0 pixel
-        - stamp sgen_ize, default=10 pixels
-        - numbasis - K-L cuttoff
-        - contrast [False] True: units of contrast. False: units of DN
-        - model_from_spots [True]: use spots as PSF models, or [False] use gaussians
-    Returns:
-        A dictionary containg the extracted spectrum from both matrix inversion 
-        styles (FLUX_JB, FLUX_LP), and measured errors (ERR_JB, ERR_LP)
-    """
-
-    # 1:
-    numbasis = np.array([numbasis,])
-    if not hasattr(numbasis, "__iter__"):
-        num_k_klip = 1
-    else:
-        print(hasattr(numbasis, "__iter__"))
-        print(type(numbasis))
-        print(numbasis)
-        num_k_klip = len(numbasis)
-    fmout = gen_fm(dataset, location, numbasis=numbasis, \
-                      mv=movement, stamp=stamp)
-    # contrast  spectrum
-    spectrum_jb, fm_jb = invert_spect_fmodel(fmout, dataset, method="JB")
-    spectrum_lp, fm_lp = invert_spect_fmodel(fmout, dataset, method="LP")
-
-    # 3:
-    # zero spectrum
-    zeroloc = (location[0], (location[1]+180)%360)
-    zfmout = gen_fm(dataset, zeroloc, numbasis=numbasis, \
-                      mv=movement, stamp=stamp)
-    zero_jb, zero_fmjb = invert_spect_fmodel(fmout, dataset, method="JB")
-    zero_lp, zero_fmlp = invert_spect_fmodel(fmout, dataset, method="LP")
-
-    # 2:
-    # useful values
-    N_frames = len(dataset.input)
-    N_cubes = len(dataset.exthdrs)
-    nl = int(N_frames / N_cubes)
-    # Factor to convert contrast spectrum back to data number PER FRAME
-    # Jonathan hack
-    contrast2DN = np.ones_like(dataset.spot_flux)
-    if contrast == True:
-        contrast2DN = (dataset.spot_flux / dataset.spot_ratio["K1"]) / N_cubes
-    # generate a psf model
-    sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
-    PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
-    inputpsfs = np.tile(PSF_cube,(N_cubes, 1, 1))
-
-    # Save the klipped data array (new attricbute of dataset:
-    klipped = fmout[:,:,-1,:]
-    klipped_coadd = np.zeros((num_k_klip, nl, stamp*stamp))
-    for k in range(N_cubes):
-        klipped_coadd = klipped_coadd + klipped[:, k*nl:(k+1)*nl, :]
-    klipped_coadd.shape = [num_k_klip, nl, int(stamp), int(stamp)]
-    dataset.klipped = klipped_coadd
-
-    # Where are we placing the fakes? Drop down 10 30 deg apart
-    pas = np.linspace(location[1]+30, (location[1]+(30*11))%360, num=11)
-
-    flux_jb = copy(dataset.spot_flux)
-    flux_lp = copy(dataset.spot_flux)
-    for ii in range(fmout.shape[0]):
-        for k in range(N_cubes):
-            flux_jb[k*nl:(k+1)*nl] = spectrum_jb[ii,...] * contrast2DN[k*nl:(k+1)*nl]
-            flux_lp[k*nl:(k+1)*nl] = spectrum_lp[ii,...] * contrast2DN[k*nl:(k+1)*nl]
-        fake_jb_spectra = np.zeros((len(pas), spectrum_jb.shape[1]))
-        fake_lp_spectra = np.zeros((len(pas), spectrum_lp.shape[1]))
-        for p, pa in enumerate(pas):
-            psf_inject = inputpsfs*(flux_jb)[:,None,None]
-            fakes.inject_planet(dataset.input, dataset.centers, psf_inject,\
-                                dataset.wcs, location[0], pa)
-            fmtmp = gen_fm(dataset, (location[0], pa), numbasis=numbasis[ii], \
-                           mv=movement, stamp=stamp, model_from_spots=model_from_spots)
-            fake_jb_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="JB")
-            fake_lp_spectra[p, :], fmtmp = invert_spect_fmodel(fmtmp, dataset, method="LP")
-        error_jb = np.std(fake_jb_spectra, axis=0)
-        error_lp = np.std(fake_lp_spectra, axis=0)
-    spectextract_dictionary = {"FLUX_JB":spectrum_jb, "FLUX_LP":spectrum_lp,\
-                               "ERR_JB": error_jb, "ERR_LP":error_lp,\
-                               "ZERO_JB":zero_jb, "ZERO_LP":zero_lp}
-
-    return spectextract_dictionary
 
 def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
     """

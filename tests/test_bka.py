@@ -98,11 +98,11 @@ def test_fmastrometry():
     # generate data_stamp stamp
     fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
 
-    # set kernel, no read noise
-    fma.set_kernel("matern32", [3.], [r"$l$"])
+    # set kernel, with read noise
+    fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
 
     # set bounds
-    fma.set_bounds(1.5, 1.5, 1, [1.])
+    fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_RA_offset, fma.guess_Dec_offset)
     print(fma.bounds)
@@ -110,7 +110,7 @@ def test_fmastrometry():
     mod_bounds = np.copy(fma.bounds)
     mod_bounds[2:] = np.log(mod_bounds[2:])
     print(mod_bounds)
-    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3)), fma, mod_bounds, fma.covar)
+    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
     print(lnpos, np.nanmean(data_frame), np.nanmean(fm_frame), np.nanmean(fma.data_stamp), np.nanmean(fma.fm_stamp))
     assert lnpos > -np.inf
 
@@ -119,16 +119,10 @@ def test_fmastrometry():
 
     print("{0} seconds to run".format(time.time()-t1))
 
-    print(fma.RA_offset, fma.RA_offset_1sigma, fma.RA_offset * 14.166, np.array(fma.RA_offset_1sigma)*14.166)
-    print(fma.Dec_offset, fma.Dec_offset_1sigma, fma.Dec_offset * 14.166, np.array(fma.Dec_offset_1sigma)*14.166)
+    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
 
-    RA_error = np.mean(np.abs(fma.RA_offset_1sigma - fma.RA_offset_1sigma))
-    Dec_error = np.mean(np.abs(fma.Dec_offset_1sigma - fma.Dec_offset_1sigma))
-
-    print(np.abs(fma.Dec_offset*GPI.GPIData.lenslet_scale - -0.3611))
-
-    assert(np.abs(fma.RA_offset*GPI.GPIData.lenslet_scale - -0.2272) < 0.005)
-    assert(np.abs(fma.Dec_offset*GPI.GPIData.lenslet_scale - -0.3611) < 0.005)
+    assert(np.abs(fma.RA_offset.bestfit - -227.2) < 5.)
+    assert(np.abs(fma.Dec_offset.bestfit - -361.1) < 5.)
 
 
     fma.best_fit_and_residuals()

@@ -170,7 +170,8 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
 
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
-def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False):
+# @profile
+def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False, refs_mean_subbed = False):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
@@ -192,8 +193,9 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_per
     N_ref = refs.shape[0]
     N_pix = original_KL.shape[1]
 
-    refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
-    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+    if refs_mean_subbed is False:
+        refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
+        refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
     models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
@@ -833,16 +835,24 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
     phi = np.arctan2(y - img_center[1], x - img_center[0])
 
-    # incorporate padding
-    #JB debug
-    #print(padding,IWA,OWA)
+    if phistart < phiend:
+        deltaphi = phiend - phistart + 2 * padding/np.mean([radstart, radend])
+    else:
+        deltaphi = (2*np.pi - (phistart - phiend))  + 2 * padding/np.mean([radstart, radend])
+
+    # If the length or the arc is higher than 2*pi, simply pick the entire circle.
+    if deltaphi >= 2*np.pi:
+        phistart = 0
+        phiend = 2*np.pi
+    else:
+        phistart = ((phistart)- padding/np.mean([radstart, radend])) % (2.0 * np.pi)
+        phiend = ((phiend) + padding/np.mean([radstart, radend])) % (2.0 * np.pi)
+
     radstart = np.max([radstart-padding,IWA])
     if OWA is not None:
         radend = np.min([radend+padding,OWA])
     else:
         radend = radend+padding
-    phistart = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
-    phiend = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
 
     # grab the pixel location of the section we are going to anaylze
     phi_rotate = ((phi + np.radians(parang)) % (2.0 * np.pi))
@@ -852,16 +862,6 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
     # 2 pi wrap case
     else:
         section_ind = np.where((r >= radstart) & (r < radend) & ((phi_rotate >= phistart) | (phi_rotate < phiend)))
-
-    ## JB debug
-    #print (radstart,radend)
-    #print (phistart/np.pi*180,phiend/np.pi*180)
-    #phi_rotate[section_ind] = np.nan
-    #phi_rotate.shape = (input_shape[0],input_shape[1])
-    #plt.subplot(121)
-    #plt.imshow(phi_rotate/np.pi*180)
-    #plt.colorbar()
-
 
     return section_ind
 
@@ -1010,7 +1010,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                   I.e. subsections = floor(pi*(r_max^2-r_min^2)/N_pix_sector)
                   Warning: There is a bug if N_pix_sector is too big for the first annulus. The annulus is defined from
                             0 to 2pi which create a bug later on. It is probably in the way pa_start and pa_end are
-                            defined in fm_from_eigen(). (I am taking about matched filter by the way)
+                            defined in fm_from_eigen().
         movement: minimum amount of movement (in pixels) of an astrophysical source
                   to consider using that image for a refernece PSF
         flux_overlap: Maximum fraction of flux overlap between a slice and any reference frames included in the
@@ -1130,10 +1130,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     else:
         iterator_sectors=[]
         for [r_min,r_max] in rad_bounds:
-            curr_sep_subsections = int(np.pi*(r_max**2-r_min**2)/N_pix_sector) # equivalent to using floor but casting as well
+            curr_sep_N_subsections = np.max([int(np.pi*(r_max**2-r_min**2)/N_pix_sector),1]) # equivalent to using floor but casting as well
             # divide annuli into subsections
-            dphi = 2 * np.pi / curr_sep_subsections
-            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_subsections)]
+            dphi = 2 * np.pi / curr_sep_N_subsections
+            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_N_subsections)]
             phi_bounds_list[-1][1] = 2 * np.pi
             # for phi_bound in phi_bounds_list:
             #     print(((r_min,r_max),phi_bound) )
@@ -1246,7 +1246,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #print(np.shape(section_ind))
         #print(radstart, radend, phistart, phiend)
 
-        if fm_class.skip_section(radstart, radend, phistart, phiend):
+        if fm_class.skip_section(radstart, radend, phistart, phiend,flipx=flipx):
+            print("SKIPPING")
             continue
 
         sector_size = np.size(section_ind) #+ 2 * (radend- radstart) # some sectors are bigger than others due to boundary
@@ -1413,9 +1414,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
+    if np.sum(np.isfinite(aligned_imgs[img_num, section_ind[0]])) == 0:
+        print("section is full of NaNs ({0} pixels), skipping...".format(np.size(section_ind)))
+        return False
+
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
-    ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
     ref_nanpix = np.where(np.isnan(ref_psfs_mean_sub))
     ref_psfs_mean_sub[ref_nanpix] = 0
 
@@ -1426,9 +1434,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     covar_psfs = np.cov(ref_psfs_mean_sub)
     #also calculate correlation matrix since we'll use that to select reference PSFs
     covar_diag_sqrt = np.sqrt(np.diag(covar_psfs))
-    covar_diag_sqrt_inverse = 1./covar_diag_sqrt
+    covar_diag_sqrt_inverse = np.zeros(covar_diag_sqrt.shape)
+    where_zeros = np.where(covar_diag_sqrt != 0)
+    covar_diag_sqrt_inverse[where_zeros] = 1./covar_diag_sqrt[where_zeros]
     # any image where the diagonal is 0 is all NaNs and shouldn't be infinity
-    covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
+    # covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
     covar_diag = np.diagflat(covar_diag_sqrt_inverse)
     
     corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
@@ -1644,7 +1654,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     if spectrum is not None:
         if spectrum.lower() == "methane":
             pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
             spectrum_wvs = spectrum_dat[:,1]
             spectrum_fluxes = spectrum_dat[:,3]
             spectrum_interpolation = sinterp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
@@ -1685,19 +1695,9 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression)
 
     klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
-    
-    # save outputs to the dataset object
-    # save klipped, reformat wavelengths if necessary
-    if np.size(np.unique(dataset.wvs)) > 1:
-        numwvs = np.size(np.unique(dataset.wvs))
-        dataset.output = klipped.reshape([klipped.shape[0], klipped.shape[1] / numwvs, numwvs,
-                                            klipped.shape[2], klipped.shape[3]])  # (b, N_cube, wvs, y, x)
-    else:
-        dataset.output = klipped
-    # save fm outputs
+
     dataset.fmout = fmout
     dataset.perturbmag = perturbmag
-
 
     # write fmout
     fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
