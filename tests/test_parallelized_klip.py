@@ -95,9 +95,9 @@ def test_exmaple_gpi_klip_dataset():
     print("{0} seconds to run".format(time()-t1))
 
 
-def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
+def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     """
-    Tests ADI reduction with fakes injected at certain position angles
+    Tests ADI reduction with fakes injected at certain position angles. And tests we can run it twice and still be ok
 
     Also tests lite mode
 
@@ -134,7 +134,11 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
-                          calibrate_flux=True, mode="ADI", lite=True, highpass=True)
+                          calibrate_flux=False, mode="ADI", lite=True, highpass=False)
+    # And run it again to check that we can reuse the same dataset object
+    parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
+                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
+                          calibrate_flux=True, mode="ADI", lite=False, highpass=True)
 
     # look at the output data. Validate the spectral cube
     spec_hdulist = fits.open("{out}/{pre}-KL20-speccube.fits".format(out=outputdir, pre=prefix))
@@ -201,5 +205,4 @@ def test_mock_SDI(mock_klip_parallelized):
 
 
 if __name__ == "__main__":
-    #test_exmaple_gpi_klip_dataset()
-    test_adi_gpi_klip_dataset_with_fakes()
+    test_exmaple_gpi_klip_dataset()
