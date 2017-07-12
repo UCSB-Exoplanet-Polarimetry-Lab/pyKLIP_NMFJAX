@@ -133,6 +133,7 @@ class GPIData(Data):
         self._output = None
         self.bad_sat_spots = bad_sat_spots
         if filepaths is None:
+            print("Creating a blank GPI data instance with all fields set to None. Did you want to do this?")
             self._input = None
             self._centers = None
             self._filenums = None
@@ -243,9 +244,13 @@ class GPIData(Data):
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
         """
-        #check to see if user just inputted a single filename string
+        # check to see if user just inputted a single filename string
         if isinstance(filepaths, str):
             filepaths = [filepaths]
+
+        # check that the list of files actually contains something
+        if len(filepaths) == 0:
+            raise ValueError("An empty filelist was passed in to GPIData")
 
         # check bad sat spots to make sure they are reasonable
         if bad_sat_spots is not None:

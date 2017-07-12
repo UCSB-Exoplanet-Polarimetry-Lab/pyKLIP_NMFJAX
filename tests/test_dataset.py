@@ -3,6 +3,7 @@ import glob
 import numpy as np
 import astropy.io.fits as fits
 import pyklip.instruments.Instrument as Instrument
+import pyklip.instruments.GPI as GPI
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
@@ -31,3 +32,19 @@ def test_generic_dataset():
     dataset.savedata(os.path.join(testdir, "generic_dataset.fits"), dataset.input)
     # it didn't crash? Good enough
 
+def test_gpi_dataset():
+    """
+    Tests the GPI data interface, mostly on some edge cases since the general case is tested in test_parallelized_klip
+    """
+    # this shouldn't crash
+    dataset = GPI.GPIData()
+
+    # empty filelist should raise an error
+    error_raised = False
+    filelist = []
+    try:
+        dataset = GPI.GPIData(filelist)
+    except ValueError:
+        error_raised = True
+    
+    assert error_raised
