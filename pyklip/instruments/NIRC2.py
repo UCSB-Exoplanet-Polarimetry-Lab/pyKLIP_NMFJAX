@@ -361,7 +361,7 @@ class NIRC2Data(Data):
 
         #use the dataset center if none was passed in
         if center is None:
-            center = self.centers[0]
+            center = self.output_centers[0]
         if center is not None:
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})

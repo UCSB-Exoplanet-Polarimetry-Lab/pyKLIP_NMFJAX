@@ -310,7 +310,7 @@ class Ifs(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
-        center = self.centers[0]
+        center = self.output_centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
@@ -651,7 +651,7 @@ class Irdis(Data):
             hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
             # write it out instead
 
-        center = self.centers[0]
+        center = self.output_centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))

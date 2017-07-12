@@ -507,7 +507,7 @@ class P1640Data(Data):
 
         #use the dataset astr hdr if none was passed in
         if astr_hdr is None:
-            astr_hdr = self.wcs[0]
+            astr_hdr = self.output_wcs[0]
         if astr_hdr is not None:
             #update astro header
             #I don't have a better way doing this so we'll just inject all the values by hand
@@ -535,7 +535,7 @@ class P1640Data(Data):
 
         #use the dataset center if none was passed in
         if center is None:
-            center = self.centers[0]
+            center = self.output_centers[0]
         if center is not None:
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
