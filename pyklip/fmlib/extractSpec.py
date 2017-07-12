@@ -587,37 +587,3 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     else:
         spec_unit = "DN"
         return estim_spec, fm_coadd_mat
-
-def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
-    """
-    Calculate annulus boundaries of a particular annuli. Useful for figuring out annuli boundaries when just giving an
-    integer as the parameter to pyKLIP
-
-    Args:
-        num_annuli: integer for number of annuli requested
-        annuli_index: integer for which annuli (innermost annulus is 0)
-        iwa: inner working angle
-        firstframe: data of first frame of the sequence. dataset.inputs[0]
-        firstframe_centers: [x,y] center for the first frame. i.e. dataset.centers[0]
-
-    Returns:
-        rad_bounds[annuli_index]: radial separation of annuli. [annuli_start, annuli_end]
-                                  This is a single 2 element list [annuli_start, annuli_end]
-    """
-    dims = firstframe.shape
-
-    # use first image to figure out how to divide the annuli
-    # TODO: what to do with OWA
-    # need to make the next 10 lines or so much smarter
-
-    x, y = np.meshgrid(np.arange(dims[1] * 1.0), np.arange(dims[0] * 1.0))
-    nanpix = np.where(np.isnan(firstframe))
-
-    owa = np.sqrt(np.min((x[nanpix] - firstframe_centers[0]) ** 2 + (y[nanpix] - firstframe_centers[1]) ** 2))
-
-    dr = float(owa - iwa) / (num_annuli)
-    # calculate the annuli
-    rad_bounds = [(dr * rad + iwa, dr * (rad + 1) + iwa) for rad in range(num_annuli)]
-
-    # return desired
-    return rad_bounds[annuli_index]
