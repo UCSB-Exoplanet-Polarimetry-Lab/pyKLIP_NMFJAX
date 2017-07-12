@@ -19,7 +19,7 @@ class Data(object):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         OWA: (optional) specifies outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
-        output_centers: Array of shape (N,2) for N output centers (does not need to be implemented)
+        output_centers: Array of shape (N,2) for N output centers. Also coresponds to FM centers (does not need to be implemented)
         output_wcs: Array of N wcs astrometry headers for each output image (does not need to be implemneted)
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters

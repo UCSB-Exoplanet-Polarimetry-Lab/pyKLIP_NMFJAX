@@ -1049,6 +1049,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                   Note: this will be None if save_klipped is False
         fmout_np: output of forward modelling.
         perturbmag: output indicating the magnitude of the linear perturbation to assess validity of KLIP FM
+        aligned_center: (x, y) location indicating the star center for all images and FM after PSF subtraction
     """
 
     ################## Interpret input arguments ####################
@@ -1341,12 +1342,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # convert pertrubmag to numpy
     perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.np_data_type)
 
-    #all of the image centers are now at aligned_center
-    centers[:,0] = aligned_center[0]
-    centers[:,1] = aligned_center[1]
-
     # Output for the sole PSFs
-    return sub_imgs, fmout_np, perturbmag_np
+    return sub_imgs, fmout_np, perturbmag_np, aligned_center
 
 
 
@@ -1631,10 +1628,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         else:
             numbasis = np.array([numbasis])
 
-    # default aligned_center if none:
-    if aligned_center is None:
-        aligned_center = [np.mean(dataset.centers[:,0]), np.mean(dataset.centers[:,1])]
-
     # high pass filter?
     if isinstance(highpass, bool):
         if highpass:
@@ -1681,6 +1674,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
 
+    # run WCS rotation on output WCS, which we'll copy from the input ones
+    # TODO: wcs rotation not yet implemented. 
+    dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+
     # Set MLK parameters
     if mkl_exists:
         old_mkl = mkl.get_max_threads()
@@ -1694,10 +1691,12 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      flipx=dataset.flipx,
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression)
 
-    klipped, fmout, perturbmag = klip_outputs # images are already rotated North up East left
+    klipped, fmout, perturbmag, klipped_center = klip_outputs # images are already rotated North up East left
 
     dataset.fmout = fmout
     dataset.perturbmag = perturbmag
+    # save output centers here
+    dataset.output_centers = np.array([klipped_center for _ in range(klipped.shape[1])])
 
     # write fmout
     fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
@@ -1707,8 +1706,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     if save_klipped:
         # store it in the dataset object
         dataset.output = klipped
-        dataset.centers[:,0] = aligned_center[0]
-        dataset.centers[:,1] = aligned_center[1]
 
         # write to disk. Filepath
         outputdirpath = os.path.realpath(outputdir)
