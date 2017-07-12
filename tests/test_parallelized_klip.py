@@ -72,7 +72,7 @@ def test_exmaple_gpi_klip_dataset():
 
     # find planet in collapsed cube
     collapsed_kl20 = klcube[1]
-    flux_meas, x_meas, y_meas, fwhm_meas = fakes.retrieve_planet(collapsed_kl20, dataset.centers[0], dataset.wcs[0],
+    flux_meas, x_meas, y_meas, fwhm_meas = fakes.retrieve_planet(collapsed_kl20, dataset.output_centers[0], dataset.output_wcs[0],
                                                                  true_sep, true_pa, searchrad=4, guesspeak=2.e-5,
                                                                  guessfwhm=2)
     print(flux_meas, x_meas, y_meas, fwhm_meas)
@@ -81,9 +81,9 @@ def test_exmaple_gpi_klip_dataset():
     # flux error
     assert np.abs((flux_meas - true_flux)/true_flux) < 0.4
     # positonal error
-    theta = fakes.convert_pa_to_image_polar(true_pa, dataset.wcs[0])
-    true_x = true_sep * np.cos(np.radians(theta)) + dataset.centers[0, 0]
-    true_y = true_sep * np.sin(np.radians(theta)) + dataset.centers[0, 1]
+    theta = fakes.convert_pa_to_image_polar(true_pa, dataset.output_wcs[0])
+    true_x = true_sep * np.cos(np.radians(theta)) + dataset.output_centers[0, 0]
+    true_y = true_sep * np.sin(np.radians(theta)) + dataset.output_centers[0, 1]
     assert np.abs(true_x - x_meas) < 0.4
     assert np.abs(true_y - y_meas) < 0.4
     # fwhm error
@@ -155,7 +155,7 @@ def test_adi_gpi_klip_dataset_with_fakes(filelist=None):
 
     # try to retrieve fake planet
     for fake_sep, fake_pa, fake_contrast in zip(fake_seps, fake_pas, fake_contrasts):
-        peakflux = fakes.retrieve_planet_flux(collapsed_kl20, dataset.centers[0], dataset.wcs[0], fake_sep,
+        peakflux = fakes.retrieve_planet_flux(collapsed_kl20, dataset.output_centers[0], dataset.output_wcs[0], fake_sep,
                                               fake_pa, refinefit=True)
 
         assert (np.abs((peakflux/0.7 - fake_contrast)/fake_contrast) < 0.5)
@@ -174,7 +174,7 @@ def test_mock_SDI(mock_klip_parallelized):
     """
 
     #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.
-    mock_klip_parallelized.return_value = np.zeros((4, 111, 281, 281))
+    mock_klip_parallelized.return_value = (np.zeros((4, 111, 281, 281)), np.array([140,140]))
 
     # time it
     t1 = time()
@@ -201,4 +201,5 @@ def test_mock_SDI(mock_klip_parallelized):
 
 
 if __name__ == "__main__":
-    test_exmaple_gpi_klip_dataset()
+    #test_exmaple_gpi_klip_dataset()
+    test_adi_gpi_klip_dataset_with_fakes()

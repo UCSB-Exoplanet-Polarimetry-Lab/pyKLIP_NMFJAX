@@ -525,7 +525,7 @@ class GPIData(Data):
         if user_exthdr is None:
             #use the dataset astr hdr if none was passed in
             if astr_hdr is None:
-                astr_hdr = self.wcs[0]
+                astr_hdr = self.output_wcs[0]
             if astr_hdr is not None:
                 #update astro header
                 #I don't have a better way doing this so we'll just inject all the values by hand
@@ -552,7 +552,7 @@ class GPIData(Data):
 
             #use the dataset center if none was passed in
             if center is None:
-                center = self.centers[0]
+                center = self.output_centers[0]
             if center is not None:
                 hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
@@ -1022,11 +1022,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                 spots_yloc.append(this_frame_spot_y_locs)
 
             # if the data is a pyklip reduced spectral cube, PSFCENTX/Y should be used to define the center of the image
-            try:
+            if "PSFSUB" in prihdr:
                 if prihdr["PSFSUB"].strip() == "pyKLIP":
                     center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']],]*len(center)
-            except:
-                pass
+
 
             parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
             inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)

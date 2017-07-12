@@ -10,19 +10,20 @@ class Data(object):
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
-        centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
+        centers: Array of shape (N,2) for N input centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
-        wcs: Array of N wcs astormetry headers for each image.
+        wcs: Array of N wcs astormetry headers for each input image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         OWA: (optional) specifies outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        output_centers: Array of shape (N,2) for N output centers (does not need to be implemented)
+        output_wcs: Array of N wcs astrometry headers for each output image (does not need to be implemneted)
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters
         flipx: (optional) True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
-
 
     Methods:
         readdata(): reread in the dadta
@@ -40,6 +41,9 @@ class Data(object):
         self.OWA = None
         # determine whether a reflection is needed for North-up East-left (optional)
         self.flipx = True
+        # self output centers and wcs to None until after running KLIP
+        self.output_centers = None
+        self.output_wcs = None
 
 
     ###################################
