@@ -117,6 +117,9 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     # create the dataset object
     dataset = GPI.GPIData(filelist, skipslices=[0, 36], bad_sat_spots=[3], highpass=False)
 
+    # save old centesr for later
+    oldcenters = np.copy(dataset.centers)
+
     dataset.generate_psfs(boxrad=25//2)
     assert np.max(dataset.psfs > 0)
 
@@ -134,7 +137,11 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
-                          calibrate_flux=False, mode="ADI", lite=True, highpass=False)
+                          calibrate_flux=False, mode="ADI", lite=True, highpass=False)  
+   
+    # before we do it again, check that dataset.centers remains unchanged
+    assert(dataset.centers[0][0] == oldcenters[0][0])
+    
     # And run it again to check that we can reuse the same dataset object
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],

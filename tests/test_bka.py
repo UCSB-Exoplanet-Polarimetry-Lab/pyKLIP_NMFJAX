@@ -43,6 +43,9 @@ def test_fmastrometry():
     numwvs = np.size(np.unique(dataset.wvs))
     assert(numwvs == 2)
 
+    # save old centesr for later
+    oldcenters = np.copy(dataset.centers)
+
     # generate PSF
     dataset.generate_psfs(boxrad=25//2)
     dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] // numwvs, numwvs]), axis=0)[:, None, None])
@@ -68,6 +71,9 @@ def test_fmastrometry():
     prefix = "betpic-131210-j-fmpsf"
     fm.klip_dataset(dataset, fm_class, outputdir=testdir, fileprefix=prefix, numbasis=numbasis,
                     annuli=[[guesssep-15, guesssep+15]], subsections=1, padding=0, movement=2)
+
+    # before we do anything else, check that dataset.centers remains unchanged
+    assert(dataset.centers[0][0] == oldcenters[0][0])
 
     # read in outputs
     output_prefix = os.path.join(testdir, prefix)
