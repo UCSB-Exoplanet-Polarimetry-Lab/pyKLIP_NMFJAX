@@ -63,7 +63,7 @@ def _arraytonumpy(shared_array, shape=None, dtype=float):
         shape: a shape for the numpy array. otherwise, will assume a 1d array
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
 
-    Return:
+    Returns:
         numpy_array: numpy array for vectorized operation. still points to the same memory!
                      returns None is shared_array is None
     """
@@ -131,7 +131,7 @@ def _align_and_scale(iterable_arg):
 
     aligned_imgs = _arraytonumpy(aligned, aligned_shape,dtype=dtype)
     aligned_imgs[ref_wv_index, :, :, :] =  np.array([klip.align_and_scale(frame, ref_center, old_center, ref_wv/old_wv,dtype=dtype)
-                                        for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
+                                                     for frame, old_center, old_wv in zip(original_imgs, centers_imgs, wvs_imgs)])
 
     return ref_wv_index, ref_wv
 
@@ -267,7 +267,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
         lite: if True, use low memory footprint mode
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
 
-    Return:
+    Returns:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
         Saves data to output array as defined in _tpool_init()
     """
@@ -364,7 +364,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         lite: if True, in memory-lite mode
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
 
-    Return:
+    Returns:
         return True on success, False on failure.
         Saves image to output array defined in _tpool_init()
     """
@@ -485,7 +485,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         # compute cross term
         # cross term has shape N_dataset_ref x N_rdi_selected
         covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:,None]),
-                               (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
+                                 (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
         # piece together covariance matrix. It should looke like
         # [ cov_ref, cov_ref_x_rdi ]
         # [ cov_rdi_x_ref, cov_rdi ]
@@ -530,7 +530,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
         flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
         hdrs: array of N wcs astrometry headers
 
-    Return:
+    Returns:
         derotated: array of shape (N,y,x) containing the derotated images
     """
 
@@ -621,7 +621,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         kwargs: in case you pass it stuff that we don't use in the lite version
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
 
-    Return:
+    Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
                     specified by numbasis. Shape of (b,N,y,x).
     """
@@ -723,8 +723,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
     centers_imgs_np[:] = centers
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                   initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, None, None), maxtasksperchild=50)
+                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, None, None), maxtasksperchild=50)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
@@ -736,7 +736,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         
         #multitask this
         tasks = [tpool.apply_async(_align_and_scale_per_image, args=(img_index, aligned_center, this_wv,dtype))
-                                        for img_index in range(recentered_imgs_shape[0])]
+                 for img_index in range(recentered_imgs_shape[0])]
 
         #save it to shared memory
         for img_index, aligned_img_task in enumerate(tasks):
@@ -964,9 +964,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         recentered_imgs_np[:] = restored_aligned
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                   initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
-                             maxtasksperchild=50)
+                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
+                    maxtasksperchild=50)
 
     if restored_aligned is None:
         #align and scale the images for each image. Use map to do this asynchronously
@@ -1236,13 +1236,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 restored_aligned_thiswv = None
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
-                                    dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
-                                    movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                    maxnumbasis=maxnumbasis, annuli_spacing=annuli_spacing,
-                                    aligned_center=aligned_center, psf_library=master_library,
-                                    psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                    save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
-                                    dtype=dtype)
+                                        dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
+                                        movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
+                                        maxnumbasis=maxnumbasis, annuli_spacing=annuli_spacing,
+                                        aligned_center=aligned_center, psf_library=master_library,
+                                        psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
+                                        save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
+                                        dtype=dtype)
             
             klipped_imgs = klip_output[0]
             klipped_center = klip_output[1]
@@ -1289,7 +1289,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # parallelized rotate images
     print("Derotating Images...")
     rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
-                            hdrs=dataset.output_wcs, new_center=aligned_center)
+                           hdrs=dataset.output_wcs, new_center=aligned_center)
 
     # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
@@ -1316,8 +1316,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
     dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                        klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
-                        zaxis=numbasis)
+                     klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
+                     zaxis=numbasis)
 
     # if there is more than one wavelenght channel, save spectral data cubes too
     if num_wvs > 1:
@@ -1328,15 +1328,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             if calibrate_flux:
                 spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
             dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
-                                spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-                                filetype="PSF Subtracted Spectral Cube")
+                             spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                             filetype="PSF Subtracted Spectral Cube")
 
 
 
     #Restore old setting
     if mkl_exists:
         mkl.set_num_threads(old_mkl)
-
-
-
 

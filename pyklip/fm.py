@@ -1,10 +1,11 @@
 
 #KLIP Forward Modelling
 import os
+from sys import stdout
 from time import time
-import ctypes
 import itertools
 import multiprocessing as mp
+import ctypes
 
 import numpy as np
 import scipy.linalg as la
@@ -15,7 +16,6 @@ import scipy.interpolate as sinterp
 import pyklip.klip as klip
 from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs
 
-from sys import stdout
 
 #Logic to test mkl exists
 try:
@@ -24,19 +24,20 @@ try:
 except ImportError:
     mkl_exists = False
 
-
+# for debugging purposes
 parallel = True
 
-
-def find_id_nearest(array,value):
+def find_id_nearest(array, value):
     """
     Find index of the closest value in input array to input value
-    :param array: 1D array
-    :param value: scalar value
-    :return: Index of the nearest value in array
+    Args:
+        array: 1D array
+        value: scalar value
+    Returns:
+        Index of the nearest value in array
     """
-    id = (np.abs(array-value)).argmin()
-    return id
+    index = (np.abs(array-value)).argmin()
+    return index
 
 def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=None, spec_included=False, spec_from_model=False):
     """
@@ -87,7 +88,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
     # calculate the total number of KL basis we need based on the number of reference PSFs and number requested
     tot_basis = covar_psfs.shape[0]
 
-    if numbasis[0] == None:
+    if numbasis[0] is None:
         evals, evecs = la.eigh(covar_psfs, eigvals = (tot_basis-np.min([100,tot_basis-1]), tot_basis-1))
         evals = np.copy(evals[::-1])
         evecs = np.copy(evecs[:,::-1])
@@ -125,7 +126,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         inner_products = np.dot(sci_rows_selected, KL_basis.T)
         inner_products[0,int(max_basis)::]=0
 
-        klip = np.dot(inner_products, KL_basis)
+        klip_reconstruction = np.dot(inner_products, KL_basis)
 
     else:
         # prepare science frame for KLIP subtraction
@@ -142,13 +143,13 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         lower_tri = np.tril(np.ones([max_basis,max_basis]))
         inner_products = inner_products * lower_tri
 
-        if numbasis[0] == None:
-            klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+        if numbasis[0] is None:
+            klip_reconstruction = np.dot(inner_products[[max_basis-1],:], KL_basis)
         else:
-            klip = np.dot(inner_products[numbasis,:], KL_basis)
+            klip_reconstruction = np.dot(inner_products[numbasis,:], KL_basis)
 
 
-    sub_img_rows_selected = sci_rows_selected - klip
+    sub_img_rows_selected = sci_rows_selected - klip_reconstruction
     sub_img_rows_selected[:, sci_nanpix[0]] = np.nan
 
 
@@ -239,13 +240,14 @@ def perturb_nospec_modelsBased(evals, evecs, original_KL, refs, models_ref_list)
     The difference however in the pertrurb_nospec() case is that the spectrum here is the asummed to be the same for all
      cubes while pertrurb_nospec() fit each cube independently.
 
-
-    :param evals:
-    :param evecs:
-    :param original_KL:
-    :param refs:
-    :param models_ref:
-    :return:
+    Args:
+        evals:
+        evecs:
+        original_KL:
+        refs:
+        models_ref:
+    Returns:
+        delta_KL_nospec
     """
 
     max_basis = original_KL.shape[0]
@@ -354,7 +356,7 @@ def pertrurb_nospec(evals, evecs, original_KL, refs, models_ref):
 
 
 def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = None):
-    """
+    r"""
     Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
     and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
     the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
@@ -391,7 +393,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
         return calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = inputflux)
 
     max_basis = original_KL.shape[0]
-    if numbasis[0]==None:
+    if numbasis[0] is None:
         numbasis_index = [max_basis-1]
     else:
         numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
@@ -484,7 +486,7 @@ def calculate_fm(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputfl
 
 
 def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, model_sci, inputflux = None):
-    """
+    r"""
     Same function as calculate_fm() but faster when numbasis has only one element. It doesn't do the mutliplication with
     the triangular matrix.
 
@@ -522,10 +524,6 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
 
     """
     max_basis = original_KL.shape[0]
-    if numbasis[0]==None:
-        numbasis_index = [max_basis-1]
-    else:
-        numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     N_pix = np.size(sci)
 
@@ -799,7 +797,7 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype
     for img_index, ref_wv_index in combos_todo:
         #aligned_imgs[ref_wv_index,img_index,:,:] = np.ones(original_imgs.shape[1:])
         aligned_imgs[ref_wv_index,img_index,:,:] = klip.align_and_scale(original_imgs[img_index], aligned_center,
-                                                centers_imgs[img_index], unique_wvs[ref_wv_index]/wvs_imgs[img_index])
+                                                                        centers_imgs[img_index], unique_wvs[ref_wv_index]/wvs_imgs[img_index])
     return
 
 
@@ -868,7 +866,7 @@ def _get_section_indicies(input_shape, img_center, radstart, radend, phistart, p
 
 
 def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
-                         new_center=None):
+                          new_center=None):
     """
     Rotate and save sector in output image at desired ranges
 
@@ -1070,14 +1068,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         if spectrum is None:
             movement = 3
 
-    if numbasis[0]==None:
+    if numbasis[0] is None:
         if np.size(numbasis)>1:
             print("numbasis should have only one element if numbasis[0] = 0.")
             return None
 
     if maxnumbasis is None and numbasis[0] is not None:
         maxnumbasis = np.max(numbasis)
-    elif maxnumbasis is None and numbasis[0]==None:
+    elif maxnumbasis is None and numbasis[0] is None:
         maxnumbasis = 100
 
     if numthreads is None:
@@ -1129,7 +1127,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         iterator_sectors = itertools.product(rad_bounds, phi_bounds)
         tot_sectors = len(rad_bounds)*len(phi_bounds)
     else:
-        iterator_sectors=[]
+        iterator_sectors = []
         for [r_min,r_max] in rad_bounds:
             curr_sep_N_subsections = np.max([int(np.pi*(r_max**2-r_min**2)/N_pix_sector),1]) # equivalent to using floor but casting as well
             # divide annuli into subsections
@@ -1197,15 +1195,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     # align and scale the images for each image. Use map to do this asynchronously]
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                   initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                             output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                             fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
+                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                              fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if not parallel:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                                 output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                                 fmout_data, fmout_shape,perturbmag,perturbmag_shape)
+                    output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                    fmout_data, fmout_shape,perturbmag,perturbmag_shape)
 
 
 
@@ -1217,7 +1215,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
-            aligned_output.wait()
+        aligned_output.wait()
 
     print("Align and scale finished")
 
@@ -1268,7 +1266,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                           numbasis,maxnumbasis,
                                                           movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
                                                           flipx, fm_class))
-                                    for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+                                  for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
             if not parallel:
@@ -1277,7 +1275,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                                   numbasis,maxnumbasis,
                                                                   movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
                                                                   flipx, fm_class)
-                                    for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
+                                  for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
         # Can be multithreaded code using the threadpool defined above
@@ -1389,7 +1387,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         flipx: if True, flips x axis after rotation to get North up East left
 
-    Return:
+    Returns:
         sector_index: used for tracking jobs
         Saves image to output array defined in _tpool_init()
     """
@@ -1398,9 +1396,9 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #print(img_num)
     IWA,OWA = IOWA
     section_ind = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
-                                            padding, parang,IOWA)
+                                        padding, parang,IOWA)
     section_ind_nopadding = _get_section_indicies(original_shape[1:], ref_center, radstart, radend, phistart, phiend,
-                                            0, parang,IOWA)
+                                                  0, parang,IOWA)
 
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
@@ -1536,23 +1534,23 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
             if thisnumbasisindex == 0:
                 # only increment the numstack counter for the first KL mode
                 _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
-                                 output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
-                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
+                                      output_imgs[img_num,:,thisnumbasisindex], output_imgs_numstacked[img_num], parang,
+                                      radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
             else:
                 _save_rotated_section([original_shape[1], original_shape[2]], klipped[:, thisnumbasisindex], section_ind,
-                                 output_imgs[img_num,:,thisnumbasisindex], None, parang,
-                                 radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
+                                      output_imgs[img_num,:,thisnumbasisindex], None, parang,
+                                      radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
 
 
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable
     # and it can choose which variables it wants to deal with using **kwargs
     # result is stored in fmout
     fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
-                          input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
-                          ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind,section_ind_nopadding=section_ind_nopadding, aligned_imgs=aligned_imgs,
-                          pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
-                          radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
-                          parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
+                           input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
+                           ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind,section_ind_nopadding=section_ind_nopadding, aligned_imgs=aligned_imgs,
+                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
+                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, ref_center=ref_center,
+                           parang=parang, ref_wv=wavelength, numbasis=numbasis,maxnumbasis=maxnumbasis,
                            fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped, covar_files=covar_files, flipx=flipx)
 
     return sector_index

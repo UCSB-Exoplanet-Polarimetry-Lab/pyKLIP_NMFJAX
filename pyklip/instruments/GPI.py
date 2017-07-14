@@ -500,10 +500,10 @@ class GPIData(Data):
         # JB's code to store keywords
         if extra_prihdr_keywords is not None:
             for name,value in extra_prihdr_keywords:
-                 hdulist[0].header[name] = value
+                hdulist[0].header[name] = value
         if extra_exthdr_keywords is not None:
             for name,value in extra_exthdr_keywords:
-                 hdulist[1].header[name] = value
+                hdulist[1].header[name] = value
 
         # write z axis units if necessary
         if zaxis is not None:
@@ -580,7 +580,7 @@ class GPIData(Data):
             spectral: if True, this is a spectral datacube. Otherwise, it is a broadband image.
             units: currently only support "contrast" w.r.t central star
 
-        Return:
+        Returns:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
         if units == "contrast":
@@ -1134,8 +1134,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
                     numthreads = mp.cpu_count()
                 tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
-                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,wv_indices))
-                                                for id,(slice, spots_xs, spots_ys, wv, wv_index) in enumerate(zip(cube, spots_xloc, spots_yloc, wvs, wv_indices))]
+                                                   args=(slice, spots_xs, spots_ys,psfs_func_list,wv_indices))
+                                 for id,(slice, spots_xs, spots_ys, wv, wv_index) in enumerate(zip(cube, spots_xloc, spots_yloc, wvs, wv_indices))]
 
                 for out in tpool_outputs:
                     out.wait()
@@ -1158,7 +1158,7 @@ def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index
         psfs_func_list: List of spline fit function for the PSF_cube. If None (default) a gaussian fit is used.
         wave_index: Index of the current wavelength. In [0,36] for GPI. Only used when psfs_func_list is not None.
         residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
-    Return:
+    Returns:
         spots_f: list of 4 satellite spot fluxes
     """
     spots_f = []
@@ -1206,7 +1206,7 @@ def recalculate_sat_spot_fluxes(dataset, skipslices=None, numthreads=-1, PSF_cub
         PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
         residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
 
-    Return:
+    Returns:
         spot_fluxes: The list of sat spot fluxes. Can be used to redefine dataset.spot_flux.
     """
 
@@ -1278,8 +1278,8 @@ def recalculate_sat_spot_fluxes(dataset, skipslices=None, numthreads=-1, PSF_cub
                     numthreads = mp.cpu_count()
                 tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
-                                                                args=(slice, spots_xs, spots_ys,psfs_func_list,np.where(wv_unique == wv)[0],residuals))
-                                                for id,(slice, spots_xs, spots_ys,wv) in enumerate(zip(cube, spots_xloc, spots_yloc,dataset.wvs))]
+                                                   args=(slice, spots_xs, spots_ys,psfs_func_list,np.where(wv_unique == wv)[0],residuals))
+                                 for id,(slice, spots_xs, spots_ys,wv) in enumerate(zip(cube, spots_xloc, spots_yloc,dataset.wvs))]
 
                 for out in tpool_outputs:
                     out.wait()
@@ -1373,7 +1373,8 @@ def rescale_wvs(exthdrs, wvs, refwv=None, skipslices=None, bad_sat_spots=None):
     if skipslices is not None:
         wv_indicies = np.delete(wv_indicies, skipslices)
     sats = np.array([[[h['SATS{0}_{1}'.format(i,j)].split() for i in wv_indicies]
-                          for j in range(0,4)] for h in exthdrs], dtype=np.float)
+                      for j in range(0,4)] 
+                     for h in exthdrs], dtype=np.float)
     sats = sats.mean(axis=0)
     pairs = [(0,3), (1,2)]
     separations = np.mean([0.5*np.sqrt(np.diff(sats[p,:,0], axis=0)[0]**2 + np.diff(sats[p,:,1], axis=0)[0]**2) 
@@ -1574,16 +1575,16 @@ def get_gpi_wavelength_sampling(filter_name):
         filter_name: 'H', 'J', 'K1', 'K2', 'Y'.
                     Wavelength samples are linearly spaced between the first and the last wavelength of the band.
 
-    Return:
+    Returns:
         wavelengths: is the gpi sampling of the considered band in micrometer.
     """
     # First and last wavelength of each band
     band_sampling = {'Z' : (0.9444, 1.1448, 37),
-                    'Y' : (0.9444, 1.1448, 37),
-                    'J' : (1.1108, 1.353, 37),
-                    'H' : (1.4904, 1.8016, 37),
-                    'K1' : (1.8818, 2.1994, 37),
-                    'K2' : (2.1034, 2.4004, 37)}
+                     'Y' : (0.9444, 1.1448, 37),
+                     'J' : (1.1108, 1.353, 37),
+                     'H' : (1.4904, 1.8016, 37),
+                     'K1' : (1.8818, 2.1994, 37),
+                     'K2' : (2.1034, 2.4004, 37)}
 
     w_start, w_end, N_sample = band_sampling[filter_name]
     sampling_pip = np.linspace(w_start,w_end,N_sample,endpoint=True)
