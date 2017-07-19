@@ -78,8 +78,8 @@ class P1640Data(Data):
     spot_ratio = {} #w.r.t. central star
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
-    nchannels_all = []
-    nchannels_used = []
+    nchannels_all = None
+    nchannels_used = None
     observatory_latitude = 0.0
 
     ## read in P1640 configuration file and set these static variables
@@ -132,6 +132,8 @@ class P1640Data(Data):
             self.channels_used = [i for i in self.channels_all if i not in skipslices]
         except:
             self.channels_used = self.channels_all[:]
+        self.nchannels_used = len(self.channels_used)
+
         if filepaths is None:
             # general stuff
             self._input = None
@@ -497,6 +499,9 @@ class P1640Data(Data):
         if filetype is not None:
             hdulist[0].header['FILETYPE'] = (filetype, "P1640 File type")
 
+        if self.channels_used is not None:
+            hdulist[0].header['channels'] = ','.join(['{0}'.format(i) for i in self.channels_used])
+
         #write flux units/conversion
         hdulist[0].header['FUNIT'] = (self.flux_units, "Flux units of data")
         if self.flux_units.upper() == 'CONTRAST':
@@ -662,7 +667,7 @@ class P1640Data(Data):
                 spotpsf = generate_psf(frame, spots, boxrad=boxrad)
                 self.psfs.append(spotpsf)
             self.psfs = np.array(self.psfs)
-            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//self.nchannels_all, self.nchannels_all,
+            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//self.nchannels_used, self.nchannels_used,
                                                self.psfs.shape[1], self.psfs.shape[2]))
             self.psfs = np.mean(self.psfs, axis=0)
 
@@ -1039,8 +1044,9 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         parang = np.delete(parang, skipslices)
         wvs = np.delete(wvs, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
-        spot_fluxes = np.delete(spot_fluxes, skipslices)
-        spot_locations = np.delete(spot_locations, skipslices)
+        spot_fluxes = np.delete(spot_fluxes, skipslices, axis=0)
+        spot_locations = np.delete(spot_locations, skipslices, axis=1)
+        scale_factors = np.delete(scale_factors, skipslices, axis=0)
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
