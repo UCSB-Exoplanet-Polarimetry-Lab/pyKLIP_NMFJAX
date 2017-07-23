@@ -1141,13 +1141,19 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     global tot_iter
     tot_iter = np.size(np.unique(wvs)) * tot_sectors
-    ##JB debug
-    #print(phi_bounds[0][0]/np.pi*180,phi_bounds[0][1]/np.pi*180)
-    #print(iterator_sectors)
-    #print(rad_bounds)
-    #print(phi_bounds_list)
-    #return None
 
+    sectors_area = []
+    iterator_sectors = list(iterator_sectors)
+    for (r0,r1),(phi0,phi1) in iterator_sectors:
+        phi0_mod = phi0 % (2*np.pi)
+        phi1_mod = phi1 % (2*np.pi)
+        if phi1_mod > phi0_mod:
+            dphi = phi1_mod-phi0_mod
+        else:
+            dphi = phi1_mod+2*np.pi-phi0_mod
+        sectors_area.append((dphi/2.)*(r1**2-r0**2))
+    sectors_area = np.array(sectors_area)
+    tot_area = np.sum(sectors_area)
 
     ########################### Create Shared Memory ###################################
 
@@ -1230,7 +1236,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     time_spent_last_sector=0
     for sector_index, ((radstart, radend),(phistart,phiend)) in enumerate(iterator_sectors):
         t_start_sector = time()
-        print("Starting KLIP for sector {0}/{1}".format(sector_index+1,tot_sectors))
+        print("Starting KLIP for sector {0}/{1} with an area of {2} pix^2".format(sector_index+1,tot_sectors,sectors_area[sector_index]))
         if len(time_spent_per_sector_list)==0:
             print("Time spent on last sector: {0:.0f}s".format(0))
             print("Time spent since beginning: {0:.0f}s".format(0))
@@ -1238,7 +1244,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         else:
             print("Time spent on last sector: {0:.0f}s".format(time_spent_last_sector))
             print("Time spent since beginning: {0:.0f}s".format(np.sum(time_spent_per_sector_list)))
-            print("Estimated remaining time: {0:.0f}s".format((tot_sectors-sector_index)*np.mean(time_spent_per_sector_list)))
+            print("Estimated remaining time: {0:.0f}s".format((tot_area-np.sum(sectors_area[0:sector_index]))*\
+                                      (np.sum(time_spent_per_sector_list)/np.sum(sectors_area[0:sector_index]))))
+            print("Average time per pixel: {0} during last sector, {1} since begining"\
+                  .format(time_spent_last_sector/sectors_area[sector_index-1],
+                          (np.sum(time_spent_per_sector_list)/np.sum(sectors_area[0:sector_index]))))
         # calculate sector size
         section_ind = _get_section_indicies(original_imgs_shape[1:], aligned_center, radstart, radend, phistart, phiend,
                                             padding, 0,[IWA,OWA])
