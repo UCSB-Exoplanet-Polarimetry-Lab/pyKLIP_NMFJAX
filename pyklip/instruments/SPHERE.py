@@ -231,7 +231,7 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None,pyklip_output=True):
         """
         Save SPHERE Data.
 
@@ -243,6 +243,8 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
+                            have been defined.
         
         """
         hdulist = fits.HDUList()
@@ -310,7 +312,10 @@ class Ifs(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
-        center = self.output_centers[0]
+        if not pyklip_output:
+            center = self.centers[0]
+        else:
+            center = self.output_centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
@@ -573,7 +578,7 @@ class Irdis(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None,pyklip_output=True):
         """
         Save SPHERE Data.
 
@@ -585,6 +590,8 @@ class Irdis(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
+                            have been defined.
 
         """
         hdulist = fits.HDUList()
@@ -651,7 +658,10 @@ class Irdis(Data):
             hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
             # write it out instead
 
-        center = self.output_centers[0]
+        if not pyklip_output:
+            center = self.centers[0]
+        else:
+            center = self.output_centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))

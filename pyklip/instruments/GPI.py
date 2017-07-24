@@ -396,7 +396,7 @@ class GPIData(Data):
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
-                 extra_exthdr_keywords = None, extra_prihdr_keywords = None ):
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None,pyklip_output = True):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
@@ -416,6 +416,8 @@ class GPIData(Data):
             user_exthdr: User defined extension headers to be used instead
             extra_exthdr_keywords: Fits keywords to be added to the extension header before saving the file
             extra_prihdr_keywords: Fits keywords to be added to the primary header before saving the file
+            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
+                            have been defined.
 
         """
         hdulist = fits.HDUList()
@@ -525,7 +527,10 @@ class GPIData(Data):
         if user_exthdr is None:
             #use the dataset astr hdr if none was passed in
             if astr_hdr is None:
-                astr_hdr = self.output_wcs[0]
+                if not pyklip_output:
+                    astr_hdr = self.wcs[0].deepcopy()
+                else:
+                    astr_hdr = self.output_wcs[0]
             if astr_hdr is not None:
                 #update astro header
                 #I don't have a better way doing this so we'll just inject all the values by hand
@@ -552,7 +557,10 @@ class GPIData(Data):
 
             #use the dataset center if none was passed in
             if center is None:
-                center = self.output_centers[0]
+                if not pyklip_output:
+                    center = self.centers[0]
+                else:
+                    center = self.output_centers[0]
             if center is not None:
                 hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
