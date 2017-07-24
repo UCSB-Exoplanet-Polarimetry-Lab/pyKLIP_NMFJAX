@@ -340,11 +340,13 @@ class FMMF(KPPSuperClass):
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.image_obj.input.shape,self.numbasis, self.PSF_cube_arr, self.PSF_cube_wvs,
-                                     spectrallib = [self.spectrum_vec],
-                                     save_per_sector = self.save_per_sector,
-                                     fakes_sepPa_list = self.fakes_sepPa_list,
-                                     disable_FM=self.disable_FM,
-                                     true_fakes_pos= self.true_fakes_pos)
+                                         spectrallib = [self.spectrum_vec],
+                                         save_per_sector = self.save_per_sector,
+                                         fakes_sepPa_list = self.fakes_sepPa_list,
+                                         disable_FM=self.disable_FM,
+                                         true_fakes_pos= self.true_fakes_pos,
+                                         ref_center=[np.mean(self.image_obj.centers[:,0]), np.mean(self.image_obj.centers[:,1])],
+                                         flipx=self.image_obj.flipx)
         return None
 
     def initialize(self,inputDir = None,
@@ -542,11 +544,13 @@ class FMMF(KPPSuperClass):
 
         # Build the FM class to do matched filter
         self.fm_class = mf.MatchedFilter(self.image_obj.input.shape,self.numbasis, self.PSF_cube_arr, self.PSF_cube_wvs,
-                                     spectrallib = [self.spectrum_vec],
-                                     save_per_sector = self.save_per_sector,
-                                     fakes_sepPa_list = self.fakes_sepPa_list,
-                                     disable_FM=self.disable_FM,
-                                     true_fakes_pos= self.true_fakes_pos)
+                                         spectrallib = [self.spectrum_vec],
+                                         save_per_sector = self.save_per_sector,
+                                         fakes_sepPa_list = self.fakes_sepPa_list,
+                                         disable_FM=self.disable_FM,
+                                         true_fakes_pos= self.true_fakes_pos,
+                                         ref_center=[np.mean(self.image_obj.centers[:,0]), np.mean(self.image_obj.centers[:,1])],
+                                         flipx=self.image_obj.flipx)
 
         return init_out
 
@@ -638,10 +642,8 @@ class FMMF(KPPSuperClass):
         # self.spectrum_vec = np.nansum(self.image_obj.input[:,32:36,8:12],axis=(1,2))
         # self.spectrum_vec=self.spectrum_vec/self.spectrum_vec
 
-
-
         # Run KLIP with the forward model matched filter
-        sub_imgs, fmout,tmp = fm.klip_parallelized(self.image_obj.input, self.image_obj.centers, self.image_obj.PAs, self.image_obj.wvs, self.image_obj.IWA, self.fm_class,
+        sub_imgs, fmout,tmp, klipped_center = fm.klip_parallelized(self.image_obj.input, self.image_obj.centers, self.image_obj.PAs, self.image_obj.wvs, self.image_obj.IWA, self.fm_class,
                                    numbasis=self.numbasis,
                                    maxnumbasis=self.maxnumbasis,
                                    flux_overlap=self.flux_overlap,
@@ -767,31 +769,31 @@ class FMMF(KPPSuperClass):
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.FMMF_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords)
+                             more_keywords = extra_keywords,pyklip_output=False)
             suffix = presuffix+"FMCont-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.contrast_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords)
+                             more_keywords = extra_keywords,pyklip_output=False)
             suffix = presuffix+"FMCC-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.FMCC_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords)
+                             more_keywords = extra_keywords,pyklip_output=False)
             suffix = presuffix+"FMNpix-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.N_pix_mf[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords)
+                             more_keywords = extra_keywords,pyklip_output=False)
             suffix = "speccube-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.final_cube_modes[k],
                              filetype="PSF subtracted spectral cube with fmpyklip",
-                             more_keywords = extra_keywords)
+                             more_keywords = extra_keywords,pyklip_output=False)
 
         return None
 
