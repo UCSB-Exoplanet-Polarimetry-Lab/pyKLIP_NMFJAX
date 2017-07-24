@@ -183,7 +183,8 @@ class KPPSuperClass(object):
 
         self.spectrum_vec = self.spectrum_vec/np.mean(self.spectrum_vec)
 
-        self.folderName = self.spectrum_name
+        if self.folderName == "default_out":
+            self.folderName = self.spectrum_name
 
         return None
 
