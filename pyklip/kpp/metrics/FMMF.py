@@ -464,15 +464,15 @@ class FMMF(KPPSuperClass):
         if self.keepPrefix:
             if self.flux_overlap is not None:
                 file_ext_ind = os.path.basename(self.filename_path_list[0])[::-1].find(".")
-                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.folderName +"_{0:.2f}".format(self.flux_overlap)
             else:
                 file_ext_ind = os.path.basename(self.filename_path_list[0])[::-1].find(".")
-                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+                self.prefix = os.path.basename(self.filename_path_list[0])[:-(file_ext_ind+1)]+"_"+self.folderName +"_{0:.2f}".format(self.mvt)
         else:
             if self.flux_overlap is not None:
-                self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.flux_overlap)
+                self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.folderName +"_{0:.2f}".format(self.flux_overlap)
             else:
-                self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.spectrum_name +"_{0:.2f}".format(self.mvt)
+                self.prefix = self.star_name+"_"+self.compact_date+"_"+self.filter+"_"+self.folderName +"_{0:.2f}".format(self.mvt)
 
         # Build the PSF cube
         if isinstance(self.PSF_cube, np.ndarray):

@@ -395,7 +395,7 @@ class MatchedFilter(NoFM):
                     model_sci_fk = model_sci[where_fk]
                     delta_KL_kl = delta_KL[:,where_fk]
                     klmodes_fk = klmodes[:,where_fk]
-                    postklip_psf = calculate_fm_opti(delta_KL, klmodes, numbasis,sci, model_sci_fk,delta_KL_kl,klmodes_fk)
+                    postklip_psf = calculate_fm_opti(delta_KL, klmodes,sci, model_sci_fk,delta_KL_kl,klmodes_fk)
                     # postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis,
                     #                                                                  sci, model_sci, inputflux=None)
                 else:
