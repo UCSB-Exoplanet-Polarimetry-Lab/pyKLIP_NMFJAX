@@ -61,6 +61,10 @@ class MatchedFilter(NoFM):
                         The unchanged original PSF will be used instead. (Default False)
             true_fakes_pos: If True and fakes_only is True, calculate the forward model at the exact position of the
                     fakes and not at the center of the pixels. (Default False)
+            ref_center: reference center to which all the images are aligned. It should be the same center as the one
+                    used in fm.parallelized.
+            flipx: Determines whether a relfection about the x axis is necessary to rotate image North-up East left.
+                    Should match the same attribute in the instrument class.
 
         '''
         # allocate super class
@@ -824,10 +828,9 @@ class MatchedFilter(NoFM):
 
 
 
-def calculate_fm_opti(delta_KL, original_KL, numbasis, sci, model_sci_fk,delta_KL_fk, original_KL_fk):
+def calculate_fm_opti(delta_KL, original_KL, sci, model_sci_fk,delta_KL_fk, original_KL_fk):
     r"""
-    Same function as calculate_fm() but faster when numbasis has only one element. It doesn't do the mutliplication with
-    the triangular matrix.
+    Optimized version for calculate_fm() (if numbas) for a single numbasis.
 
     Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
     and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
@@ -841,8 +844,6 @@ def calculate_fm_opti(delta_KL, original_KL, numbasis, sci, model_sci_fk,delta_K
         delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
                          Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
         orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
-        numbasis: array of (ONE ELEMENT ONLY) KL mode cutoffs
-                If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         sci: array of size p representing the science data
         model_sci: array of size p corresponding to the PSF of the science frame
         input_spectrum: array of size wv with the assumed spectrum of the model
@@ -858,15 +859,10 @@ def calculate_fm_opti(delta_KL, original_KL, numbasis, sci, model_sci_fk,delta_K
 
     If inputflux = None and if delta_KL_nospec include a spectral dimension:
     Returns:
-        klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (size(numbasis),Npix)
-        klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+        klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (1,Npix)
+        klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (1,N_lambda or N_ref,N_pix)
 
     """
-    # max_basis = original_KL.shape[0]
-
-    # N_pix = np.size(sci)
-    # N_pix_fk = np.size(model_sci_fk)
-
     # remove means and nans from science image
     sci_mean_sub = (sci - np.nanmean(sci))[None,:]
     sci_mean_sub[np.where(np.isnan(sci_mean_sub))] =0
