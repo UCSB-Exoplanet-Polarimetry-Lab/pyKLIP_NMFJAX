@@ -67,6 +67,7 @@ Contents
    instruments/index
    contrast_curves
    bka
+   fm_spect
    fmmf
    kpop_gpi
    diskfm_gpi
