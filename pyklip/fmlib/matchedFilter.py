@@ -20,7 +20,7 @@ from time import time
 import matplotlib.pyplot as plt
 
 debug = False
-
+rm_edge = True
 
 class MatchedFilter(NoFM):
     """
@@ -368,7 +368,7 @@ class MatchedFilter(NoFM):
                 where_background = np.where(mask>=1)[0] # Caution: it includes where the fake is...
                 where_background_strict = np.where(mask==1)[0]
 
-                if float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
+                if rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
                     fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
@@ -425,7 +425,7 @@ class MatchedFilter(NoFM):
                 klipped_rm_pl = copy(klipped[:,N_KL_id])
                 klipped_rm_pl[where_fk] -= sky + (dot_prod/model_norm)*postklip_psf_fk
                 klipped_rm_pl_bkg = klipped_rm_pl[where_background]
-                if float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
+                if rm_edge and float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
                     variance = np.nan
                     npix = np.nan
                 else:
