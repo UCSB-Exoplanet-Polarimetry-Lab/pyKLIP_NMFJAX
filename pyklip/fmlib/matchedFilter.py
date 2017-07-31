@@ -419,14 +419,8 @@ class MatchedFilter(NoFM):
                 klipped_sub_finite = np.where(np.isfinite(klipped_sub))
                 # klipped_sub_nan = np.where(np.isnan(klipped_sub))
                 postklip_psf[N_KL_id,np.where(np.isnan(klipped))[0]] = np.nan
-                if 1:
-                    postklip_psf_fk = postklip_psf[N_KL_id,:]
-                else:
-                    postklip_psf_fk = postklip_psf[N_KL_id,where_fk]
-                if float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub))<=0.75:
-                    dot_prod = np.nan
-                else:
-                    dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
+                postklip_psf_fk = postklip_psf[N_KL_id,:]
+                dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
                 model_norm = np.nansum(postklip_psf_fk*postklip_psf_fk)
                 klipped_rm_pl = copy(klipped[:,N_KL_id])
                 klipped_rm_pl[where_fk] -= sky + (dot_prod/model_norm)*postklip_psf_fk
