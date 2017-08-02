@@ -53,7 +53,8 @@ class FMMF(KPPSuperClass):
                  pix2as=None,
                  highpass = None,
                  padding = None,
-                 PSF_size = None):
+                 PSF_size = None,
+                 rm_edge = None):
         """
         Define the general parameters of the matched filter.
 
@@ -154,6 +155,8 @@ class FMMF(KPPSuperClass):
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units.
             PSF_size: Width of the PSF stamp to be used. Trim or pad with zeros the available PSF stamp.
+            rm_edge: When True (default), remove image edges to avoid edge effect. When there is more than 25% of NaNs
+                    in the projection of the FM model on the data, the result of the projection is set to NaNs right away.
 
         Return: instance of FMMF.
         """
@@ -174,6 +177,7 @@ class FMMF(KPPSuperClass):
         self.spectrum = spectrum
 
         self.highpass = highpass
+        self.rm_edge = rm_edge
 
         if filename is None:
             self.filename = "S*distorcorr.fits"
@@ -346,7 +350,8 @@ class FMMF(KPPSuperClass):
                                          disable_FM=self.disable_FM,
                                          true_fakes_pos= self.true_fakes_pos,
                                          ref_center=[np.mean(self.image_obj.centers[:,0]), np.mean(self.image_obj.centers[:,1])],
-                                         flipx=self.image_obj.flipx)
+                                         flipx=self.image_obj.flipx,
+                                         rm_edge=self.rm_edge)
         return None
 
     def initialize(self,inputDir = None,
@@ -549,8 +554,9 @@ class FMMF(KPPSuperClass):
                                          fakes_sepPa_list = self.fakes_sepPa_list,
                                          disable_FM=self.disable_FM,
                                          true_fakes_pos= self.true_fakes_pos,
-                                         ref_center=[np.mean(self.image_obj.centers[:,0]), np.mean(self.image_obj.centers[:,1])],
-                                         flipx=self.image_obj.flipx)
+                                         # ref_center=[np.mean(self.image_obj.centers[:,0]), np.mean(self.image_obj.centers[:,1])],
+                                         # flipx=self.image_obj.flipx,
+                                         rm_edge=self.rm_edge)
 
         return init_out
 

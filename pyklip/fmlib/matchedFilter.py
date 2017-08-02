@@ -20,7 +20,6 @@ from time import time
 import matplotlib.pyplot as plt
 
 debug = False
-rm_edge = True
 
 class MatchedFilter(NoFM):
     """
@@ -37,7 +36,8 @@ class MatchedFilter(NoFM):
                  disable_FM = None,
                  true_fakes_pos = None,
                  ref_center = None,
-                 flipx = None):
+                 flipx = None,
+                 rm_edge = None):
         '''
         Defining the forward model matched filter parameters
 
@@ -65,10 +65,17 @@ class MatchedFilter(NoFM):
                     used in fm.parallelized.
             flipx: Determines whether a relfection about the x axis is necessary to rotate image North-up East left.
                     Should match the same attribute in the instrument class.
+            rm_edge: When True (default), remove image edges to avoid edge effect. When there is more than 25% of NaNs
+                    in the projection of the FM model on the data, the result of the projection is set to NaNs right away.
 
         '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
+
+        if rm_edge is not None:
+            self.rm_edge = rm_edge
+        else:
+            self.rm_edge = True
 
         if true_fakes_pos is None:
             self.true_fakes_pos = False
@@ -151,11 +158,12 @@ class MatchedFilter(NoFM):
             nx = inputs_shape[2]
             ny = inputs_shape[1]
             self.x_grid, self.y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
+            self.r_grid = abs(self.x_grid +self.y_grid*1j)
+            self.pa_grid = np.arctan2( -self.x_grid,self.y_grid) % (2.0 * np.pi)
             if flipx is not None:
                 sign = -1.
                 if flipx:
                     sign = 1.
-                self.r_grid = abs(self.x_grid +self.y_grid*1j)
                 self.th0_grid = np.arctan2(sign*self.x_grid,self.y_grid)
 
 
@@ -285,8 +293,9 @@ class MatchedFilter(NoFM):
                      cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
             kwargs: any other variables that we don't use but are part of the input
         """
-        if (self.ref_center[0] != ref_center[0]) or (self.ref_center[1] != ref_center[1]):
-            raise ValueError("ref_center needs to be the same when defining the matchedFilter class and calling parallelized")
+        if hasattr(self,"ref_center"):
+            if (self.ref_center[0] != ref_center[0]) or (self.ref_center[1] != ref_center[1]):
+                raise ValueError("ref_center needs to be the same when defining the matchedFilter class and calling parallelized")
         if np.size(numbasis) != 1:
             raise ValueError("Numbasis should only have a single element. e.g. numbasis = [30]. numbasis = [10,20,30] is not accepted.")
 
@@ -297,11 +306,22 @@ class MatchedFilter(NoFM):
         refs = refs[:, section_ind[0]]
 
         # Calculate the PA,sep 2D map
-        x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.0)- ref_center[0], np.arange(self.ny * 1.0)- ref_center[1])
+
+        if hasattr(self,"x_grid") and hasattr(self,"y_grid"):
+            x_grid, y_grid = self.x_grid,self.y_grid
+        else:
+            x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.)-ref_center[0], np.arange(self.ny * 1.)-ref_center[1])
         x_grid=x_grid.astype(self.np_data_type)
         y_grid=y_grid.astype(self.np_data_type)
-        r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
-        pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
+        # Define the masks for where the planet is and the background.
+        if hasattr(self,"r_grid"):
+            r_grid = self.r_grid
+        else:
+            r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
+        if hasattr(self,"pa_grid"):
+            pa_grid = self.pa_grid
+        else:
+            pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
         if flipx:
             paend= ((-phistart + np.pi/2.)% (2.0 * np.pi))
             pastart = ((-phiend + np.pi/2.)% (2.0 * np.pi))
@@ -368,7 +388,7 @@ class MatchedFilter(NoFM):
                 where_background = np.where(mask>=1)[0] # Caution: it includes where the fake is...
                 where_background_strict = np.where(mask==1)[0]
 
-                if rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
+                if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
                     fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
@@ -416,16 +436,16 @@ class MatchedFilter(NoFM):
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
-                klipped_sub_finite = np.where(np.isfinite(klipped_sub))
+                # klipped_sub_finite = np.where(np.isfinite(klipped_sub))
                 # klipped_sub_nan = np.where(np.isnan(klipped_sub))
-                postklip_psf[N_KL_id,np.where(np.isnan(klipped))[0]] = np.nan
+                postklip_psf[N_KL_id,np.where(np.isnan(klipped_sub))[0]] = np.nan
                 postklip_psf_fk = postklip_psf[N_KL_id,:]
                 dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
                 model_norm = np.nansum(postklip_psf_fk*postklip_psf_fk)
                 klipped_rm_pl = copy(klipped[:,N_KL_id])
                 klipped_rm_pl[where_fk] -= sky + (dot_prod/model_norm)*postklip_psf_fk
                 klipped_rm_pl_bkg = klipped_rm_pl[where_background]
-                if rm_edge and float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
+                if self.rm_edge and float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
                     variance = np.nan
                     npix = np.nan
                 else:
@@ -610,9 +630,10 @@ class MatchedFilter(NoFM):
         # create some parameters for a blank canvas to draw psfs on
         nx = input_img_shape[1]
         ny = input_img_shape[0]
-        try:
+
+        if hasattr(self,"x_grid") and hasattr(self,"y_grid"):
             x_grid, y_grid = self.x_grid,self.y_grid
-        except:
+        else:
             x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
@@ -669,10 +690,10 @@ class MatchedFilter(NoFM):
         whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
         # Define the masks for where the planet is and the background.
-        try:
+        if hasattr(self,"th0_grid") and hasattr(self,"r_grid"):
             r_grid = self.r_grid
             th_grid = (self.th0_grid-sign*np.radians(pa))% (2.0 * np.pi)
-        except:
+        else:
             r_grid = abs(x_grid +y_grid*1j)
             th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
         w = self.stamp_PSF_mask.shape[0]//2
