@@ -576,6 +576,8 @@ class MatchedFilter(NoFM):
         contrast_map[np.where(contrast_map==0)]=np.nan
         self.contrast_map = contrast_map
 
+        self.FMNpix_map = np.nansum(fmout[3,:,:,:,:,:],axis=2)
+
         self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map]
 
 
@@ -594,6 +596,11 @@ class MatchedFilter(NoFM):
             suffix = "FMCC-KL{0}".format(self.numbasis[k])
             dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
                              self.FMCC_map[0,k,:,:],
+                             filetype=suffix)
+
+            suffix = "FMN_pix-KL{0}".format(self.numbasis[k])
+            dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                             self.FMNpix_map[0,k,:,:],
                              filetype=suffix)
 
         return
