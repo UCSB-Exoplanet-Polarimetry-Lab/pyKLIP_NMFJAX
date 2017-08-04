@@ -775,31 +775,31 @@ class FMMF(KPPSuperClass):
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.FMMF_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords,pyklip_output=False)
+                             more_keywords = extra_keywords,pyklip_output=True)
             suffix = presuffix+"FMCont-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.contrast_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords,pyklip_output=False)
+                             more_keywords = extra_keywords,pyklip_output=True)
             suffix = presuffix+"FMCC-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.FMCC_map[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords,pyklip_output=False)
+                             more_keywords = extra_keywords,pyklip_output=True)
             suffix = presuffix+"FMNpix-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.N_pix_mf[0,k,:,:],
                              filetype=suffix,
-                             more_keywords = extra_keywords,pyklip_output=False)
+                             more_keywords = extra_keywords,pyklip_output=True)
             suffix = "speccube-KL{0}".format(self.numbasis[k])+susuffix
             extra_keywords["KPPSUFFI"]=suffix
             self.image_obj.savedata(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+suffix+'.fits',
                              self.final_cube_modes[k],
                              filetype="PSF subtracted spectral cube with fmpyklip",
-                             more_keywords = extra_keywords,pyklip_output=False)
+                             more_keywords = extra_keywords,pyklip_output=True)
 
         return None
 
