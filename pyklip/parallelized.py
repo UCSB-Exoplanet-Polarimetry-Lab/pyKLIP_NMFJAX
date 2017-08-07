@@ -239,7 +239,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, psflib_good=None,
-                            psflib_corr=None, lite=False, dtype=float):
+                            psflib_corr=None, lite=False, dtype=float, algo='klip'):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -266,6 +266,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         lite: if True, use low memory footprint mode
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -320,7 +321,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
                                             parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
                                             maxnumbasis, minmove, minrot, maxrot, mode, psflib_good=psflib_good,
-                                            psflib_corr=psflib_corr, spectrum=spectrum, lite=lite,dtype=dtype)
+                                            psflib_corr=psflib_corr, spectrum=spectrum, lite=lite, dtype=dtype,
+                                            algo=algo)
         except (ValueError, RuntimeError, TypeError) as err:
             print("({0}): {1}".format(err.errno, err.strerror))
             return False
@@ -336,7 +338,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
                                     psflib_good=None, psflib_corr=None,
-                                    spectrum=None, lite=False,dtype=float):
+                                    spectrum=None, lite=False, dtype=float, algo='klip'):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -504,7 +506,12 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
     # run KLIP
     try:
-        klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
+        if algo.lower() == 'klip':
+            klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
+        elif algo.lower() == 'nmf':
+            import pyklip.nmf_imaging as nmf_imaging
+            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs)
+            klipped = klipped.reshape(klipped.shape[0], 1)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
         return False
@@ -588,7 +595,7 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
 def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
                            annuli_spacing="constant", maxnumbasis=None,
-                           spectrum=None, dtype=float, **kwargs):
+                           spectrum=None, dtype=float, algo='klip', **kwargs):
     """
     multithreaded KLIP PSF Subtraction, has a smaller memory foot print than the original
 
@@ -620,6 +627,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         kwargs: in case you pass it stuff that we don't use in the lite version
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -763,7 +771,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
                                                                      maxnumbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, None, None, lite, dtype))
+                                                                     mode, None, None, lite, dtype, algo))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -799,7 +807,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                       annuli_spacing="constant", maxnumbasis=None,
                       spectrum=None,
                       psf_library=None, psf_library_good=None, psf_library_corr=None,
-                      save_aligned = False, restored_aligned = None,dtype=float):
+                      save_aligned = False, restored_aligned = None, dtype=float, algo='klip'):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -835,6 +843,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -999,7 +1008,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
                                                                      mode, psf_library_good, psf_library_corr, False,
-                                                                     dtype))
+                                                                     dtype, algo))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -1036,7 +1045,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, spectrum=None, psf_library=None, highpass=False,
-                 lite=False, save_aligned = False, restored_aligned = None, dtype=np.float32):
+                 lite=False, save_aligned = False, restored_aligned = None, dtype=np.float32, algo='klip'):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1070,6 +1079,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         save_aligned	Save the aligned and scaled images (as well as various wcs information), True/False
         restore_aligned The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
+        algo (str): algorithm to use ('klip', 'nmf')
+
     Returns
         Saved files in the output directory
         Returns: nothing, but saves to dataset.output: (b, N, wv, y, x) 5D cube of KL cutoff modes (b), number of images
@@ -1087,6 +1098,17 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    # check which algo we will use and whether the inputs are correct
+    if algo.lower() == 'klip':
+        pass
+    elif algo.lower() == 'nmf':
+        # check to see the correct nmf packages are installed 
+        import pyklip.nmf_imaging as nmf_imaging
+        if np.size(numbasis) > 1:
+            raise ValuerError("NMF can only be run with one basis")
+    else:
+        raise ValuerError("Algo {0} is not supported".format(algo))
 
     # RDI Sanity Checks to make sure PSF Library is properly configured
     if "RDI" in mode:
@@ -1197,7 +1219,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                      annuli_spacing=annuli_spacing, maxnumbasis=maxnumbasis,
                                      spectrum=spectra_template, psf_library=master_library,
                                      psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                     save_aligned = save_aligned, restored_aligned = restored_aligned,dtype=dtype)
+                                     save_aligned = save_aligned, restored_aligned = restored_aligned, dtype=dtype,
+                                     algo=algo)
 
         # parse the output of klip. Normally, it is just the klipped_imgs,
         # but some optional arguments return more things
