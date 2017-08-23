@@ -391,9 +391,6 @@ class GPIData(Data):
         self.object_name = self.prihdrs[0]["OBJECT"]
 
 
-
-
-
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
                  extra_exthdr_keywords = None, extra_prihdr_keywords = None,pyklip_output = True):
@@ -902,6 +899,25 @@ class GPIData(Data):
             print("Wrong size of the PSFs stored in gpi dataset structure when calling get_radial_psf. Return 0")
             return 0
         
+
+    def spectral_collapse(self, collapse_channels=1, align_frames=True, numthreads=None):
+        """
+        GPI wrapper of spectral_collapse(). Adds GPI values to collapse
+        
+        Collapses the dataset spectrally, bining the data into the desired number of output wavelengths. 
+        This bins each cube individually; it does not bin the data tempoarally. 
+        If number of wavelengths / output channels is not a whole number, some output channels will have more frames
+        that went into the collapse
+
+        Args:
+            collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
+            align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
+            numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
+        """
+        gpi_params = ["spot_flux", "dn_per_contrast"]
+
+        super(GPIData, self).spectral_collapse(collapse_channels=collapse_channels, align_frames=align_frames, numthreads=numthreads,
+                                                additional_params=gpi_params)
 
 ######################
 ## Static Functions ##
