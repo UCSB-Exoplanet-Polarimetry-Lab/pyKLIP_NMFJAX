@@ -2,7 +2,7 @@ import multiprocessing as mp
 import ctypes
 
 import numpy as np
-import pyklip.spectra_management as specmanage
+import pyklip.spectra_management as spec
 import os
 
 from pyklip.fmlib.nofm import NoFM
@@ -56,15 +56,15 @@ class FMPlanetPSF(NoFM):
             if spectrallib is not None:
                 self.spectrallib = spectrallib
             else:
-                spectra_folder = os.path.dirname(os.path.abspath(specmanage.__file__)) + os.sep + "spectra" + os.sep
+                spectra_folder = os.path.dirname(os.path.abspath(spec.__file__)) + os.sep + "spectra" + os.sep
                 spectra_files = [spectra_folder + "t650g18nc.flx"]
-                self.spectrallib = [specmanage.get_planet_spectrum(filename, input_wvs)[1] for filename in spectra_files]
+                self.spectrallib = [spec.get_planet_spectrum(filename, input_wvs)[1] for filename in spectra_files]
 
             # TODO: calibrate to contrast units
             # calibrate spectra to DN
             if spectrallib_units.lower() == "flux":
                 # need to divide by flux of the star to get contrast units
-                self.spectrallib = [spectrum/(specmanage.get_star_spectrum(input_wvs, star_type=star_spt)[1]) for spectrum in self.spectrallib]
+                self.spectrallib = [spectrum/(spec.get_star_spectrum(input_wvs, star_type=star_spt)[1]) for spectrum in self.spectrallib]
             self.spectrallib = [spectrum/np.mean(spectrum) for spectrum in self.spectrallib]
         else:
             self.spectrallib = [np.array([1])]
@@ -124,7 +124,7 @@ class FMPlanetPSF(NoFM):
 
         """
         fmout_size = int(np.prod(output_img_shape))
-        fmout = mp.Array(ctypes.c_double, fmout_size)
+        fmout = mp.Array(self.mp_data_type, fmout_size)
         fmout_shape = output_img_shape
 
         return fmout, fmout_shape
@@ -145,7 +145,7 @@ class FMPlanetPSF(NoFM):
 
         """
         perturbmag_shape = (output_img_shape[0], np.size(numbasis))
-        perturbmag = mp.Array(ctypes.c_double, int(np.prod(perturbmag_shape)))
+        perturbmag = mp.Array(self.mp_data_type, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
 
@@ -193,7 +193,7 @@ class FMPlanetPSF(NoFM):
             #print(self.pa,self.sep)
             #print(pa,wv)
             # grab PSF given wavelength
-            wv_index = np.where(wv == self.input_psfs_wvs)[0]
+            wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
             #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
@@ -222,7 +222,7 @@ class FMPlanetPSF(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                    self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

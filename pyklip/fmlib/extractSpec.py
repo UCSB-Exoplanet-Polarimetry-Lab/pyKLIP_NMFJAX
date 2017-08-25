@@ -3,7 +3,7 @@ import multiprocessing as mp
 import ctypes
 
 import numpy as np
-import pyklip.spectra_management as specmanage
+import pyklip.spectra_management as spec
 import os
 
 from pyklip.fmlib.nofm import NoFM
@@ -225,7 +225,7 @@ class ExtractSpec(NoFM):
             #print(self.pa,self.sep)
             #print(pa,wv)
             # grab PSF given wavelength
-            wv_index = np.where(wv == self.input_psfs_wvs)[0]
+            wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
             #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
@@ -250,7 +250,7 @@ class ExtractSpec(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[int(k-row_m):int(k+row_p), int(l-col_m):int(l+col_p)] = \
-                    self.psfs_func_list[int(wv_index[0])](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                    self.psfs_func_list[int(wv_index)](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

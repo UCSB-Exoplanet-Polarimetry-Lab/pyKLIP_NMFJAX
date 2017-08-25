@@ -648,7 +648,7 @@ class MatchedFilter(NoFM):
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
         # grab PSF given wavelength
-        wv_index = [spec.find_nearest(self.input_psfs_wvs,wv)[1]]
+        wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
 
         sign = -1.
         if flipx:
@@ -689,7 +689,7 @@ class MatchedFilter(NoFM):
         # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
         #         self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
         whiteboard[np.max([(k-self.row_m),0]):np.min([(k+self.row_p),ny]), np.max([(l-self.col_m),0]):np.min([(l+self.col_p),nx])] = \
-                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -706,6 +706,8 @@ class MatchedFilter(NoFM):
         w = self.stamp_PSF_mask.shape[0]//2
         thstart = (np.radians(pa_fk)- float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         thend = (np.radians(pa_fk) + float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        # thstart = (np.radians(pa_fk)- 2*float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        #thend = (np.radians(pa_fk) + 2*float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         if thstart < thend:
             where_mask = np.where((r_grid>=(sep_fk-w)) & (r_grid<(sep_fk+w)) & (th_grid >= thstart) & (th_grid < thend))
         else:
