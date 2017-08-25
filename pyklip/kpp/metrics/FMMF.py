@@ -692,6 +692,10 @@ class FMMF(KPPSuperClass):
         if self.image_obj.wcs[0] is not None:
             [klip._rotate_wcs_hdr(astr_hdr, angle, flipx=True) for angle, astr_hdr in zip(self.image_obj.PAs, self.image_obj.wcs)]
 
+
+        self.image_obj.output_wcs = np.array([w.deepcopy() for w in self.image_obj.wcs])
+        self.image_obj.output_centers = np.array([klipped_center for _ in range(sub_imgs.shape[1])])
+
         # Form regular klipped cubes
         self.sub_imgs = sub_imgs
         N_unique_wvs = len(np.unique(self.image_obj.wvs))
