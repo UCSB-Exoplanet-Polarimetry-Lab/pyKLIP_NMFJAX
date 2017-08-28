@@ -928,10 +928,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
     ########################### Create Shared Memory ###################################
 
-    if dtype == float:
-        mp_data_type = ctypes.c_double
-    elif dtype == np.float32:
-        mp_data_type = ctypes.c_float
+    # we should use the same datatype for both
+    mp_data_type = dtype
 
     #implement the thread pool
     #make a bunch of shared memory arrays to transfer data between threads
