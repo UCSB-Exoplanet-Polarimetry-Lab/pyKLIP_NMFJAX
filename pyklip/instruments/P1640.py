@@ -606,7 +606,7 @@ class P1640Data(Data):
             core_cubes = np.array([core_hdus.data for hdu in core_hdus])
             star_psf = P1640cores.make_median_core(core_cubes)
             for hdu in core_hdus:
-                hdu.close
+                hdu.close()
 
             self.contrast_scaling = star_flux = np.nansum(axis=0)
 
