@@ -144,7 +144,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         inner_products = inner_products * lower_tri
 
         if numbasis[0] is None:
-            klip = np.dot(inner_products[[max_basis-1],:], KL_basis)
+            klip_reconstruction = np.dot(inner_products[[max_basis-1],:], KL_basis)
         else:
             klip_reconstruction = np.dot(inner_products[numbasis,:], KL_basis)
 
