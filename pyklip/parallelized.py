@@ -55,18 +55,21 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     psf_lib_shape = psf_library_shape
 
 
-def _arraytonumpy(shared_array, shape=None, dtype=float):
+def _arraytonumpy(shared_array, shape=None, dtype=None):
     """
     Covert a shared array to a numpy array
     Args:
         shared_array: a multiprocessing.Array array
         shape: a shape for the numpy array. otherwise, will assume a 1d array
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
 
     Returns:
         numpy_array: numpy array for vectorized operation. still points to the same memory!
                      returns None is shared_array is None
     """
+    if dtype is None:
+        dtype = ctypes.c_float
+
     # if you passed in nothing you get nothing
     if shared_array is None:
         return None
@@ -78,7 +81,7 @@ def _arraytonumpy(shared_array, shape=None, dtype=float):
     return numpy_array
 
 
-def _align_and_scale_per_image(img_index, aligned_center, ref_wv,dtype=float):
+def _align_and_scale_per_image(img_index, aligned_center, ref_wv, dtype=None):
     """
     Aligns and scales the an individual image (used for pyklip lite)
 
@@ -86,11 +89,14 @@ def _align_and_scale_per_image(img_index, aligned_center, ref_wv,dtype=float):
         img_index: index of image for the shared arrays
         algined_center: center to align things to
         ref_wv: wavelength to scale images to
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
 
     Returns:
         None
     """
+    if dtype is None:
+        dtype = ctypes.c_float
+
     original_imgs = _arraytonumpy(original, original_shape,dtype=dtype)
     wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
     centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2),dtype=dtype)
@@ -137,7 +143,7 @@ def _align_and_scale(iterable_arg):
 
 
 def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
-                  ref_center,dtype=float):
+                  ref_center, dtype=None):
     """
     DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
 
@@ -157,13 +163,16 @@ def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, rad
         phiend: upper boundin CCW angle from y axis for the end of the section
         minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
 
     Returns:
         Returns True on success and False on failure.
         Output images are stored in output array as defined by _tpool_init()
     """
     global output, aligned
+
+    if dtype is None:
+        dtype = ctypes.c_float
 
     #create a coordinate system
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
@@ -239,7 +248,7 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
 def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, psflib_good=None,
-                            psflib_corr=None, lite=False, dtype=float, algo='klip'):
+                            psflib_corr=None, lite=False, dtype=None, algo='klip'):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -265,13 +274,16 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         lite: if True, use low memory footprint mode
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
         Saves data to output array as defined in _tpool_init()
     """
+    if dtype is None:
+        dtype = ctypes.c_float
+
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
@@ -338,7 +350,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
                                     psflib_good=None, psflib_corr=None,
-                                    spectrum=None, lite=False, dtype=float, algo='klip'):
+                                    spectrum=None, lite=False, dtype=None, algo='klip'):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -364,12 +376,15 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         lite: if True, in memory-lite mode
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
 
     Returns:
         return True on success, False on failure.
         Saves image to output array defined in _tpool_init()
     """
+    if dtype is None:
+        dtype = ctypes.c_float
+        
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths and PAs
     wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
@@ -595,7 +610,7 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
 def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
                            annuli_spacing="constant", maxnumbasis=None,
-                           spectrum=None, dtype=float, algo='klip', **kwargs):
+                           spectrum=None, dtype=None, algo='klip', **kwargs):
     """
     multithreaded KLIP PSF Subtraction, has a smaller memory foot print than the original
 
@@ -626,7 +641,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         kwargs: in case you pass it stuff that we don't use in the lite version
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float (default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
@@ -698,10 +713,9 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
 
     ########################### Create Shared Memory ###################################
 
-    if dtype == float:
-        mp_data_type = ctypes.c_double
-    elif dtype == np.float32:
-        mp_data_type = ctypes.c_float
+    if dtype is None:
+        dtype = ctypes.c_float
+    mp_data_type = dtype
 
     #implement the thread pool
     #make a bunch of shared memory arrays to transfer data between threads
@@ -807,7 +821,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                       annuli_spacing="constant", maxnumbasis=None,
                       spectrum=None,
                       psf_library=None, psf_library_good=None, psf_library_corr=None,
-                      save_aligned = False, restored_aligned = None, dtype=float, algo='klip'):
+                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip'):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -842,7 +856,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         save_aligned:	Save the aligned and scaled images (as well as various wcs information), True/False
         restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
-        dtype: data type of the arrays. Should be either float (meaning double) or np.float32.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf')
 
     Returns:
@@ -928,10 +942,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
     ########################### Create Shared Memory ###################################
 
-    if dtype == float:
-        mp_data_type = ctypes.c_double
-    elif dtype == np.float32:
-        mp_data_type = ctypes.c_float
+    # default to using float precision
+    if dtype is None:
+        dtype = ctypes.c_float
+    # we should use the same datatype for both
+    mp_data_type = dtype
 
     #implement the thread pool
     #make a bunch of shared memory arrays to transfer data between threads
@@ -1045,7 +1060,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, spectrum=None, psf_library=None, highpass=False,
-                 lite=False, save_aligned = False, restored_aligned = None, dtype=np.float32, algo='klip'):
+                 lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip'):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1079,6 +1094,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         save_aligned	Save the aligned and scaled images (as well as various wcs information), True/False
         restore_aligned The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf')
 
     Returns

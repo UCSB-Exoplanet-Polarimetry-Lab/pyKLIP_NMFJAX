@@ -28,7 +28,7 @@ class NoFM(object):
         # self.np_data_type = float
         # Use float32
         self.mp_data_type = ctypes.c_float
-        self.np_data_type = np.float32
+        self.np_data_type = ctypes.c_float
 
     def alloc_output(self):
         """
