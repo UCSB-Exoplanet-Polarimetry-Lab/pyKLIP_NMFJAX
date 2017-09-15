@@ -9,13 +9,14 @@
 version.py
 tests/*.fits
 examples/*.fits
+*.pkl
 
 #ignore auxiliary directories
 pyklip.egg-info/
 gitstats/
 .idea/
+.vscode/
 testing_scripts/
 docs/build/
 .cache/
 examples/.ipynb_checkpoints/
-

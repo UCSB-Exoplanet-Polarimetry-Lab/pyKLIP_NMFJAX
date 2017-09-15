@@ -73,7 +73,7 @@ KLIP-FM feature for how to make sense of this data.
 
 ``centers``
 """""""""""
-This is the image centers for each frame of data. It should be a numpy array of dimensions (Nframes, 2) where the second dimension
+This is the image centers for each input frame of data. It should be a numpy array of dimensions (Nframes, 2) where the second dimension
 is the (x,y) center for that frame. This is required for all datasets.
 
 ``filenames``
@@ -110,7 +110,7 @@ If your image starts out with East clockwise of North, then flipx should be set 
 
 ``wcs``
 """""""
-This is an array of astropy.wcs.WCS objects that specifies the orientation of each image. Since pyKLIP primiarily uses ``PAs`` and
+This is an array of astropy.wcs.WCS objects that specifies the orientation of each input image. Since pyKLIP primiarily uses ``PAs`` and
 ``flipx`` to figure out image orientation, this keyword isn't strictly necessary, but could be good to have (e.g. pyklip.fakes
 uses it for fake planet injection, and it is generally nice to have in your final PSF subtracted images). Note that WCS objects
 have the method ``deepcopy`` which allows you to replicate WCS headers, so if you have multiple frames that share the same WCS,
@@ -128,6 +128,14 @@ guess one, or set it to 0. Note that this is a single number and not an array.
 This is the outer working angle for your data. By default this is None, and pyKLIP will use either the closest NaN to the center of
 the first image, or (if there are no NaNs) the edge of the image as the outer working angle. This is also a single number.
 
+``output``, ``output_centers``, ``output_wcs`` (Required-ish)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+These fields corresponds to the output data, an array of dimensions (KLcutoffs, Nframes, y, x), the (x,y) center for each output
+frame, an array of dimensions (Nframes, 2), and an array of WCS headers corresponding to the output images, which are typically
+rotated North-up and East-left. The one you must explicitly define in your class is ``output``, but you should expect the other 
+two fields to also get populated after a KLIP reduction, so it could be useful to refer to those fields in ``savedata``. Note that
+if you pass an array of None to ``wcs``, ``output_wcs`` will also be an array of None. Also note that ``output_center`` is the same
+(x,y) coordinate repeated for each frame since the images are aligned together after KLIP. 
 
 Methods
 -------

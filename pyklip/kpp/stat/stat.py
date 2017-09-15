@@ -308,7 +308,7 @@ class Stat(KPPSuperClass):
 
             if self.OI_list_folder is not None:
                 try:
-                    MJDOBS = self.prihdr.header['MJD-OBS']
+                    MJDOBS = self.prihdr['MJD-OBS']
                 except:
                     raise ValueError("Could not find MJDOBS. Probably because non GPI data. Code needs to be improved")
             else:
@@ -442,7 +442,7 @@ class Stat(KPPSuperClass):
         self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'),
                          self.stat_cube_map,
                          filetype=self.suffix,
-                         more_keywords = extra_keywords)
+                         more_keywords = extra_keywords,pyklip_output=False)
 
         return None
 

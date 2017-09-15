@@ -618,7 +618,7 @@ class Matchedfilter(KPPSuperClass):
         self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+suffix+'.fits'),
                          self.metricMap[0],
                          filetype=suffix,
-                         more_keywords = extra_keywords)
+                         more_keywords = extra_keywords,pyklip_output=False)
         suffix = "CC"+self.suffix
         extra_keywords["KPPSUFFI"] = suffix
         if not self.mute:
@@ -626,7 +626,7 @@ class Matchedfilter(KPPSuperClass):
         self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+suffix+'.fits'),
                          self.metricMap[1],
                          filetype=suffix,
-                         more_keywords = extra_keywords)
+                         more_keywords = extra_keywords,pyklip_output=False)
         suffix = "Flux"+self.suffix
         extra_keywords["KPPSUFFI"] = suffix
         if not self.mute:
@@ -634,7 +634,7 @@ class Matchedfilter(KPPSuperClass):
         self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+suffix+'.fits'),
                          self.metricMap[2],
                          filetype=suffix,
-                         more_keywords = extra_keywords)
+                         more_keywords = extra_keywords,pyklip_output=False)
 
         return None
 

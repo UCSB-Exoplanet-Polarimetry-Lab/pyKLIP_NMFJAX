@@ -429,7 +429,8 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data,center=None, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data,center=None, klipparams=None, filetype="", zaxis=None , more_keywords=None,
+                 pyklip_output=True):
         """
         Save SPHERE Data.
 
@@ -443,6 +444,8 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
+                            have been defined.
         
         """
         hdulist = fits.HDUList()
@@ -492,8 +495,10 @@ class Ifs(Data):
 
 
         #use the dataset center if none was passed in
-        if center is None:
+        if not pyklip_output:
             center = self.centers[0]
+        else:
+            center = self.output_centers[0]
         if center is not None:
             hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
             hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})

@@ -1,15 +1,19 @@
+
+import os
+import glob
+from copy import copy
+
 import numpy as np
 from scipy import optimize
 import scipy.ndimage as ndimage
 import scipy.interpolate as interp
-
 from scipy.optimize import minimize
-from copy import copy
-
-import os
-import glob
-import pyklip.spectra_management as spec
 from scipy.interpolate import interp1d
+
+
+
+import pyklip.spectra_management as spec
+
 
 def convert_pa_to_image_polar(pa, astr_hdr):
     """
@@ -152,7 +156,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
 
         #now that we found the planet location, inject it
         #check whether we are injecting a gaussian of a template PSF
-        if type(inputpsf) == np.ndarray:
+        if isinstance(inputpsf, np.ndarray):
             # stampsize should defautl to minimum dimension of PSF
             if stampsize is None:
                 stampsize = int(np.min(inputpsf.shape))
@@ -213,18 +217,9 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm, stampsize=stampsize)
 
 
-def generate_dataset_with_fakes(dataset,
-                             fake_position_dict,
-                             fake_flux_dict,
-                             spectrum = None,
-                             PSF_cube = None,
-                             PSF_cube_wvs = None,
-                             star_type = None,
-                             mute = False,
-                             SpT_file_csv = None,
-                             real_planets_pos = None,
-                             sep_skip_real_pl = None,
-                             pa_skip_real_pl = None):
+def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spectrum = None, PSF_cube = None, PSF_cube_wvs = None,
+                                star_type = None, mute = False, SpT_file_csv = None, real_planets_pos = None, sep_skip_real_pl = None,
+                                pa_skip_real_pl = None):
     '''
     Generate spectral datacubes with fake planets.
     It will do a copy of the cubes read in GPIData after having injected fake planets in them.
@@ -282,10 +277,7 @@ def generate_dataset_with_fakes(dataset,
         sep_skip_real_pl: Limit in seperation of how close a fake can be injected of a known GOI.
         pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
 
-    Return:
     '''
-    import pyklip.kpp.utils.GPIimage as gpiim
-
 
     if sep_skip_real_pl is None:
         sep_skip_real_pl = 20
@@ -297,7 +289,7 @@ def generate_dataset_with_fakes(dataset,
     except:
         star_name = "noname"
 
-    nl,ny,nx = dataset.input.shape
+    nl, ny, nx = dataset.input.shape
     dn_per_contrast = 1./dataset.calibrate_output(np.ones((nl,1,1)),spectral=True).squeeze()
     host_star_spec = dn_per_contrast/np.mean(dn_per_contrast)
 
@@ -358,7 +350,7 @@ def generate_dataset_with_fakes(dataset,
         aper_over_peak_ratio_tiled[k] = aper_over_peak_ratio[spec.find_nearest(PSF_cube_wvs,wv)[1]]
     # Summed DN flux of the star in the entire dataset calculated from dn_per_contrast
     star_flux = np.sum(aper_over_peak_ratio_tiled*dn_per_contrast)
-    nl_psf,ny_psf,nx_psf = PSF_cube.shape
+    nl_psf, ny_psf, nx_psf = PSF_cube.shape
     inputpsfs = np.zeros((nl,ny_psf,nx_psf))
     for k,wv in enumerate(dataset.wvs):
         inputpsfs[k,:,:] = PSF_cube[spec.find_nearest(PSF_cube_wvs,wv)[1],:,:]
@@ -374,19 +366,19 @@ def generate_dataset_with_fakes(dataset,
         sep_pa_iter_list = fake_position_dict["pa_sep_list"]
 
     if fake_position_dict["mode"] == "spirals":
-        try:
+        if "pa_shift" in fake_position_dict:
             pa_shift = fake_position_dict["pa_shift"]
-        except:
+        else:
             pa_shift = 0.0
         # Calculate the radii of the annuli like in klip_adi_plus_sdi using the first image
         # We want to inject one planet per section where klip is independently applied.
-        try:
+        if "annuli" in fake_position_dict:
             annuli = fake_position_dict["annuli"]
-        except:
+        else:
             annuli = 8
-        try:
+        if "dr" in fake_position_dict:
             dr = fake_position_dict["dr"]
-        except:
+        else:
             dr = 15.
         delta_th = 90
 
@@ -394,7 +386,7 @@ def generate_dataset_with_fakes(dataset,
         # PSF_dist = 20 # Distance between PSFs. Actually length of an arc between 2 consecutive PSFs.
         # delta_pa = 180/np.pi*PSF_dist/radius
         pa_list = np.arange(-180.,180.-0.01,delta_th) + pa_shift
-        radii_list = np.array([dr * annuli_it + dataset.IWA + 3.5 for annuli_it in range(annuli)])
+        radii_list = np.array([dr * annuli_it + dataset.IWA + 2.5 for annuli_it in range(annuli)])
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         # for row_id in range(pa_grid.shape[0]):
         #     pa_grid[row_id,:] = pa_grid[row_id,:] + 30
@@ -545,7 +537,7 @@ def inject_disk(frames, centers, inputfluxes, astr_hdrs, pa, fwhm=3.5):
         #calculate the rotation angle in the pixel plane
         theta = convert_pa_to_image_polar(pa, astr_hdr)
 
-        if type(inputpsf) == np.ndarray:
+        if isinstance(inputpsf, np.ndarray):
             # inject real data
             # rotate and grab pixels of disk that can be injected into the image
             # assume disk is centered
@@ -861,7 +853,7 @@ def retrieve_planet_flux(frames, centers, astr_hdrs, sep, pa, searchrad=7, guess
 
 
 def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=3.0, guesspeak=1, refinefit=True,
-                         thetas=None):
+                    thetas=None):
     """
     Retrives the planet properties from a series of frames given a separation and PA
 

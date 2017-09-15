@@ -3,7 +3,7 @@ import multiprocessing as mp
 import ctypes
 
 import numpy as np
-import pyklip.spectra_management as specmanage
+import pyklip.spectra_management as spec
 import os
 
 from pyklip.fmlib.nofm import NoFM
@@ -225,7 +225,7 @@ class ExtractSpec(NoFM):
             #print(self.pa,self.sep)
             #print(pa,wv)
             # grab PSF given wavelength
-            wv_index = np.where(wv == self.input_psfs_wvs)[0]
+            wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
             #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
@@ -250,7 +250,7 @@ class ExtractSpec(NoFM):
 
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[int(k-row_m):int(k+row_p), int(l-col_m):int(l+col_p)] = \
-                    self.psfs_func_list[int(wv_index[0])](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                    self.psfs_func_list[int(wv_index)](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -381,7 +381,7 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           maxnumbasis = 100, spectra_template=None, manual_psfs=None):
+           maxnumbasis = 100, spectra_template=None, manual_psfs=None, aligned_center=None):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
@@ -390,17 +390,17 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     - stamp             - size of box around companion for FM
     - numthreads        (default=4)
     - spectra_template  - Can provide a template, default is None
-    - manual_psfs       - If dataset does not have attribute "psfs" will look for 
-                        manual input of psf model. 
-                    
+    - manual_psfs       - If dataset does not have attribute "psfs" will look for
+                        manual input of psf model.
+    - aligned_center    - pass to klip_dataset
     """
 
-    maxnumbasis = maxnumbasis 
-    movement = mv 
+    maxnumbasis = maxnumbasis
+    movement = mv
     stamp_size=stamp
     N_frames = len(dataset.input)
     N_cubes = len(dataset.exthdrs)
-    nl = N_frames / N_cubes
+    nl = N_frames // N_cubes
 
     print("====================================")
     print("planet separation, pa: {0}".format(pars))
@@ -411,12 +411,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     planet_sep, planet_pa = pars
 
-    # If 'dataset' does not already have psf model, check if manual_psfs not None. 
+    # If 'dataset' does not already have psf model, check if manual_psfs not None.
     if hasattr(dataset, "psfs"):
         print("Using dataset PSF model.")
         # What is this normalization? Not sure it matters (see line 82).
         radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]//nl, nl]),\
              axis=0)[:, None, None])
     elif manual_psfs is not None:
         radial_psfs = manual_psfs
@@ -446,7 +446,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=spectra_template,
-                    save_klipped=False, highpass=True)
+                    save_klipped=False, highpass=True,
+                    aligned_center=aligned_center)
 
     return dataset.fmout
 
@@ -474,13 +475,13 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     """
     N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
     N_cubes = len(dataset.exthdrs) # 
-    nl = N_frames / N_cubes
+    nl = N_frames // N_cubes
     stamp_size_squared = fmout.shape[-1]
     stamp_size = np.sqrt(stamp_size_squared)
 
     # Selection matrix (N_cubes, 1) shape
     spec_identity = np.identity(nl)
-    selec = np.tile(spec_identity,(N_frames/nl,1))
+    selec = np.tile(spec_identity,(N_frames//nl, 1))
 
     # set up array for klipped image for each numbasis, n_frames x npix
     klipped = np.zeros((fmout.shape[0], fmout.shape[1], fmout.shape[3]))
@@ -578,7 +579,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
         # CANNOT USE dataset.band !!! (always returns K1 for some reason)
         spot_flux_spectrum = \
-            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)//nl, nl), axis=0)
         spot_to_star_ratio = dataset.spot_ratio[band]
         normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
         spec_unit = "CONTRAST"
@@ -587,37 +588,3 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     else:
         spec_unit = "DN"
         return estim_spec, fm_coadd_mat
-
-def calculate_annuli_bounds(num_annuli, annuli_index, iwa, firstframe, firstframe_centers):
-    """
-    Calculate annulus boundaries of a particular annuli. Useful for figuring out annuli boundaries when just giving an
-    integer as the parameter to pyKLIP
-
-    Args:
-        num_annuli: integer for number of annuli requested
-        annuli_index: integer for which annuli (innermost annulus is 0)
-        iwa: inner working angle
-        firstframe: data of first frame of the sequence. dataset.inputs[0]
-        firstframe_centers: [x,y] center for the first frame. i.e. dataset.centers[0]
-
-    Returns:
-        rad_bounds[annuli_index]: radial separation of annuli. [annuli_start, annuli_end]
-                                  This is a single 2 element list [annuli_start, annuli_end]
-    """
-    dims = firstframe.shape
-
-    # use first image to figure out how to divide the annuli
-    # TODO: what to do with OWA
-    # need to make the next 10 lines or so much smarter
-
-    x, y = np.meshgrid(np.arange(dims[1] * 1.0), np.arange(dims[0] * 1.0))
-    nanpix = np.where(np.isnan(firstframe))
-
-    owa = np.sqrt(np.min((x[nanpix] - firstframe_centers[0]) ** 2 + (y[nanpix] - firstframe_centers[1]) ** 2))
-
-    dr = float(owa - iwa) / (num_annuli)
-    # calculate the annuli
-    rad_bounds = [(dr * rad + iwa, dr * (rad + 1) + iwa) for rad in range(num_annuli)]
-
-    # return desired
-    return rad_bounds[annuli_index]

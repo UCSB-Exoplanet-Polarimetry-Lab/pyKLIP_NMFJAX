@@ -1,8 +1,10 @@
 import abc
 import os
 import subprocess
-import astropy.io.fits as fits
+import multiprocessing as mp
 import numpy as np
+import astropy.io.fits as fits
+import pyklip.klip as klip
 
 class Data(object):
     """
@@ -10,19 +12,20 @@ class Data(object):
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
-        centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
+        centers: Array of shape (N,2) for N input centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
-        wcs: Array of N wcs astormetry headers for each image.
+        wcs: Array of N wcs astormetry headers for each input image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         OWA: (optional) specifies outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
+        output_centers: Array of shape (N,2) for N output centers. Also coresponds to FM centers (does not need to be implemented)
+        output_wcs: Array of N wcs astrometry headers for each output image (does not need to be implemneted)
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters
         flipx: (optional) True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
-
 
     Methods:
         readdata(): reread in the dadta
@@ -40,6 +43,9 @@ class Data(object):
         self.OWA = None
         # determine whether a reflection is needed for North-up East-left (optional)
         self.flipx = True
+        # self output centers and wcs to None until after running KLIP
+        self.output_centers = None
+        self.output_wcs = None
 
 
     ###################################
@@ -144,6 +150,13 @@ class Data(object):
         return
 
 
+    # not an abstract property
+    @property
+    def numwvs(self):
+        if not hasattr(self, "_numwvs"):
+            self._numwvs = int(np.size(np.unique(self.wvs)))
+        return self._numwvs
+
 
     ########################
     ### Required Methods ###
@@ -193,6 +206,115 @@ class Data(object):
         """
         return NotImplementedError("Subclass needs to implement this!")
 
+    def spectral_collapse(self, collapse_channels=1, align_frames=True, numthreads=None, additional_params=None):
+        """
+        Collapses the dataset spectrally, bining the data into the desired number of output wavelengths. 
+        This bins each cube individually; it does not bin the data tempoarally. 
+        If number of wavelengths / output channels is not a whole number, some output channels will have more frames
+        that went into the collapse
+
+        Args:
+            collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
+            align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
+            numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
+            additional_params (list of str): other dataset parameters to collapse. Assume each variable has first dimension of Nframes
+        """
+        # reshpae input into 4D cube
+        Ncubes = self.input.shape[0] // self.numwvs
+        input_4d = self.input.reshape([Ncubes, self.numwvs, self.input.shape[1], self.input.shape[2]])
+
+        slices_per_group = self.numwvs // collapse_channels # how many wavelengths per each output channel
+        leftover_slices = self.numwvs % collapse_channels
+
+        collapsed_4d = np.zeros([Ncubes, collapse_channels, self.input.shape[1], self.input.shape[2]])
+        wvs_collapsed = np.zeros([Ncubes, collapse_channels])
+        pas_collapsed = np.zeros([Ncubes, collapse_channels])
+        centers_collapsed = np.zeros([Ncubes, collapse_channels, 2])
+        # appending following as lists
+        wcs_collapsed = [] 
+        filenums_collapsed = []
+        filenames_collapsed = []
+        # additional params, if needed
+        if additional_params is not None:
+            additional_collapsed = []
+            for param_field in additional_params:
+                param_orig = getattr(self, param_field)
+                reshaped_shape = (Ncubes, collapse_channels) + param_orig.shape[1:]
+                additional_collapsed.append(np.zeros(reshaped_shape))
+        # populate the output image
+        next_start_channel = 0 # initialize which channel to start with for the input images
+        for i in range(collapse_channels):
+            # figure out which slices to pick
+            slices_this_group = slices_per_group
+            if leftover_slices > 0:
+                # take one extra slice, yummy
+                slices_this_group += 1
+                leftover_slices -= 1
+
+            i_start = next_start_channel
+            i_end = next_start_channel + slices_this_group # this is the index after the last one in this group
+
+            if align_frames:
+                tpool = mp.Pool(processes=numthreads)
+
+                # for this range of wvs, one (x,y) center per cube
+                centers_4d = self.centers.reshape([Ncubes, self.numwvs, 2])
+                mean_centers =  np.mean(centers_4d[:,i_start:i_end,:], axis=1)
+
+                tasks = [tpool.apply_async(klip.align_and_scale, args=(img, old_center, new_center))        
+                         for cube_j, new_center in enumerate(mean_centers)
+                          for img, old_center in zip(input_4d[cube_j, i_start:i_end], centers_4d[cube_j, i_start:i_end])
+                        ]
+
+                # reform back into a giant array
+                derotated = np.array([task.get() for task in tasks])
+                derotated.shape = (Ncubes, slices_this_group, self.input.shape[1], self.input.shape[2])
+                input_4d[:, i_start:i_end, :, :] = derotated
+
+
+            collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
+            wvs_collapsed[:, i] = np.mean(self.wvs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
+            pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
+            centers_collapsed[:,i,:] = np.mean(self.centers.reshape([Ncubes, self.numwvs, 2])[:,i_start:i_end,:], axis=1)
+            # append arrays, we'll reshape them later
+            # these variables are all the same for a single cube, so we can just select one
+            wcs_collapsed.append(self.wcs.reshape([Ncubes, self.numwvs])[:,i_start]) 
+            filenums_collapsed.append(self.filenums.reshape([Ncubes, self.numwvs])[:,i_start]) 
+            filenames_collapsed.append(self.filenames.reshape([Ncubes, self.numwvs])[:,i_start])
+
+            if additional_params is not None:
+                for param_collapsed, param_field in zip(additional_collapsed, additional_params):
+                    param_orig = getattr(self, param_field)
+                    reshaped_shape = (Ncubes, self.numwvs) + param_orig.shape[1:]
+                    param_collapsed[:, i] = np.nanmean(param_orig.reshape(reshaped_shape)[:, i_start:i_end], axis=1)
+
+            next_start_channel = i_end
+
+        # unravel the wavelength information
+        collapsed_4d.shape = [Ncubes * collapse_channels, self.input.shape[1], self.input.shape[2]]
+        wvs_collapsed.shape = [Ncubes * collapse_channels]
+        pas_collapsed.shape = [Ncubes * collapse_channels]
+        centers_collapsed.shape = [Ncubes * collapse_channels, 2]
+
+        # unfold the lists, need to flip the dimensions, so they are ordered properly
+        wcs_collapsed = np.array(wcs_collapsed).T.ravel()
+        filenums_collapsed = np.array(filenums_collapsed).T.ravel()
+        filenames_collapsed = np.array(filenames_collapsed).T.ravel()
+
+        # ok time to set all the variables correctly
+        self._numwvs = collapse_channels
+        self.input = collapsed_4d
+        self.wvs = wvs_collapsed
+        self.PAs = pas_collapsed
+        self.centers = centers_collapsed
+        self.wcs = wcs_collapsed
+        self.filenums = filenums_collapsed
+        self.filenames = filenames_collapsed
+
+        if additional_collapsed is not None:
+            for param_field, param_collapsed in zip(additional_params, additional_collapsed):
+                param_collapsed.shape = (Ncubes * collapse_channels, ) + param_collapsed.shape[2:]
+                setattr(self, param_field, param_collapsed)
 
 class GenericData(Data):
     """

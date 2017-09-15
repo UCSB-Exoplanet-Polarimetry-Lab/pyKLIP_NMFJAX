@@ -434,7 +434,7 @@ class CrossCorr(KPPSuperClass):
         self.image_obj.savedata(os.path.join(self.outputDir,self.folderName,self.prefix+'-'+self.suffix+'.fits'),
                          self.image_convo,
                          filetype=self.suffix,
-                         more_keywords = extra_keywords)
+                         more_keywords = extra_keywords,pyklip_output=False)
 
         return None
 

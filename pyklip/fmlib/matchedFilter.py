@@ -21,7 +21,6 @@ import matplotlib.pyplot as plt
 
 debug = False
 
-
 class MatchedFilter(NoFM):
     """
     Matched filter with forward modelling.
@@ -35,7 +34,10 @@ class MatchedFilter(NoFM):
                  datatype="float",
                  fakes_sepPa_list = None,
                  disable_FM = None,
-                 true_fakes_pos = None):
+                 true_fakes_pos = None,
+                 ref_center = None,
+                 flipx = None,
+                 rm_edge = None):
         '''
         Defining the forward model matched filter parameters
 
@@ -59,10 +61,21 @@ class MatchedFilter(NoFM):
                         The unchanged original PSF will be used instead. (Default False)
             true_fakes_pos: If True and fakes_only is True, calculate the forward model at the exact position of the
                     fakes and not at the center of the pixels. (Default False)
+            ref_center: reference center to which all the images are aligned. It should be the same center as the one
+                    used in fm.parallelized.
+            flipx: Determines whether a relfection about the x axis is necessary to rotate image North-up East left.
+                    Should match the same attribute in the instrument class.
+            rm_edge: When True (default), remove image edges to avoid edge effect. When there is more than 25% of NaNs
+                    in the projection of the FM model on the data, the result of the projection is set to NaNs right away.
 
         '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
+
+        if rm_edge is not None:
+            self.rm_edge = rm_edge
+        else:
+            self.rm_edge = True
 
         if true_fakes_pos is None:
             self.true_fakes_pos = False
@@ -138,6 +151,20 @@ class MatchedFilter(NoFM):
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
         self.stamp_PSF_mask[np.where(r_PSF_stamp < np.min([ny_PSF,nx_PSF])*7./20.)] = np.nan
         # self.stamp_PSF_mask[np.where(r_PSF_stamp < 4.)] = np.nan
+
+        if ref_center is not None:
+            self.ref_center = ref_center
+            # create some parameters for a blank canvas to draw psfs on
+            nx = inputs_shape[2]
+            ny = inputs_shape[1]
+            self.x_grid, self.y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
+            self.r_grid = abs(self.x_grid +self.y_grid*1j)
+            self.pa_grid = np.arctan2( -self.x_grid,self.y_grid) % (2.0 * np.pi)
+            if flipx is not None:
+                sign = -1.
+                if flipx:
+                    sign = 1.
+                self.th0_grid = np.arctan2(sign*self.x_grid,self.y_grid)
 
 
     # def alloc_interm(self, max_sector_size, numsciframes):
@@ -266,6 +293,12 @@ class MatchedFilter(NoFM):
                      cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
             kwargs: any other variables that we don't use but are part of the input
         """
+        if hasattr(self,"ref_center"):
+            if (self.ref_center[0] != ref_center[0]) or (self.ref_center[1] != ref_center[1]):
+                raise ValueError("ref_center needs to be the same when defining the matchedFilter class and calling parallelized")
+        if np.size(numbasis) != 1:
+            raise ValueError("Numbasis should only have a single element. e.g. numbasis = [30]. numbasis = [10,20,30] is not accepted.")
+
         ref_wv = ref_wv.astype(self.np_data_type)
 
         sci = aligned_imgs[input_img_num, section_ind[0]]
@@ -273,11 +306,22 @@ class MatchedFilter(NoFM):
         refs = refs[:, section_ind[0]]
 
         # Calculate the PA,sep 2D map
-        x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.0)- ref_center[0], np.arange(self.ny * 1.0)- ref_center[1])
+
+        if hasattr(self,"x_grid") and hasattr(self,"y_grid"):
+            x_grid, y_grid = self.x_grid,self.y_grid
+        else:
+            x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.)-ref_center[0], np.arange(self.ny * 1.)-ref_center[1])
         x_grid=x_grid.astype(self.np_data_type)
         y_grid=y_grid.astype(self.np_data_type)
-        r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
-        pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
+        # Define the masks for where the planet is and the background.
+        if hasattr(self,"r_grid"):
+            r_grid = self.r_grid
+        else:
+            r_grid = np.sqrt((x_grid)**2 + (y_grid)**2)
+        if hasattr(self,"pa_grid"):
+            pa_grid = self.pa_grid
+        else:
+            pa_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
         if flipx:
             paend= ((-phistart + np.pi/2.)% (2.0 * np.pi))
             pastart = ((-phiend + np.pi/2.)% (2.0 * np.pi))
@@ -344,7 +388,7 @@ class MatchedFilter(NoFM):
                 where_background = np.where(mask>=1)[0] # Caution: it includes where the fake is...
                 where_background_strict = np.where(mask==1)[0]
 
-                if float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
+                if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
                     fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
@@ -368,13 +412,18 @@ class MatchedFilter(NoFM):
 
                     # 4/ Calculate the FM: calculate postklip_psf using delta_KL
                     # postklip_psf has unit broadband contrast
-                    postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis,
-                                                                                     sci, model_sci, inputflux=None)
+                    model_sci_fk = model_sci[where_fk]
+                    delta_KL_kl = delta_KL[:,where_fk]
+                    klmodes_fk = klmodes[:,where_fk]
+                    postklip_psf = calculate_fm_opti(delta_KL, klmodes,sci, model_sci_fk,delta_KL_kl,klmodes_fk)
+                    # postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis,
+                    #                                                                  sci, model_sci, inputflux=None)
                 else:
                     #if one doesn't want the FM
                     if np.size(numbasis) == 1:
                         postklip_psf = model_sci[None,:]
                     else:
+                        # Mh, is this actually working? shouldn't I use tile?
                         postklip_psf = model_sci
 
                 # 5/ Calculate dot product (matched filter)
@@ -387,21 +436,21 @@ class MatchedFilter(NoFM):
                 # postklip_psf[N_KL_id,where_fk] = postklip_psf[N_KL_id,where_fk]-np.mean(postklip_psf[N_KL_id,where_background])
                 # Subtract local sky background to the klipped image
                 klipped_sub = klipped[where_fk,N_KL_id]-sky
-                klipped_sub_finite = np.where(np.isfinite(klipped_sub))
+                # klipped_sub_finite = np.where(np.isfinite(klipped_sub))
                 # klipped_sub_nan = np.where(np.isnan(klipped_sub))
-                postklip_psf[N_KL_id,np.where(np.isnan(klipped))[0]] = np.nan
-                if float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub))<=0.75:
-                    dot_prod = np.nan
-                else:
-                    dot_prod = np.nansum(klipped_sub*postklip_psf[N_KL_id,where_fk])
-                model_norm = np.nansum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk])
-                klipped_rm_pl = klipped[:,N_KL_id]-sky-(dot_prod/model_norm)*postklip_psf[N_KL_id,:]
-                if float(np.sum(np.isfinite(klipped_rm_pl[where_background])))/float(np.size(klipped_rm_pl[where_background]))<=0.75:
+                postklip_psf[N_KL_id,np.where(np.isnan(klipped_sub))[0]] = np.nan
+                postklip_psf_fk = postklip_psf[N_KL_id,:]
+                dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
+                model_norm = np.nansum(postklip_psf_fk*postklip_psf_fk)
+                klipped_rm_pl = copy(klipped[:,N_KL_id])
+                klipped_rm_pl[where_fk] -= sky + (dot_prod/model_norm)*postklip_psf_fk
+                klipped_rm_pl_bkg = klipped_rm_pl[where_background]
+                if self.rm_edge and float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
                     variance = np.nan
                     npix = np.nan
                 else:
-                    variance = np.nanvar(klipped_rm_pl[where_background])
-                    npix = np.sum(np.isfinite(klipped_rm_pl[where_background]))
+                    variance = np.nanvar(klipped_rm_pl_bkg)
+                    npix = np.sum(np.isfinite(klipped_rm_pl_bkg))
 
                 fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
                 fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = model_norm
@@ -527,6 +576,8 @@ class MatchedFilter(NoFM):
         contrast_map[np.where(contrast_map==0)]=np.nan
         self.contrast_map = contrast_map
 
+        self.FMNpix_map = np.nansum(fmout[3,:,:,:,:,:],axis=2)
+
         self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map]
 
 
@@ -545,6 +596,11 @@ class MatchedFilter(NoFM):
             suffix = "FMCC-KL{0}".format(self.numbasis[k])
             dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
                              self.FMCC_map[0,k,:,:],
+                             filetype=suffix)
+
+            suffix = "FMN_pix-KL{0}".format(self.numbasis[k])
+            dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                             self.FMNpix_map[0,k,:,:],
                              filetype=suffix)
 
         return
@@ -581,20 +637,18 @@ class MatchedFilter(NoFM):
         # create some parameters for a blank canvas to draw psfs on
         nx = input_img_shape[1]
         ny = input_img_shape[0]
-        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
+
+        if hasattr(self,"x_grid") and hasattr(self,"y_grid"):
+            x_grid, y_grid = self.x_grid,self.y_grid
+        else:
+            x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
-
-        # create bounds for PSF stamp size
-        row_m = int(np.floor(ny_psf/2.0))    # row_minus
-        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
-        col_m = int(np.floor(nx_psf/2.0))    # col_minus
-        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
 
         # a blank img array of write model PSFs into
         whiteboard = np.zeros((ny,nx))
         # grab PSF given wavelength
-        wv_index = [spec.find_nearest(self.input_psfs_wvs,wv)[1]]
+        wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
 
         sign = -1.
         if flipx:
@@ -624,8 +678,8 @@ class MatchedFilter(NoFM):
         # recenter coordinate system about the location of the planet
         # x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
         # y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
-        x_vec_stamp_centered = x_grid[0, np.max([(l-col_m),0]):np.min([(l+col_p),nx])]-psf_centx
-        y_vec_stamp_centered = y_grid[np.max([(k-row_m),0]):np.min([(k+row_p),ny]), 0]-psf_centy
+        x_vec_stamp_centered = x_grid[0, np.max([(l-self.col_m),0]):np.min([(l+self.col_p),nx])]-psf_centx
+        y_vec_stamp_centered = y_grid[np.max([(k-self.row_m),0]):np.min([(k+self.row_p),ny]), 0]-psf_centy
         # rescale to account for the align and scaling of the refernce PSFs
         # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
         x_vec_stamp_centered /= (ref_wv/wv)
@@ -634,8 +688,8 @@ class MatchedFilter(NoFM):
         # use intepolation spline to generate a model PSF and write to temp img
         # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
         #         self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
-        whiteboard[np.max([(k-row_m),0]):np.min([(k+row_p),ny]), np.max([(l-col_m),0]):np.min([(l+col_p),nx])] = \
-                self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+        whiteboard[np.max([(k-self.row_m),0]):np.min([(k+self.row_p),ny]), np.max([(l-self.col_m),0]):np.min([(l+self.col_p),nx])] = \
+                self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
         # write model img to output (segment is collapsed in x/y so need to reshape)
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -643,21 +697,27 @@ class MatchedFilter(NoFM):
         whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
         # Define the masks for where the planet is and the background.
-        r_grid = abs(x_grid +y_grid*1j)
-        th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
+        if hasattr(self,"th0_grid") and hasattr(self,"r_grid"):
+            r_grid = self.r_grid
+            th_grid = (self.th0_grid-sign*np.radians(pa))% (2.0 * np.pi)
+        else:
+            r_grid = abs(x_grid +y_grid*1j)
+            th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
         w = self.stamp_PSF_mask.shape[0]//2
         thstart = (np.radians(pa_fk)- float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         thend = (np.radians(pa_fk) + float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        # thstart = (np.radians(pa_fk)- 2*float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
+        #thend = (np.radians(pa_fk) + 2*float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         if thstart < thend:
             where_mask = np.where((r_grid>=(sep_fk-w)) & (r_grid<(sep_fk+w)) & (th_grid >= thstart) & (th_grid < thend))
         else:
             where_mask = np.where((r_grid>=(sep_fk-w)) & (r_grid<(sep_fk+w)) & ((th_grid >= thstart) | (th_grid < thend)))
         whiteboard[where_mask] = 1
         #TODO check the modification I did to these lines
-        whiteboard = np.pad(whiteboard,((row_m,row_p),(col_m,col_p)),mode="constant",constant_values=0)
+        whiteboard = np.pad(whiteboard,((self.row_m,self.row_p),(self.col_m,self.col_p)),mode="constant",constant_values=0)
         # whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
-        whiteboard[(k):(k+row_m+row_p), (l):(l+col_m+col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
-        whiteboard = np.ascontiguousarray(whiteboard[row_m:row_m+input_img_shape[0],col_m:col_m+input_img_shape[1]])
+        whiteboard[(k):(k+self.row_m+self.row_p), (l):(l+self.col_m+self.col_p)][np.where(np.isnan(self.stamp_PSF_mask))]=2
+        whiteboard = np.ascontiguousarray(whiteboard[self.row_m:self.row_m+input_img_shape[0],self.col_m:self.col_m+input_img_shape[1]])
         whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
         mask = whiteboard[section_ind]
 
@@ -713,15 +773,10 @@ class MatchedFilter(NoFM):
         # create some parameters for a blank canvas to draw psfs on
         nx = input_img_shape[1]
         ny = input_img_shape[0]
-        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
-
-        numwv, ny_psf, nx_psf =  self.input_psfs.shape
-
-        # create bounds for PSF stamp size
-        row_m = int(np.floor(ny_psf/2.0))    # row_minus
-        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
-        col_m = int(np.floor(nx_psf/2.0))    # col_minus
-        col_p = int(np.ceil(nx_psf/2.0))     # col_plus
+        try:
+            x_grid, y_grid = self.x_grid,self.y_grid
+        except:
+            x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
         sign = -1.
         if flipx:
@@ -758,15 +813,15 @@ class MatchedFilter(NoFM):
             l = int(round(psf_centx + ref_center[0]))
             k = int(round(psf_centy + ref_center[1]))
             # recenter coordinate system about the location of the planet
-            x_vec_stamp_centered = x_grid[0, (l-col_m):(l+col_p)]-psf_centx
-            y_vec_stamp_centered = y_grid[(k-row_m):(k+row_p), 0]-psf_centy
+            x_vec_stamp_centered = x_grid[0, (l-self.col_m):(l+self.col_p)]-psf_centx
+            y_vec_stamp_centered = y_grid[(k-self.row_m):(k+self.row_p), 0]-psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
             # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
             # use intepolation spline to generate a model PSF and write to temp img
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+            whiteboard[(k-self.row_m):(k+self.row_p), (l-self.col_m):(l+self.col_p)] = \
                     self.psfs_func_list[wv_index[0]](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
@@ -791,8 +846,82 @@ class MatchedFilter(NoFM):
                 plt.colorbar(im)
                 plt.show()
 
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0.0
+            whiteboard[(k-self.row_m):(k+self.row_p), (l-self.col_m):(l+self.col_p)] = 0.0
 
         return np.array(models)
 
 
+
+def calculate_fm_opti(delta_KL, original_KL, sci, model_sci_fk,delta_KL_fk, original_KL_fk):
+    r"""
+    Optimized version for calculate_fm() (if numbas) for a single numbasis.
+
+    Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
+    and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
+    the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
+
+    Note: if inputflux is None and delta_KL_nospec has three dimensions (ie delta_KL_nospec was calculated using
+    pertrurb_nospec() or perturb_nospec_modelsBased()) then only klipped_oversub and klipped_selfsub are returned.
+    Besides they will have an extra first spectral dimension.
+
+    Args:
+        delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
+                         Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
+        orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
+        sci: array of size p representing the science data
+        model_sci: array of size p corresponding to the PSF of the science frame
+        input_spectrum: array of size wv with the assumed spectrum of the model
+
+    If delta_KL_nospec does NOT include a spectral dimension or if inputflux is not None:
+    Returns:
+        fm_psf: array of shape (b,p) showing the forward modelled PSF
+                Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
+        klipped_oversub: array of shape (b, p) showing the effect of oversubtraction as a function of KL modes
+        klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
+        Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
+              (shape of b,p)
+
+    If inputflux = None and if delta_KL_nospec include a spectral dimension:
+    Returns:
+        klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (1,Npix)
+        klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (1,N_lambda or N_ref,N_pix)
+
+    """
+    # remove means and nans from science image
+    sci_mean_sub = (sci - np.nanmean(sci))[None,:]
+    sci_mean_sub[np.where(np.isnan(sci_mean_sub))] =0
+
+
+    # science PSF models, ready for FM
+    # /!\ JB: If subtracting the mean. It should be done here. not in klip_math since we don't use model_sci there.
+    model_sci_mean_sub = model_sci_fk[None,:] # should be subtracting off the mean?
+    model_sci_mean_sub[np.where(np.isnan(model_sci_mean_sub))] =0
+
+
+    # Forward model the PSF
+    # 3 terms: 1 for oversubtracton (planet attenauted by speckle KL modes),
+    # and 2 terms for self subtraction (planet signal leaks in KL modes which get projected onto speckles)
+    #
+    # Klipped = N-Sum(<N|KL>KL) + S-Sum(<S|KL>KL) - Sum(<N|DKL>KL) - Sum(<N|KL>DKL)
+    # With  N = noise/speckles (science image)
+    #       S = signal/planet model
+    #       KL = KL modes
+    #       DKL = perturbation of the KL modes/Delta_KL
+    #
+    # sci_mean_sub_rows.shape = (1,N_pix)
+    # model_sci_mean_sub_rows.shape = (1,N_pix)
+    # original_KL.shape = (max_basis,N_pix)
+    # delta_KL.shape = (max_basis,N_pix)
+    oversubtraction_inner_products = np.dot(model_sci_mean_sub, original_KL_fk.T)
+    selfsubtraction_1_inner_products = np.dot(sci_mean_sub, delta_KL.T)
+    selfsubtraction_2_inner_products = np.dot(sci_mean_sub, original_KL.T)
+
+    # oversubtraction_inner_products = (1,numbasis)
+    klipped_oversub = np.dot(oversubtraction_inner_products, original_KL_fk)
+
+    # selfsubtraction_1_inner_products = (1,numbasis)
+    # selfsubtraction_2_inner_products = (1,numbasis)
+    klipped_selfsub = np.dot(selfsubtraction_1_inner_products, original_KL_fk) + \
+                      np.dot(selfsubtraction_2_inner_products, delta_KL_fk)
+
+    return model_sci_fk[None,:] - klipped_oversub - klipped_selfsub

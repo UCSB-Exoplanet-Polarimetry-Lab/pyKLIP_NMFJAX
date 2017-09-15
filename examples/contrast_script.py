@@ -34,7 +34,6 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     maxnumbasis = 10
     # Less important parameters
     mute = False # Mute print statements
-    resolution = 3.5 # FWHM of the PSF used for the small sample statistic correction
     mask_radius = 5 # (Pixels) Radius of the disk used to mask out objects in an image
     overwrite = False # Force rewriting the files even if they already exist
 
@@ -50,9 +49,9 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
     filenames = glob(os.path.join(inputDir,"S*distorcorr.fits"))
     dataset = GPI.GPIData(filenames,highpass=True)
     dataset.generate_psf_cube(20,same_wv_only=True)
-    PSF_cube = inputDir + os.path.sep + "beta_Pic_test"+"-original_PSF_cube.fits"
+    PSF_cube = inputDir + os.path.sep + os.path.basename(filenames[0]).split(".fits")[0]+"-original_PSF_cube.fits"
     # Save the original PSF calculated from combining the sat spots
-    dataset.savedata(PSF_cube, dataset.psfs, filetype="PSF Spec Cube")
+    dataset.savedata(PSF_cube, dataset.psfs, filetype="PSF Spec Cube",pyklip_output=False)
 
     ###########################################################################################
     ## Reduce the dataset with FMMF
@@ -182,7 +181,8 @@ def contrast_dataset(inputDir,dir_fakes,mvt,reduc_spectrum,fakes_spectrum,approx
                 dataset.savedata(dir_fakes + os.path.sep + spdc_filename+"_"+suffix+".fits",
                                  dataset.input[(cube_id*numwaves):((cube_id+1)*numwaves),:,:],
                                  filetype="raw spectral cube with fakes", more_keywords =extra_keywords,
-                                 user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id])
+                                 user_prihdr=dataset.prihdrs[cube_id], user_exthdr=dataset.exthdrs[cube_id],
+                                 pyklip_output=False)
 
     ###########################################################################################
     ## Reduce the fake dataset
