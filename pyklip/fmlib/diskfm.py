@@ -1,6 +1,5 @@
 
 import multiprocessing as mp
-import ctypes
 import numpy as np
 import os
 import copy
@@ -11,7 +10,6 @@ import scipy.ndimage as ndimage
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
-import ctypes
 import itertools
 
 
@@ -110,7 +108,7 @@ class DiskFM(NoFM):
         '''
         fmout_size = np.prod(output_img_shape)
         fmout_shape = output_img_shape
-        fmout = mp.Array(ctypes.c_double, fmout_size)        
+        fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
@@ -237,7 +235,7 @@ class DiskFM(NoFM):
         self.dphi = 2 * np.pi / self.subsections
         
         # Make flattened images for running paralellized
-        original_imgs = mp.Array(self.mp_data_type, np.size(self.images))
+        original_imgs = mp.Array(self.data_type, np.size(self.images))
         original_imgs_shape = self.images.shape
         original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
         original_imgs_np[:] = self.images
@@ -245,17 +243,17 @@ class DiskFM(NoFM):
 
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
-        recentered_imgs = mp.Array(self.mp_data_type, np.size(self.images)*np.size(unique_wvs))
+        recentered_imgs = mp.Array(self.data_type, np.size(self.images)*np.size(unique_wvs))
         recentered_imgs_shape = (np.size(unique_wvs),) + self.images.shape
 
         # remake the PA, wv, and center arrays as shared arrays                  
-        pa_imgs = mp.Array(self.mp_data_type, np.size(self.pas))
+        pa_imgs = mp.Array(self.data_type, np.size(self.pas))
         pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.np_data_type)
         pa_imgs_np[:] = self.pas
-        wvs_imgs = mp.Array(self.mp_data_type, np.size(self.wvs))
+        wvs_imgs = mp.Array(self.data_type, np.size(self.wvs))
         wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.np_data_type)
         wvs_imgs_np[:] = self.wvs
-        centers_imgs = mp.Array(self.mp_data_type, np.size(self.centers))
+        centers_imgs = mp.Array(self.data_type, np.size(self.centers))
         centers_imgs_np = fm._arraytonumpy(centers_imgs, self.centers.shape,dtype=self.np_data_type)
         centers_imgs_np[:] = self.centers
         output_imgs = None

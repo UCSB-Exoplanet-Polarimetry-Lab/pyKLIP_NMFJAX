@@ -53,11 +53,9 @@ class ExtractSpec(NoFM):
             self.stamp_size = stamp_size
 
         if datatype=="double":
-            self.mp_data_type = ctypes.c_double
-            self.np_data_type = float
+            self.data_type = ctypes.c_double
         elif datatype=="float":
-            self.mp_data_type = ctypes.c_float
-            self.np_data_type = np.float32
+            self.data_type = ctypes.c_float
 
         self.N_numbasis =  np.size(numbasis)
         self.ny = self.inputs_shape[1]
@@ -71,12 +69,12 @@ class ExtractSpec(NoFM):
 
 
         self.input_psfs = input_psfs
-        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
+        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.data_type))
         self.nl = np.size(input_psfs_wvs)
         #self.flux_conversion = flux_conversion
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
-        self.aper_over_peak_ratio = np.zeros(37)
+        self.aper_over_peak_ratio = np.zeros(np.size(self.input_psfs_wvs))
         for l_id in range(self.input_psfs.shape[0]):
             self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
             self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
@@ -134,7 +132,7 @@ class ExtractSpec(NoFM):
         # The 3rd dimension (self.N_frames corresponds to the spectrum)
         # The +1 in (self.N_frames+1) is for the klipped image
         fmout_size = self.N_numbasis*self.N_frames*(self.N_frames+1)*self.stamp_size*self.stamp_size
-        fmout = mp.Array(self.mp_data_type, fmout_size)
+        fmout = mp.Array(self.data_type, fmout_size)
         # fmout shape is defined as:
         #   (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
         # 1st dim: The size of the numbasis input. numasis gives the list of the number of KL modes we want to try out

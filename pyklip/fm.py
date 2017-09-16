@@ -1160,30 +1160,30 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # implement the thread pool
     # make a bunch of shared memory arrays to transfer data between threads
     # make the array for the original images and initalize it
-    original_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs))
+    original_imgs = mp.Array(fm_class.data_type, np.size(imgs))
     original_imgs_shape = imgs.shape
-    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape,dtype=fm_class.np_data_type)
+    original_imgs_np = _arraytonumpy(original_imgs, original_imgs_shape,dtype=fm_class.data_type)
     original_imgs_np[:] = imgs
     # make array for recentered/rescaled image for each wavelength
     unique_wvs = np.unique(wvs)
-    recentered_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs)*np.size(unique_wvs))
+    recentered_imgs = mp.Array(fm_class.data_type, np.size(imgs)*np.size(unique_wvs))
     recentered_imgs_shape = (np.size(unique_wvs),) + imgs.shape
 
     # remake the PA, wv, and center arrays as shared arrays
-    pa_imgs = mp.Array(fm_class.mp_data_type, np.size(parangs))
-    pa_imgs_np = _arraytonumpy(pa_imgs,dtype=fm_class.np_data_type)
+    pa_imgs = mp.Array(fm_class.data_type, np.size(parangs))
+    pa_imgs_np = _arraytonumpy(pa_imgs,dtype=fm_class.data_type)
     pa_imgs_np[:] = parangs
-    wvs_imgs = mp.Array(fm_class.mp_data_type, np.size(wvs))
-    wvs_imgs_np = _arraytonumpy(wvs_imgs,dtype=fm_class.np_data_type)
+    wvs_imgs = mp.Array(fm_class.data_type, np.size(wvs))
+    wvs_imgs_np = _arraytonumpy(wvs_imgs,dtype=fm_class.data_type)
     wvs_imgs_np[:] = wvs
-    centers_imgs = mp.Array(fm_class.mp_data_type, np.size(centers))
-    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=fm_class.np_data_type)
+    centers_imgs = mp.Array(fm_class.data_type, np.size(centers))
+    centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=fm_class.data_type)
     centers_imgs_np[:] = centers
 
     # make output array which also has an extra dimension for the number of KL modes to use
     if save_klipped:
-        output_imgs = mp.Array(fm_class.mp_data_type, np.size(imgs)*np.size(numbasis))
-        output_imgs_np = _arraytonumpy(output_imgs,dtype=fm_class.np_data_type)
+        output_imgs = mp.Array(fm_class.data_type, np.size(imgs)*np.size(numbasis))
+        output_imgs_np = _arraytonumpy(output_imgs,dtype=fm_class.data_type)
         output_imgs_np[:] = np.nan
         output_imgs_numstacked = mp.Array(ctypes.c_int, np.size(imgs))
     else:
@@ -1217,7 +1217,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     aligned_outputs = []
     for threadnum in range(numthreads):
         #multitask this
-        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.np_data_type))]
+        aligned_outputs += [tpool.apply_async(_align_and_scale_subset, args=(threadnum, aligned_center,numthreads,fm_class.data_type))]
 
         #save it to shared memory
     for aligned_output in aligned_outputs:
@@ -1310,8 +1310,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
 
         # run custom function to handle end of sector post-processing analysis
-        interm_data_np = _arraytonumpy(interm_data, interm_shape,dtype=fm_class.np_data_type)
-        fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
+        interm_data_np = _arraytonumpy(interm_data, interm_shape,dtype=fm_class.data_type)
+        fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.data_type)
         fm_class.fm_end_sector(interm_data=interm_data_np, fmout=fmout_np, sector_index=sector_index,
                                section_indicies=section_ind)
 
@@ -1330,7 +1330,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     # Mean the output images if save_klipped is True
     if save_klipped:
         # Let's take the mean based on number of images stacked at a location
-        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.np_data_type)
+        sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.data_type)
         sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
         sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
@@ -1344,11 +1344,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         sub_imgs = None
 
     # put any finishing touches on the FM Output
-    fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.np_data_type)
+    fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.data_type)
     fmout_np = fm_class.cleanup_fmout(fmout_np)
 
     # convert pertrubmag to numpy
-    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.np_data_type)
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.data_type)
 
     # Output for the sole PSFs
     return sub_imgs, fmout_np, perturbmag_np, aligned_center
@@ -1416,7 +1416,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
     #load aligned images for this wavelength
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.data_type)[wv_index]
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
     if np.sum(np.isfinite(aligned_imgs[img_num, section_ind[0]])) == 0:
@@ -1451,8 +1451,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths and PAs
-    wvs_imgs = _arraytonumpy(img_wv,dtype=fm_class.np_data_type)
-    pa_imgs = _arraytonumpy(img_pa,dtype=fm_class.np_data_type)
+    wvs_imgs = _arraytonumpy(img_wv,dtype=fm_class.data_type)
+    pa_imgs = _arraytonumpy(img_pa,dtype=fm_class.data_type)
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -1523,16 +1523,16 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # restore NaNs
     ref_psfs_mean_sub[ref_nanpix] = np.nan
 
-    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.np_data_type)[wv_index]
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.data_type)[wv_index]
 
     # convert to numpy array if we are saving outputs
-    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]),dtype=fm_class.np_data_type)
+    output_imgs = _arraytonumpy(outputs, (outputs_shape[0], outputs_shape[1]*outputs_shape[2], outputs_shape[3]),dtype=fm_class.data_type)
     output_imgs_numstacked = _arraytonumpy(outputs_numstacked, (outputs_shape[0], outputs_shape[1]*outputs_shape[2]), dtype=ctypes.c_int)
 
     # convert to numpy array if fmout is defined
-    fmout_np = _arraytonumpy(fmout, fmout_shape,dtype=fm_class.np_data_type)
+    fmout_np = _arraytonumpy(fmout, fmout_shape,dtype=fm_class.data_type)
     # convert to numpy array if pertrubmag is defined
-    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.np_data_type)
+    perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.data_type)
     # run regular KLIP and get the klipped img along with KL modes and eigenvalues/vectors of covariance matrix
     klip_math_return = klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis,
                                  covar_psfs=covar_files,)
