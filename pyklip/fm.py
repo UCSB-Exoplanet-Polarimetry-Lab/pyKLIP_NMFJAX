@@ -524,6 +524,10 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
 
     """
     max_basis = original_KL.shape[0]
+    if numbasis[0] is None:
+        numbasis_index = [max_basis-1]
+    else:
+        numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
 
     N_pix = np.size(sci)
 
@@ -1673,7 +1677,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
     # save klip parameters as a string
     klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \
-                 "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}" \
+                 "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}, " \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,

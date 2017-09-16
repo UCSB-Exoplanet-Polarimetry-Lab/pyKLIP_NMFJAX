@@ -15,7 +15,10 @@ from astropy.io import fits
 from astropy import units
 from astropy.modeling import models, fitting
 
-from photutils import aperture_photometry, CircularAperture
+try:
+    from photutils import aperture_photometry, CircularAperture
+except:
+    print("P1640: photutils not available; spot photometry will fail.")
 
 #for handling different python versions
 if sys.version_info < (3,0):
@@ -708,6 +711,7 @@ def get_single_file_scaling_and_centering(fitsfile):
 ##################################
 # Spot photometry
 ##################################
+
 def get_single_cube_spot_photometry(cube, spot_positions):
     """
     Do aperture photometry on the spots. Will need to be careful about
@@ -745,7 +749,8 @@ def get_single_cube_spot_positions_and_photometry(cube):
     spot_positions = get_single_cube_spot_positions(cube)
     spot_photometry = get_single_cube_spot_photometry(cube, spot_positions)
     return spot_positions, spot_photometry
-    
+
+
 #################################
 # Multi-cube wrappers
 #################################

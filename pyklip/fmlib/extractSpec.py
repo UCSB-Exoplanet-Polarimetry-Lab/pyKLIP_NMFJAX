@@ -379,7 +379,7 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           maxnumbasis = 100, spectra_template=None, manual_psfs=None):
+           maxnumbasis = 100, spectra_template=None, manual_psfs=None, aligned_center=None):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
@@ -388,17 +388,17 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     - stamp             - size of box around companion for FM
     - numthreads        (default=4)
     - spectra_template  - Can provide a template, default is None
-    - manual_psfs       - If dataset does not have attribute "psfs" will look for 
-                        manual input of psf model. 
-                    
+    - manual_psfs       - If dataset does not have attribute "psfs" will look for
+                        manual input of psf model.
+    - aligned_center    - pass to klip_dataset
     """
 
-    maxnumbasis = maxnumbasis 
-    movement = mv 
+    maxnumbasis = maxnumbasis
+    movement = mv
     stamp_size=stamp
     N_frames = len(dataset.input)
     N_cubes = len(dataset.exthdrs)
-    nl = N_frames / N_cubes
+    nl = N_frames // N_cubes
 
     print("====================================")
     print("planet separation, pa: {0}".format(pars))
@@ -409,12 +409,12 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
 
     planet_sep, planet_pa = pars
 
-    # If 'dataset' does not already have psf model, check if manual_psfs not None. 
+    # If 'dataset' does not already have psf model, check if manual_psfs not None.
     if hasattr(dataset, "psfs"):
         print("Using dataset PSF model.")
         # What is this normalization? Not sure it matters (see line 82).
         radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]/nl,nl]),\
+            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]//nl, nl]),\
              axis=0)[:, None, None])
     elif manual_psfs is not None:
         radial_psfs = manual_psfs
@@ -444,7 +444,8 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=spectra_template,
-                    save_klipped=False, highpass=True)
+                    save_klipped=False, highpass=True,
+                    aligned_center=aligned_center)
 
     return dataset.fmout
 
@@ -472,13 +473,13 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
     """
     N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
     N_cubes = len(dataset.exthdrs) # 
-    nl = N_frames / N_cubes
+    nl = N_frames // N_cubes
     stamp_size_squared = fmout.shape[-1]
     stamp_size = np.sqrt(stamp_size_squared)
 
     # Selection matrix (N_cubes, 1) shape
     spec_identity = np.identity(nl)
-    selec = np.tile(spec_identity,(N_frames/nl,1))
+    selec = np.tile(spec_identity,(N_frames//nl, 1))
 
     # set up array for klipped image for each numbasis, n_frames x npix
     klipped = np.zeros((fmout.shape[0], fmout.shape[1], fmout.shape[3]))
@@ -576,7 +577,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
         # CANNOT USE dataset.band !!! (always returns K1 for some reason)
         spot_flux_spectrum = \
-            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)//nl, nl), axis=0)
         spot_to_star_ratio = dataset.spot_ratio[band]
         normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
         spec_unit = "CONTRAST"

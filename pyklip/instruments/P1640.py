@@ -4,6 +4,9 @@ import subprocess
 import glob
 from copy import deepcopy
 
+import sys
+if sys.version_info.major >= 3:
+    from functools import reduce
 import astropy.io.fits as fits
 from astropy import wcs
 import numpy as np
@@ -43,6 +46,7 @@ class P1640Data(Data):
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         corefilepaths: a list of filepaths to core (i.e. unocculted) files, for contrast calc
         spot_directory: (None) path to the directory where the spot positions are stored. Defaults to P1640.ini val
+        verbose: [False] if True, print more stuff
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
@@ -74,8 +78,8 @@ class P1640Data(Data):
     spot_ratio = {} #w.r.t. central star
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
-    nchannels_all = []
-    nchannels_used = []
+    nchannels_all = None
+    nchannels_used = None
     observatory_latitude = 0.0
 
     ## read in P1640 configuration file and set these static variables
@@ -105,7 +109,7 @@ class P1640Data(Data):
     ### Constructors ###
     ####################
     def __init__(self, filepaths=None, skipslices=None, corefilepaths=None, spot_directory=None, highpass=True,
-                 numthreads=-1,PSF_cube=None):
+                 numthreads=-1, PSF_cube=None, verbose=False):
         """
         Initialization code for P1640Data
 
@@ -128,6 +132,8 @@ class P1640Data(Data):
             self.channels_used = [i for i in self.channels_all if i not in skipslices]
         except:
             self.channels_used = self.channels_all[:]
+        self.nchannels_used = len(self.channels_used)
+
         if filepaths is None:
             # general stuff
             self._input = None
@@ -181,6 +187,13 @@ class P1640Data(Data):
         self._filenames = newval
 
     @property
+    def configfile(self):
+        return self._configfile
+    @configfile.setter
+    def configfile(self, newval):
+        self._configfile = newval
+
+    @property
     def PAs(self):
         return self._PAs
     @PAs.setter
@@ -231,11 +244,11 @@ class P1640Data(Data):
         self._scale_factors = newval
 
     @property
-    def spot_positions(self):
-        return self._spot_positions
-    @spot_positions.setter
-    def spot_positions(self, newval):
-        self._spot_positions = newval
+    def spot_locations(self):
+        return self._spot_locations
+    @spot_locations.setter
+    def spot_locations(self, newval):
+        self._spot_locations = newval
 
     @property
     def spot_directory(self):
@@ -284,10 +297,10 @@ class P1640Data(Data):
                 # check if all the spot files exist, if so, read them in
                 exist = np.all([os.path.isfile(f) for f in spot_filepaths])
                 assert(exist is not False)
-                print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+                # print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
                 spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                            for f in spot_filepaths])
-                return spot_locations
+                # return spot_locations
             except AssertionError:
                 # if they haven't already been written to file, calculate them
                 spot_locations = P1640spots.get_single_cube_spot_positions(cube)
@@ -308,7 +321,7 @@ class P1640Data(Data):
         #self.spot_flux = cube_spot_fluxes
 
 
-    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True, numthreads=-1, PSF_cube=None):
+    def readdata(self, filepaths, skipslices=None, corefilepaths=None, highpass=True, numthreads=-1, PSF_cube=None, verbose=False):
         """
         Method to open and read a list of P1640 data. Handles everything that can be done by
         reading directly from the P1640 header or cubes, no calculations. Scaling and Centering handled elsewhere
@@ -346,7 +359,8 @@ class P1640Data(Data):
         for index, filepath in enumerate(filepaths):
             cube, center, spot_scaling_single_cube, spot_locations_single_cube, pa, wv, \
             astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, prihdr, exthdr = \
-                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices, highpass=highpass, numthreads=numthreads)
+                _p1640_process_file(filepath, spot_directory=self.spot_directory, skipslices=skipslices,
+                                    highpass=highpass, numthreads=numthreads, verbose=verbose)
 
             data.append(cube)
             centers.append(center)
@@ -360,7 +374,9 @@ class P1640Data(Data):
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
             filenames.append([filepath for i in range(pa.shape[0])])
-
+        if verbose == False:
+            print("{N} files processed from {p} (verbose = False).".format(N=len(filepaths),
+                                                                           p=os.path.commonprefix(filepaths)))
 
 
         #convert everything into numpy arrays
@@ -376,7 +392,7 @@ class P1640Data(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-        spot_locations = np.array(spot_locations).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
+        spot_locations = np.rollaxis(np.array(spot_locations), -2, 1).reshape([dims[0]*dims[1], 4, 2])[..., ::-1]
         # for the spot scalings factors, take the mean for each wavelength
         spot_scalings = np.array(spot_scalings)#.reshape([dims[0]*dims[1]])
         # Not used by P1640
@@ -483,6 +499,9 @@ class P1640Data(Data):
         if filetype is not None:
             hdulist[0].header['FILETYPE'] = (filetype, "P1640 File type")
 
+        if self.channels_used is not None:
+            hdulist[0].header['channels'] = ','.join(['{0}'.format(i) for i in self.channels_used])
+
         #write flux units/conversion
         hdulist[0].header['FUNIT'] = (self.flux_units, "Flux units of data")
         if self.flux_units.upper() == 'CONTRAST':
@@ -587,7 +606,7 @@ class P1640Data(Data):
             core_cubes = np.array([core_hdus.data for hdu in core_hdus])
             star_psf = P1640cores.make_median_core(core_cubes)
             for hdu in core_hdus:
-                hdu.close
+                hdu.close()
 
             self.contrast_scaling = star_flux = np.nansum(axis=0)
 
@@ -613,6 +632,7 @@ class P1640Data(Data):
 
         # spots initially have shape (Ncube x Nchan x Nspots x 2)
         nframes = reduce(lambda x,y: x*y, self.spot_locations.shape[:-2])
+
         spot0 = self.spot_locations[..., 0,:].reshape(nframes, 2)
         spot1 = self.spot_locations[..., 1,:].reshape(nframes, 2)
         spot2 = self.spot_locations[..., 2,:].reshape(nframes, 2)
@@ -646,13 +666,16 @@ class P1640Data(Data):
                 #now make a psf
                 spotpsf = generate_psf(frame, spots, boxrad=boxrad)
                 self.psfs.append(spotpsf)
-                self.psfs = np.array(self.psfs)
-                self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]/self.nchannels_all, self.nchannels_all,
-                                                   self.psfs.shape[1], self.psfs.shape[2]))
+            self.psfs = np.array(self.psfs)
+            self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//self.nchannels_used, self.nchannels_used,
+                                               self.psfs.shape[1], self.psfs.shape[2]))
             self.psfs = np.mean(self.psfs, axis=0)
 
     def generate_psf_cube(self, boxw=14):
-        """
+        return generate_psfs(int(np.floor(boxw//2)))
+    """
+    def generate_psf_cube(self, boxw=14):
+        \"""
         # P1640 - use unocculted files
         Generates an average PSF from all frames of input data. Only works on spectral mode data.
         Overall cube normalized to unity with norm 2.
@@ -668,7 +691,7 @@ class P1640Data(Data):
 
         Returns:
             A cube of shape Nchan*boxw*boxw. Each slice [k,:,:] is the PSF for a given wavelength.
-        """
+        \"""
 
         n_frames,ny,nx = self.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(ny), np.arange(nx))
@@ -786,7 +809,7 @@ class P1640Data(Data):
             plt.show()
 
         self.psfs = PSF_cube
-
+    """
     def get_radial_psf(self,save = None):
         """
         Return a pure radial PSF by averaging the original psf. The new PSF is invariant by rotation.
@@ -910,7 +933,7 @@ def write_p1640_spots_to_file(config, data_filepath, spot_positions,
     return
 
 def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass=True,
-                        numthreads=-1, psfs_func_list=None):
+                        numthreads=-1, psfs_func_list=None, verbose=False):
     """
     Method to open and parse a P1640 file
 
@@ -922,7 +945,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
                   can also be a number specifying FWHM of box in pixel units
         numthreads: : Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
-            PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
+        verbose [False]: if True, print more stuff
     Returns: (using z as size of 3rd dimension, z=32 for spec including all wavelengths)
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
@@ -937,7 +961,8 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         prihdr: primary header of the FITS file NOT USED
         exthdr: 1st extention header of the FITS file
     """
-    print("Reading File: {0}".format(filepath))
+    if verbose == True:
+        print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
         #grab the data and headers
@@ -978,18 +1003,20 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         try:
             if spot_directory is not None:
                 spot_filedir = spot_directory
-                print(spot_filedir)
+                if verbose == True:
+                    print("Spot directory: {s}".format(s=spot_filedir))
             else: # use the default set in P1640.ini
                 spot_filedir = P1640Data.config.get("spots","spot_file_path")
                 #spot_filepaths = get_p1640_spot_filepaths(P1640Data.config, filepath)
             spot_filebasename = os.path.splitext(os.path.basename(filepath))[0]
             spot_fullpath = os.path.join(spot_filedir, spot_filebasename)
-            spot_filepaths = glob.glob(spot_fullpath+'*')
+            spot_filepaths = sorted(glob.glob(spot_fullpath+'*'))
 
             # check if all the spot files exist, if so, read them in
             exist = np.all([os.path.isfile(f) for f in spot_filepaths])
             assert(exist is not False)
-            print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
+            if verbose == True:
+                print("Reading spots from files: {0}".format(os.path.commonprefix(spot_filepaths)))
             spot_locations = np.array([np.genfromtxt(f, delimiter=',') 
                                        for f in spot_filepaths])
         except AssertionError:
@@ -1017,8 +1044,9 @@ def _p1640_process_file(filepath, spot_directory=None, skipslices=None, highpass
         parang = np.delete(parang, skipslices)
         wvs = np.delete(wvs, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
-        spot_fluxes = np.delete(spot_fluxes, skipslices)
-        spot_locations = np.delete(spot_locations, skipslices)
+        spot_fluxes = np.delete(spot_fluxes, skipslices, axis=0)
+        spot_locations = np.delete(spot_locations, skipslices, axis=1)
+        scale_factors = np.delete(scale_factors, skipslices, axis=0)
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
