@@ -76,7 +76,7 @@ class ExtractSpec(NoFM):
         #self.flux_conversion = flux_conversion
         # Make sure the peak value is unity for all wavelengths
         self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
-        self.aper_over_peak_ratio = np.zeros(37)
+        self.aper_over_peak_ratio = np.zeros(self.input_psfs.shape[0])
         for l_id in range(self.input_psfs.shape[0]):
             self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
             self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
