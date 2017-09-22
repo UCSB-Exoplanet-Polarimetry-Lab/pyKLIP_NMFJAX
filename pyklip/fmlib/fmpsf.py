@@ -124,7 +124,7 @@ class FMPlanetPSF(NoFM):
 
         """
         fmout_size = int(np.prod(output_img_shape))
-        fmout = mp.Array(self.mp_data_type, fmout_size)
+        fmout = mp.Array(self.data_type, fmout_size)
         fmout_shape = output_img_shape
 
         return fmout, fmout_shape
@@ -145,7 +145,7 @@ class FMPlanetPSF(NoFM):
 
         """
         perturbmag_shape = (output_img_shape[0], np.size(numbasis))
-        perturbmag = mp.Array(self.mp_data_type, int(np.prod(perturbmag_shape)))
+        perturbmag = mp.Array(self.data_type, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
 

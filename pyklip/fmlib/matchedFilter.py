@@ -83,11 +83,9 @@ class MatchedFilter(NoFM):
             self.true_fakes_pos = true_fakes_pos
 
         if datatype=="double":
-            self.mp_data_type = ctypes.c_double
-            self.np_data_type = float
+            self.data_type = ctypes.c_double
         elif datatype=="float":
-            self.mp_data_type = ctypes.c_float
-            self.np_data_type = np.float32
+            self.data_type = ctypes.c_float
 
         if save_per_sector is not None:
             self.fmout_dir = save_per_sector
@@ -108,7 +106,7 @@ class MatchedFilter(NoFM):
 
         self.inputs_shape = self.inputs_shape
 
-        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.np_data_type))
+        self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.data_type))
 
         # Make sure the total flux of each PSF is unity for all wavelengths
         # So the peak value won't be unity.
@@ -207,10 +205,10 @@ class MatchedFilter(NoFM):
 
         """
         # fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-        # fmout = mp.Array(self.mp_data_type, fmout_size)
+        # fmout = mp.Array(self.data_type, fmout_size)
         # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-        fmout = mp.Array(self.mp_data_type, fmout_size)
+        fmout = mp.Array(self.data_type, fmout_size)
         fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
 
         return fmout, fmout_shape
@@ -299,7 +297,7 @@ class MatchedFilter(NoFM):
         if np.size(numbasis) != 1:
             raise ValueError("Numbasis should only have a single element. e.g. numbasis = [30]. numbasis = [10,20,30] is not accepted.")
 
-        ref_wv = ref_wv.astype(self.np_data_type)
+        ref_wv = ref_wv.astype(self.data_type)
 
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
@@ -311,8 +309,8 @@ class MatchedFilter(NoFM):
             x_grid, y_grid = self.x_grid,self.y_grid
         else:
             x_grid, y_grid = np.meshgrid(np.arange(self.nx * 1.)-ref_center[0], np.arange(self.ny * 1.)-ref_center[1])
-        x_grid=x_grid.astype(self.np_data_type)
-        y_grid=y_grid.astype(self.np_data_type)
+        x_grid=x_grid.astype(self.data_type)
+        y_grid=y_grid.astype(self.data_type)
         # Define the masks for where the planet is and the background.
         if hasattr(self,"r_grid"):
             r_grid = self.r_grid
@@ -442,10 +440,10 @@ class MatchedFilter(NoFM):
                 postklip_psf_fk = postklip_psf[N_KL_id,:]
                 dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
                 model_norm = np.nansum(postklip_psf_fk*postklip_psf_fk)
-                klipped_rm_pl = copy(klipped[:,N_KL_id])
-                klipped_rm_pl[where_fk] -= sky + (dot_prod/model_norm)*postklip_psf_fk
+                klipped_rm_pl = copy(klipped[:,N_KL_id]) -sky
+                klipped_rm_pl[where_fk] -=  (dot_prod/model_norm)*postklip_psf_fk
                 klipped_rm_pl_bkg = klipped_rm_pl[where_background]
-                if self.rm_edge and float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75:
+                if self.rm_edge and (float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75):
                     variance = np.nan
                     npix = np.nan
                 else:

@@ -49,6 +49,50 @@ gen_fm usage::
     # "LP" inversion adds over frames and one wavelength axis, then inverts
     # (LP is not recommended)
 
+The units of the spectrum, FM matrix, and klipped data are all in raw data units
+in this example. Calibration of instrument and atmospheric transmmission and 
+stellar spectrum are left to the user
+
+An important note about GPI data: There is a keyword to convert the spectrum
+to contrast units by setting unit="CONTRAST" however, the FM matrix and the 
+klipped data remain in raw data units. We recommend calculating the contrast
+conversion separately and explain the steps in the following section.
+
+Converting from raw DN to contrast for GPI data
+-----------------------------------------------
+Converting to contrast for GPI data is done using the flux of the satellite spots.
+The dataset object has attribute spot_flux that represent the average peak flux of
+the four spots. The normalization factor is computed by dividing the spot flux 
+spectrum by the ratio between the stellar flux and the spot flux (stored in 
+spot_ratio) and adjusting for the ratio between the peak and the sum of the spot
+PSF.
+
+Example::
+
+    # First set up a PSF model and sums
+    sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
+    PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
+    sat_spot_spec = np.nanmax(PSF_cube, axis=(1,2))
+    # Now divide the sum by the peak for each wavelength slice
+    aper_over_peak_ratio = np.zeros(nl)
+    for l_id in range(PSF_cube.shape[0]):
+        aper_over_peak_ratio[l_id] = \
+            np.nansum(PSF_cube[l_id,:,:]) / sat_spot_spec[l_id]
+
+    # Avg spot ratio
+    band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
+    # DO NOT USE dataset.band !!! (always returns K1)
+    spot_flux_spectrum = \
+        np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+    spot_to_star_ratio = dataset.spot_ratio[band]
+    normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
+
+Divide your spectrum in DN by this normalization factor.::
+
+    spectrum_contrast = spectrum / normfactor
+
+
+
 Calculating Errobars
 --------------------
 One way to calculate a spectrum with errorbars after running the above::

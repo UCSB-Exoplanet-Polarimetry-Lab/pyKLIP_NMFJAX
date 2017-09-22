@@ -70,6 +70,8 @@ class Ifs(Data):
                 dwv = self.prihdrs[k]["CDELT1"]/1000. # wv interval between 2 slices in mum
                 self.wvs.extend(np.arange(init_wv,init_wv+dwv*self.nwvs,dwv))
 
+                # Plate scale of the spectrograph
+                self.platescale = float(self.prihdrs[k]["SSCALE"])
 
                 if guess_center is None:
                     self.centers.extend(np.array([[img.shape[1]/2., img.shape[0]/2.] for img in tmp_input]))
@@ -209,8 +211,6 @@ class Ifs(Data):
         # Infinity...
         self.OWA = 10000
 
-        # TODO: need to check how it works (cf GPI)
-        self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
 
         self._output = None
 
@@ -226,7 +226,7 @@ class Ifs(Data):
             new_PAs = []
             new_filenames = []
             new_dn_per_contrast = []
-            new_wcs = []
+            # new_wcs = []
             for k in range(self.nfiles):
                 tmp_input = copy(self.input[k*self.nwvs:(k+1)*self.nwvs,:,:])
                 tmp_input = np.array([np.nanmean(tmp_input[l*coaddslices:(l+1)*coaddslices,:,:],axis=0) for l in range(N_chunks)])
@@ -242,7 +242,7 @@ class Ifs(Data):
                 new_PAs.extend([self.PAs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
                 new_filenames.extend([self.filenames[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
                 new_dn_per_contrast.extend([np.nanmean(self.dn_per_contrast[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices:(l+1)*coaddslices]) for l in range(N_chunks)])
-                new_wcs.extend([self.wcs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+                # new_wcs.extend([self.wcs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
 
 
             self.input = new_input
@@ -253,8 +253,21 @@ class Ifs(Data):
             self.PAs = np.array(new_PAs)
             self.filenames = new_filenames
             self.dn_per_contrast = np.array(new_dn_per_contrast)
-            self.wcs = new_wcs
+            # self.wcs = new_wcs
+        self.dn_per_contrast = np.squeeze(self.dn_per_contrast)
 
+        # # TODO: need to check how it works (cf GPI)
+        # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+        # Creating WCS info for OSIRIS
+        self.wcs = []
+        for vert_angle in self.PAs:
+            w = wcs.WCS()
+            vert_angle = np.radians(vert_angle)
+            pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+            cdmatrix = pc * self.platescale /3600.
+            w.wcs.cd = cdmatrix
+            self.wcs.append(w)
+        self.wcs = np.array(self.wcs)
 
         # import matplotlib.pyplot as plt
         # for k in range(self.nwvs):
@@ -268,8 +281,14 @@ class Ifs(Data):
 
         if nan_mask_boxsize != 0:
             # zeros are nans, and anything adjacient to a pixel less than zero is 0.
+            input_nans = np.where(np.isnan(self.input))
+            self.input[input_nans] = 0
             input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
             self.input[np.where(input_minfilter <= 0)] = np.nan
+            self.input[:,0:nan_mask_boxsize//2,:] = np.nan
+            self.input[:,-nan_mask_boxsize//2+1::,:] = np.nan
+            self.input[:,:,0:nan_mask_boxsize//2] = np.nan
+            self.input[:,:,-nan_mask_boxsize//2+1::] = np.nan
 
         # for wv_index in range(self.psfs.shape[0]):
         #     model_psf = self.psfs[wv_index, :, :]

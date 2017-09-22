@@ -24,11 +24,9 @@ class NoFM(object):
         self.outputs_shape = inputs_shape + numbasis.shape
         self.need_aux = False
         # Use float64
-        # self.mp_data_type = ctypes.c_double
-        # self.np_data_type = float
+        # self.data_type = ctypes.c_double
         # Use float32
-        self.mp_data_type = ctypes.c_float
-        self.np_data_type = ctypes.c_float
+        self.data_type = ctypes.c_float
 
     def alloc_output(self):
         """
@@ -45,7 +43,7 @@ class NoFM(object):
 
         outputs_size = np.prod(np.array(self.inputs_shape)) * np.size(self.numbasis)
 
-        outputs = mp.Array(self.mp_data_type, outputs_size)
+        outputs = mp.Array(self.data_type, outputs_size)
         outputs_shape = self.outputs_shape
 
         return outputs, outputs_shape

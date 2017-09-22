@@ -1122,9 +1122,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # check to see the correct nmf packages are installed 
         import pyklip.nmf_imaging as nmf_imaging
         if np.size(numbasis) > 1:
-            raise ValuerError("NMF can only be run with one basis")
+            raise ValueError("NMF can only be run with one basis")
     else:
-        raise ValuerError("Algo {0} is not supported".format(algo))
+        raise ValueError("Algo {0} is not supported".format(algo))
 
     # RDI Sanity Checks to make sure PSF Library is properly configured
     if "RDI" in mode:
