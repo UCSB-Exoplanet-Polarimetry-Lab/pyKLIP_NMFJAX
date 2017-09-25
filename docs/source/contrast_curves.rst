@@ -34,7 +34,7 @@ Here we will show an example using the pyKLIP output of GPI data, and using KL m
     hdulist = fits.open("myobject-KLmodes-all.fits")
     # pick the 20 KL mode cutoff frame out of [1,20,50,100]
     kl20frame = hdulist[1].data[1]
-    dataset_center = [klip_hdulist[1].header['PSFCENTX'], klip_hdulist[1].header['PSFCENTY'] ]
+    dataset_center = [hdulist[1].header['PSFCENTX'], hdulist[1].header['PSFCENTY'] ]
 
 
 Then, a convenient pyKLIP function will calculate the contrast, accounting for small
