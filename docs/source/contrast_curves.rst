@@ -1,6 +1,6 @@
 .. _contrast-label:
 
-Calibrating Algoirthm Throughput & Generating Contrast Curves
+Calibrating Algorithm Throughput & Generating Contrast Curves
 =============================================================
 
 Due to oversubtraction and selfsubtraction (see `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_ for a good
