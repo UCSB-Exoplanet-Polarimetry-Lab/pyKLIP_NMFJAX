@@ -1147,7 +1147,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         rdi_corr_matrix = None
         rdi_good_psfs = None
 
-    # Save the WCS and centers info, incase we need it again!
+    # Save the WCS and centers info, in case we need it again!
     if save_aligned is True:
         dataset.old_wcs = copy.deepcopy(dataset.wcs)
         dataset.old_centers = copy.deepcopy(dataset.centers)
@@ -1251,11 +1251,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # construct the output wcs info, but it's currently just a copy of the input one until we rotate it
         dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
 
-    # For ADI only datasets, can run KLIP on each wavelenght separately
+    # For ADI only datasets, can run KLIP on each wavelength separately
     else:
         # set up output, output centers, and output wcs variables but they are the same as the input for now
         dataset.output_centers = np.copy(dataset.centers)
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        if dataset.wcs is not None:
+            dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
 
         # append output to a list at first since we are running it a bunch of times
         dataset.output = []
