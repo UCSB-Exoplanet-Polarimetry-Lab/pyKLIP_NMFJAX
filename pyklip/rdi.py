@@ -222,7 +222,7 @@ class PSFLibrary(object):
             # generate a list indicating which files are good
             self.isgoodpsf = good
 
-    def add_new_dataset_to_library(self, dataset, verbose=False):
+    def add_new_dataset_to_library(self, dataset, collapse = False, verbose=False):
         """
         Add all the files from a new dataset to the PSF library and add them to the correlation matrix. 
         If a mask was used for the correlation matrix, use it here too. 
@@ -233,13 +233,14 @@ class PSFLibrary(object):
             dataset (pyklip.instruments.Instrument.Data)
         """
 
-        #Collapse the dataset
-        if verbose:
-            stdout.write("Collapsing spectral cubes.....")
-            stdout.flush()
-        dataset.spectral_collapse(align_frames=False)
-        if verbose:
-            stdout.write("\rCollapsing spectral cubes.....Done\n")
+        if collapse: 
+            #Collapse the dataset
+            if verbose:
+                stdout.write("Collapsing spectral cubes.....")
+                stdout.flush()
+            dataset.spectral_collapse(align_frames=False)
+            if verbose:
+                stdout.write("\rCollapsing spectral cubes.....Done\n")
 
         n_newfiles = dataset.input.shape[0]
         if verbose:
