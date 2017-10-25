@@ -16,6 +16,7 @@ class Ifs(Data):
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
+        ifs_rdp: Reduction algorithm used to obtain the input data. Choices: vigan or sphere-dc
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
@@ -30,7 +31,7 @@ class Ifs(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         psfs: Spectral cube of size (Nwv, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
-        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs
         flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
         nfiles: number of datacubes
         nwvs: number of wavelengths
@@ -42,109 +43,225 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info,keepslices=None,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, ifs_rdp = None, keepslices=None,
                  psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15, object_name = None, disable_minimum_filter = False):
         super(Ifs, self).__init__()
 
-        # read in the data
-        with fits.open(data_cube) as hdulist:
-            self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx
-            # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
-            # parameters or for the the location of injected planets.
-            self.prihdr = hdulist[0].header
-            if np.size(self.input.shape) == 4:
-                self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
-                self.nfiles = self.input.shape[0]
-                self.nwvs = self.input.shape[1]
-                # collapse files with wavelengths
-                self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
-                                                self.input.shape[3])
-                # zeros are nans, and anything adjacient to a pixel less than zero is 0.
-                if not disable_minimum_filter:
-                    input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
-                    self.input[np.where(input_minfilter <= 0)] = np.nan
-                # centers are at dim/2
-                self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 3:
-                # If spectral data cube.
-                self._filenums = np.zeros(self.input.shape[0])
-                self.nfiles = 1
-                self.nwvs = self.input.shape[0]
-                # centers are at dim/2
-                self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
-            elif np.size(self.input.shape) == 2:
-                # If 2D images like SNR maps.
-                self._filenums = 0
-                self.nfiles = 1
-                self.nwvs = 1
-                self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
+        if not (ifs_rdp == "vigan" or ifs_rdp == "sphere-dc"):
+            raise TypeError('Input reduction is not valid or missing. Please choose vigan or sphere-dc.')
+
+        if ifs_rdp == "vigan":
+
+            # read in the data
+            with fits.open(data_cube) as hdulist:
+                self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx
+                # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
+                # parameters or for the the location of injected planets.
+                self._ifs_rdp = ifs_rdp # Store the reduction process
+                self.prihdr = hdulist[0].header
+                if np.size(self.input.shape) == 4:
+                    self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                    self.nfiles = self.input.shape[0]
+                    self.nwvs = self.input.shape[1]
+                    # collapse files with wavelengths
+                    self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                    self.input.shape[3])
+                    # zeros are nans, and anything adjacent to a pixel less than zero is 0.
+                    if not disable_minimum_filter:
+                        input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+                        self.input[np.where(input_minfilter <= 0)] = np.nan
+                    # centers are at dim/2
+                    self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+                elif np.size(self.input.shape) == 3:
+                    # If spectral data cube.
+                    self._filenums = np.zeros(self.input.shape[0])
+                    self.nfiles = 1
+                    self.nwvs = self.input.shape[0]
+                    # centers are at dim/2
+                    self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+                elif np.size(self.input.shape) == 2:
+                    # If 2D images like SNR maps.
+                    self._filenums = 0
+                    self.nfiles = 1
+                    self.nwvs = 1
+                    self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
 
 
-        # read in the psf cube
-        with fits.open(psf_cube) as hdulist:
-            self.psfs = hdulist[0].data # Nwvs, Ny, Nx
-            self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
+            # read in the psf cube
+            with fits.open(psf_cube) as hdulist:
+                self.psf = hdulist[0].data # Nwvs, Ny, Nx
+                if np.size(self.psf.shape) == 4: # If more than 1 PSF was taken during observation
+                    self.psfs = np.median(self.psf,axis=0) # Take the median of the three PSFs
+                else:
+                    self.psfs = self.psf
+                self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
 
-            # trim the cube
-            pixelsbefore = psf_cube_size//2
-            pixelsafter = psf_cube_size - pixelsbefore
-            self.psfs = np.copy(self.psfs[:, self.psfs_center[1]-pixelsbefore:self.psfs_center[1]+pixelsafter,
-                                            self.psfs_center[0]-pixelsbefore:self.psfs_center[0]+pixelsafter])
-            self.psfs_center = [psf_cube_size//2, psf_cube_size//2]
+                # trim the cube
+                pixelsbefore = psf_cube_size//2
+                pixelsafter = psf_cube_size - pixelsbefore
+                self.psfs = np.copy(self.psfs[:, self.psfs_center[1]-pixelsbefore:self.psfs_center[1]+pixelsafter,
+                                                self.psfs_center[0]-pixelsbefore:self.psfs_center[0]+pixelsafter])
+                self.psfs_center = [psf_cube_size//2, psf_cube_size//2]
 
-        # read in wavelength solution
-        with fits.open(wavelength_info) as hdulist:
-            self._wvs = hdulist[0].data
-            # repeat for all Nfile cubes
-            self._wvs = np.tile(self.wvs, self.nfiles)
+            # read in wavelength solution
+            with fits.open(wavelength_info) as hdulist:
+                self._wvs = hdulist[0].data
+                # repeat for all Nfile cubes
+                self._wvs = np.tile(self.wvs, self.nfiles)
 
-        # read in PA info among other things
-        with fits.open(info_fits) as hdulist:
-            metadata = hdulist[1].data
-            self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
-            self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            # read in PA info among other things
+            with fits.open(info_fits) as hdulist:
+                metadata = hdulist[1].data
+                self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
+                self._filenames = np.repeat(metadata["FILE"], self.nwvs)
 
-        # we don't need to flip x for North Up East left
-        self.flipx = False
+            # we don't need to flip x for North Up East left
+            self.flipx = False
 
-        # I have no idea
-        self.IWA = IWA / Ifs.platescale # 0.15" IWA
+            # I have no idea
+            self.IWA = IWA / Ifs.platescale # 0.15" IWA
 
-        # Creating WCS info for SPHERE
-        self.wcs = []
-        for vert_angle in self.PAs:
-            w = wcs.WCS()
-            vert_angle = np.radians(vert_angle)
-            pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
-            cdmatrix = pc * self.platescale /3600.
-            w.wcs.cd = cdmatrix
-            self.wcs.append(w)
-        self.wcs = np.array(self.wcs)
-        # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+            # Creating WCS info for SPHERE
+            self.wcs = []
+            for vert_angle in self.PAs:
+                w = wcs.WCS()
+                vert_angle = np.radians(vert_angle)
+                pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+                cdmatrix = pc * self.platescale /3600.
+                w.wcs.cd = cdmatrix
+                self.wcs.append(w)
+            self.wcs = np.array(self.wcs)
+            # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
 
-        self._output = None
+            self._output = None
 
-        # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
-        # But it works with keepslices
-        self.psfs_wvs = np.unique(self.wvs)
-        self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
-        self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+            # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+            # But it works with keepslices
+            self.psfs_wvs = np.unique(self.wvs)
+            self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+            self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
 
-        if np.size(self.input.shape) == 2:
-            self.wvs = 0
-            self.dn_per_contrast = 0
+            if np.size(self.input.shape) == 2:
+                self.wvs = 0
+                self.dn_per_contrast = 0
 
-        if keepslices is not None:
-            self.input = self.input[keepslices,:,:]
-            self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
-            self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
-            self.filenums = self.filenums[keepslices]
-            self.centers = self.centers[keepslices]
-            self.wvs = self.wvs[keepslices]
-            self.PAs = self.PAs[keepslices]
-            self.filenames = self.filenames[keepslices]
-            self.dn_per_contrast = self.dn_per_contrast[keepslices]
-            self.wcs = self.wcs[keepslices]
+            if keepslices is not None:
+                self.input = self.input[keepslices,:,:]
+                self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+                self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
+                self.filenums = self.filenums[keepslices]
+                self.centers = self.centers[keepslices]
+                self.wvs = self.wvs[keepslices]
+                self.PAs = self.PAs[keepslices]
+                self.filenames = self.filenames[keepslices]
+                self.dn_per_contrast = self.dn_per_contrast[keepslices]
+                self.wcs = self.wcs[keepslices]
+
+        if ifs_rdp == "sphere-dc":
+
+            # read in the data
+            with fits.open(data_cube) as hdulist:
+                self._input = hdulist[0].data # If 4D cube, Nwvs, Nfiles, Ny, Nx
+                # Read headers to be saved when using savedata. The SPHERE DC doesn't include headers but pyklip does it
+                # parameters or for the the location of injected planets.
+                self._ifs_rdp = ifs_rdp # Store the reduction process
+                self.prihdr = hdulist[0].header
+                if np.size(self.input.shape) == 4:
+                    self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations
+                    self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
+                    self.nfiles = self.input.shape[0]
+                    self.nwvs = self.input.shape[1]
+                    # collapse files with wavelengths
+                    self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
+                                                    self.input.shape[3])
+                    # zeros are nans, and anything adjacent to a pixel less than zero is 0.
+                    if not disable_minimum_filter:
+                        input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
+                        self.input[np.where(input_minfilter <= 0)] = np.nan
+                    # centers are at dim/2
+                    self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+                elif np.size(self.input.shape) == 3:
+                    # If spectral data cube.
+                    self._filenums = np.zeros(self.input.shape[0])
+                    self.nfiles = 1
+                    self.nwvs = self.input.shape[0]
+                    # centers are at dim/2
+                    self.centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
+                elif np.size(self.input.shape) == 2:
+                    # If 2D images like SNR maps.
+                    self._filenums = 0
+                    self.nfiles = 1
+                    self.nwvs = 1
+                    self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
+
+            # read in the psf cube
+            with fits.open(psf_cube) as hdulist:
+                self.psf = hdulist[0].data # Nwvs, Ny, Nx
+                if np.size(self.psf.shape) == 4: # If more than 1 PSF was taken during observation
+                    self.psfs = np.median(self.psf,axis=1) # Take the median of the three PSFs
+                else:
+                    self.psfs = self.psf
+                self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
+
+                # trim the cube
+                pixelsbefore = psf_cube_size//2
+                pixelsafter = psf_cube_size - pixelsbefore
+                self.psfs = np.copy(self.psfs[:, self.psfs_center[1]-pixelsbefore:self.psfs_center[1]+pixelsafter,
+                                                self.psfs_center[0]-pixelsbefore:self.psfs_center[0]+pixelsafter])
+                self.psfs_center = [psf_cube_size//2, psf_cube_size//2]
+
+            # read in wavelength solution
+            with fits.open(wavelength_info) as hdulist:
+                self._wvs = hdulist[0].data
+                # repeat for all Nfile cubes
+                self._wvs = np.tile(self.wvs, self.nfiles)
+
+            # read in PA info among other things
+            with fits.open(info_fits) as hdulist:
+                self._PAs = -hdulist[0].data
+                self._PAs = np.repeat(self.PAs, self.nwvs)
+
+            # we don't need to flip x for North Up East left
+            self.flipx = False
+
+            # I have no idea
+            self.IWA = IWA / Ifs.platescale # 0.15" IWA
+
+            # Creating WCS info for SPHERE
+            self.wcs = []
+            for vert_angle in self.PAs:
+                w = wcs.WCS()
+                vert_angle = np.radians(vert_angle)
+                pc = np.array([[(-1)*np.cos(vert_angle), (-1)*-np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
+                cdmatrix = pc * self.platescale /3600.
+                w.wcs.cd = cdmatrix
+                self.wcs.append(w)
+            self.wcs = np.array(self.wcs)
+            # self.wcs = np.array([None for _ in range(self.nfiles * self.nwvs)])
+
+            self._output = None
+
+            # The definition of psfs_wvs requires that no wavelengths has been skipped in the input files
+            # But it works with keepslices
+            self.psfs_wvs = np.unique(self.wvs)
+            self.star_peaks = np.nanmax(self.psfs,axis=(1,2))
+            self.dn_per_contrast = np.squeeze(np.array([self.star_peaks[np.where(self.psfs_wvs==wv)[0]] for wv in self.wvs]))
+
+            if np.size(self.input.shape) == 2:
+                self.wvs = 0
+                self.dn_per_contrast = 0
+
+            if keepslices is not None:
+                self.input = self.input[keepslices,:,:]
+                self.nfiles = self.input.shape[0]//self.nwvs # only works if keepslices select whole cubes
+                self.nwvs = self.input.shape[0]//self.nfiles # only works if keepslices select whole cubes
+                self.filenums = self.filenums[keepslices]
+                self.centers = self.centers[keepslices]
+                self.wvs = self.wvs[keepslices]
+                self.PAs = self.PAs[keepslices]
+                self.filenames = self.filenames[keepslices]
+                self.dn_per_contrast = self.dn_per_contrast[keepslices]
+                self.wcs = self.wcs[keepslices]
 
 
         # Required for automatically querying Simbad for the spectral type of the star.
@@ -161,6 +278,13 @@ class Ifs(Data):
     @input.setter
     def input(self, newval):
         self._input = newval
+
+    @property
+    def ifs_rdp(self):
+        return self._ifs_rdp
+    @ifs_rdp.setter
+    def ifs_rdp(self, newval):
+        self._ifs_rdp = newval
 
     @property
     def centers(self):
@@ -204,7 +328,6 @@ class Ifs(Data):
     def wcs(self, newval):
         self._wcs = newval
 
-
     @property
     def IWA(self):
         return self._IWA
@@ -243,9 +366,13 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+<<<<<<< .merge_file_jWV4ni
+
+=======
             pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
                             have been defined.
         
+>>>>>>> .merge_file_tI0FXb
         """
         hdulist = fits.HDUList()
         hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
@@ -253,11 +380,12 @@ class Ifs(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        filenames = np.unique(self.filenames)
-        nfiles = np.size(filenames)
-        hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
-        for i, filename in enumerate(filenames):
-            hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+        if self.ifs_rdp == "vigan":
+            filenames = np.unique(self.filenames)
+            nfiles = np.size(filenames)
+            hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
+            for i, filename in enumerate(filenames):
+                hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
 
 
@@ -382,7 +510,7 @@ class Irdis(Data):
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         psfs: Spectral cube of size (2, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
-        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs
         flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
         nfiles: number of datacubes
         nwvs: number of wavelengths (i.e. 2 for dual band imaging)
