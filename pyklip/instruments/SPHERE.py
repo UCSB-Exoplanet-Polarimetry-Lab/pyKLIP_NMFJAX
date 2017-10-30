@@ -16,7 +16,6 @@ class Ifs(Data):
         psf_cube: FITS file with a 3-D (Nwvs, Ny, Nx) PSF cube
         info_fits: FITS file with a table in the 1st ext hdr with parallactic angle info
         wavelenegth_info: FITS file with a 1-D array (Nwvs) of the wavelength sol'n of a cube
-        ifs_rdp: Reduction algorithm used to obtain the input data. Choices: vigan or sphere-dc
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         nan_mask_boxsize: size of box centered around any pixel <= 0 to mask as NaNs
         IWA: inner working angle of the data in arcsecs
@@ -26,6 +25,7 @@ class Ifs(Data):
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        ifs_rdp: Reduction algorithm used to obtain the input data.
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
