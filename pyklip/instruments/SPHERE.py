@@ -43,23 +43,27 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, ifs_rdp = None, keepslices=None,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, keepslices=None,
                  psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15, object_name = None, disable_minimum_filter = False):
         super(Ifs, self).__init__()
-
-        if not (ifs_rdp == "vigan" or ifs_rdp == "sphere-dc"):
-            raise TypeError('Input reduction is not valid or missing. Please choose vigan or sphere-dc.')
 
         # read in the data
         with fits.open(data_cube) as hdulist:
             self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx for vigan and Nwvs, Nfiles, Nx, Ny for sphere-dc
             # Read headers to be saved when using savedata. Vigan's or SPHERE-DC code don't include headers but pyklip does it
             # parameters or for the the location of injected planets.
-            self._ifs_rdp = ifs_rdp # Store the reduction process
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4:
-                if ifs_rdp == "sphere-dc":
+                try:
+                    self.prihdr['HIERARCH ESO PRO REC1 ID'] # The SPHERE DC has headers with details of the reduction. We can use that information to differentiate between the two types of reduction
+                except KeyError:
+                    self.prihdr['HIERARCH ESO PRO REC1 ID'] = False # If the keyword is missing, then we know it is data from Arthur Vigan's reduction
+                if self.prihdr['HIERARCH ESO PRO REC1 ID'] == 'sph_ifs_science_dr':
+                    ifs_rdp = "sphere-dc" # Set the reduction process
                     self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
+                elif self.prihdr['HIERARCH ESO PRO REC1 ID'] == False:
+                    ifs_rdp = "vigan" # Set the reduction process
+                self._ifs_rdp = ifs_rdp # Store the reduction process
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
                 self.nwvs = self.input.shape[1]
