@@ -93,14 +93,14 @@ class Ifs(Data):
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
-            self.psf = hdulist[0].data # Nwvs, Ny, Nx
-            if np.size(self.psf.shape) == 4: # If more than 1 PSF was taken during observation
+            psf_cube = hdulist[0].data # Nwvs, Ny, Nx
+            if np.size(psf_cube.shape) == 4: # If more than 1 PSF was taken during observation
                 if ifs_rdp == "vigan":
-                    self.psfs = np.median(self.psf,axis=0) # Take the median of the three PSFs
+                    self.psfs = np.median(psf_cube ,axis=0) # Take the median of the three PSFs
                 elif ifs_rdp == "sphere-dc":
-                    self.psfs = np.median(self.psf,axis=1) # Take the median of the three PSFs
+                    self.psfs = np.median(psf_cube ,axis=1) # Take the median of the three PSFs
             else:
-                self.psfs = self.psf
+                self.psfs = psf_cube
             self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
 
             # trim the cube
@@ -258,7 +258,7 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None, pyklip_output=False):
         """
         Save SPHERE Data.
 
@@ -270,6 +270,8 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+            pyklip_output: boolean, if False, assumes we're saving input data rather than output data
+                            (TODO: JB, please depricate this)
 
         """
         hdulist = fits.HDUList()
@@ -338,7 +340,11 @@ class Ifs(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
-        center = self.output_centers[0]
+        if not pyklip_output:
+            center = self.centers[0]
+        else:
+            center = self.output_centers[0]
+            
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
@@ -601,7 +607,7 @@ class Irdis(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None, pyklip_output=False):
         """
         Save SPHERE Data.
 
@@ -613,6 +619,8 @@ class Irdis(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
+            pyklip_output: boolean, if False, assumes we're saving input data rather than output data
+                            (TODO: JB, please depricate this)
 
         """
         hdulist = fits.HDUList()
@@ -679,7 +687,11 @@ class Irdis(Data):
             hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
             # write it out instead
 
-        center = self.output_centers[0]
+        if not pyklip_output:
+            center = self.centers[0]
+        else:
+            center = self.output_centers[0]
+
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
