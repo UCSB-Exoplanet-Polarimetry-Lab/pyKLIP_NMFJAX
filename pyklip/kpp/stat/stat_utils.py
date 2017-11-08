@@ -20,7 +20,7 @@ from pyklip.kpp.utils.GPIimage import *
 
 
 def get_image_stat_map(image,
-                        image_without_planet,
+                        image_without_planet=None,
                         IOWA = None,
                         N = 3000,
                         centroid = None,
@@ -51,11 +51,19 @@ def get_image_stat_map(image,
                     If "stddev" returns the pure standard deviation map.
                     If "proba" triggers proba calculation with pdf fitting.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
-                    Use the entire image directly. Not available if "pixel based: is defined,
+                    Use the entire image directly.
 
     Return:
         The statistic map for image.
     """
+
+    if image_without_planet is None:
+        image_without_planet = image
+    ny,nx = image.shape
+
+
+    if centroid is None :
+        centroid = ((nx-1)//2 ,(ny-1)//2)
 
     if image_wide is None:
         image_wide = False
@@ -71,8 +79,6 @@ def get_image_stat_map(image,
         pdf_radii = np.array(annulus_radii_list)[:,0]
 
         stat_map = np.zeros(image.shape) + np.nan
-        ny,nx = image.shape
-
         # Build the x and y coordinates grids
         x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
 
@@ -165,7 +171,7 @@ def get_image_stat_map(image,
         return stat_map
 
 
-def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
+def get_image_PDF(image,IOWA=None,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
     """
     Calculate the PDF of a given image using annuli.
 
@@ -191,7 +197,10 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
     """
     if image_wide is None:
         image_wide = False
-    IWA,OWA = IOWA
+    if IOWA is None:
+        IWA,OWA = get_IOWA(image, centroid = centroid)
+    else:
+        IWA,OWA = IOWA
     ny,nx = image.shape
 
     if 0:
