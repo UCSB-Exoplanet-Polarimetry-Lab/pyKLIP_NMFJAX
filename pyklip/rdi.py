@@ -60,6 +60,7 @@ class PSFLibrary(object):
         self.master_filenames = np.asarray(filenames)
 
         self.master_correlation = correlation_matrix
+        self.correlation_mask = None
         self.master_wvs = wvs
         self.nfiles = nfiles_data
         # fields in the context of a specific dataset
@@ -83,6 +84,8 @@ class PSFLibrary(object):
         it isn't super useful for saving time (e.g. when there are subsections the covariance still needs
         to be recomputed with all the PSFs currently being used).
 
+        The mask should have 0s where you want to correlate and NANs when you don't. 
+
         """
 
         #Get the number of files
@@ -102,6 +105,8 @@ class PSFLibrary(object):
         if verbose:
             print("Making correlation matrix")
 
+        if mask != None:
+            self.correlation_mask = mask
 
         #Loop the correlation matrix calculation
         for i in np.arange(0,self.nfiles-1):
@@ -216,3 +221,84 @@ class PSFLibrary(object):
 
             # generate a list indicating which files are good
             self.isgoodpsf = good
+
+    def add_new_dataset_to_library(self, dataset, collapse = False, verbose=False):
+        """
+        Add all the files from a new dataset to the PSF library and add them to the correlation matrix. 
+        If a mask was used for the correlation matrix, use it here too. 
+
+        NOTE: This routine already assumes that the data has been centered. 
+
+        Args:
+            dataset (pyklip.instruments.Instrument.Data)
+        """
+
+        if collapse: 
+            #Collapse the dataset
+            if verbose:
+                stdout.write("Collapsing spectral cubes.....")
+                stdout.flush()
+            dataset.spectral_collapse(align_frames=False)
+            if verbose:
+                stdout.write("\rCollapsing spectral cubes.....Done\n")
+
+        n_newfiles = dataset.input.shape[0]
+        if verbose:
+            print("Found {} new files".format(n_newfiles))
+
+        if verbose:
+            stdout.write("Appending to master_library and master_filenames arrays.....")
+            stdout.flush()
+
+        #Increase the size of the data array, correlation matrix and file list
+        self.master_correlation = np.pad(self.master_correlation,((0,n_newfiles),(0,n_newfiles)), mode='constant', constant_values=0)
+        self.master_library = np.pad(self.master_library,((0,n_newfiles),(0,0),(0,0)), mode='constant', constant_values=0)
+
+        #Add the filenames to the library
+        self.master_filenames = np.append(self.master_filenames,dataset.filenames)        
+
+        #Put the new data in the master_library
+        self.master_library[self.nfiles:self.nfiles+n_newfiles] = dataset.input
+
+        if verbose:
+            stdout.write("Appending to master_library and master_filenames arrays.....Done\n")
+            stdout.flush()
+
+        if verbose:
+            print("Correlating {} new files with existing {} files in the library".format(n_newfiles,self.nfiles))
+
+        #Run the correlation
+        for i in np.arange(self.nfiles+n_newfiles-1,self.nfiles-1,-1):
+            self.master_correlation[i,i]
+
+            #TODO: PARALLELIZE THIS STEP
+
+            #Cycle through every file that comes AFTER the current file 
+            for j in np.arange(0,i):
+
+                if verbose:
+                    # print("Correlating file "+ str(i) + " with file "+str(j) + "  \r")
+                    stdout.write("\r Correlating new file {0} with file {1}".format(n_newfiles - (i-self.nfiles+1),j))
+                    stdout.flush()
+                
+                #You might want to only correlate some of the image. 
+                if self.correlation_mask != None:
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) & (self.correlation_mask == self.correlation_mask)
+                else: 
+                #Ditch where either of the two arrays have NANs
+                    where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) 
+
+                data1= self.master_library[i,:,:]
+                data2= self.master_library[j,:,:]
+
+                #I believe this bit was copied and pasted from pyklip at some point. 
+                covar_psfs=np.cov([data2[where_to_corr], data1[where_to_corr]])
+                covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+                corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+
+                self.master_correlation[i,j]=corr_psfs[0,1]
+                self.master_correlation[j,i]=corr_psfs[0,1]
+
+        if verbose:
+            print("\nDone updating correlation matrix")
+
