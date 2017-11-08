@@ -1687,8 +1687,11 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     dataset.klipparams = klipparams
 
     # run WCS rotation on output WCS, which we'll copy from the input ones
-    # TODO: wcs rotation not yet implemented. 
-    dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+    # TODO: wcs rotation not yet implemented.
+    if dataset.wcs[0] is not None:
+        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+    else:
+        dataset.output_wcs = dataset.wcs
 
     # Set MLK parameters
     if mkl_exists:
