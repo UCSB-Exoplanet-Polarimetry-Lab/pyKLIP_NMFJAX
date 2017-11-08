@@ -18,6 +18,7 @@ import astropy.io.fits as pyfits
 
 from time import time
 import matplotlib.pyplot as plt
+import scipy.ndimage as ndimage
 
 debug = False
 
@@ -37,7 +38,10 @@ class MatchedFilter(NoFM):
                  true_fakes_pos = None,
                  ref_center = None,
                  flipx = None,
-                 rm_edge = None):
+                 rm_edge = None,
+                 planet_radius = None,
+                 background_width = None,
+                 save_bbfm = None):
         '''
         Defining the forward model matched filter parameters
 
@@ -67,10 +71,16 @@ class MatchedFilter(NoFM):
                     Should match the same attribute in the instrument class.
             rm_edge: When True (default), remove image edges to avoid edge effect. When there is more than 25% of NaNs
                     in the projection of the FM model on the data, the result of the projection is set to NaNs right away.
+            planet_radius: Radius of the aperture to be used for the matched filter (pick something of the order of the
+                            2xFWHM)
+            background_width: Half the width of the arc in which the local standard deviation will be calculated.
+            save_bbfm: path of the file where to save the broadband forward models
 
         '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
+
+        self.save_bbfm = save_bbfm
 
         if rm_edge is not None:
             self.rm_edge = rm_edge
@@ -147,8 +157,22 @@ class MatchedFilter(NoFM):
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF//2,np.arange(0,ny_PSF,1)-ny_PSF//2)
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
         r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
-        self.stamp_PSF_mask[np.where(r_PSF_stamp < np.min([ny_PSF,nx_PSF])*7./20.)] = np.nan
+        if planet_radius is not None:
+            self.planet_radius = planet_radius
+        else:
+            self.planet_radius =  int(np.round(np.min([ny_PSF,nx_PSF])*7./20.))
+        print("self.planet_radius",self.planet_radius)
+        self.stamp_PSF_mask[np.where(r_PSF_stamp < self.planet_radius)] = np.nan
         # self.stamp_PSF_mask[np.where(r_PSF_stamp < 4.)] = np.nan
+        if background_width is not None:
+            self.background_width = background_width
+        else:
+            self.background_width =  np.min([ny_PSF,nx_PSF])//2
+        self.bbfm_mask = np.ones((self.planet_radius*2,self.planet_radius*2))
+        stamp_bbfm_x_grid, stamp_bbfm_y_grid = np.meshgrid(np.arange(0,self.planet_radius*2,1)-self.planet_radius,
+                                                           np.arange(0,self.planet_radius*2,1)-self.planet_radius)
+        r_bbfm_stamp = abs((stamp_bbfm_x_grid) +(stamp_bbfm_y_grid)*1j)
+        self.bbfm_mask[np.where(r_bbfm_stamp < planet_radius)] = np.nan
 
         if ref_center is not None:
             self.ref_center = ref_center
@@ -178,13 +202,15 @@ class MatchedFilter(NoFM):
     #         interm_shape:shape of interm array (used to convert to numpy arrays)
     #
     #     """
+    #     if self.save_bbfm is not None:
+    #         interm_size = self.planet_radius*self.planet_radius*self.ny*self.nx
+    #         interm = mp.Array(ctypes.c_double, interm_size)
+    #         interm_shape = [self.ny,self.nx,self.planet_radius,self.planet_radius]
     #
-    #     interm_size = max_sector_size * np.size(self.numbasis) * numsciframes * len(self.spectrallib)
-    #
-    #     interm = mp.Array(ctypes.c_double, interm_size)
-    #     interm_shape = [numsciframes, len(self.spectrallib), max_sector_size, np.size(self.numbasis)]
-    #
-    #     return interm, interm_shape
+    #         return interm, interm_shape
+    #     else:
+    #         return None,None
+
 
 
     def alloc_fmout(self, output_img_shape):
@@ -204,12 +230,17 @@ class MatchedFilter(NoFM):
                             3: Number of pixels used in the matched filter
 
         """
-        # fmout_size = 3*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-        # fmout = mp.Array(self.data_type, fmout_size)
-        # fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-        fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-        fmout = mp.Array(self.data_type, fmout_size)
-        fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        if not self.save_bbfm:
+            fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
+            fmout = mp.Array(self.data_type, fmout_size)
+            fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+        else:
+            fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
+                         2*self.planet_radius*2*self.planet_radius*self.ny*self.nx
+            fmout = mp.Array(self.data_type, fmout_size)
+            fmout_shape = (4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
+                         2*self.planet_radius*2*self.planet_radius*self.ny*self.nx,)
+
 
         return fmout, fmout_shape
 
@@ -297,6 +328,14 @@ class MatchedFilter(NoFM):
         if np.size(numbasis) != 1:
             raise ValueError("Numbasis should only have a single element. e.g. numbasis = [30]. numbasis = [10,20,30] is not accepted.")
 
+        if self.save_bbfm:
+            fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
+            fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+            fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
+            fmout2.shape = (self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
+        else:
+            fmout1 = fmout
+
         ref_wv = ref_wv.astype(self.data_type)
 
         sci = aligned_imgs[input_img_num, section_ind[0]]
@@ -366,6 +405,21 @@ class MatchedFilter(NoFM):
             row_id_list = row_id_list_tmp
             col_id_list = col_id_list_tmp
 
+        greenboard = np.zeros((self.ny,self.nx))
+        x_bbfm, y_bbfm = np.meshgrid(np.arange(self.ny, dtype=np.float32), np.arange(self.nx, dtype=np.float32))
+        # flip x if needed to get East left of North
+        if flipx is True:
+            x_bbfm = ref_center[0] - (x_bbfm - ref_center[0])
+        # do rotation. CW rotation formula to get a CCW of the image
+        angle_rad = np.radians(parang)
+        cosa = np.cos(angle_rad)
+        sina = np.sin(angle_rad)
+        xp = (x_bbfm-ref_center[0])*cosa + (y_bbfm-ref_center[1])*sina + ref_center[0]
+        yp = -(x_bbfm-ref_center[0])*sina + (y_bbfm-ref_center[1])*cosa + ref_center[1]
+        # create bounds for PSF stamp size
+        self.bbfm_m = int(np.floor(self.planet_radius))
+        self.bbfm_p = int(np.ceil(self.planet_radius))
+
         # Loop over the input template spectra and the number of KL modes in numbasis
         for spec_id,N_KL_id in itertools.product(range(self.N_spectra),range(self.N_numbasis)):
             # Calculate the projection of the FM and the klipped section for every pixel in the section.
@@ -376,6 +430,7 @@ class MatchedFilter(NoFM):
             # 4/ Calculate the FM
             # 5/ Calculate dot product (matched filter)
             for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),row_id_list,col_id_list):
+                # print(sep_fk,pa_fk,row_id,col_id)
                 # 1/ Inject a fake at one pa and sep in the science image
                 model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv,
                                                          radstart, radend, phistart, phiend, padding, ref_center,
@@ -387,10 +442,10 @@ class MatchedFilter(NoFM):
                 where_background_strict = np.where(mask==1)[0]
 
                 if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
-                    fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
-                    fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
-                    fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
-                    fmout[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                    fmout1[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                    fmout1[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                    fmout1[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
+                    fmout1[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     continue
 
                 # 2/ Inject the corresponding planets at the same PA and sep in the reference images remembering that the
@@ -450,10 +505,26 @@ class MatchedFilter(NoFM):
                     variance = np.nanvar(klipped_rm_pl_bkg)
                     npix = np.sum(np.isfinite(klipped_rm_pl_bkg))
 
-                fmout[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
-                fmout[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = model_norm
-                fmout[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = variance
-                fmout[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = npix
+
+                fmout1[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
+                fmout1[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = model_norm
+                fmout1[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = variance
+                fmout1[3,spec_id,N_KL_id,input_img_num,row_id,col_id] = npix
+
+                if self.save_bbfm:
+                    greenboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                    greenboard[section_ind[0][where_fk]] = postklip_psf[N_KL_id,:]
+                    greenboard.shape = [input_img_shape[0],input_img_shape[1]]
+
+                    rot_stamp = ndimage.map_coordinates(greenboard,
+                                                        [yp[(row_id-self.bbfm_m):(row_id+self.bbfm_p),
+                                                            (col_id-self.bbfm_m):(col_id+self.bbfm_p)].ravel(),
+                                                         xp[(row_id-self.bbfm_m):(row_id+self.bbfm_p),
+                                                            (col_id-self.bbfm_m):(col_id+self.bbfm_p)].ravel()],
+                                                        cval=np.nan)
+                    rot_stamp.shape = [2*self.planet_radius,2*self.planet_radius]
+
+                    fmout2[row_id,col_id,:,:] = fmout2[row_id,col_id,:,:]+rot_stamp
 
                 if 0:
                     print(dot_prod,model_norm,variance,npix)
@@ -487,7 +558,7 @@ class MatchedFilter(NoFM):
                     # print(float(np.sum(np.isfinite(klipped_sub)))/float(np.size(klipped_sub)))
                     # print(float(np.sum(np.isfinite(klipped[where_background,N_KL_id])))/float(np.size(klipped[where_background,N_KL_id])))
                     print(sep_fk,pa_fk,row_id,col_id)
-                    # print(dot_prod,model_norm,variance)
+                    print(dot_prod,model_norm,variance,npix)
                     # print(np.nanmean(klipped-sky),sky,dot_prod,model_norm,np.nanmean((dot_prod/model_norm)*postklip_psf[N_KL_id,:]))
                     # print(klipped.shape,postklip_psf[N_KL_id,:].shape)
                     # print(float(np.sum(np.isfinite(klipped_rm_pl[where_background]))),float(np.size(klipped_rm_pl[where_background])))
@@ -501,28 +572,28 @@ class MatchedFilter(NoFM):
                     blackboard1[section_ind] = mask
                     blackboard1[section_ind] = blackboard1[section_ind] + 1
                     blackboard1.shape = [input_img_shape[0],input_img_shape[1]]
-                    plt.imshow(blackboard1)
+                    plt.imshow(blackboard1,interpolation="nearest")
                     plt.colorbar()
                     plt.subplot(1,3,2)
                     blackboard2.shape = [input_img_shape[0] * input_img_shape[1]]
                     # blackboard2[section_ind[0][where_fk]] = klipped[where_fk,N_KL_id]
                     blackboard2[section_ind[0]] = klipped#klipped_rm_pl
                     blackboard2.shape = [input_img_shape[0],input_img_shape[1]]
-                    plt.imshow(blackboard2)
+                    plt.imshow(blackboard2,interpolation="nearest")
                     plt.colorbar()
                     plt.subplot(1,3,3)
                     blackboard3.shape = [input_img_shape[0] * input_img_shape[1]]
-                    blackboard3[section_ind[0][where_fk]] = postklip_psf[N_KL_id,where_fk]
+                    blackboard3[section_ind[0][where_fk]] = postklip_psf[N_KL_id,:]
                     blackboard3.shape = [input_img_shape[0],input_img_shape[1]]
-                    plt.imshow(blackboard3)
+                    plt.imshow(blackboard3,interpolation="nearest")
                     plt.colorbar()
                     #print(klipped[where_fk,N_KL_id])
                     #print(postklip_psf[N_KL_id,where_fk])
-                    print(np.sum(klipped[where_fk,N_KL_id]*postklip_psf[N_KL_id,where_fk]))
-                    print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
-                    print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
+                    # print(np.sum(klipped[where_fk,N_KL_id]*postklip_psf[N_KL_id,where_fk]))
+                    # print(np.sum(postklip_psf[N_KL_id,where_fk]*postklip_psf[N_KL_id,where_fk]))
+                    # print(np.sum(klipped[where_fk,N_KL_id]*klipped[where_fk,N_KL_id]))
                     plt.show()
-
+                # exit()
 
 
     def fm_end_sector(self, interm_data=None, fmout=None, sector_index=None,
@@ -532,9 +603,16 @@ class MatchedFilter(NoFM):
         """
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         if self.save_raw_fmout:
+            if self.save_bbfm:
+                fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
+                fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+            else:
+                fmout1 = fmout
             hdu = pyfits.PrimaryHDU(fmout)
             hdulist = pyfits.HDUList([hdu])
             hdulist.writeto(self.fmout_dir,clobber=True)
+
+
         return
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
@@ -553,28 +631,44 @@ class MatchedFilter(NoFM):
             spectrum: if not None, the spectrum to weight the data by. Length same as dataset.wvs
         """
 
+        if self.save_bbfm:
+            fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
+            fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+            fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
+            fmout2.shape = (self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
+        else:
+            fmout1 = fmout
+
+        hdu = pyfits.PrimaryHDU(fmout1)
+        hdulist = pyfits.HDUList([hdu])
+        hdulist.writeto(outputdir+os.path.sep+'fmout1_test_before3.fits',clobber=True)
+
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-        fmout[np.where(fmout==0)] = np.nan
+        fmout1[np.where(fmout1==0)] = np.nan
+
+        hdu = pyfits.PrimaryHDU(fmout1)
+        hdulist = pyfits.HDUList([hdu])
+        hdulist.writeto(outputdir+os.path.sep+'fmout1_test3.fits',clobber=True)
 
         # The mf.MatchedFilter class calculate the projection of the FM on the data for each pixel and images.
         # The final combination to form the cross  cross correlation, matched filter and contrast maps is done right
         # here.
-        FMCC_map = np.nansum(fmout[0,:,:,:,:,:],axis=2) \
-                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:],axis=2))
+        FMCC_map = np.nansum(fmout1[0,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout1[1,:,:,:,:,:],axis=2))
         FMCC_map[np.where(FMCC_map==0)]=np.nan
         self.FMCC_map = FMCC_map
 
-        FMMF_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
-                        / np.sqrt(np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2))
+        FMMF_map = np.nansum(fmout1[0,:,:,:,:,:]/fmout1[2,:,:,:,:,:],axis=2) \
+                        / np.sqrt(np.nansum(fmout1[1,:,:,:,:,:]/fmout1[2,:,:,:,:,:],axis=2))
         FMMF_map[np.where(FMMF_map==0)]=np.nan
         self.FMMF_map = FMMF_map
 
-        contrast_map = np.nansum(fmout[0,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2) \
-                        / np.nansum(fmout[1,:,:,:,:,:]/fmout[2,:,:,:,:,:],axis=2)
+        contrast_map = np.nansum(fmout1[0,:,:,:,:,:]/fmout1[2,:,:,:,:,:],axis=2) \
+                        / np.nansum(fmout1[1,:,:,:,:,:]/fmout1[2,:,:,:,:,:],axis=2)
         contrast_map[np.where(contrast_map==0)]=np.nan
         self.contrast_map = contrast_map
 
-        self.FMNpix_map = np.nansum(fmout[3,:,:,:,:,:],axis=2)
+        self.FMNpix_map = np.nansum(fmout1[3,:,:,:,:,:],axis=2)
 
         self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map]
 
@@ -600,6 +694,12 @@ class MatchedFilter(NoFM):
             dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
                              self.FMNpix_map[0,k,:,:],
                              filetype=suffix)
+
+            if self.save_bbfm:
+                suffix = "BBFM-KL{0}".format(self.numbasis[k])
+                dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                                 fmout2,
+                                 filetype=suffix)
 
         return
 
@@ -701,7 +801,7 @@ class MatchedFilter(NoFM):
         else:
             r_grid = abs(x_grid +y_grid*1j)
             th_grid = (np.arctan2(sign*x_grid,y_grid)-sign*np.radians(pa))% (2.0 * np.pi)
-        w = self.stamp_PSF_mask.shape[0]//2
+        w = self.background_width
         thstart = (np.radians(pa_fk)- float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         thend = (np.radians(pa_fk) + float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
         # thstart = (np.radians(pa_fk)- 2*float(w)/sep_fk) % (2.0 * np.pi) # -(2*np.pi-np.radians(pa))
@@ -723,6 +823,7 @@ class MatchedFilter(NoFM):
         if 0:#np.size(np.where(mask==2)[0])==0: 296
             print(pa,pa_fk)
             print(thstart,thend)
+            whiteboard[section_ind] = whiteboard[section_ind] + 0.5
             whiteboard.shape = (input_img_shape[0], input_img_shape[1])
             blackboard = np.zeros((ny,nx))
             blackboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -733,7 +834,7 @@ class MatchedFilter(NoFM):
             im = plt.imshow(whiteboard)
             plt.colorbar(im)
             plt.subplot(1,3,2)
-            im = plt.imshow(blackboard+whiteboard)
+            im = plt.imshow(blackboard)
             plt.colorbar(im)
             plt.subplot(1,3,3)
             im = plt.imshow(np.degrees(th_grid))
