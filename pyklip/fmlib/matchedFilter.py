@@ -239,7 +239,7 @@ class MatchedFilter(NoFM):
                          2*self.planet_radius*2*self.planet_radius*self.ny*self.nx
             fmout = mp.Array(self.data_type, fmout_size)
             fmout_shape = (4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
-                         2*self.planet_radius*2*self.planet_radius*self.ny*self.nx,)
+                         2*self.planet_radius*2*self.planet_radius*self.ny*self.nx,1)
 
 
         return fmout, fmout_shape
@@ -639,16 +639,16 @@ class MatchedFilter(NoFM):
         else:
             fmout1 = fmout
 
-        hdu = pyfits.PrimaryHDU(fmout1)
-        hdulist = pyfits.HDUList([hdu])
-        hdulist.writeto(outputdir+os.path.sep+'fmout1_test_before3.fits',clobber=True)
+        # hdu = pyfits.PrimaryHDU(fmout1)
+        # hdulist = pyfits.HDUList([hdu])
+        # hdulist.writeto(outputdir+os.path.sep+'fmout1_test_before3.fits',clobber=True)
 
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         fmout1[np.where(fmout1==0)] = np.nan
 
-        hdu = pyfits.PrimaryHDU(fmout1)
-        hdulist = pyfits.HDUList([hdu])
-        hdulist.writeto(outputdir+os.path.sep+'fmout1_test3.fits',clobber=True)
+        # hdu = pyfits.PrimaryHDU(fmout1)
+        # hdulist = pyfits.HDUList([hdu])
+        # hdulist.writeto(outputdir+os.path.sep+'fmout1_test3.fits',clobber=True)
 
         # The mf.MatchedFilter class calculate the projection of the FM on the data for each pixel and images.
         # The final combination to form the cross  cross correlation, matched filter and contrast maps is done right
