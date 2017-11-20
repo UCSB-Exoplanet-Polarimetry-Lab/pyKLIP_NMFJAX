@@ -1133,7 +1133,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if psf_library.dataset is dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
         if aligned_center is not None:
-            if aligned_center != psf_library.aligned_center:
+            if np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
 
         else:
@@ -1249,7 +1249,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         dataset.output = klipped_imgs
         dataset.output_centers = np.array([klipped_center for _ in range(klipped_imgs.shape[1])])
         # construct the output wcs info, but it's currently just a copy of the input one until we rotate it
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
     # For ADI only datasets, can run KLIP on each wavelenght separately
     else:
