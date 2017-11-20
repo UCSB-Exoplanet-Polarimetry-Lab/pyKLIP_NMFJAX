@@ -1255,7 +1255,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     else:
         # set up output, output centers, and output wcs variables but they are the same as the input for now
         dataset.output_centers = np.copy(dataset.centers)
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
         # append output to a list at first since we are running it a bunch of times
         dataset.output = []
