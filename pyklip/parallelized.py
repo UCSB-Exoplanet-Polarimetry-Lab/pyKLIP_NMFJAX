@@ -525,7 +525,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
         elif algo.lower() == 'nmf':
             import pyklip.nmf_imaging as nmf_imaging
-            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs)
+            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs, componentNum=numbasis[0])
             klipped = klipped.reshape(klipped.shape[0], 1)
     except (ValueError, RuntimeError, TypeError) as err:
         print("({0}): {1}".format(err.errno, err.strerror))
@@ -1133,7 +1133,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if psf_library.dataset is dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
         if aligned_center is not None:
-            if aligned_center != psf_library.aligned_center:
+            if np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
 
         else:
@@ -1249,13 +1249,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         dataset.output = klipped_imgs
         dataset.output_centers = np.array([klipped_center for _ in range(klipped_imgs.shape[1])])
         # construct the output wcs info, but it's currently just a copy of the input one until we rotate it
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
     # For ADI only datasets, can run KLIP on each wavelenght separately
     else:
         # set up output, output centers, and output wcs variables but they are the same as the input for now
         dataset.output_centers = np.copy(dataset.centers)
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
         # append output to a list at first since we are running it a bunch of times
         dataset.output = []

@@ -172,7 +172,7 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         return sub_img_rows_selected.transpose(), KL_basis, evals, evecs
 
 # @profile
-def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False, refs_mean_subbed = False):
+def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_perturb_covar=False):
     """
     Perturb the KL modes using a model of the PSF but with the spectrum included in the model. Quicker than the others
 
@@ -194,9 +194,8 @@ def perturb_specIncluded(evals, evecs, original_KL, refs, models_ref, return_per
     N_ref = refs.shape[0]
     N_pix = original_KL.shape[1]
 
-    if refs_mean_subbed is False:
-        refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
-        refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
+    refs_mean_sub = refs - np.nanmean(refs, axis=1)[:, None]
+    refs_mean_sub[np.where(np.isnan(refs_mean_sub))] = 0
 
     models_mean_sub = models_ref # - np.nanmean(models_ref, axis=1)[:,None] should this be the case?
     models_mean_sub[np.where(np.isnan(models_mean_sub))] = 0
@@ -1687,11 +1686,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     dataset.klipparams = klipparams
 
     # run WCS rotation on output WCS, which we'll copy from the input ones
-    # TODO: wcs rotation not yet implemented.
-    if dataset.wcs[0] is not None:
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
-    else:
-        dataset.output_wcs = dataset.wcs
+    # TODO: wcs rotation not yet implemented. 
+    dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
     # Set MLK parameters
     if mkl_exists:

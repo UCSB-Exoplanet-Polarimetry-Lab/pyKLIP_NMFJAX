@@ -42,7 +42,6 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-        self.imgs_mean_subbed = False
         
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
@@ -129,7 +128,7 @@ class DiskFM(NoFM):
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False, refs_mean_subbed = self.aligned_imgs_np)
+        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
         for thisnumbasisindex in range(np.size(numbasis)):
@@ -286,9 +285,6 @@ class DiskFM(NoFM):
 
 
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-        self.aligned_imgs_np = self.aligned_imgs_np - np.nanmean(self.aligned_imgs_np)
-        self.aligned_imgs_np[np.where(np.isnan(self.aligned_imgs_np))] = 0
-        self.imgs_mean_subbed = True
 
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
