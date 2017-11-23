@@ -137,11 +137,6 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
     if thetas is None:
         thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
-    if stampsize is None:
-        stampsize = 3 * fwhm
-    # convert boxsize to an integer
-    stampsize = int(np.ceil(stampsize))
-
     if (np.size(inputflux) == 1):
         #input is probably a number and we want an array
         inputflux = np.ones(frames.shape[0]) * inputflux
@@ -409,7 +404,8 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid[range(2,annuli,3),:] += 60
         pa_grid = pa_grid + 5
 
-        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        #sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     if fake_position_dict["mode"] == "sector":
         annuli = fake_position_dict["annuli"]
@@ -422,7 +418,10 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         dims = dataset.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(dataset.input[0]))
-        OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
+        if np.size(nanpix) == 0:
+            OWA = np.sqrt(np.max((x_grid) ** 2 + (y_grid) ** 2))
+        else:
+            OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
         dr = float(OWA - dataset.IWA) / (annuli)
         delta_th = 360./subsections
 
@@ -434,7 +433,8 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         pa_grid[range(1,annuli-1,2),:] += delta_th/2.
 
-        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        #sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
     if (fake_flux_dict["mode"] == "contrast"):
@@ -479,7 +479,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
                 print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
             # inject fake planet at given radius,pa into dataset.input
             inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa,
-                          stampsize=np.min([ny_psf, nx_psf]))
+                          stampsize=np.min([ny_psf, nx_psf]), thetas=pa+dataset.PAs)
 
             # Save fake planet position in headers
             extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
@@ -488,9 +488,11 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
             extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
             extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
             extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
-        except:
-            if not mute:
-                print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+        except OverflowError:
+            pass
+        # except:
+        #     if not mute:
+        #         print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
 
     return dataset,extra_keywords
 
