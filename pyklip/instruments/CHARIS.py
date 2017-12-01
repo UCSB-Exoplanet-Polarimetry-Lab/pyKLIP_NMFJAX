@@ -200,7 +200,7 @@ class CHARISData(Data):
             with fits.open(filepath, lazy_load_hdus=False) as hdulist:
                 cube = hdulist[1].data
                 prihdr = hdulist[0].header
-                exthdr = hdulist[0].header
+                exthdr = hdulist[1].header
                 w = wcs.WCS(header=prihdr, naxis=[1,2])
                 astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] #repeat astrom header for each wavelength slice
 
