@@ -3,6 +3,7 @@ import numpy as np
 import scipy.ndimage as ndimage
 import astropy.io.fits as fits
 import datetime
+from astropy import wcs
 import astropy.time as time
 import astropy.coordinates as coord
 import astropy.units as u
@@ -200,13 +201,15 @@ class CHARISData(Data):
                 cube = hdulist[1].data
                 prihdr = hdulist[0].header
                 exthdr = hdulist[0].header
+                w = wcs.WCS(header=prihdr, naxis=[1,2])
+                astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] #repeat astrom header for each wavelength slice
 
             # mask pixels that receive no light as nans. Includ masking a 1 pix boundary around NaNs
             input_minfilter = ndimage.minimum_filter(cube, (0, 1, 1))
             cube[np.where(input_minfilter == 0)] = np.nan
 
             # recalculate parang if necessary
-            parang = prihdr['PARANG']
+            parang = prihdr['PARANG'] + 113.5
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
@@ -218,6 +221,7 @@ class CHARISData(Data):
                 cube = np.delete(cube, skipslices, axis=0)
                 thiswvs = np.delete(thiswvs, skipslices)
                 wv_indices = np.delete(wv_indices, skipslices)
+                astr_hdrs = np.delete(astr_hdrs, skipslices)
 
 
             print("Finding satellite spots for cube {0}".format(index))
@@ -234,7 +238,7 @@ class CHARISData(Data):
             wvs.append(thiswvs)
             wv_indices.append(cube_wv_indices)
             filenums.append(np.ones(cube.shape[0], dtype=int) * index)
-            wcs_hdrs.append([None for _ in range(cube.shape[0])])
+            wcs_hdrs.append(astr_hdrs)
             inttimes.append(np.ones(cube.shape[0], dtype=int) * prihdr['EXPTIME'])
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
@@ -527,7 +531,7 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     start_spot_fwhms = []
     for guess_spot_loc in guess_spot_locs:
         xguess, yguess = guess_spot_loc
-        fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, refinefit=True, searchrad=6)
+        fitargs = fakes.airyfit2d(start_frame, xguess, yguess, searchrad=7)
         fitflux, fitfwhm, fitx, fity = fitargs
         start_spot_locs.append([fitx, fity])
         start_spot_fluxes.append(fitflux)
@@ -560,7 +564,7 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
         thiswv_spot_fwhms = []
         for guess_spot_loc in thiswv_guess_spot_locs:
             xguess, yguess = guess_spot_loc
-            fitargs = fakes.gaussfit2d(frame, xguess, yguess, refinefit=True, searchrad=6)
+            fitargs = fakes.airyfit2d(frame, xguess, yguess, searchrad=7)
             fitflux, fitfwhm, fitx, fity = fitargs
             thiswv_spot_locs.append([fitx, fity])
             thiswv_spot_fluxes.append(fitflux)
