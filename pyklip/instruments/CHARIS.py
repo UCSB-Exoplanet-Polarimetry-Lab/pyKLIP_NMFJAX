@@ -1,11 +1,15 @@
+import os
 import numpy as np
+import scipy.ndimage as ndimage
 import astropy.io.fits as fits
 import datetime
 import astropy.time as time
 import astropy.coordinates as coord
 import astropy.units as u
+import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
+
 
 class CHARISData(Data):
     """
@@ -56,8 +60,8 @@ class CHARISData(Data):
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
-    observatory_latitude = 19 + 49./60 + 43./3600
-    observatory_longitude = 155 + 28./60 + 50./3600
+    obs_latitude = 19 + 49./60 + 43./3600 # radians
+    obs_longitude = -(155 + 28./60 + 50./3600) # radians
 
     ####################
     ### Constructors ###
@@ -72,6 +76,7 @@ class CHARISData(Data):
         """
         super(CHARISData, self).__init__()
         self._output = None
+        self.flipx = False
         self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
                       skipslices=skipslices, PSF_cube=PSF_cube, 
                       recalc_wvs=recalc_wvs, recalc_centers=recalc_centers)
@@ -181,6 +186,7 @@ class CHARISData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        spot_locs = []
         inttimes = []
         prihdrs = []
         exthdrs = []
@@ -190,44 +196,40 @@ class CHARISData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            with fits.open(filepath) as hdulist:
+            with fits.open(filepath, lazy_load_hdus=False) as hdulist:
                 cube = hdulist[1].data
                 prihdr = hdulist[0].header
                 exthdr = hdulist[0].header
 
-            # recalculate parang if necessary
-            if isinstance(prihdr['PARANG'], float):
-                parang = prihdr['PARANG']
-            else:
-                obs_time = time.Time(prihdr['UTC-DATE'] + ' ' + prihdr['UTC-TIME'])
-                obs_lst = _get_lst(obs_time, CHARISData.observatory_longitude)
-                obs_lst_radians = obs_lst / 24. * 2 * np.pi
-                
-                ra = coord.Angle(prihdr['RA'], unit=u.hour)
-                dec = coord.Angle(prihdr['Dec'], unit=u.degree)
+            # mask pixels that receive no light as nans. Includ masking a 1 pix boundary around NaNs
+            input_minfilter = ndimage.minimum_filter(cube, (0, 1, 1))
+            cube[np.where(input_minfilter == 0)] = np.nan
 
-                ha = obs_lst_radians - ra.radian
-                parang = _calc_parang(ha, dec.radian, CHARISData.observatory_latitude*np.pi/180.)
-                parang += prihdr['D_IMRPAP']
+            # recalculate parang if necessary
+            parang = prihdr['PARANG']
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
             thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM'])
 
-            center, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc)
 
             #remove undesirable slices of the datacube if necessary
             if skipslices is not None:
                 cube = np.delete(cube, skipslices, axis=0)
-                center = np.delete(center, skipslices, axis=0)
                 thiswvs = np.delete(thiswvs, skipslices)
                 wv_indices = np.delete(wv_indices, skipslices)
-                spot_flux = np.delete(spot_flux, skipslices)
-                spot_fwhm = np.delete(spot_fwhm, skipslices)
+
+
+            print("Finding satellite spots for cube {0}".format(index))
+            spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc)
+
+            # simple mean for center for now
+            center = np.mean(spot_loc, axis=1)
 
             data.append(cube)
             centers.append(center)
             spot_fluxes.append(spot_flux)
+            spot_locs.append(spot_loc)
             rot_angles.append(np.ones(cube.shape[0], dtype=int) * parang)
             wvs.append(thiswvs)
             wv_indices.append(cube_wv_indices)
@@ -253,6 +255,7 @@ class CHARISData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
+        spot_locs = np.array(spot_locs).reshape([dims[0] * dims[1], 4, 2])
         inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
 
         # if there is more than 1 integration time, normalize all data to the first integration time
@@ -274,6 +277,9 @@ class CHARISData(Data):
         self._IWA = 5
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
+
+        self.spot_fluxes = spot_fluxes
+        self.spot_locs = spot_locs
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = self.prihdrs[0]["OBJECT"]
@@ -443,6 +449,7 @@ class CHARISData(Data):
             hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
+
     def calibrate_output(self, img, spectral=False, units="contrast"):
         """
         Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
@@ -464,60 +471,44 @@ class CHARISData(Data):
         """
         return img
 
-def _get_lst(t, longitude):
-    """
-    Gets the Local Sidereal Time
-    
-    Args:
-        t: astropy.time.Time() object of a given time
-        longitude: decimal degrees (west is negative so longitude ranges from [-180,180])
+    def generate_psfs(self, boxrad=7):
+        """
+        Generates PSF for each frame of input data. Only works on spectral mode data.
 
-    Return:
-        LST: return LST in hours 
-    """  
-    if longitude > 180:
-        longitude -= 360
-    if (longitude < -180) or (longitude > 180):
-        raise ValueError("{0} invalid. Needs to be between -180 and 180".format(longitude))
+        Args:
+            boxrad: the halflength of the size of the extracted PSF (in pixels)
 
-    jd0 = (t.jd-0.5) // 1 + 0.5
-    ut = ((t.jd-0.5) % 1) * 24
-    T=(jd0-2451545.0)/36525.0
-    T0 = 6.697374558+ (2400.051336*T)+(0.000025862*T**2)+(ut*1.0027379093)
-    GST = T0 % 24
-    LST = (GST + longitude/15) % 24
+        Returns:
+            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+        """
+        self.psfs = []
+        numwaves = np.size(np.unique(self.wvs))
 
-    return LST
+        for i,frame in enumerate(self.input):
+            this_spot_locs = self.spot_locs[i]
 
-def _calc_parang(HA, dec, latitude):
-    """
-    calculate the Parallactic Angle of an object
-    Input:
-                HA: hour angles of the object (radians)
-                dec: declination of object (radians)
-                latitude: latitude of the object (radians)
-    Output:
-                parang: corresponding parallactic angle (degrees)
-    """
-    top = np.cos(latitude) * np.sin(HA)
-    bot = np.sin(latitude) * np.cos(dec) - np.cos(latitude)*np.sin(dec)*np.cos(HA)
+            # now grab the values from them by parsing the header
+            spot0 = this_spot_locs[0]
+            spot1 = this_spot_locs[1]
+            spot2 = this_spot_locs[2]
+            spot3 = this_spot_locs[3]
 
-    if np.size(HA) == 1:
-        return np.degrees(np.arctan2(top,bot))
+            # put all the sat spot info together
+            spots = [spot0, spot1, spot2, spot3]
 
-    ratio = top/bot
-    midindex = len(ratio)/2
+            #now make a psf
+            spotpsf = generate_psf(frame, spots, boxrad=boxrad)
+            self.psfs.append(spotpsf)
 
-    #hack to figure out the right arctan function to use
-    #this is totally empirically derived and obviously has edge cases
-    if ratio[midindex] > ratio[midindex-1]:
-        parang = np.arctan2(top,bot)
-    else:
-        parang = np.arctan(top/bot)
+        self.psfs = np.array(self.psfs)
 
-    return np.degrees(parang)
+        # collapse in time dimension
+        numwvs = np.size(np.unique(self.wvs))
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.mean(self.psfs, axis=0)
 
-def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs):
+
+def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=True):
     """
     Find sat spots in a datacube. TODO: return sat spot psf cube also
     """
@@ -528,12 +519,15 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs):
 
     # start with guess center
     start_frame = cube[guess_spot_index]
+    if highpass:
+        start_frame = klip.high_pass_filter(start_frame, 10)
+
     start_spot_locs = []
     start_spot_fluxes = []
     start_spot_fwhms = []
     for guess_spot_loc in guess_spot_locs:
         xguess, yguess = guess_spot_loc
-        fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, refinefit=True)
+        fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, refinefit=True, searchrad=6)
         fitflux, fitfwhm, fitx, fity = fitargs
         start_spot_locs.append([fitx, fity])
         start_spot_fluxes.append(fitflux)
@@ -553,6 +547,9 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs):
         if i == guess_spot_index:
             continue
 
+        if highpass:
+            frame = klip.high_pass_filter(frame, 10)
+
         # guess where the sat spots are based on the wavelength
         wv_scaling = wv/ref_wv # shorter wavelengths closer in
         thiswv_guess_spot_locs = ref_spot_locs_deltas * wv_scaling + ref_center
@@ -561,9 +558,9 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs):
         thiswv_spot_locs = []
         thiswv_spot_fluxes = []
         thiswv_spot_fwhms = []
-        for guess_spot_loc in guess_spot_locs:
+        for guess_spot_loc in thiswv_guess_spot_locs:
             xguess, yguess = guess_spot_loc
-            fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, refinefit=True, searchrad=7)
+            fitargs = fakes.gaussfit2d(frame, xguess, yguess, refinefit=True, searchrad=6)
             fitflux, fitfwhm, fitx, fity = fitargs
             thiswv_spot_locs.append([fitx, fity])
             thiswv_spot_fluxes.append(fitflux)
@@ -574,13 +571,56 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs):
         spot_fwhms[i] = np.nanmean(thiswv_spot_fwhms)
 
     # turn them into numpy arrays
-    centers = []
+    locs = []
     fluxes = []
     fwhms = []
     for i in range(cube.shape[0]):
-        centers.append(np.mean(spot_locs[i], axis=0))
+        locs.append(spot_locs[i])
         fluxes.append(spot_fluxes[i])
         fwhms.append(spot_fwhms[i])
 
-    return np.array(centers), np.array(fluxes), np.array(fwhms)
-        
+    return np.array(locs), np.array(fluxes), np.array(fwhms)
+
+def generate_psf(frame, locations, boxrad=5):
+    """
+    Generates a GPI PSF for the frame based on the satellite spots
+
+    Args:
+        frame: 2d frame of data
+        location: array of (N,2) containing [x,y] coordinates of all N satellite spots
+        boxrad: half length of box to use to pull out PSF
+
+    Returns:
+        genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
+    """
+    genpsf = []
+    #mask nans
+    cleaned = np.copy(frame)
+    cleaned[np.where(np.isnan(cleaned))] = 0
+
+
+    for loc in locations:
+        #grab satellite spot positions
+        spotx = loc[0]
+        spoty = loc[1]
+
+        #interpolate image to grab satellite psf with it centered
+        #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
+        #create arrays of size 2*boxrad+2)
+        x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
+        spotpsf = ndimage.map_coordinates(cleaned, [y,x])
+
+        # if applicable, do a background subtraction
+        if boxrad >= 7:
+            y_img, x_img = np.indices(frame.shape, dtype=float)
+            r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+            noise_annulus = np.where((r_img > 9) & (r_img <= 12))
+            background_mean = np.nanmean(cleaned[noise_annulus])
+            spotpsf -= background_mean
+
+        genpsf.append(spotpsf)
+
+    genpsf = np.array(genpsf)
+    genpsf = np.mean(genpsf, axis=0) #average the different psfs together    
+
+    return genpsf
