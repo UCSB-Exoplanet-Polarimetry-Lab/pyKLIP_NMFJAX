@@ -311,7 +311,7 @@ class Data(object):
         self.filenums = filenums_collapsed
         self.filenames = filenames_collapsed
 
-        if additional_collapsed is not None:
+        if additional_params is not None:
             for param_field, param_collapsed in zip(additional_params, additional_collapsed):
                 param_collapsed.shape = (Ncubes * collapse_channels, ) + param_collapsed.shape[2:]
                 setattr(self, param_field, param_collapsed)
