@@ -1085,8 +1085,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
             for frame in kl_cube:
                 annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
                 dr_spacing = np.median(annuli_widths)/2.
-                noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,OWA), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
-        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape[:-2]) # reshape into a cube with same shape as sub_imgs
+                noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,rad_bounds[-1][1]), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
+        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
@@ -1413,7 +1413,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         #do the mean combine by weighting by the spectrum
         spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
         KLmode_cube = np.nanmean(pixel_weights * dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
-                        / np.mean(spectra_template[None, :, :, None, None] * pixel_weights)
+                        / np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis = (1, 2))
     # broadband flux calibration for KL mode cube
     if calibrate_flux:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
