@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as interp
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
+import astropy.modeling as modeling
 
 
 
@@ -677,6 +678,58 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     yfit = yfit - searchrad + y0
 
     return corrflux, fwhm, xfit, yfit
+
+def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
+    """
+    Fits a 2d airy function to the data at point (xguess, yguess)
+
+    Args:
+        frame: the data - Array of size (y,x)
+        xguess,yguess: location to fit the 2d guassian to (should be pretty accurate)
+        searchrad: 1/2 the length of the box used for the fit
+        guessfwhm: approximate fwhm to fit to
+
+    Returns:
+        peakflux: the peakflux of the Airy function
+        fwhm: diameter between the first minima along one axis
+        xfit: x position
+        yfit: y position
+    """
+    if not isinstance(searchrad, int):
+        raise ValueError("searchrad needs to be an integer")
+
+    x0 = np.rint(xguess).astype(int)
+    y0 = np.rint(yguess).astype(int)
+    #construct our searchbox
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
+
+    #mask bad pixels
+    fitbox[np.where(np.isnan(fitbox))] = 0
+ 
+    # construct an Airy function to fit to the data
+    airy_psf = modeling.functional_models.AiryDisk2D()
+    fity, fitx = np.indices(fitbox.shape)
+    errorfunction = lambda p: np.sum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) - fitbox)**2)
+
+    #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
+    #(2searchrad+1,2searchrad+1)
+
+    guess = np.array((searchrad, searchrad, guesspeak, guessfwhm))
+
+    #p, success = optimize.leastsq(errorfunction, guess)
+    res = optimize.minimize(errorfunction, guess, bounds=((0, 2*searchrad+1), (0, 2*searchrad+1), (0, None), (0, searchrad)))
+    p = res.x
+
+    xfit = p[0]
+    yfit = p[1]
+    peakflux = p[2]
+    fwhm = p[3] 
+
+    # convert xfit, yfit back to image coordinates
+    xfit = xfit - searchrad + x0
+    yfit = yfit - searchrad + y0
+
+    return peakflux, fwhm, xfit, yfit
 
 
 def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):
