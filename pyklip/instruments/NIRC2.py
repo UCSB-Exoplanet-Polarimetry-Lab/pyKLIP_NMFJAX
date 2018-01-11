@@ -12,6 +12,8 @@ from scipy.interpolate import interp1d
 import time
 from copy import copy
 
+import multiprocessing as mp
+
 #different imports depending on if python2.7 or python3
 import sys
 if sys.version_info < (3,0):
@@ -227,11 +229,16 @@ class NIRC2Data(Data):
         star_fluxes = []
         spot_fluxes = []
         prihdrs = []
+        
+        #Create a threadpool for high pass filter
+        pool = None
+        if highpass:
+            pool = mp.Pool()
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_flux, prihdr, exthdr, camera, obsdate =\
-                _nirc2_process_file(filepath, highpass=highpass, meas_star_flux=meas_star_flux)
+                _nirc2_process_file(filepath, highpass=highpass, meas_star_flux=meas_star_flux, pool=pool)
 
             data.append(cube)
             centers.append(center)
@@ -246,6 +253,12 @@ class NIRC2Data(Data):
             #filename = np.chararray(pa.shape[0])
             #filename[:] = filepath
             filenames.append([filepath for i in range(pa.shape[0])])
+        
+        # Close threadpool
+        if highpass:
+            pool.close()
+            pool.join()
+        
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
         data = np.array(data)
@@ -461,7 +474,7 @@ class NIRC2Data(Data):
 ## Static Functions ##
 ######################
 
-def _nirc2_process_file(filepath, highpass=False, meas_star_flux=False):
+def _nirc2_process_file(filepath, highpass=False, meas_star_flux=False, pool=None):
     """
     Method to open and parse a NIRC2 file
 
@@ -470,6 +483,7 @@ def _nirc2_process_file(filepath, highpass=False, meas_star_flux=False):
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
         meas_star_flux: if True, measures the stellar flux
+        pool: optional to pass along a threadpool (mainly for highpass filtering multiple images)
 
     Returns: (using z as size of 3rd dimension, z=1 for NIRC2)
         cube: 3D data cube from the file. Shape is (z,256,256)
@@ -532,14 +546,14 @@ def _nirc2_process_file(filepath, highpass=False, meas_star_flux=False):
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
-            cube = high_pass_filter_imgs(cube)
+            cube = high_pass_filter_imgs(cube, pool=pool)
             highpassed = True
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
             highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
-            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size, pool=pool)
             highpassed = True
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_fluxes, prihdr, exthdr, camera, obsdate
