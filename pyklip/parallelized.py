@@ -1173,7 +1173,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if psf_library.dataset is dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
         if aligned_center is not None:
-            if np.array_equal(aligned_center, psf_library.aligned_center): 
+            if not np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
 
         else:
