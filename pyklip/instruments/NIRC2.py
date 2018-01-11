@@ -102,7 +102,7 @@ class NIRC2Data(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, highpass=False):
+    def __init__(self, filepaths=None, highpass=False, meas_star_flux=False):
         """
         Initialization code for NIRC2Data
 
@@ -128,7 +128,7 @@ class NIRC2Data(Data):
             self.lenslet_scale = None
             self.pupil_diam = None
         else:
-            self.readdata(filepaths, highpass=highpass)
+            self.readdata(filepaths, highpass=highpass, meas_star_flux=meas_star_flux)
 
     ################################
     ### Instance Required Fields ###
@@ -200,7 +200,7 @@ class NIRC2Data(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, highpass=False):
+    def readdata(self, filepaths, highpass=False, meas_star_flux=False):
         """
         Method to open and read a list of NIRC2 data
 
@@ -231,7 +231,7 @@ class NIRC2Data(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_flux, prihdr, exthdr, camera, obsdate =\
-                _nirc2_process_file(filepath, highpass=highpass)
+                _nirc2_process_file(filepath, highpass=highpass, meas_star_flux=meas_star_flux)
 
             data.append(cube)
             centers.append(center)
@@ -279,7 +279,7 @@ class NIRC2Data(Data):
         self._filenames = filenames
         self._PAs = rot_angles
         self._wvs = wvs
-        self._wcs = None #wcs_hdrs
+        self._wcs = [None] #wcs_hdrs
         self.spot_flux = spot_fluxes
         self._IWA = NIRC2Data.fpm_diam[fpm_band]*lenslet_scale/2.0
         self.star_flux = star_fluxes
@@ -461,7 +461,7 @@ class NIRC2Data(Data):
 ## Static Functions ##
 ######################
 
-def _nirc2_process_file(filepath, highpass=False):
+def _nirc2_process_file(filepath, highpass=False, meas_star_flux=False):
     """
     Method to open and parse a NIRC2 file
 
@@ -469,6 +469,7 @@ def _nirc2_process_file(filepath, highpass=False):
         filepath: the file to open
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        meas_star_flux: if True, measures the stellar flux
 
     Returns: (using z as size of 3rd dimension, z=1 for NIRC2)
         cube: 3D data cube from the file. Shape is (z,256,256)
@@ -518,8 +519,9 @@ def _nirc2_process_file(filepath, highpass=False):
             nx = center[0][0] - (x - center[0][0])
             minval = np.min([np.nanmin(cube), 0.0])
             flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
-
-            star_flux = calc_starflux(flipped_cube, center)
+            star_flux = np.nan
+            if meas_star_flux:
+                star_flux = calc_starflux(flipped_cube, center)
             cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])  #maintain 3d-ness
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
