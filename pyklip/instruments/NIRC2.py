@@ -281,7 +281,7 @@ class NIRC2Data(Data):
         self._wvs = wvs
         self._wcs = [None] #wcs_hdrs
         self.spot_flux = spot_fluxes
-        self._IWA = NIRC2Data.fpm_diam[fpm_band]*lenslet_scale/2.0
+        self._IWA = NIRC2Data.fpm_diam[fpm_band]/lenslet_scale/2.0
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes #GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
