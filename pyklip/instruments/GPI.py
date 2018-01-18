@@ -272,6 +272,9 @@ class GPIData(Data):
         prihdrs = []
         exthdrs = []
 
+        #Create a threadpool for high pass filter
+        pool = mp.Pool()
+
         if PSF_cube is not None:
             if isinstance(PSF_cube, np.ndarray):
                 PSF_cube_arr = PSF_cube
@@ -298,7 +301,7 @@ class GPIData(Data):
             cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
-                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet)
+                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
 
             # import matplotlib.pyplot as plt
             # print(filepath)
@@ -321,7 +324,9 @@ class GPIData(Data):
             #filename[:] = filepath
             filenames.append([filepath for i in range(pa.shape[0])])
 
-
+        #Close threadpool
+        pool.close()
+        pool.join()
 
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
@@ -924,7 +929,7 @@ class GPIData(Data):
 ######################
 
 def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
-                      psfs_func_list=None, bad_sat_spots=None, quiet=False):
+                      psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
     """
     Method to open and parse a GPI file
 
@@ -957,17 +962,16 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
-
         #grab the data and headers
         cube = hdulist[1].data
         exthdr = hdulist[1].header
         prihdr = hdulist[0].header
-
+ 
         #get some instrument configuration from the primary header
         filt_band = prihdr['IFSFILT'].split('_')[1]
         fpm_band = prihdr['OCCULTER'].split('_')[1]
         ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
-
+  
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
         #turns out WCS data can be wrong. Let's recalculate it using avparang
@@ -1124,16 +1128,15 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
-            cube = high_pass_filter_imgs(cube)
+            cube = high_pass_filter_imgs(cube, pool = pool)
             highpassed = True
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
             highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
-            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size, pool = pool)
             highpassed = True
-
 
     # remeasure satellite spot fluxes
     if meas_satspot_flux:

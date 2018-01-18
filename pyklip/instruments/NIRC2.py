@@ -8,21 +8,21 @@ from astropy.modeling import models, fitting
 import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
+from scipy.interpolate import interp1d
+import time
+from copy import copy
 
 #different imports depending on if python2.7 or python3
 import sys
-from copy import copy
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
-    from pyklip.instruments.Instrument import Data
-    from pyklip.instruments.utils.nair import nMathar
 else:
     import configparser as ConfigParser
-    from pyklip.instruments.Instrument import Data
-    from pyklip.instruments.utils.nair import nMathar
+    
+from pyklip.instruments.Instrument import Data
+from pyklip.instruments.utils.nair import nMathar
 
-from scipy.interpolate import interp1d
 from pyklip.parallelized import high_pass_filter_imgs
 from pyklip.fakes import gaussfit2d
 from pyklip.fakes import gaussfit2dLSQ
@@ -33,6 +33,8 @@ class NIRC2Data(Data):
 
     Args:
         filepaths: list of filepaths to files
+        highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -56,11 +58,12 @@ class NIRC2Data(Data):
     ###Class Initilization ###
     ##########################
     #some static variables to define the GPI instrument
+    lenslet_scales = {}  # in arcsec/pixel
     centralwave = {}  # in microns
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
+    pupil_diam = {}  # in meters
     #spot_ratio = {} #w.r.t. central star
-    lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     #ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     observatory_latitude = 0.0
@@ -71,17 +74,26 @@ class NIRC2Data(Data):
     config = ConfigParser.ConfigParser()
     try:
         config.read(configfile)
-        #get pixel scale
-        lenslet_scale = float(config.get("instrument", "pixel_scale_narrow"))  # arcsecond/pix
+        #get list of pixel scales for different cameras and time periods
+        cameras = ['narrow_pre150413', 'narrow_post150413', 'medium', 'wide']
+        for cam in cameras:
+            lenslet_scales[cam] = float(config.get("pixel_scales", "pixel_scale_{0}".format(cam))) # arcsec/pix
         #get IFS rotation
         #ifs_rotation = float(config.get("instrument", "ifs_rotation")) #degrees
         #get some information specific to each band
-        bands = ['Ks', 'Lp', 'Ms']
+        bands = ['J', 'H', 'K', 'Ks', 'Kp', 'Lp', 'Ms']
         for band in bands:
             centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
-            fpm_diam[band] = float(config.get("instrument", "fpm_diam_{0}".format(band))) / lenslet_scale  # pixels
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
             #spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
+        fpms = ['corona100', 'corona150', 'corona200', 'corona300', 'corona400',
+                'corona600', 'corona800', 'corona1000', 'corona1500', 'corona2000']
+        for fpm in fpms:
+            fpm_diam[fpm] = float(config.get("instrument", "fpm_diam_{0}".format(fpm))) # arcsec
+        pupils = ['incircle', 'largehex', 'smallhex', 'open']
+        for pupil in pupils:
+            pupil_diam[pupil] = float(config.get("instrument", "pupil_diam_{0}".format(pupil))) # meters
+        
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
     except ConfigParser.Error as e:
         print("Error reading GPI configuration file: {0}".format(e.message))
@@ -90,7 +102,7 @@ class NIRC2Data(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None):
+    def __init__(self, filepaths=None, highpass=False):
         """
         Initialization code for NIRC2Data
 
@@ -113,8 +125,10 @@ class NIRC2Data(Data):
             self.contrast_scaling = None
             self.prihdrs = None
             self.exthdrs = None
+            self.lenslet_scale = None
+            self.pupil_diam = None
         else:
-            self.readdata(filepaths)
+            self.readdata(filepaths, highpass=highpass)
 
     ################################
     ### Instance Required Fields ###
@@ -186,12 +200,14 @@ class NIRC2Data(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths):
+    def readdata(self, filepaths, highpass=False):
         """
         Method to open and read a list of NIRC2 data
 
         Args:
             filespaths: a list of filepaths
+            highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
 
         Returns:
             Technically none. It saves things to fields of the NIRC2Data object. See object doc string
@@ -214,7 +230,8 @@ class NIRC2Data(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, ppm_band, star_flux, spot_flux, prihdr, exthdr = _nirc2_process_file(filepath)
+            cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_flux, prihdr, exthdr, camera, obsdate =\
+                _nirc2_process_file(filepath, highpass=highpass)
 
             data.append(cube)
             centers.append(center)
@@ -242,7 +259,19 @@ class NIRC2Data(Data):
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         star_fluxes = np.array(star_fluxes).reshape([dims[0] * dims[1]])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-
+        
+        #select correct pixel scale
+        #narrow camera pixel scale changed after servicing on 2015-04-13
+        date_2015_4_13 = time.strptime("2015-4-13", "%Y-%m-%d")
+        if camera=='narrow':
+            if obsdate < date_2015_4_13:
+                lenslet_scale = NIRC2Data.lenslet_scales['narrow_pre150413']
+            elif obsdate >= date_2015_4_13:
+                lenslet_scale = NIRC2Data.lenslet_scales['narrow_post150413']
+        else:
+            lenslet_scale = NIRC2Data.lenslet_scales[camera]
+        self.lenslet_scale = lenslet_scale
+        
         #set these as the fields for the GPIData object
         self._input = data
         self._centers = centers
@@ -250,12 +279,14 @@ class NIRC2Data(Data):
         self._filenames = filenames
         self._PAs = rot_angles
         self._wvs = wvs
-        self._wcs = None#wcs_hdrs
+        self._wcs = None #wcs_hdrs
         self.spot_flux = spot_fluxes
-        self._IWA = NIRC2Data.fpm_diam[fpm_band]/2.0
+        self._IWA = NIRC2Data.fpm_diam[fpm_band]*lenslet_scale/2.0
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes #GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
+        self.pupil_diam = NIRC2Data.pupil_diam[pupil]
+        
         #self.exthdrs = exthdrs
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
@@ -430,12 +461,14 @@ class NIRC2Data(Data):
 ## Static Functions ##
 ######################
 
-def _nirc2_process_file(filepath):
+def _nirc2_process_file(filepath, highpass=False):
     """
     Method to open and parse a NIRC2 file
 
     Args:
         filepath: the file to open
+        highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                  can also be a number specifying FWHM of box in pixel units
 
     Returns: (using z as size of 3rd dimension, z=1 for NIRC2)
         cube: 3D data cube from the file. Shape is (z,256,256)
@@ -457,17 +490,28 @@ def _nirc2_process_file(filepath):
         cube = hdulist[0].data
         exthdr = None #hdulist[1].header
         prihdr = hdulist[0].header
+        
+        obsdate = time.strptime(prihdr['DATE-OBS'], "%Y-%m-%d") # observation date
 
         #get some instrument configuration from the primary header
         filt_band = prihdr['FILTER'].split('+')[0].strip()
-        fpm_band = filt_band
-        ppm_band = None #prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+        fpm_band = prihdr['SLITNAME']
+        camera = prihdr['CAMNAME']
+        pupil = prihdr['PMSNAME']
 
         #for NIRC2, we only have broadband but want to keep the GPI array shape to make processing easier
         if prihdr['CURRINST'].strip() == 'NIRC2':
             wvs = [1.0]
-            center = [[128,128]]#[[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
-
+            if 'PSFCENTX' and 'PSFCENTY' in prihdr.keys():
+                center = [[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
+            else:
+                center = [[np.nan, np.nan]]
+            
+            if 'ROTNORTH' in prihdr.keys():
+                parang = prihdr['ROTNORTH']*np.ones(1)
+            else:
+                parang = np.nan*np.ones(1)
+            
             # Flipping x-axis to enable use of GPI data rotation code without modification
             dims = cube.shape
             x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
@@ -477,13 +521,26 @@ def _nirc2_process_file(filepath):
 
             star_flux = calc_starflux(flipped_cube, center)
             cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])  #maintain 3d-ness
-            parang = prihdr['ROTNORTH']*np.ones(1)
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
     finally:
         hdulist.close()
+    
+    #high pass filter
+    highpassed = False
+    if isinstance(highpass, bool):
+        if highpass:
+            cube = high_pass_filter_imgs(cube)
+            highpassed = True
+    else:
+        # should be a number
+        if isinstance(highpass, (float, int)):
+            highpass = float(highpass)
+            fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            highpassed = True
 
-    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, ppm_band, star_flux, spot_fluxes, prihdr, exthdr
+    return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_fluxes, prihdr, exthdr, camera, obsdate
 
 def calc_starflux(cube, center):
     """
@@ -529,4 +586,7 @@ def measure_star_flux(img, star_x, star_y):
     print(flux, fwhm, xfit, yfit)
 
     return flux
+
+
+
 

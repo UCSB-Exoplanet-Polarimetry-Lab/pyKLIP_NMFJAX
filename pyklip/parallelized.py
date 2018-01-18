@@ -582,7 +582,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
 
     return derotated
 
-def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
+def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
     """
     filters a sequences of images using a FFT
 
@@ -590,20 +590,24 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10):
         imgs: array of shape (N,y,x) containing N images
         numthreads: number of threads to be used
         filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
+        pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
 
     Output:
         filtered: array of shape (N,y,x) containing the filtered images
     """
 
-    tpool = mp.Pool(processes=numthreads)
-
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
 
     tasks = [tpool.apply_async(klip.high_pass_filter, args=(img, filtersize)) for img in imgs]
 
     #reform back into a giant array
     filtered = np.array([task.get() for task in tasks])
 
-    tpool.close()
+    if pool is None:
+        tpool.close()
 
     return filtered
 
@@ -1173,7 +1177,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if psf_library.dataset is dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
         if aligned_center is not None:
-            if np.array_equal(aligned_center, psf_library.aligned_center): 
+            if not np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
 
         else:
