@@ -561,8 +561,8 @@ class FMAstrometry(object):
             pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
             d_pa = np.arctan2(np.sin(pa_mean-pa_mcmc), np.cos(pa_mean-pa_mcmc))
             pa_median = np.median(d_pa) + pa_mean
-            pa_mcmc = np.degrees(pa_median)
             pa_best = np.degrees(pa_median)
+            pa_mcmc = np.degrees(pa_mcmc) # Convert back to degrees
         
         # PA Uncertainity
         if pa_uncertainty is None:
