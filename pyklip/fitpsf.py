@@ -513,7 +513,7 @@ class FMAstrometry(object):
         # then compute median/precentiles
         pa_mcmc = (np.arctan2(y_mcmc, -x_mcmc) - (np.pi/2.0)) % (2.0*np.pi) # Radians!
         pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
-        d_pa = np.arctan2(np.sin(pa_mean-pa_mcmc), np.cos(pa_mean-pa_mcmc))
+        d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
         pa_median = np.median(d_pa) + pa_mean
         pa_percentile = np.nanpercentile(d_pa, [84,16])  - np.median(d_pa) # median of d_pa should be small
         pa_mcmc = np.degrees(pa_mcmc) # Convert to degrees
@@ -559,7 +559,8 @@ class FMAstrometry(object):
             # Have to repeat wrapping procedure above in case pa_offset is large
             pa_mcmc = np.radians((pa_mcmc + pa_offset) % 360) # Convert back to radians for circstats
             pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
-            d_pa = np.arctan2(np.sin(pa_mean-pa_mcmc), np.cos(pa_mean-pa_mcmc))
+            d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
+
             pa_median = np.median(d_pa) + pa_mean
             pa_best = np.degrees(pa_median)
             pa_mcmc = np.degrees(pa_mcmc) # Convert back to degrees
