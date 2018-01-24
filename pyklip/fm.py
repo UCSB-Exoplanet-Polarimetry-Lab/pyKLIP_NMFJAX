@@ -987,7 +987,7 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
-                      spectrum=None, padding=3, save_klipped=True, flipx=True,
+                      spectrum=None, padding=0, save_klipped=True, flipx=True,
                       N_pix_sector = None,mute_progression = False, annuli_spacing="constant"):
     """
     multithreaded KLIP PSF Subtraction
@@ -1571,7 +1571,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
 
 def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
-                 OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=3,
+                 OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=0,
                  numbasis=None, maxnumbasis=None, numthreads=None, calibrate_flux=False, aligned_center=None,
                  spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False):
     """
