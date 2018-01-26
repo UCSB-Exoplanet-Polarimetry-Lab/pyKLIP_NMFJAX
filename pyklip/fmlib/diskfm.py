@@ -104,7 +104,7 @@ class DiskFM(NoFM):
         ''' 
        Allocates shared memory for output image 
         '''
-        fmout_size = np.prod(output_img_shape)
+        fmout_size = int(np.prod(output_img_shape))
         fmout_shape = output_img_shape
         fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
