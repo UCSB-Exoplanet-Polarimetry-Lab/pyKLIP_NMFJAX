@@ -311,7 +311,7 @@ class Data(object):
         self.filenums = filenums_collapsed
         self.filenames = filenames_collapsed
 
-        if additional_collapsed is not None:
+        if additional_params is not None:
             for param_field, param_collapsed in zip(additional_params, additional_collapsed):
                 param_collapsed.shape = (Ncubes * collapse_channels, ) + param_collapsed.shape[2:]
                 setattr(self, param_field, param_collapsed)
@@ -555,6 +555,9 @@ class GenericData(Data):
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+
+        if more_keywords is not None:
+            hdulist[0].header.update(more_keywords)
 
         try:
             hdulist.writeto(filepath, overwrite=True)

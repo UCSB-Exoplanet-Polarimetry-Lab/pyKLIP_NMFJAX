@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as interp
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
+import astropy.modeling as modeling
 
 
 
@@ -136,11 +137,6 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
 
     if thetas is None:
         thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
-
-    if stampsize is None:
-        stampsize = 3 * fwhm
-    # convert boxsize to an integer
-    stampsize = int(np.ceil(stampsize))
 
     if (np.size(inputflux) == 1):
         #input is probably a number and we want an array
@@ -409,7 +405,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid[range(2,annuli,3),:] += 60
         pa_grid = pa_grid + 5
 
-        sep_pa_iter_list = [(r,p) for r,p in zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))]
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     if fake_position_dict["mode"] == "sector":
         annuli = fake_position_dict["annuli"]
@@ -422,7 +418,10 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         dims = dataset.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(dataset.input[0]))
-        OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
+        if np.size(nanpix) == 0:
+            OWA = np.sqrt(np.max((x_grid) ** 2 + (y_grid) ** 2))
+        else:
+            OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
         dr = float(OWA - dataset.IWA) / (annuli)
         delta_th = 360./subsections
 
@@ -434,8 +433,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         pa_grid[range(1,annuli-1,2),:] += delta_th/2.
 
-        sep_pa_iter_list = [(r,p) for r,p in zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))]
-        # sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
     if (fake_flux_dict["mode"] == "contrast"):
@@ -480,7 +478,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
                 print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
             # inject fake planet at given radius,pa into dataset.input
             inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa,
-                          stampsize=np.min([ny_psf, nx_psf]))
+                          stampsize=np.min([ny_psf, nx_psf]), thetas=pa+dataset.PAs)
 
             # Save fake planet position in headers
             extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
@@ -489,9 +487,11 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
             extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
             extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
             extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
-        except:
-            if not mute:
-                print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+        except OverflowError:
+            pass
+        # except:
+        #     if not mute:
+        #         print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
 
     return dataset,extra_keywords
 
@@ -676,6 +676,58 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     yfit = yfit - searchrad + y0
 
     return corrflux, fwhm, xfit, yfit
+
+def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
+    """
+    Fits a 2d airy function to the data at point (xguess, yguess)
+
+    Args:
+        frame: the data - Array of size (y,x)
+        xguess,yguess: location to fit the 2d guassian to (should be pretty accurate)
+        searchrad: 1/2 the length of the box used for the fit
+        guessfwhm: approximate fwhm to fit to
+
+    Returns:
+        peakflux: the peakflux of the Airy function
+        fwhm: diameter between the first minima along one axis
+        xfit: x position
+        yfit: y position
+    """
+    if not isinstance(searchrad, int):
+        raise ValueError("searchrad needs to be an integer")
+
+    x0 = np.rint(xguess).astype(int)
+    y0 = np.rint(yguess).astype(int)
+    #construct our searchbox
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
+
+    #mask bad pixels
+    fitbox[np.where(np.isnan(fitbox))] = 0
+ 
+    # construct an Airy function to fit to the data
+    airy_psf = modeling.functional_models.AiryDisk2D()
+    fity, fitx = np.indices(fitbox.shape)
+    errorfunction = lambda p: np.sum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) - fitbox)**2)
+
+    #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
+    #(2searchrad+1,2searchrad+1)
+
+    guess = np.array((searchrad, searchrad, guesspeak, guessfwhm))
+
+    #p, success = optimize.leastsq(errorfunction, guess)
+    res = optimize.minimize(errorfunction, guess, bounds=((0, 2*searchrad+1), (0, 2*searchrad+1), (0, None), (0, searchrad)))
+    p = res.x
+
+    xfit = p[0]
+    yfit = p[1]
+    peakflux = p[2]
+    fwhm = p[3] 
+
+    # convert xfit, yfit back to image coordinates
+    xfit = xfit - searchrad + x0
+    yfit = yfit - searchrad + y0
+
+    return peakflux, fwhm, xfit, yfit
 
 
 def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):

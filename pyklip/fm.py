@@ -987,8 +987,8 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                       movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
-                      spectrum=None, padding=3, save_klipped=True, flipx=True,
-                      N_pix_sector = None,mute_progression = False):
+                      spectrum=None, padding=0, save_klipped=True, flipx=True,
+                      N_pix_sector = None,mute_progression = False, annuli_spacing="constant"):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -1042,6 +1042,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
                         doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
                         idea.
+        annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
+                        log (logarithmical expansion with r), and linear (linearly expansion with r)
 
 
     Returns:
@@ -1107,9 +1109,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
             else:
                 # grab the NaN from the 1st percentile (this way we drop outliers)
                 OWA = np.sqrt(np.percentile((x[nanpix] - centers[0][0]) ** 2 + (y[nanpix] - centers[0][1]) ** 2, 1))
-        dr = float(OWA - IWA) / (annuli)
         # calculate the annuli
-        rad_bounds = [(dr * rad + IWA, dr * (rad + 1) + IWA) for rad in range(annuli)]
+        rad_bounds = klip.define_annuli_bounds(annuli, IWA, OWA, annuli_spacing)
         # last annulus should mostly emcompass everything
         # rad_bounds[annuli - 1] = (rad_bounds[annuli - 1][0], imgs[0].shape[0])
     else:
@@ -1570,9 +1571,9 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
 
 def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
-                 OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=3,
+                 OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=0,
                  numbasis=None, maxnumbasis=None, numthreads=None, calibrate_flux=False, aligned_center=None,
-                 spectrum=None, highpass=False, save_klipped=True, mute_progression=False):
+                 spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False):
     """
     Run KLIP-FM on a dataset object
 
@@ -1618,6 +1619,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units
+        annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
+                        log (logarithmical expansion with r), and linear (linearly expansion with r)
         save_klipped: if True, will save the regular klipped image. If false, it wil not and sub_imgs will return None
         mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
                         doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
@@ -1699,7 +1702,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
                                      maxnumbasis=maxnumbasis, aligned_center=aligned_center, numthreads=numthreads,
                                      minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
-                                     flipx=dataset.flipx,
+                                     flipx=dataset.flipx, annuli_spacing=annuli_spacing,
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression)
 
     klipped, fmout, perturbmag, klipped_center = klip_outputs # images are already rotated North up East left

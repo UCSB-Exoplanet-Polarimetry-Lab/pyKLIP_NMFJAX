@@ -2,18 +2,12 @@ __author__ = 'JB'
 
 
 import warnings
-import itertools
-
-from scipy.optimize import leastsq
-from astropy.modeling import models, fitting
-from matplotlib import rcParams
-from scipy.interpolate import interp1d
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
-
-import numpy as np
 from copy import copy
 
+import numpy as np
+from scipy.optimize import leastsq
+from scipy.interpolate import interp1d
+from astropy.modeling import models, fitting
 from pyklip.kpp.utils.mathfunc import *
 from pyklip.kpp.utils.multiproc import *
 from pyklip.kpp.utils.GPIimage import *
@@ -157,7 +151,18 @@ def get_image_stat_map(image,
         # Calculate the radial distance of each pixel
         r_grid = abs(x_grid +y_grid*1j)
 
-        image_finite = np.where(np.isfinite(image))
+        nanpix = np.where(np.isnan(image))
+        stat_map = stddev_func(r_grid.ravel())
+        stat_map.shape = r_grid.shape
+        stat_map[nanpix] = np.nan
+
+        if type == "SNR":
+            stat_map = image/stat_map
+
+        return stat_map
+        
+
+        image_finite = np.where(np.isfinite(image)) 
 
         for k,l in zip(image_finite[0],image_finite[1]):
             #stdout.flush()
@@ -593,6 +598,7 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
 
     if interupt_plot:
         import matplotlib.pyplot as plt
+        from matplotlib import rcParams
         rcParams.update({'font.size': 20})
         fig = 2
         plt.close(2)
@@ -618,6 +624,8 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
     pdf_model /= np.sum(pdf_model)
 
     if interupt_plot:
+        from mpl_toolkits.axes_grid1 import host_subplot
+        import mpl_toolkits.axisartist as AA
         host = host_subplot(122, axes_class=AA.Axes)
         par1 = host.twinx()
         p1, = host.plot(new_sampling,pdf_model/(new_sampling[1]-new_sampling[0]),'r-',linewidth=5)
