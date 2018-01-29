@@ -39,6 +39,7 @@ class MatchedFilter(NoFM):
                  ref_center = None,
                  flipx = None,
                  rm_edge = None,
+                 edge_threshold = None,
                  planet_radius = None,
                  background_width = None,
                  save_bbfm = None):
@@ -71,6 +72,8 @@ class MatchedFilter(NoFM):
                     Should match the same attribute in the instrument class.
             rm_edge: When True (default), remove image edges to avoid edge effect. When there is more than 25% of NaNs
                     in the projection of the FM model on the data, the result of the projection is set to NaNs right away.
+            edge_threshold: if rm_edge is true, defines the fraction of pixels that needs to be finite in the aperture
+                around the planet for the projection to be calculated.
             planet_radius: Radius of the aperture to be used for the matched filter (pick something of the order of the
                             2xFWHM)
             background_width: Half the width of the arc in which the local standard deviation will be calculated.
@@ -86,6 +89,11 @@ class MatchedFilter(NoFM):
             self.rm_edge = rm_edge
         else:
             self.rm_edge = True
+
+        if edge_threshold is None:
+            self.edge_threshold = 0.75
+        else:
+            self.edge_threshold = edge_threshold
 
         if true_fakes_pos is None:
             self.true_fakes_pos = False
@@ -156,12 +164,11 @@ class MatchedFilter(NoFM):
             raise Exception("PSF cube is too small. It needs a stamp width bigger than 8 pixels.")
         stamp_PSF_x_grid, stamp_PSF_y_grid = np.meshgrid(np.arange(0,nx_PSF,1)-nx_PSF//2,np.arange(0,ny_PSF,1)-ny_PSF//2)
         self.stamp_PSF_mask = np.ones((ny_PSF,nx_PSF))
-        r_PSF_stamp = abs((stamp_PSF_x_grid) +(stamp_PSF_y_grid)*1j)
+        r_PSF_stamp = np.sqrt((stamp_PSF_x_grid)**2 +(stamp_PSF_y_grid)**2)
         if planet_radius is not None:
             self.planet_radius = planet_radius
         else:
             self.planet_radius =  int(np.round(np.min([ny_PSF,nx_PSF])*7./20.))
-        print("self.planet_radius",self.planet_radius)
         self.stamp_PSF_mask[np.where(r_PSF_stamp < self.planet_radius)] = np.nan
         # self.stamp_PSF_mask[np.where(r_PSF_stamp < 4.)] = np.nan
         if background_width is not None:
@@ -172,7 +179,7 @@ class MatchedFilter(NoFM):
         stamp_bbfm_x_grid, stamp_bbfm_y_grid = np.meshgrid(np.arange(0,self.planet_radius*2,1)-self.planet_radius,
                                                            np.arange(0,self.planet_radius*2,1)-self.planet_radius)
         r_bbfm_stamp = abs((stamp_bbfm_x_grid) +(stamp_bbfm_y_grid)*1j)
-        self.bbfm_mask[np.where(r_bbfm_stamp < planet_radius)] = np.nan
+        self.bbfm_mask[np.where(r_bbfm_stamp < self.planet_radius)] = np.nan
 
         if ref_center is not None:
             self.ref_center = ref_center
@@ -432,16 +439,40 @@ class MatchedFilter(NoFM):
             for sep_fk,pa_fk,row_id,col_id in zip(r_list,np.rad2deg(pa_list),row_id_list,col_id_list):
                 # print(sep_fk,pa_fk,row_id,col_id)
                 # 1/ Inject a fake at one pa and sep in the science image
-                model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv,
-                                                         radstart, radend, phistart, phiend, padding, ref_center,
-                                                         parang, ref_wv,sep_fk,pa_fk, flipx)
+                try:
+                    model_sci,mask = self.generate_model_sci(input_img_shape, section_ind, parang, ref_wv,
+                                                             radstart, radend, phistart, phiend, padding, ref_center,
+                                                             parang, ref_wv,sep_fk,pa_fk, flipx)
+                except:
+                    # print("skip",sep_fk,pa_fk)
+                    continue
                 # Normalize the science image according to the spectrum. the model is normalize to unit contrast,
                 model_sci = model_sci*self.spectrallib[spec_id][input_img_num]
                 where_fk = np.where(mask==2)[0]
                 where_background = np.where(mask>=1)[0] # Caution: it includes where the fake is...
                 where_background_strict = np.where(mask==1)[0]
 
-                if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=0.75:
+                # JB hack trying to include covariances
+                # if 0:
+                #     section_ind_y,section_ind_x = np.unravel_index(section_ind,(self.ny,self.nx))
+                #     section_ind_y,section_ind_x = section_ind_y[0][where_fk],section_ind_x[0][where_fk]
+                #     distances = np.sqrt((section_ind_x[:,None]-section_ind_x[None,:])**2+(section_ind_y[:,None]-section_ind_y[None,:])**2)
+                #     from  scipy.interpolate import interp1d
+                #     corr_profile = interp1d([0,1,np.sqrt(2),2],[1,0.2,-0.1,0],bounds_error=False, fill_value=0)
+                #     spatial_covar =corr_profile(distances)
+                #     inv_spatial_covar = np.linalg.inv(spatial_covar)
+                #
+                #     # import matplotlib.pyplot as plt
+                #     # plt.subplot(1,3,1)
+                #     # plt.imshow(distances,interpolation="nearest")
+                #     # plt.subplot(1,3,2)
+                #     # plt.imshow(spatial_covar,interpolation="nearest")
+                #     # plt.subplot(1,3,3)
+                #     # plt.imshow(np.linalg.inv(spatial_covar),interpolation="nearest")
+                #     # plt.show()
+                #     # exit()
+
+                if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=self.edge_threshold:
                     fmout1[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout1[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout1[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
@@ -498,12 +529,35 @@ class MatchedFilter(NoFM):
                 klipped_rm_pl = copy(klipped[:,N_KL_id]) -sky
                 klipped_rm_pl[where_fk] -=  (dot_prod/model_norm)*postklip_psf_fk
                 klipped_rm_pl_bkg = klipped_rm_pl[where_background]
-                if self.rm_edge and (float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=0.75):
+                if self.rm_edge and (float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=self.edge_threshold):
                     variance = np.nan
                     npix = np.nan
                 else:
                     variance = np.nanvar(klipped_rm_pl_bkg)
                     npix = np.sum(np.isfinite(klipped_rm_pl_bkg))
+
+                # JB hack trying to include covariances
+                # else:
+                #     dot_prod = np.nansum(klipped_sub*postklip_psf_fk)
+                #     model_norm = np.nansum(postklip_psf_fk*postklip_psf_fk)
+                #     klipped_rm_pl = copy(klipped[:,N_KL_id]) -sky
+                #     klipped_rm_pl[where_fk] -=  (dot_prod/model_norm)*postklip_psf_fk
+                #     klipped_rm_pl_bkg = klipped_rm_pl[where_background]
+                #     if self.rm_edge and (float(np.sum(np.isfinite(klipped_rm_pl_bkg)))/float(np.size(klipped_rm_pl_bkg))<=self.edge_threshold):
+                #         variance = np.nan
+                #         npix = np.nan
+                #     else:
+                #         variance = np.nanvar(klipped_rm_pl_bkg)
+                #         npix = np.sum(np.isfinite(klipped_rm_pl_bkg))
+                #
+                #     inv_spatial_covar = inv_spatial_covar/variance
+                #     # print(klipped_sub.shape,inv_spatial_covar.shape)
+                #     # print(np.dot(klipped_sub,inv_spatial_covar).shape)
+                #     dot_prod = np.nansum(np.dot(klipped_sub,inv_spatial_covar)*postklip_psf_fk)
+                #     model_norm = np.nansum(np.dot(postklip_psf_fk,inv_spatial_covar)*postklip_psf_fk)
+                #     variance = 1.0
+                #     # exit()
+
 
 
                 fmout1[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = dot_prod
@@ -648,7 +702,7 @@ class MatchedFilter(NoFM):
 
         # hdu = pyfits.PrimaryHDU(fmout1)
         # hdulist = pyfits.HDUList([hdu])
-        # hdulist.writeto(outputdir+os.path.sep+'fmout1_test3.fits',clobber=True)
+        # hdulist.writeto(outputdir+os.path.sep+'fmout1_mvt6_KL30.fits',clobber=True)
 
         # The mf.MatchedFilter class calculate the projection of the FM on the data for each pixel and images.
         # The final combination to form the cross  cross correlation, matched filter and contrast maps is done right
