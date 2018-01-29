@@ -213,7 +213,8 @@ class CHARISData(Data):
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
-            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM'])
+            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM']) # nm
+            thiswvs /= 1e3 # now in microns
 
 
             #remove undesirable slices of the datacube if necessary
