@@ -71,20 +71,27 @@ def get_specType(object_name,SpT_file_csv = None):
         return "A8"
 
     if SpT_file_csv is None:
-        import urllib
-
         object_name = object_name.replace('_','+')
 
-        # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
-        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
-                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
-                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
+        try: #python 2
+            import urllib
+            # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+            url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                                  obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                                  obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
+        except: # python 3
+            import urllib.request
+            # url = urllib.request.urlopen("http://www.python.org")
+            url = urllib.request.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&"
+                                        +"obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&"
+                                        +"obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            # if line.startswith('Spectral type:'):
-            if line.find('Spectral type:') != -1:
+            str_line = line.decode("utf8")
+            # if line.find('Spectral type:') != -1:
+            if 'Spectral type:' in str_line:
                 # print(line)
-                spec_type =line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
+                spec_type =str_line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
 
         try:
             return spec_type
@@ -92,7 +99,7 @@ def get_specType(object_name,SpT_file_csv = None):
             print("Couldn't find {0} in Simbad.".format(object_name))
             return None
 
-    with open(SpT_file_csv, 'rb') as csvfile_TID:
+    with open(SpT_file_csv, 'r') as csvfile_TID:
         TID_reader = csv.reader(csvfile_TID, delimiter=';')
         TID_csv_as_list = list(TID_reader)
         TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
