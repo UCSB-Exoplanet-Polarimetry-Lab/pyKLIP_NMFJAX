@@ -20,6 +20,9 @@ try:
 except ImportError:
     mkl_exists = False
 
+# can turn off for debugging purposes
+parallel = True
+
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 pa_imgs, wvs_imgs, centers_imgs, psf_library, psf_library_shape):
     """
@@ -1020,8 +1023,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
                     maxtasksperchild=50)
+
+    # # SINGLE THREAD DEBUG PURPOSES ONLY
+    if not parallel:
+        _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape)
+
 
     if restored_aligned is None:
         #align and scale the images for each image. Use map to do this asynchronously
@@ -1049,23 +1058,34 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
-        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
-                                                                     maxnumbasis,
-                                                                     radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, psf_library_good, psf_library_corr, False,
-                                                                     dtype, algo))
-                    for phistart,phiend in phi_bounds
-                    for radstart, radend in rad_bounds]
+
+        if parallel:
+            outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
+                                                                        maxnumbasis,
+                                                                        radstart, radend, phistart, phiend, movement,
+                                                                        aligned_center, minrot, maxrot, spectrum,
+                                                                        mode, psf_library_good, psf_library_corr, False,
+                                                                        dtype, algo))
+                        for phistart,phiend in phi_bounds
+                        for radstart, radend in rad_bounds]
+        else:
+            outputs += [_klip_section_multifile(scidata_indicies, wv_value, wv_index, numbasis,
+                                                maxnumbasis,
+                                                radstart, radend, phistart, phiend, movement,
+                                                aligned_center, minrot, maxrot, spectrum,
+                                                mode, psf_library_good, psf_library_corr, False,
+                                                dtype, algo)
+                        for phistart,phiend in phi_bounds
+                        for radstart, radend in rad_bounds]
 
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
-    print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
-    for index, out in enumerate(outputs):
-        out.wait()
-        if (index + 1) % 10 == 0:
-            print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
-
+    if parallel:
+        print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
+        for index, out in enumerate(outputs):
+            out.wait()
+            if (index + 1) % 10 == 0:
+                print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
 
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
