@@ -478,7 +478,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
                 print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
             # inject fake planet at given radius,pa into dataset.input
             inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa,
-                          stampsize=np.min([ny_psf, nx_psf]), thetas=pa+dataset.PAs)
+                          stampsize=np.min([ny_psf, nx_psf]))#, thetas=pa+dataset.PAs)
 
             # Save fake planet position in headers
             extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
