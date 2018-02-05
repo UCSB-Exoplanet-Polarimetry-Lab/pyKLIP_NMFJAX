@@ -1712,6 +1712,11 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     # save output centers here
     dataset.output_centers = np.array([klipped_center for _ in range(klipped.shape[1])])
 
+    for angle, astr_hdr in zip(dataset.PAs, dataset.output_wcs):
+        if astr_hdr is None:
+            continue
+        klip._rotate_wcs_hdr(astr_hdr, angle, flipx=dataset.flipx)
+
     # write fmout
     fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
                         calibrate_flux=calibrate_flux, spectrum=spectra_template)
