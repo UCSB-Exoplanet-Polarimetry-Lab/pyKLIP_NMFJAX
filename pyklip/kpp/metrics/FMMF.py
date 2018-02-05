@@ -708,6 +708,21 @@ class FMMF(KPPSuperClass):
 
         self.metricMap = [self.FMMF_map,self.FMCC_map,self.contrast_map,self.final_cube_modes]
 
+        if not os.path.exists(self.outputDir+os.path.sep+self.folderName):
+            os.makedirs(self.outputDir+os.path.sep+self.folderName)
+        # hdu = pyfits.PrimaryHDU(fmout)
+        # hdulist = pyfits.HDUList([hdu])
+        # hdulist.writeto(self.outputDir+os.path.sep+self.folderName+os.path.sep+self.prefix+'-'+'fmout.fits',clobber=True)
+
+        hdulist = pyfits.HDUList()
+        hdulist.append(pyfits.PrimaryHDU(data=sub_imgs))
+        try:
+            hdulist.writeto(os.path.join(self.outputDir,self.folderName,"datasetoutput.fits"), overwrite=True)
+        except TypeError:
+            hdulist.writeto(os.path.join(self.outputDir,self.folderName,"datasetoutput.fits"), clobber=True)
+        hdulist.close()
+        print(sub_imgs.shape)
+
         return self.metricMap
 
 

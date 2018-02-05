@@ -70,8 +70,21 @@ def get_specType(object_name,SpT_file_csv = None):
     if object_name == "IK_Peg":
         return "A8"
 
-    if SpT_file_csv is None:
+    if SpT_file_csv is not None:
+        with open(SpT_file_csv, 'r') as csvfile_TID:
+            TID_reader = csv.reader(csvfile_TID, delimiter=';')
+            TID_csv_as_list = list(TID_reader)
+            TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
+            target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
+            specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
+
+    try:
+        object_name = object_name.replace(' ','_')
+        object_name = object_name.replace('+','_')
+        return specTypes[target_names.index(object_name)]
+    except:
         object_name = object_name.replace('_','+')
+        object_name = object_name.replace(' ','+')
 
         try: #python 2
             import urllib
@@ -93,45 +106,15 @@ def get_specType(object_name,SpT_file_csv = None):
                 # print(line)
                 spec_type =str_line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
 
-        try:
-            return spec_type
-        except:
-            print("Couldn't find {0} in Simbad.".format(object_name))
-            return None
-
-    with open(SpT_file_csv, 'r') as csvfile_TID:
-        TID_reader = csv.reader(csvfile_TID, delimiter=';')
-        TID_csv_as_list = list(TID_reader)
-        TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
-        target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
-        specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
-
-
-    try:
-        return specTypes[target_names.index(object_name)]
-    except:
-        import urllib
-
-        print("Couldn't find {0} in spectral type list. Try to retrieve it from Simbad.".format(object_name))
-
-        target_names.append(object_name)
-        object_name = object_name.replace('_','+')
-
-        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
-                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
-                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
-        text = url.read()
-        for line in text.splitlines():
-            if line.startswith('Spectral type:'):
-                spec_type =line.replace("Spectral type: ","").split(" ")[0]
-        specTypes.append(spec_type)
-
-
-        attrib_name=["name","specType"]
-        with open(SpT_file_csv, 'w+') as csvfile:
-            csvwriter = csv.writer(csvfile, delimiter=';')
-            table_to_csv = [attrib_name]+zip(target_names,specTypes)
-            csvwriter.writerows(table_to_csv)
+        if SpT_file_csv is not None:
+            print("Couldn't find {0} in spectral type list. Retrieved it from Simbad.".format(object_name))
+            target_names.append(object_name.replace('+','_'))
+            specTypes.append(spec_type)
+            attrib_name=["name","specType"]
+            with open(SpT_file_csv, 'w+') as csvfile:
+                csvwriter = csv.writer(csvfile, delimiter=';')
+                table_to_csv = [attrib_name]+[(name, stype) for name, stype in zip(target_names,specTypes)]
+                csvwriter.writerows(table_to_csv)
 
         return spec_type
 
