@@ -258,9 +258,13 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None, pyklip_output=False):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the follwing attributes:
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -270,8 +274,6 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-            pyklip_output: boolean, if False, assumes we're saving input data rather than output data
-                            (TODO: JB, please depricate this)
 
         """
         hdulist = fits.HDUList()
@@ -340,10 +342,7 @@ class Ifs(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
-        if not pyklip_output:
-            center = self.centers[0]
-        else:
-            center = self.output_centers[0]
+        center = self.output_centers[0]
             
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
@@ -625,9 +624,13 @@ class Irdis(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None, pyklip_output=False):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the follwing attribute:
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -637,8 +640,6 @@ class Irdis(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-            pyklip_output: boolean, if False, assumes we're saving input data rather than output data
-                            (TODO: JB, please depricate this)
 
         """
         hdulist = fits.HDUList()
@@ -705,10 +706,7 @@ class Irdis(Data):
             hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
             # write it out instead
 
-        if not pyklip_output:
-            center = self.centers[0]
-        else:
-            center = self.output_centers[0]
+        center = self.output_centers[0]
 
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})

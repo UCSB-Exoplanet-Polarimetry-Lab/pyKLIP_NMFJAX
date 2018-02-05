@@ -294,6 +294,10 @@ class NIRC2Data(Data):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
 
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the following attribute:
+                dataset.output_centers = dataset.centers
+
         Inputs:
             filepath: path to file to output
             data: 2D or 3D data to save
