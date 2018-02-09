@@ -513,7 +513,7 @@ class GPIData(Data):
                 hdulist[1].header[name] = value
 
         # write z axis units if necessary
-        if zaxis is not None:
+        if zaxis is not None and filetype is not None:
             #Writing a KL mode Cube
             if "KL Mode" in filetype:
                 hdulist[1].header['CTYPE3'] = 'KLMODES'
