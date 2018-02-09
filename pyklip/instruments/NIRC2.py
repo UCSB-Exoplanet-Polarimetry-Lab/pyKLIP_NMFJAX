@@ -390,7 +390,7 @@ class NIRC2Data(Data):
 
         #use the dataset astr hdr if none was passed in
         #if astr_hdr is None:
-        #    print self.wcs[0]
+        #    print(self.wcs[0])
         #    astr_hdr = self.wcs[0]
         if astr_hdr is not None:
             #update astro header
@@ -513,7 +513,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
         exthdr: For NIRC2, None
     """
     print("Reading File: {0}".format(filepath))
-    hdulist = fits.open(filepath, mode='update')
+    hdulist = fits.open(filepath, mode='update', ignore_missing_end=True) # some NIRC2 FITS files are missing END card
     try:
         #grab the data and headers
         cube = hdulist[0].data
@@ -686,7 +686,7 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
             zp_offset = -0.262 # [deg]; from Service et al. 2016
     else:
         zp_offset = 0.
-        print "WARNING: No PA offset applied."
+        print("WARNING: No PA offset applied.")
     
     if rotmode is None:
         global _last_rotmode
@@ -820,10 +820,10 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
         Returns [X,Y] list of Radon transform star center. Default is to also write
         the star coordinates to PSFCENTX & PSFCENTY in original FITS header.
     """
-    from radonCenter import searchCenter
+    from pyklip.instruments.utils.radonCenter import searchCenter
     from scipy.ndimage.filters import median_filter, gaussian_filter
     
-    if not silent: print "Finding star..."
+    if not silent: print("Finding star...")
     data = hdulist[0].data.copy()
     hdr = hdulist[0].header
     
@@ -882,12 +882,12 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
     data_masked = np.ma.array(data_filt, mask=mask_total)
     
     # Perform radon transform search for star.
-    if not silent: print "Performing radon transform search..."
+    if not silent: print("Performing radon transform search...")
     (x_radon, y_radon) = searchCenter(data_masked.filled(0.), ctr[1], ctr[0],
                             size_window=radon_wdw, size_cost=7, m=0.2, M=0.8,
                             smooth=smooth, theta=spike_angles)
     
-    if not silent: print "radon y,x =", y_radon, ",", x_radon
+    if not silent: print("radon y,x = {0}, {1}".format(y_radon, x_radon))
     
     if write_hdr:
         # Update the original FITS header with new star coordinates.
@@ -895,7 +895,7 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
         hdr['PSFCENTY'] = (y_radon, 'Star Y numpy coord')
         
         hdulist.flush()
-        if not silent: print "Wrote new star coordinates to FITS header in PSFCENTX & PSFCENTY."
+        if not silent: print("Wrote new star coordinates to FITS header in PSFCENTX & PSFCENTY.")
     
     return [x_radon, y_radon]
 
