@@ -12,6 +12,7 @@ import copy
 import astropy.io.fits as fits
 import scipy.interpolate as interp
 from scipy.stats import norm
+import scipy.ndimage as ndi
 
 #Logic to test mkl exists
 try:
@@ -312,8 +313,13 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     else:
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
 
-
     ref_psfs = aligned_imgs[:,  section_ind[0]]
+    
+    aligned_imgs_3d = aligned_imgs.reshape([aligned_imgs.shape[0], aligned_shape[-2], aligned_shape[-1]]) # make a cube that's not flattened in spatial dimensions
+    smooth_sigmas = (0,1,1)
+    ref_psfs_3d_smoothed = ndi.gaussian_filter(aligned_imgs_3d, smooth_sigmas)
+    ref_psfs_smoothed = ref_psfs_3d_smoothed.reshape([ref_psfs_3d_smoothed.shape[0], aligned_shape[-2] * aligned_shape[-1]])[:, section_ind[0]]
+    ref_psfs_smoothed[np.where(np.isnan(ref_psfs_smoothed))] = 0
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
@@ -328,6 +334,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     #also calculate correlation matrix since we'll use that to select reference PSFs
     covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
     corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+    corr_psfs = np.corrcoef(ref_psfs_smoothed)
+
 
     #grab the parangs
     parangs = _arraytonumpy(img_pa,dtype=dtype)
