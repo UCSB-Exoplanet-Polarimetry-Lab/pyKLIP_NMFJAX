@@ -8,6 +8,7 @@ import scipy.ndimage as ndi
 import scipy.ndimage.interpolation as sinterp
 
 import pyklip.covars as covars
+import astropy.stats.circstats as circstats
 
 # emcee more MCMC sampling
 import emcee
@@ -508,13 +509,20 @@ class FMAstrometry(object):
 
         # calculate sep and pa from x/y separation
         sep_mcmc = np.sqrt((x_mcmc)**2 + (y_mcmc)**2)
-        pa_mcmc = (np.degrees(np.arctan2(y_mcmc, -x_mcmc)) - 90) % 360
+        # For PA compute mean using circstats package, find delta_pa between all points and the mean,
+        # then compute median/precentiles
+        pa_mcmc = (np.arctan2(y_mcmc, -x_mcmc) - (np.pi/2.0)) % (2.0*np.pi) # Radians!
+        pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
+        d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
+        pa_median = np.median(d_pa) + pa_mean
+        pa_percentile = np.nanpercentile(d_pa, [84,16])  - np.median(d_pa) # median of d_pa should be small
+        pa_mcmc = np.degrees(pa_mcmc) # Convert to degrees
 
         # calculate sep and pa statistical errors
         sep_best = np.median(sep_mcmc)
-        pa_best = np.median(pa_mcmc)
+        pa_best = np.degrees(pa_median)
         sep_1sigma_raw = (np.percentile(sep_mcmc, [84,16]) - sep_best)
-        pa_1sigma_raw = (np.percentile(pa_mcmc, [84,16]) - pa_best)
+        pa_1sigma_raw = np.degrees(pa_percentile)
 
         print("Raw Sep/PA Centroid = ({0}, {1}) with statistical error of {2} pix in Sep and {3} pix in PA".format(sep_best, pa_best, sep_1sigma_raw, pa_1sigma_raw))
         
@@ -548,7 +556,14 @@ class FMAstrometry(object):
         # PA Offset
         if pa_offset is not None:
             print("Adding in a PA/North angle offset")
-            pa_mcmc = (pa_mcmc + pa_offset) % 360
+            # Have to repeat wrapping procedure above in case pa_offset is large
+            pa_mcmc = np.radians((pa_mcmc + pa_offset) % 360) # Convert back to radians for circstats
+            pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
+            d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
+
+            pa_median = np.median(d_pa) + pa_mean
+            pa_best = np.degrees(pa_median)
+            pa_mcmc = np.degrees(pa_mcmc) # Convert back to degrees
         
         # PA Uncertainity
         if pa_uncertainty is None:

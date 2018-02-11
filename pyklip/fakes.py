@@ -405,7 +405,6 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid[range(2,annuli,3),:] += 60
         pa_grid = pa_grid + 5
 
-        #sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
         sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     if fake_position_dict["mode"] == "sector":
@@ -434,7 +433,6 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         pa_grid[range(1,annuli-1,2),:] += delta_th/2.
 
-        #sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
         sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
@@ -480,7 +478,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
                 print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
             # inject fake planet at given radius,pa into dataset.input
             inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa,
-                          stampsize=np.min([ny_psf, nx_psf]), thetas=pa+dataset.PAs)
+                          stampsize=np.min([ny_psf, nx_psf]))#, thetas=pa+dataset.PAs)
 
             # Save fake planet position in headers
             extra_keywords["FKPA{0:02d}".format(fake_id)] = pa

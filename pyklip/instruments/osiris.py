@@ -41,7 +41,7 @@ class Ifs(Data):
     def __init__(self, data_cube_list, telluric_cube,
                  guess_center=None,recalculate_center_cadi=False, centers = None,
                  psf_cube_size=21,
-                 coaddslices=None, nan_mask_boxsize=0,median_filter_boxsize = 0,badpix2nan=False):
+                 coaddslices=None, nan_mask_boxsize=0,median_filter_boxsize = 0,badpix2nan=False,ignore_PAs=True):
         super(Ifs, self).__init__()
 
         self.nfiles = len(data_cube_list)
@@ -52,6 +52,9 @@ class Ifs(Data):
         self.prihdrs = []
         self.wvs = []
         self.centers = []
+        self.OBFMXIM_list = []
+        self.OBFMYIM_list = []
+        self.PAs = []
         for k,data_cube in enumerate(data_cube_list):
             with fits.open(data_cube) as hdulist:
                 print("Reading "+data_cube)
@@ -71,7 +74,19 @@ class Ifs(Data):
                 self.wvs.extend(np.arange(init_wv,init_wv+dwv*self.nwvs,dwv))
 
                 # Plate scale of the spectrograph
-                self.platescale = float(self.prihdrs[k]["SSCALE"])
+                if "0.02" in self.prihdrs[k]["SSCALE"]:
+                    self.platescale = 0.0203
+                elif "0.035" in self.prihdrs[k]["SSCALE"]:
+                    self.platescale = 0.0350
+                elif "0.05" in self.prihdrs[k]["SSCALE"]:
+                    self.platescale = 0.0500
+                elif "0.1" in self.prihdrs[k]["SSCALE"]:
+                    self.platescale = 0.1009
+
+
+                self.PAs.extend(np.array([self.prihdrs[k]["PARANG"],]*self.nwvs))
+                self.OBFMXIM_list.extend(np.array([self.prihdrs[k]["OBFMXIM"],]*self.nwvs))
+                self.OBFMYIM_list.extend(np.array([self.prihdrs[k]["OBFMYIM"],]*self.nwvs))
 
                 if guess_center is None:
                     self.centers.extend(np.array([[img.shape[1]/2., img.shape[0]/2.] for img in tmp_input]))
@@ -86,8 +101,9 @@ class Ifs(Data):
         self.wvs = np.array(self.wvs)
         self.centers = np.array(self.centers)
 
-        # TODO set the PAs right?
-        self.PAs = np.zeros(self.wvs.shape)
+        # # TODO set the PAs right?
+        if ignore_PAs:
+            self.PAs = np.zeros(self.wvs.shape)
 
         if badpix2nan:
             box_w = 3
@@ -216,7 +232,8 @@ class Ifs(Data):
 
         if coaddslices is not None:
 
-            N_chunks = self.psfs.shape[0]//coaddslices
+            # N_chunks = self.psfs.shape[0]//coaddslices
+            N_chunks = self.nwvs//coaddslices
             self.psfs = np.array([np.nanmean(self.psfs[k*coaddslices:(k+1)*coaddslices,:,:],axis=0) for k in range(N_chunks)])
             self.psfs_wvs = np.array([np.nanmean(self.psfs_wvs[k*coaddslices:(k+1)*coaddslices]) for k in range(N_chunks)])
 
@@ -224,6 +241,8 @@ class Ifs(Data):
             new_filenums = []
             new_centers = []
             new_PAs = []
+            new_OBFMXIM = []
+            new_OBFMYIM = []
             new_filenames = []
             new_dn_per_contrast = []
             # new_wcs = []
@@ -240,6 +259,8 @@ class Ifs(Data):
                 new_filenums.extend(np.array([self.filenums[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)]))
                 new_centers.extend([np.nanmean(self.centers[k*self.nwvs:(k+1)*self.nwvs,:][l*coaddslices:(l+1)*coaddslices,:],axis=0) for l in range(N_chunks)])
                 new_PAs.extend([self.PAs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+                new_OBFMXIM.extend([self.OBFMXIM_list[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
+                new_OBFMYIM.extend([self.OBFMYIM_list[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
                 new_filenames.extend([self.filenames[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
                 new_dn_per_contrast.extend([np.nanmean(self.dn_per_contrast[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices:(l+1)*coaddslices]) for l in range(N_chunks)])
                 # new_wcs.extend([self.wcs[k*self.nwvs:(k+1)*self.nwvs][l*coaddslices] for l in range(N_chunks)])
@@ -251,6 +272,8 @@ class Ifs(Data):
             self.filenums = np.array(new_filenums)
             self.centers = np.array(new_centers)
             self.PAs = np.array(new_PAs)
+            self.OBFMXIM_list = np.array(new_OBFMXIM)
+            self.OBFMYIM_list = np.array(new_OBFMYIM)
             self.filenames = new_filenames
             self.dn_per_contrast = np.array(new_dn_per_contrast)
             # self.wcs = new_wcs
@@ -448,10 +471,13 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data,center=None, klipparams=None, filetype="", zaxis=None , more_keywords=None,
-                 pyklip_output=True):
+    def savedata(self, filepath, data,center=None, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
-        Save SPHERE Data.
+        Save OSIRIS Data.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the following attribute:
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -463,8 +489,6 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
-                            have been defined.
         
         """
         hdulist = fits.HDUList()
@@ -514,16 +538,16 @@ class Ifs(Data):
 
 
         #use the dataset center if none was passed in
-        if not pyklip_output:
-            center = self.centers[0]
-        else:
-            center = self.output_centers[0]
+        center = self.output_centers[0]
         if center is not None:
             hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
             hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-        hdulist.writeto(filepath, overwrite=True)
+        try:
+            hdulist.writeto(filepath, overwrite=True)
+        except TypeError:
+            hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
     def calibrate_output(self, img, spectral=False, units="contrast"):
@@ -605,3 +629,159 @@ def casdi_residual(xcen,ycen,input,wvs,nan2zero = False):
     # plt.show()
 
     return input_sub.ravel()
+
+def determine_mosaic_offsets_from_header(prihdr_list):
+
+    OBFMXIM_list = []
+    OBFMYIM_list = []
+    parang_list = []
+    vd_InstAngl_list = []
+    for k,prihdr in enumerate(prihdr_list):
+        OBFMXIM_list.append(float(prihdr["OBFMXIM"]))
+        OBFMYIM_list.append(float(prihdr["OBFMYIM"]))
+        parang_list.append(float(prihdr["PARANG"]))
+        vd_InstAngl_list.append(float(prihdr["INSTANGL"]))
+
+    vd_C0 = OBFMXIM_list
+    vd_C1 = OBFMYIM_list
+    md_Coords = np.array([vd_C0,vd_C1])
+    vd_InstAngl = np.array(vd_InstAngl_list)
+
+    if "0.02" in prihdr["SSCALE"]:
+        d_Scale = 0.0203
+    elif "0.035" in prihdr["SSCALE"]:
+        d_Scale = 0.0350
+    elif "0.05" in prihdr["SSCALE"]:
+        d_Scale = 0.0500
+    elif "0.1" in prihdr["SSCALE"]:
+        d_Scale = 0.1009
+    else:
+        d_Scale = 0.0203
+
+    vd_CoordsNX =   (md_Coords[0,0] - md_Coords[0,:]) * (35.6 * (0.0397/d_Scale))
+    vd_CoordsNY  =  (md_Coords[1,0] - md_Coords[1,:]) * (35.6 * (0.0397/d_Scale))
+
+    vd_InstAngl = np.deg2rad(vd_InstAngl)
+    md_Offsets = np.array([vd_CoordsNX * np.cos(vd_InstAngl) + vd_CoordsNY * np.sin(vd_InstAngl),
+                   (-1.)*vd_CoordsNX * np.sin(vd_InstAngl) + vd_CoordsNY * np.cos(vd_InstAngl)])
+
+    delta_x = -(md_Offsets[1,:]-md_Offsets[1,0])
+    delta_y = -(md_Offsets[0,:]-md_Offsets[0,0])
+
+    return delta_x,delta_y
+
+
+def determine_mosaic_offsets_from_speckles(input_list):
+    ncubes,nz,ny,nx = input_list.shape
+    flat_inputs = np.nansum(input_list,axis=1)
+    flat_inputs[np.where(flat_inputs==0)] = np.nan
+    flat_inputs = flat_inputs/np.nanstd(flat_inputs,axis=(1,2))[:,None,None]
+    print(flat_inputs.shape)
+    print(ncubes,nz,ny,nx )
+    # exit()
+
+    # a = np.zeros((11,11))
+    # b = np.zeros((11,11))
+    # a[5:7,5:7] = 1
+    # b[6:8,6:8] = 1
+    #
+    # from image_registration.image_registration import chi2_shift
+    # xoff,yoff,exoff,eyoff = chi2_shift(a,a,np.ones((11,11)),return_error=True,upsample_factor='auto')
+    # print("coucou")
+    # print(xoff,yoff,exoff,eyoff)
+    # exit()
+
+    # plt.show()
+
+    # dx_map = np.zeros((ncubes,ncubes))
+    # dy_map = np.zeros((ncubes,ncubes))
+    # edx_map = np.zeros((ncubes,ncubes))
+    # edy_map = np.zeros((ncubes,ncubes))
+    # noise = np.ones((ny,nx))
+    # from image_registration.image_registration import chi2_shift
+    # for k in np.arange(0,ncubes):
+    #     for l in np.arange(0,ncubes):
+    #         dx_map[k,l],dy_map[k,l],edx_map[k,l],edy_map[k,l] = chi2_shift(flat_inputs[k],flat_inputs[l],noise,return_error=True,upsample_factor='auto')
+    #
+    #
+    # import matplotlib.pyplot as plt
+    # plt.subplot(2,2,1)
+    # plt.imshow(dx_map,interpolation="nearest")
+    # plt.colorbar()
+    # plt.subplot(2,2,2)
+    # plt.imshow(dy_map,interpolation="nearest")
+    # plt.colorbar()
+    # plt.subplot(2,2,3)
+    # plt.imshow(edx_map,interpolation="nearest")
+    # plt.colorbar()
+    # plt.subplot(2,2,4)
+    # plt.imshow(edy_map,interpolation="nearest")
+    # plt.colorbar()
+    # plt.show()
+
+    delta_x = [0]
+    delta_y = [0]
+    delta_x2 = [0]
+    delta_y2 = [0]
+    from image_registration.image_registration import chi2_shift
+    from image_registration.image_registration.fft_tools import shift
+    for k in np.arange(1,ncubes):
+        im1 = flat_inputs[0]
+        im2 = flat_inputs[k]
+        noise = np.ones(im2.shape)
+        xoff,yoff,exoff,eyoff = chi2_shift(im1,im2,noise/10.,return_error=True,upsample_factor='auto')
+        # print("bonjour")
+        # print(xoff,yoff,exoff,eyoff)
+        # print(xoff-0.5,yoff-0.5,exoff,eyoff)
+        # exit()
+        delta_x.append(xoff)
+        delta_y.append(yoff)
+        im1 = flat_inputs[k-1]
+        im2 = flat_inputs[k]
+        noise = np.ones(im2.shape)
+        xoff2,yoff2,exoff,eyoff = chi2_shift(im1,im2,noise,return_error=True,upsample_factor='auto')
+        # print(xoff2+delta_x2[-1],yoff2+delta_y2[-1],xoff2,yoff2,exoff,eyoff)
+        delta_x2.append(xoff2+delta_x2[-1])
+        delta_y2.append(yoff2+delta_y2[-1])
+
+        # import matplotlib.pyplot as plt
+        # plt.subplot(2,3,1)
+        # plt.imshow(flat_inputs[0],interpolation="nearest")
+        # plt.colorbar()
+        # plt.subplot(2,3,2)
+        # plt.imshow(flat_inputs[k],interpolation="nearest")
+        # plt.colorbar()
+        # plt.subplot(2,3,3)
+        # plt.imshow(flat_inputs[k-1],interpolation="nearest")
+        # plt.colorbar()
+        # plt.subplot(2,3,4)
+        # res = flat_inputs[0]-shift.shiftnd(flat_inputs[k],(-yoff+0.5,-xoff+0.5))
+        # print(np.sqrt(np.nansum(res**2)))
+        # plt.imshow(res,interpolation="nearest")
+        # plt.colorbar()
+        # plt.subplot(2,3,6)
+        # res = flat_inputs[k-1]-shift.shiftnd(flat_inputs[k],(-yoff2+0.5,-xoff2+0.5))
+        # print(np.sqrt(np.nansum(res**2)))
+        # plt.imshow(res,interpolation="nearest")
+        # plt.colorbar()
+        # plt.show()
+
+    # import matplotlib.pyplot as plt
+    # plt.figure(10)
+    # for k in range(ncubes):
+    #     plt.subplot(2,ncubes,k+1)
+    #     plt.imshow(flat_inputs[k,::-1,:],interpolation="nearest")
+    #     plt.subplot(2,ncubes,ncubes+k+1)
+    #     plt.imshow(flat_inputs[0,::-1,:]-shift.shiftnd(flat_inputs[k,::-1,:],(-delta_y[k],-delta_x[k])),interpolation="nearest")
+
+    # import matplotlib.pyplot as plt
+    # plt.subplot(1,2,1)
+    # plt.plot(delta_x,"r")
+    # plt.plot(delta_x2,"b")
+    # plt.subplot(1,2,2)
+    # plt.plot(delta_y,"r")
+    # plt.plot(delta_y2,"b")
+    # plt.show()
+
+
+    return delta_x,delta_y,delta_x2,delta_y2

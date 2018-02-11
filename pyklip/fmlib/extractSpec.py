@@ -170,7 +170,7 @@ class ExtractSpec(NoFM):
     #     return perturbmag, perturbmag_shape
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size = None):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, stamp_size = None):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -186,6 +186,7 @@ class ExtractSpec(NoFM):
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
             stamp_size: size of the stamp for spectral extraction
+            flipx: if True, flip x coordinate in final image
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -229,8 +230,12 @@ class ExtractSpec(NoFM):
             # find center of psf
             # to reduce calculation of sin and cos, see if it has already been calculated before
             if pa not in self.psf_centx_notscaled:
-                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - self.pa - pa))
-                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - self.pa - pa))
+                # flipx requires the opposite rotation
+                sign = -1.
+                if flipx:
+                    sign = 1.
+                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - sign*self.pa - pa))
+                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - sign*self.pa - pa))
             psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
             psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
@@ -256,7 +261,6 @@ class ExtractSpec(NoFM):
             whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
             models.append(segment_with_model)
-
             if stamp_size is not None:
                 # These are actually indices of indices. they indicate which indices correspond to the stamp in section_ind
                 stamp_mask[int(k-row_m_stamp):int(k+row_p_stamp), int(l-col_m_stamp):int(l+col_p_stamp)] = 1
@@ -275,7 +279,7 @@ class ExtractSpec(NoFM):
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, flipx=True, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -314,12 +318,12 @@ class ExtractSpec(NoFM):
 
 
         # generate models for the PSF of the science image
-        model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size=self.stamp_size)
+        model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, stamp_size=self.stamp_size)
         model_sci = model_sci[0]
         stamp_indices = stamp_indices[0]
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)
 
         # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
         #delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
@@ -398,7 +402,7 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
     movement = mv
     stamp_size=stamp
     N_frames = len(dataset.input)
-    N_cubes = len(dataset.exthdrs)
+    N_cubes = np.size(np.unique(dataset.filenums))
     nl = N_frames // N_cubes
 
     print("====================================")
@@ -474,7 +478,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         
     """
     N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
-    N_cubes = len(dataset.exthdrs) # 
+    N_cubes = np.size(np.unique(dataset.filenums)) # 
     nl = N_frames // N_cubes
     stamp_size_squared = fmout.shape[-1]
     stamp_size = np.sqrt(stamp_size_squared)

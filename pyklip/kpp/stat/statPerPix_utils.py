@@ -120,7 +120,7 @@ def get_image_stat_map_perPixMasking(image,
 
         outputs_list = \
             pool.map(get_image_stat_map_perPixMasking_threadTask_star,
-                       itertools.izip(chunks_row_indices,
+                       zip(chunks_row_indices,
                        chunks_col_indices,
                        itertools.repeat(image),
                        itertools.repeat(image_without_planet),

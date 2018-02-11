@@ -107,7 +107,7 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
         if not fakes_only and MJDOBS is not None and OI_list_folder is not None:
             object_GOI_filename = OI_list_folder+os.path.sep+object_name+'_GOI.csv'
             if len(glob(object_GOI_filename)) != 0:
-                with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+                with open(object_GOI_filename, 'r') as csvfile_GOI_list:
                     GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
                     GOI_csv_as_list = list(GOI_list_reader)
                     attrib_name = GOI_csv_as_list[0]
