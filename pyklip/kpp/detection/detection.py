@@ -324,7 +324,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
             pix2as: Platescale (arcsec per pixel).
             mask_radius: Radius of the mask used for masking point sources or the surroundings of the current pixel out
                         of the data. Default value is 4 pixels.
-            maskout_edge: mask a 10 pixels border around each NaN pixel.
+            maskout_edge: mask a maskout_edge pixels border around each NaN pixel.
             IWA: inner working angle in pixels.
             OWA: outer working angle in pixels.
 
@@ -351,15 +351,15 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
         # Definition of the different masks used in the following.
         stamp_size = mask_radius * 2 + 2
         # Mask to remove the spots already checked in criterion_map.
-        stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,stamp_size,1)-6,np.arange(0,stamp_size,1)-6)
+        stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,stamp_size,1)-stamp_size//2,np.arange(0,stamp_size,1)-stamp_size//2)
         stamp_mask = np.ones((stamp_size,stamp_size))
         r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
         stamp_mask[np.where(r_stamp < mask_radius)] = np.nan
 
         # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
-        if maskout_edge:
+        if maskout_edge is not None:
             IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center[0])
-            conv_kernel = np.ones((10,10))
+            conv_kernel = np.ones((maskout_edge,maskout_edge))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
 
@@ -381,7 +381,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
         # 7/ y position in pixel
         # 8/ row index
         # 9/ column index
-        candidate_table = []
+        candidates_table = []
         table_labels = ["index","value","PA","Sep (pix)","Sep (as)","x","y","row","col"]
         ## START WHILE LOOP.
         # Each iteration looks at one local maximum in the criterion map.
@@ -414,7 +414,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
                     continue
 
             # Store the current local maximum information in the table
-            candidate_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id,col_id])
+            candidates_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id,col_id])
         ## END WHILE LOOP.
 
-        return candidate_table
+        return candidates_table
