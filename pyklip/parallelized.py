@@ -315,12 +315,6 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
 
     ref_psfs = aligned_imgs[:,  section_ind[0]]
     
-    aligned_imgs_3d = aligned_imgs.reshape([aligned_imgs.shape[0], aligned_shape[-2], aligned_shape[-1]]) # make a cube that's not flattened in spatial dimensions
-    smooth_sigmas = (0,1,1)
-    ref_psfs_3d_smoothed = ndi.gaussian_filter(aligned_imgs_3d, smooth_sigmas)
-    ref_psfs_smoothed = ref_psfs_3d_smoothed.reshape([ref_psfs_3d_smoothed.shape[0], aligned_shape[-2] * aligned_shape[-1]])[:, section_ind[0]]
-    ref_psfs_smoothed[np.where(np.isnan(ref_psfs_smoothed))] = 0
-
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
@@ -331,9 +325,34 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
+
+
+    # calcualte the correlation matrix, with possible smoothing  
+    aligned_imgs_3d = aligned_imgs.reshape([aligned_imgs.shape[0], aligned_shape[-2], aligned_shape[-1]]) # make a cube that's not flattened in spatial dimension
+    # smooth only the square that encompasses the segment
+    # we need to figure where that is
+    # figure out the smallest square that encompasses this sector
+    blank_img = np.ones(aligned_shape[-2:]) * np.nan
+    blank_img.ravel()[section_ind] = 0
+    y_good, x_good = np.where(~np.isnan(blank_img))
+    ymin = np.min(y_good)
+    ymax = np.max(y_good)
+    xmin = np.min(x_good)
+    xmax = np.max(x_good)
+    blank_img_crop = blank_img[ymin:ymax+1, xmin:xmax+1]
+    section_ind_smooth_crop = np.where(~np.isnan(blank_img_crop))
+    # now that we figured out only the region of interest for each image to smooth, let's smooth that region'
+    ref_psfs_smoothed = []
+    for aligned_img_2d in aligned_imgs_3d:
+        smooth_sigma = 1
+        smoothed_square_crop = ndi.gaussian_filter(aligned_img_2d[ymin:ymax+1, xmin:xmax+1], smooth_sigma)
+        smoothed_section = smoothed_square_crop[section_ind_smooth_crop]
+        smoothed_section[np.isnan(smoothed_section)] = 0
+        ref_psfs_smoothed.append(smoothed_section)
+    
     #also calculate correlation matrix since we'll use that to select reference PSFs
-    covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
-    corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+    # covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+    # corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
     corr_psfs = np.corrcoef(ref_psfs_smoothed)
 
 
@@ -341,6 +360,9 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     parangs = _arraytonumpy(img_pa,dtype=dtype)
 
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+        #if file_index//37 == 30 and file_index % 37 == 10:
+        #if file_index//37 == 8 and file_index % 37 == 10:
+        #    import pdb; pdb.set_trace()
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
                                             parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
