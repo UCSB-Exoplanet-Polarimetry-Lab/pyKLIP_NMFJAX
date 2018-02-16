@@ -102,10 +102,10 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
 
 
     if object_name is not None:
-        object_name = object_name.replace(" ","_")
+        _object_name = copy(object_name).replace(" ","_")
 
         if not fakes_only and MJDOBS is not None and OI_list_folder is not None:
-            object_GOI_filename = OI_list_folder+os.path.sep+object_name+'_GOI.csv'
+            object_GOI_filename = OI_list_folder+os.path.sep+_object_name+'_GOI.csv'
             if len(glob(object_GOI_filename)) != 0:
                 with open(object_GOI_filename, 'r') as csvfile_GOI_list:
                     GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
@@ -149,7 +149,7 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
                                 row_vec.append(y_max_pos+center[1])
                                 col_vec.append(x_max_pos+center[0])
                         except:
-                            print("Missing data in GOI database for {0}".format(object_name))
+                            print("Missing data in GOI database for {0}".format(_object_name))
 
     if not ignore_fakes:
         for fake_id in range(100):
