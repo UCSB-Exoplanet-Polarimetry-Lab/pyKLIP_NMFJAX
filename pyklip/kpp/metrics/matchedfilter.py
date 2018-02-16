@@ -830,7 +830,7 @@ def run_matchedfilter(image, PSF,N_threads=None):
             chunks_row_indices.append(flat_cube_noNans_noEdges[0][((N_chunks-1)*chunk_size):N_pix])
             chunks_col_indices.append(flat_cube_noNans_noEdges[1][((N_chunks-1)*chunk_size):N_pix])
 
-            outputs_list = pool.map(calculate_matchedfilter_star, itertools.izip(chunks_row_indices,
+            outputs_list = pool.map(calculate_matchedfilter_star, zip(chunks_row_indices,
                                                        chunks_col_indices,
                                                        itertools.repeat(image),
                                                        itertools.repeat(PSF_cube_arr),

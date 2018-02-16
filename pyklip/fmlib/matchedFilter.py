@@ -17,7 +17,6 @@ from copy import copy
 import astropy.io.fits as pyfits
 
 from time import time
-import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 
 debug = False
