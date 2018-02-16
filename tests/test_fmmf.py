@@ -8,6 +8,7 @@ import pyklip.spectra_management as specmanage
 import pyklip.fm as fm
 import pyklip.instruments.GPI as GPI
 import pyklip.fmlib.matchedFilter as mf
+import pyklip.kpp.metrics.matchedfilter as kppmf
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
@@ -82,8 +83,36 @@ def test_fmmf():
         noise = np.nanstd(dat[away_from_planet])
 
         snr_planet = planet_signal/noise
-        print(snr_planet)
+        print("FMMF SNR", snr_planet)
         assert snr_planet > 25
+
+    # compare against a regular matched filter
+    klip_outputfile = os.path.join(outputdir, fileprefix + "-klipped-KL{0}-speccube.fits".format(numbasis[0]))
+    assert os.path.exists(klip_outputfile)
+    with fits.open(klip_outputfile) as hdulist:
+        klipcube = hdulist[1].data
+
+        # convert the template spectrum into DN
+        star_spectrum = specmanage.get_star_spectrum(np.unique(dataset.wvs), "A6V")[1]
+        inputspec_contrast = np.unique(inputspec)/star_spectrum
+        inputspec_dn = inputspec_contrast * (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]//dataset.numwvs, dataset.numwvs]), axis=0))
+
+        # create psf template
+        psfmf = dataset.psfs * inputspec_dn[:, None, None]
+        mf_map, cc_map, flux_map = kppmf.run_matchedfilter(klipcube, psfmf)
+
+        # use same method to comptue SNR
+        mf_planet_signal = np.max(mf_map[planet_y_min:planet_y_max+1, planet_x_min:planet_x_max+1])
+        mf_noise = np.nanstd(mf_map[away_from_planet])
+        mf_snr_planet = mf_planet_signal/mf_noise
+        print("noFM MF SNR", mf_snr_planet)
+
+        # make sure it's better than snr 5
+        assert mf_snr_planet > 5
+
+        # but it should be worse than FMMF
+        assert mf_snr_planet < snr_planet
+
 
 if __name__ == "__main__":
     test_fmmf()
