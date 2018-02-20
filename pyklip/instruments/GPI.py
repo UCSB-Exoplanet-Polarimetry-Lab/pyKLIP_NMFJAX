@@ -1125,6 +1125,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
+            cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
             cube = high_pass_filter_imgs(cube, pool = pool)
             highpassed = True
     else:
@@ -1170,6 +1171,90 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
 
     return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
+import pyklip.klip as klip
+def remove_radial_mean_profile_imgs(imgs,centers,IWA=None,OWA=None,sub_azi_pro=False, numthreads=None, pool=None):
+    """
+    Remove the mean (calculate in concentric annuli) of the images.
+
+    Inputs:
+        imgs: array of shape (N,y,x) containing N images
+        centers: [(x0,y0),(x1,y1),..] list of image centers
+        IWA: sets an inner working angle for the calculation of the azimuthal profile. (ie set pixels to Nans if below IWA)
+        OWA: sets an outer working angle for the calculation of the azimuthal profile. (ie set pixels to Nans if beyond OWA)
+        sub_azi_pro: If True, also subtract azimuthal intensity profile (weighted radially by the radial mean profile.).
+        numthreads: number of threads to be used
+        pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
+
+    Output:
+        filtered: array of shape (N,y,x) containing the filtered images
+    """
+
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
+
+    tasks = [tpool.apply_async(klip.remove_radial_mean_profile, args=(img,center,IWA,OWA,sub_azi_pro)) for img,center in zip(imgs,centers)]
+
+    #reform back into a giant array
+    filtered = np.array([task.get() for task in tasks])
+
+    if pool is None:
+        tpool.close()
+
+    return filtered
+
+from pyklip.kpp.stat.stat_utils import get_image_stat_map
+from copy import copy
+def remove_radial_mean_profile(img,center,IWA=None,OWA=None,sub_azi_pro = False):
+    """
+    Remove the mean (calculate in concentric annuli) of the image.
+
+    Args:
+        img: a 2D image
+        center: (x_cen,y_cen) center of the image
+        IWA: sets an inner working angle for the calculation of the azimuthal profile. (ie set pixels to Nans if below IWA)
+        OWA: sets an outer working angle for the calculation of the azimuthal profile. (ie set pixels to Nans if beyond OWA)
+        sub_azi_pro: If True, also subtract azimuthal intensity profile (weighted radially by the radial mean profile.).
+
+    Returns:
+        filtered: the filtered image
+    """
+
+    im = copy(img)
+    meanprof_map = get_image_stat_map(im,
+                       centroid = center,
+                       Dr = 2,r_step=2,
+                       type = "mean")
+    if sub_azi_pro:
+        ny,nx = im.shape
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0], np.arange(ny * 1.)-center[1])
+        r_grid = abs(x_grid +y_grid*1j)
+        th_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
+        th_samples = np.linspace(0,2*np.pi,100)
+        th_bins = [(th_samples[l],th_samples[l+1]) for l in range(np.size(th_samples)-1)]
+        th_bins_center = np.array([(th_samples[l]+th_samples[l+1])/2. for l in range(np.size(th_samples)-1)])
+        im_meansub = im-meanprof_map
+        if IWA is not None:
+            im_meansub[np.where((r_grid<IWA))] = np.nan
+        if OWA is not None:
+            im_meansub[np.where((r_grid>OWA))] = np.nan
+        azimuthal_intensity = np.zeros(th_bins_center.shape)
+        for l,th_bin in enumerate(th_bins):
+            sector = np.where((th_grid>th_bin[0])&(th_grid<th_bin[1]))
+            azimuthal_intensity[l] = np.nansum(im_meansub[sector])
+        from scipy.interpolate import splrep
+        from scipy.interpolate import splev
+        x = th_bins_center
+        y = azimuthal_intensity
+        aziprof_spl = splrep(x,y,w=1/(0.1*y))
+        aziprof_map = splev(th_grid.ravel(),aziprof_spl)
+        aziprof_map.shape = im.shape
+        tbsub_map = meanprof_map+np.nansum(meanprof_map*aziprof_map*(im-meanprof_map))/np.nansum(meanprof_map*aziprof_map*meanprof_map*aziprof_map)*meanprof_map*aziprof_map
+        filtered = im - tbsub_map
+    else:
+        filtered = im - meanprof_map
+    return filtered
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
     """
