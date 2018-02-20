@@ -1171,7 +1171,6 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
 
     return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
-import pyklip.klip as klip
 def remove_radial_mean_profile_imgs(imgs,centers,IWA=None,OWA=None,sub_azi_pro=False, numthreads=None, pool=None):
     """
     Remove the mean (calculate in concentric annuli) of the images.
@@ -1194,7 +1193,7 @@ def remove_radial_mean_profile_imgs(imgs,centers,IWA=None,OWA=None,sub_azi_pro=F
     else:
         tpool = pool
 
-    tasks = [tpool.apply_async(klip.remove_radial_mean_profile, args=(img,center,IWA,OWA,sub_azi_pro)) for img,center in zip(imgs,centers)]
+    tasks = [tpool.apply_async(remove_radial_mean_profile, args=(img,center,IWA,OWA,sub_azi_pro)) for img,center in zip(imgs,centers)]
 
     #reform back into a giant array
     filtered = np.array([task.get() for task in tasks])
