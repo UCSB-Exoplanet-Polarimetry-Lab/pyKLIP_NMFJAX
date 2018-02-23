@@ -48,6 +48,7 @@ class GPIData(Data):
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        butterfly_rdi: Filename of butterfly KL modes. If defined, remove the butterfly using the KL modes prodived.
         meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
@@ -121,7 +122,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
+    def __init__(self, filepaths=None, skipslices=None, highpass=False,butterfly_rdi=False, meas_satspot_flux=False, numthreads=-1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Initialization code for GPIData
@@ -149,7 +150,7 @@ class GPIData(Data):
             self.flux_units = None
             self.wv_indices = None
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,meas_satspot_flux=meas_satspot_flux,
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,meas_satspot_flux=meas_satspot_flux,
                           numthreads=numthreads,PSF_cube=PSF_cube, recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
                           bad_sat_spots=bad_sat_spots, quiet=quiet)
 
@@ -223,7 +224,7 @@ class GPIData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, skipslices=None, highpass=False, meas_satspot_flux=False,numthreads = -1,
+    def readdata(self, filepaths, skipslices=None, highpass=False, butterfly_rdi=False,meas_satspot_flux=False,numthreads = -1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Method to open and read a list of GPI data
@@ -233,6 +234,7 @@ class GPIData(Data):
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                       can also be a number specifying FWHM of box in pixel units
+            butterfly_rdi:
             meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be done after hp filter)
             numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
@@ -299,7 +301,7 @@ class GPIData(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
-                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
                                   psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
 
@@ -925,7 +927,7 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
+def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=False, meas_satspot_flux=False, numthreads=-1,
                       psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
     """
     Method to open and parse a GPI file
@@ -935,6 +937,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        butterfly_rdi:
         meas_satspot_flux: if True, measure sat spot fluxes. Will be down after high pass filter
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
@@ -1121,11 +1124,50 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         spots_yloc = np.delete(spots_yloc, skipslices)
         inttime = np.delete(inttime, skipslices)
 
+    #???????????????????
+    butterfly_rdi_applied = False
+    if isinstance(butterfly_rdi, str):
+        hdulist = fits.open("/data/butterflies/butterfly_KL50_wv10.fits")
+        butterfly_KLmodes = hdulist[0].data[0:10,:,:]
+        wv_KL = 1.577843082410582 #(wvs[10])
+        hdulist.close()
+        Nkl = butterfly_KLmodes.shape[0]
+
+        im = np.nansum(cube,axis=0)
+        ny,nx = im.shape
+        meanprof_map = get_image_stat_map(im,
+                           centroid = center[0],
+                           Dr = 2,r_step=2,
+                           type = "mean")
+        im_meansub = im-meanprof_map
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0][0], np.arange(ny * 1.)-center[0][1])
+        r_grid = abs(x_grid +y_grid*1j)
+        th_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
+        th_samples = np.linspace(0,2*np.pi,100)
+        th_bins = [(th_samples[l],th_samples[l+1]) for l in range(np.size(th_samples)-1)]
+        th_bins_center = np.array([(th_samples[l]+th_samples[l+1])/2. for l in range(np.size(th_samples)-1)])
+        azimuthal_intensity = np.zeros(th_bins_center.shape)
+        im_meansub[np.where((r_grid<2*8.7)|(r_grid>50))] = np.nan
+        for l,th_bin in enumerate(th_bins):
+            sector = np.where((th_grid>th_bin[0])&(th_grid<th_bin[1]))
+            azimuthal_intensity[l] = np.nansum(im_meansub[sector])
+        from scipy.interpolate import splrep
+        from scipy.interpolate import splev
+        aziprof_spl = splrep(th_bins_center,azimuthal_intensity,w=1/(0.15*azimuthal_intensity))
+        butterfly_phase = np.rad2deg(th_bins_center)[np.argmax(splev(th_bins_center,aziprof_spl))]
+
+
+        from pyklip.parallelized import rotate_imgs
+        butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[0],flipx=False)
+
+        # cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
+        cube = butterfly_rdi_imgs(cube,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
+        butterfly_rdi_applied = True
+
     #high pass and remeasure the satellite spot fluxes if necessary
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
-            cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
             cube = high_pass_filter_imgs(cube, pool = pool)
             highpassed = True
     else:
@@ -1203,8 +1245,88 @@ def remove_radial_mean_profile_imgs(imgs,centers,IWA=None,OWA=None,sub_azi_pro=F
 
     return filtered
 
+def butterfly_rdi_imgs(imgs,KLmodes,wv_KL,centers,wvs, numthreads=None, pool=None):
+    """
+    Remove the butterfly using KL modes provided (calculate in concentric annuli) of the images.
+
+    Inputs:
+        imgs: array of shape (N,y,x) containing N images
+        centers: [(x0,y0),(x1,y1),..] list of image centers
+        numthreads: number of threads to be used
+        pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
+
+    Output:
+        filtered: array of shape (N,y,x) containing the filtered images
+    """
+
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
+
+    tasks = [tpool.apply_async(butterfly_rdi_img, args=(img,KLmodes,wv_KL,center,wv)) for img,center,wv in zip(imgs,centers,wvs)]
+
+    #reform back into a giant array
+    filtered = np.array([task.get() for task in tasks])
+
+    if pool is None:
+        tpool.close()
+
+    return filtered
+
 from pyklip.kpp.stat.stat_utils import get_image_stat_map
 from copy import copy
+def butterfly_rdi_img(img,KLmodes,wv_KL,center,wv):
+    """
+    Remove the mean (calculate in concentric annuli) of the image.
+
+    Args:
+        img: a 2D image
+        center: (x_cen,y_cen) center of the image
+
+    Returns:
+        filtered: the filtered image
+    """
+
+    import pyklip.klip as klip
+    butterfly_KLmodes_rot= np.zeros(KLmodes.shape)
+    Nkl = butterfly_KLmodes_rot.shape[0]
+    for p in range(Nkl):
+        butterfly_KLmodes_rot[p,:,:] = klip.align_and_scale(KLmodes[p,:,:], center,
+                                                                    center, (wv/wv_KL))
+
+    ny,nx = img.shape
+    x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0], np.arange(ny * 1.)-center[1])
+    r_grid = abs(x_grid +y_grid*1j)
+    meanprof_map = get_image_stat_map(img,
+                       centroid = center,
+                       Dr = 2,r_step=2,
+                       type = "mean")
+    im_meansub = img-meanprof_map
+    im_meansub_masked = copy(im_meansub)
+    im_meansub_masked[np.where(r_grid>80)] = np.nan
+    im_meansub_masked = im_meansub_masked - np.nanmean(im_meansub_masked)
+    butterfly_KLmodes_rot[np.where(np.isnan(butterfly_KLmodes_rot))] = 0
+    im_meansub_masked[np.where(np.isnan(im_meansub_masked))] = 0
+
+    im_meansub_masked.shape = ny*nx
+    butterfly_KLmodes_rot.shape = (Nkl,ny*nx)
+    inner_products = np.dot(butterfly_KLmodes_rot,im_meansub_masked)/(np.sum(butterfly_KLmodes_rot*butterfly_KLmodes_rot,axis=1))
+    butterfly_model = np.dot(inner_products, butterfly_KLmodes_rot)
+    butterfly_KLmodes_rot.shape = (Nkl,ny,nx)
+    butterfly_model.shape = (ny,nx)
+
+    butterfly_model = butterfly_model- get_image_stat_map(butterfly_model,
+                       centroid = center,
+                       Dr = 2,r_step=2,
+                       type = "mean")
+    butterfly_model[np.where(np.isnan(butterfly_model))] = 0
+    mask = (np.pi/2+ np.arctan(-(r_grid-50)/10))/(np.pi)
+    butterfly_model *= mask
+
+    filtered = im_meansub-butterfly_model
+    return filtered
+
 def remove_radial_mean_profile(img,center,IWA=None,OWA=None,sub_azi_pro = False):
     """
     Remove the mean (calculate in concentric annuli) of the image.
