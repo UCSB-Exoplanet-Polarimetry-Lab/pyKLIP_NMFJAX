@@ -900,11 +900,10 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         dr_spacing = np.min(annuli_widths)
         # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
         sub_imgs_shape = sub_imgs.shape
-        sub_imgs.shape = [sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]]
-        noise_imgs = generate_noise_maps(sub_imgs, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
+        sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
         # reform the 4-D cubes
-        sub_imgs.shape = sub_imgs_shape
-        noise_imgs.shape = sub_imgs_shape # reshape into a cube with same shape as sub_imgs
+        noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
@@ -1178,7 +1177,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     #restore bad pixe
     sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
 
-    # calculate weights for weighted mean if necessary
     # calculate weights for weighted mean if necessary
     if compute_noise_cube:
         print("Computing weights for weighted collapse")
