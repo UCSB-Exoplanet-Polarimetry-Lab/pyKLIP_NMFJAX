@@ -621,13 +621,13 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
     """
     filters a sequences of images using a FFT
 
-    Inputs:
+    Args:
         imgs: array of shape (N,y,x) containing N images
         numthreads: number of threads to be used
         filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
         pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
 
-    Output:
+    Returns:
         filtered: array of shape (N,y,x) containing the filtered images
     """
 
@@ -645,6 +645,45 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
         tpool.close()
 
     return filtered
+
+def generate_noise_maps(imgs, aligned_center, dr, IWA=None, OWA=None, numthreads=None, pool=None):
+    """
+    Create a noise map for each image.  
+    The noise levels are computed using azimuthally averaged noise in the images
+
+    Args: 
+        imgs: array of shape (N,y,x) containing N images
+        aligned_center: [x,y] location of the center. All images should be aligned to common center
+        dr (float): how mnay pixels wide the annulus to compute the noise should be
+        IWA (float): inner working angle (how close to the center of the image to start). If none, this is 0
+        OWA (float): outer working angle (if None, it is the entire image.)
+        numthreads: number of threads to be used
+        pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
+
+    Returns:
+        noise_maps: array of shape (N,y,x) containing N noise maps
+    """
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
+
+    if IWA is None:
+        IWA = 0
+    if OWA is None:
+        OWA = np.max(imgs.shape[1:])
+
+    tasks = [tpool.apply_async(stat_utils.get_image_stat_map, args=(img,),
+                                kwds={'IOWA' : (IWA,OWA), 'centroid': aligned_center, 'N' : None, 'Dr' : dr, 'type' : 'stddev' }) 
+            for img in imgs]
+
+    #reform back into a giant array
+    noise_maps = np.array([task.get() for task in tasks])
+
+    if pool is None:
+        tpool.close()
+
+    return noise_maps
 
 
 def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
@@ -856,13 +895,16 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
     # calculate weights for weighted mean if necessary
     if compute_noise_cube:
         print("Computing weights for weighted collapse")
-        noise_imgs = []
-        for kl_cube in sub_imgs:
-                for frame in kl_cube:
-                    annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
-                    dr_spacing = np.median(annuli_widths)/2.
-                    noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,rad_bounds[-1][1]), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
-        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape) # reshape into a cube with same shape as sub_imgs
+        # figure out ~how wide to make it
+        annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
+        dr_spacing = np.min(annuli_widths)
+        # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
+        sub_imgs_shape = sub_imgs.shape
+        sub_imgs.shape = [sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]]
+        noise_imgs = generate_noise_maps(sub_imgs, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
+        # reform the 4-D cubes
+        sub_imgs.shape = sub_imgs_shape
+        noise_imgs.shape = sub_imgs_shape # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
@@ -1107,7 +1149,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
                                                 maxnumbasis,
                                                 radstart, radend, phistart, phiend, movement,
                                                 aligned_center, minrot, maxrot, spectrum,
-                                                mode, psf_library_good, psf_library_corr, False,
+                                                mode, corr_smooth,
+                                                psf_library_good, psf_library_corr, False,
                                                 dtype, algo)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
@@ -1136,15 +1179,18 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
 
     # calculate weights for weighted mean if necessary
+    # calculate weights for weighted mean if necessary
     if compute_noise_cube:
         print("Computing weights for weighted collapse")
-        noise_imgs = []
-        for kl_cube in sub_imgs:
-            for frame in kl_cube:
-                annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
-                dr_spacing = np.median(annuli_widths)/2.
-                noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,rad_bounds[-1][1]), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
-        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape) # reshape into a cube with same shape as sub_imgs
+        # figure out ~how wide to make it
+        annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
+        dr_spacing = np.min(annuli_widths)
+        # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
+        sub_imgs_shape = sub_imgs.shape
+        sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
+        # reform the 4-D cubes
+        noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
