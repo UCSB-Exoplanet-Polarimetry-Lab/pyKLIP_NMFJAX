@@ -1128,12 +1128,21 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
     butterfly_rdi_applied = False
     if isinstance(butterfly_rdi, str):
         hdulist = fits.open("/data/butterflies/butterfly_KL50_wv10.fits")
-        butterfly_KLmodes = hdulist[0].data[0:10,:,:]
+        butterfly_KLmodes = hdulist[0].data[0:20,:,:]
         wv_KL = 1.577843082410582 #(wvs[10])
         hdulist.close()
         Nkl = butterfly_KLmodes.shape[0]
 
         im = np.nansum(cube,axis=0)
+        try:
+            if float(prihdr["AOFRAMES"]) <= 750:
+                # Mask 500kHz artifact
+                im[116:124,123:136] = np.nan
+                im[164:172,154:168] = np.nan
+                im[116:124,123:136] = np.nanmean(im[115:125,122:137])
+                im[164:172,154:168] = np.nanmean(im[163:173,155:169])
+        except:
+            print("Problem with AOFRAMES keyword!!")
         ny,nx = im.shape
         meanprof_map = get_image_stat_map(im,
                            centroid = center[0],
