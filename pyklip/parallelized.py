@@ -502,7 +502,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         ref_psfs_selected = ref_psfs[good_file_ind[0], :]
 
         if include_rdi:
-            rdi_psfs_selected = psf_library[:, section_ind[0]]
+            rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
 
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
