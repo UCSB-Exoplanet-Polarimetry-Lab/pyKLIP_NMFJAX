@@ -739,13 +739,15 @@ def calculate_matchedfilter(row_indices,col_indices,image,PSF,stamp_PSF_sky_mask
 
     return (mf_map,cc_map,flux_map)
 
-def run_matchedfilter(image, PSF,N_threads=None):
+def run_matchedfilter(image, PSF,N_threads=None,maskedge=True):
         """
         Perform a matched filter on the current loaded file.
 
         Args:
             image: image for which to get the matched filter.
             PSF: Template for the matched filter. It should include any kind of spectrum you which to use of the data is 3d.
+            maskedge: If True (default), mask the edges of the image to prevent partial projection of the PSF.
+                  If False, does not mask the edges.
 
         Return: Processed images (matched filter,cross correlation,estimated flux).
         """
@@ -755,13 +757,6 @@ def run_matchedfilter(image, PSF,N_threads=None):
         else:
             N_threads = N_threads
 
-        if image is not None:
-            image = image
-            print(image.shape)
-            if np.size(image.shape) == 2:
-                ny,nx = image.shape
-            if np.size(image.shape) == 3:
-                nl,ny,nx = image.shape
         if PSF is not None:
             PSF_cube_arr = PSF
             if np.size(PSF_cube_arr.shape) == 2:
@@ -769,10 +764,24 @@ def run_matchedfilter(image, PSF,N_threads=None):
             if np.size(PSF_cube_arr.shape) == 3:
                 nl_PSF,ny_PSF,nx_PSF = PSF_cube_arr.shape
 
-        if (len(image.shape) == 3):
-            flat_cube = np.nanmean(image,axis=0)
+        if not maskedge:
+            if (len(image.shape) == 3):
+                image_pad = np.pad(image,((0,0),(ny_PSF//2,ny_PSF//2),(nx_PSF//2,nx_PSF//2)),mode="constant",constant_values=np.nan)
+            else:
+                image_pad = np.pad(image,((ny_PSF//2,ny_PSF//2),(nx_PSF//2,nx_PSF//2)),mode="constant",constant_values=np.nan)
         else:
-            flat_cube = image
+            image_pad = image
+
+        if image_pad is not None:
+            if np.size(image_pad.shape) == 2:
+                ny,nx = image_pad.shape
+            if np.size(image_pad.shape) == 3:
+                nl,ny,nx = image_pad.shape
+
+        if (len(image.shape) == 3):
+            flat_cube = np.nanmean(image_pad,axis=0)
+        else:
+            flat_cube = image_pad
 
         # Get the nans pixels of the flat_cube. We won't bother trying to calculate metrics for those.
         flat_cube_nans = np.where(np.isnan(flat_cube))
@@ -788,7 +797,7 @@ def run_matchedfilter(image, PSF,N_threads=None):
         flat_cube_noEdges_mask[(ny-ny_PSF//2):ny,:] = np.nan
         flat_cube_noEdges_mask[:,(nx-nx_PSF//2):nx] = np.nan
         # Get the pixel coordinates corresponding to non nan pixels and not too close from the edges of the array.
-        flat_cube_noNans_noEdges = np.where(np.isnan(flat_cube_noEdges_mask) == 0)
+        flat_cube_noNans = np.where(np.isnan(flat_cube_noEdges_mask) == 0)
 
         mf_map = np.ones((ny,nx)) + np.nan
         cc_map = np.ones((ny,nx)) + np.nan
@@ -812,8 +821,9 @@ def run_matchedfilter(image, PSF,N_threads=None):
             # Caution: No spectral widening implemented here
             stamp_PSF_aper_mask = np.tile(stamp_PSF_aper_mask,(nl,1,1))
 
-        N_pix = flat_cube_noNans_noEdges[0].size
-        chunk_size = N_pix//N_threads
+        N_pix = flat_cube_noNans[0].size
+        if N_threads > 0:
+            chunk_size = N_pix//N_threads
 
         if N_threads > 0 and chunk_size != 0:
             pool = mp.Pool(processes=N_threads)
@@ -825,14 +835,14 @@ def run_matchedfilter(image, PSF,N_threads=None):
             chunks_row_indices = []
             chunks_col_indices = []
             for k in range(N_chunks-1):
-                chunks_row_indices.append(flat_cube_noNans_noEdges[0][(k*chunk_size):((k+1)*chunk_size)])
-                chunks_col_indices.append(flat_cube_noNans_noEdges[1][(k*chunk_size):((k+1)*chunk_size)])
-            chunks_row_indices.append(flat_cube_noNans_noEdges[0][((N_chunks-1)*chunk_size):N_pix])
-            chunks_col_indices.append(flat_cube_noNans_noEdges[1][((N_chunks-1)*chunk_size):N_pix])
+                chunks_row_indices.append(flat_cube_noNans[0][(k*chunk_size):((k+1)*chunk_size)])
+                chunks_col_indices.append(flat_cube_noNans[1][(k*chunk_size):((k+1)*chunk_size)])
+            chunks_row_indices.append(flat_cube_noNans[0][((N_chunks-1)*chunk_size):N_pix])
+            chunks_col_indices.append(flat_cube_noNans[1][((N_chunks-1)*chunk_size):N_pix])
 
-            outputs_list = pool.map(calculate_matchedfilter_star, itertools.izip(chunks_row_indices,
+            outputs_list = pool.map(calculate_matchedfilter_star, zip(chunks_row_indices,
                                                        chunks_col_indices,
-                                                       itertools.repeat(image),
+                                                       itertools.repeat(image_pad),
                                                        itertools.repeat(PSF_cube_arr),
                                                        itertools.repeat(stamp_PSF_sky_mask),
                                                        itertools.repeat(stamp_PSF_aper_mask)))
@@ -843,17 +853,20 @@ def run_matchedfilter(image, PSF,N_threads=None):
                 flux_map[(row_indices,col_indices)] = out[2]
             pool.close()
         else:
-            out = calculate_matchedfilter(flat_cube_noNans_noEdges[0],
-                                                       flat_cube_noNans_noEdges[1],
-                                                       image,
+            out = calculate_matchedfilter(flat_cube_noNans[0],
+                                                       flat_cube_noNans[1],
+                                                       image_pad,
                                                        PSF_cube_arr,
                                                        stamp_PSF_sky_mask,
                                                        stamp_PSF_aper_mask)
 
-            mf_map[flat_cube_noNans_noEdges] = out[0]
-            cc_map[flat_cube_noNans_noEdges] = out[1]
-            flux_map[flat_cube_noNans_noEdges] = out[2]
+            mf_map[flat_cube_noNans] = out[0]
+            cc_map[flat_cube_noNans] = out[1]
+            flux_map[flat_cube_noNans] = out[2]
 
-
+        if not maskedge:
+            mf_map = mf_map[ny_PSF//2:(ny-ny_PSF//2),nx_PSF//2:(nx-nx_PSF//2)]
+            cc_map = cc_map[ny_PSF//2:(ny-ny_PSF//2),nx_PSF//2:(nx-nx_PSF//2)]
+            flux_map = flux_map[ny_PSF//2:(ny-ny_PSF//2),nx_PSF//2:(nx-nx_PSF//2)]
         metricMap = (mf_map,cc_map,flux_map)
         return metricMap

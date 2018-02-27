@@ -1688,8 +1688,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
 
-    # run WCS rotation on output WCS, which we'll copy from the input ones
-    # TODO: wcs rotation not yet implemented. 
     dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
     # Set MLK parameters
@@ -1712,6 +1710,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     # save output centers here
     dataset.output_centers = np.array([klipped_center for _ in range(klipped.shape[1])])
 
+    # run WCS rotation on output WCS, which we'll copy from the input ones
     for angle, astr_hdr in zip(dataset.PAs, dataset.output_wcs):
         if astr_hdr is None:
             continue

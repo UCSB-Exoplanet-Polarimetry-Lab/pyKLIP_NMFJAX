@@ -215,7 +215,58 @@ def calc_scaling(sats, refwv=18):
     scaling_factors = separations/separations[refwv]
     return scaling_factors
 
-def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float):
+
+def nan_map_coordinates_2d(img, yp, xp, mc_kwargs=None):
+    """
+    scipy.ndimage.map_coordinates() that handles nans for 2-D transformations. Only works in 2-D!
+    
+    Do NaN detection by defining any pixel in the new coordiante system (xp, yp) as a nan
+    If any one of the neighboring pixels in the original image is a nan (e.g. (xp, yp) = 
+    (120.1, 200.1) is nan if either (120, 200), (121, 200), (120, 201), (121, 201) is a nan)
+
+    Args:
+        img (np.array): 2-D image that is looking to be transformed
+        yp (np.array): 2-D array of y-coordinates that the image is evaluated out
+        xp (np.array): 2-D array of x-coordinates that the image is evaluated out
+        mc_kwargs (dict): other parameters to pass into the map_coordinates function.
+
+    Returns:
+        transformed_img (np.array): 2-D transformed image. Each pixel is evaluated at the (yp, xp) specified by xp and yp. 
+    """
+    # check if optional parameters are passed in
+    if mc_kwargs is None:
+        mc_kwargs = {}
+    # if nothing specified, we will pad transformations with np.nan
+    if "cval" not in mc_kwargs:
+        mc_kwargs["cval"] = np.nan
+
+    # check all four pixels around each pixel and see whether they are nans
+    xp_floor = np.clip(np.floor(xp).astype(int), 0, xp.shape[1]-1)
+    xp_ceil = np.clip(np.ceil(xp).astype(int), 0, xp.shape[1]-1)
+    yp_floor = np.clip(np.floor(yp).astype(int), 0, yp.shape[0]-1)
+    yp_ceil = np.clip(np.ceil(yp).astype(int), 0, yp.shape[0]-1)
+    rotnans = np.where(np.isnan(img[yp_floor.ravel(), xp_floor.ravel()]) | 
+                       np.isnan(img[yp_floor.ravel(), xp_ceil.ravel()]) |
+                       np.isnan(img[yp_ceil.ravel(), xp_floor.ravel()]) |
+                       np.isnan(img[yp_ceil.ravel(), xp_ceil.ravel()]))
+
+    # resample image based on new coordinates, set nan values as median
+    nanpix = np.where(np.isnan(img))
+    medval = np.nanmedian(img)
+    img_copy = np.copy(img)
+    img_copy[nanpix] = medval
+    transformed_img = ndimage.map_coordinates(img_copy, [yp, xp], **mc_kwargs)
+
+    # mask nans
+    img_shape = transformed_img.shape
+    transformed_img.shape = [img_shape[0] * img_shape[1]]
+    transformed_img[rotnans] = np.nan
+    transformed_img.shape = img_shape
+
+    return transformed_img
+
+
+def align_and_scale(img, new_center, old_center=None, scale_factor=1, dtype=float):
     """
     Helper function that realigns and/or scales the image
 
@@ -233,9 +284,6 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float
     Returns:
         resampled_img: shifted and/or scaled 2D image
     """
-    #import scipy.interpolate as interp
-    #import pdb
-
     #create the coordinate system of the image to manipulate for the transform
     dims = img.shape
     x, y = np.meshgrid(np.arange(dims[1], dtype=dtype), np.arange(dims[0], dtype=dtype))
@@ -269,39 +317,8 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1,dtype=float
     if mod_flag == 0:
         return np.copy(img)
 
+    resampled_img = nan_map_coordinates_2d(img, y, x)
 
-    #resample image based on new coordinates
-    #scipy uses y,x convention when meshgrid uses x,y
-    #stupid scipy functions can't work with masked arrays (NANs)
-    #and trying to use interp2d with sparse arrays is way to slow
-    #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-    #then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
-    minval = np.min([np.nanmin(img), 0.0])
-    nanpix = np.where(np.isnan(img))
-    medval = np.median(img[np.where(~np.isnan(img))])
-    img_copy = np.copy(img)
-    img_copy[nanpix] = minval * 5.0
-    resampled_img_mask = ndimage.map_coordinates(img_copy, [y, x], cval=minval * 5.0)
-    img_copy[nanpix] = medval
-    resampled_img = ndimage.map_coordinates(img_copy, [y,x], cval=np.nan)
-    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
-
-    # # JB debug
-    # nanpix = np.where(np.isnan(img))
-    # medval = np.median(img[np.where(~np.isnan(img))])
-    # img_copy = np.copy(img)
-    # img_copy[nanpix] = medval
-
-    resampled_img = ndimage.map_coordinates(img_copy, [y, x], cval = np.nan)
-    resampled_img[nanpix] = np.nan
-
-    #broken attempt at using sparse arrays with interp2d. Warning: takes forever to run
-    #good_dat = np.where(~(np.isnan(img)))
-    ##recreate old coordinate system
-    #x0,y0 = np.meshgrid(np.arange(dims[0], dtype=np.float32), np.arange(dims[1], dtype=np.float32))
-    #interpolated = interp.interp2d(x0[good_dat], y0[good_dat], img[good_dat], kind='cubic')
-    #resampled_img = np.ones(img.shape) + np.nan
-    #resampled_img[good] = interpolated(y[good],x[good])
 
     return resampled_img
 
@@ -343,22 +360,7 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     xp = (x-center[0])*np.cos(angle_rad) + (y-center[1])*np.sin(angle_rad) + center[0]
     yp = -(x-center[0])*np.sin(angle_rad) + (y-center[1])*np.cos(angle_rad) + center[1]
 
-
-    #resample image based on new coordinates
-    #scipy uses y,x convention when meshgrid uses x,y
-    #stupid scipy functions can't work with masked arrays (NANs)
-    #and trying to use interp2d with sparse arrays is way to slow
-    #hack my way out of this by picking a really small value for NANs and try to detect them after the interpolation
-    #then redo the transformation setting NaN to zero to reduce interpolation effects, but using the mask we derived
-    minval = np.min([np.nanmin(img), 0.0])
-    nanpix = np.where(np.isnan(img))
-    medval = np.median(img[np.where(~np.isnan(img))])
-    img_copy = np.copy(img)
-    img_copy[nanpix] = minval * 5.0
-    resampled_img_mask = ndimage.map_coordinates(img_copy, [yp, xp], cval=minval * 5.0)
-    img_copy[nanpix] = medval
-    resampled_img = ndimage.map_coordinates(img_copy, [yp, xp], cval=np.nan)
-    resampled_img[np.where(resampled_img_mask < minval)] = np.nan
+    resampled_img = nan_map_coordinates_2d(img, yp, xp)
 
     #edit the astrometry header if given to compensate for orientation
     if astr_hdr is not None:

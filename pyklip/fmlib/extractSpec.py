@@ -85,7 +85,7 @@ class ExtractSpec(NoFM):
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
@@ -383,7 +383,8 @@ class ExtractSpec(NoFM):
         return fmout
 
 def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           maxnumbasis = 100, spectra_template=None, manual_psfs=None, aligned_center=None):
+           maxnumbasis = 100, spectra_template=None, manual_psfs=None,
+           aligned_center=None, save_klipped=False, outputdir=''):
     """
     inputs: 
     - pars              - tuple of planet position (sep (pixels), pa (deg)).
@@ -448,8 +449,9 @@ def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
                     maxnumbasis=maxnumbasis,
                     numthreads=numthreads,
                     spectrum=spectra_template,
-                    save_klipped=False, highpass=True,
-                    aligned_center=aligned_center)
+                    save_klipped=save_klipped, highpass=True,
+                    aligned_center=aligned_center,
+                    outputdir=outputdir)
 
     return dataset.fmout
 

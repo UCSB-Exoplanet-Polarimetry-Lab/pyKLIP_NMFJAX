@@ -39,7 +39,8 @@ class Ifs(Data):
     """
     # class initialization
     # Astrometric calibration: Maire et al. 2016
-    north_offset = -102.18 # who knows on the sign on this angle
+    # North angle not used, images are only rotated by parallactic angle and pupil offset. True north correction needs to be applied to any astrometry
+    # north_offset = -102.18 # (pupil offset + true north offset) who knows on the sign on this angle
     platescale = 0.007462
 
     # Coonstructor
@@ -419,7 +420,8 @@ class Irdis(Data):
     """
     # class initialization
     # Astrometric calibration: Maire et al. 2016
-    north_offset = -1.75 # who knows on the sign on this angle
+    # North angle not used, images are only rotated by parallactic angle and pupil offset. True north correction needs to be applied to any astrometry
+    # north_offset = -1.75 # who knows on the sign on this angle
     platescale = 0.012255
     # dual band imaging central wavelengths
     wavelengths = {"Y2Y3" : (1.02, 1.073), "J2J3": (1.190, 1.270), "H2H3": (1.587, 1.667),
