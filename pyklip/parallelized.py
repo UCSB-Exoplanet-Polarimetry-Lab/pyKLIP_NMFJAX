@@ -289,7 +289,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     """
     if dtype is None:
         dtype = ctypes.c_float
-
+    
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
@@ -362,8 +362,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     parangs = _arraytonumpy(img_pa,dtype=dtype)
 
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
-        #if file_index//37 == 30 and file_index % 37 == 10:
-        #if file_index//37 == 8 and file_index % 37 == 10:
+        #if file_index//37 == 21 and file_index % 37 == 10:
+        #if file_index//37 == 6 and file_index % 37 == 4:
         #    import pdb; pdb.set_trace()
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
@@ -901,7 +901,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
         sub_imgs_shape = sub_imgs.shape
         sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
-        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1])
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
@@ -1186,12 +1186,12 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
         sub_imgs_shape = sub_imgs.shape
         sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
-        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=OWA)
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1])
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
-
+    import pdb; pdb.set_trace()
     if save_aligned:
         aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape, dtype=dtype)
         return sub_imgs, aligned_center, noise_imgs, aligned_and_scaled
