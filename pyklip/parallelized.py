@@ -362,9 +362,6 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     parangs = _arraytonumpy(img_pa,dtype=dtype)
 
     for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
-        #if file_index//37 == 21 and file_index % 37 == 10:
-        #if file_index//37 == 6 and file_index % 37 == 4:
-        #    import pdb; pdb.set_trace()
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
                                             parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
@@ -1191,7 +1188,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
-    import pdb; pdb.set_trace()
+
     if save_aligned:
         aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape, dtype=dtype)
         return sub_imgs, aligned_center, noise_imgs, aligned_and_scaled
