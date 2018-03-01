@@ -491,13 +491,23 @@ def _magao_process_file(filepath, filetype=None):
         #print("nx is " + str(nx))
         minval = np.min([np.nanmin(cube), 0.0])
         #flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
-            
+        parang = angles          
         #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION
-        star_flux = [[1]]
+
+        #calculate star flux as ghost peak/scaling factor, depends on filter
+        #check filter for scaling factor:
+        if header["INSTRUME"] =='VisAO':
+            ghst_psf = 1.22*10**(-3) #defined in magao.ini
+
+        else:
+            ghst_psf = 1.998*10**(-3) #defined in magao.ini
+            
+        star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]] 
         #print("flipped_cube shape is " + str(flipped_cube.shape))
         #cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])
+        
         cube.reshape([1, cube.shape[0], cube.shape[1]])
-        parang = angles
+        
 
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])

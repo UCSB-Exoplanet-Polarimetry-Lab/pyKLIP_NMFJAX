@@ -1249,14 +1249,16 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         dataset.output = klipped_imgs
         dataset.output_centers = np.array([klipped_center for _ in range(klipped_imgs.shape[1])])
         # construct the output wcs info, but it's currently just a copy of the input one until we rotate it
-        dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+        dataset.output_wcs = np.array([copy.deepcopy(w) for w in dataset.wcs])
+        #changed this line: dataset.output_wcs = np.array([deepcopy() for w in dataset.wcs])
 
     # For ADI only datasets, can run KLIP on each wavelength separately
     else:
         # set up output, output centers, and output wcs variables but they are the same as the input for now
         dataset.output_centers = np.copy(dataset.centers)
         if dataset.wcs is not None:
-            dataset.output_wcs = np.array([w.deepcopy() for w in dataset.wcs])
+            dataset.output_wcs = np.array([copy.deepcopy(w) for w in dataset.wcs])
+            #changed this line: dataset.output_wcs = np.array([deepcopy() for w in dataset.wcs])
 
         # append output to a list at first since we are running it a bunch of times
         dataset.output = []
@@ -1328,9 +1330,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
     # parallelized rotate images
     print("Derotating Images...")
-    rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
-                           hdrs=dataset.output_wcs, new_center=aligned_center)
-
+    rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads,hdrs=dataset.output_wcs, new_center=aligned_center)
+#flipx=dataset.flipx
     # give rot_imgs dimensions of (num KLmode cutoffs, num cubes, num wvs, y, x)
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
 
