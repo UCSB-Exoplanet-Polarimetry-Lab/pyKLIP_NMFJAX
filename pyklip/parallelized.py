@@ -611,6 +611,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     derotated = np.array([task.get() for task in tasks])
 
     tpool.close()
+    tpool.join()
 
     return derotated
 
@@ -640,6 +641,7 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
 
     if pool is None:
         tpool.close()
+        tpool.join()
 
     return filtered
 
@@ -679,6 +681,7 @@ def generate_noise_maps(imgs, aligned_center, dr, IWA=None, OWA=None, numthreads
 
     if pool is None:
         tpool.close()
+        tpool.join()
 
     return noise_maps
 
