@@ -56,7 +56,7 @@ class GPIData(Data):
                     modes were computed in H-band using the 10th wavelength channel in H-band: 1.577843082410582mum.
                     If butterfly_rdi is not None, subtract the mean radial profile from each image and subtract the
                     butterfly using user-defined RDI KL modes.
-                    We are using 20 KL modes (Hard-coded).
+        butterfly_rdi_NKL: (default=20) If butterfly_rdi is defined, Number of KL modes to be used.
         meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
@@ -130,7 +130,7 @@ class GPIData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, skipslices=None, highpass=False,butterfly_rdi=False, meas_satspot_flux=False, numthreads=-1,
+    def __init__(self, filepaths=None, skipslices=None, highpass=False,butterfly_rdi=False,butterfly_rdi_NKL=20, meas_satspot_flux=False, numthreads=-1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Initialization code for GPIData
@@ -158,7 +158,9 @@ class GPIData(Data):
             self.flux_units = None
             self.wv_indices = None
         else:
-            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,meas_satspot_flux=meas_satspot_flux,
+            self.readdata(filepaths, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,
+                          butterfly_rdi_NKL=butterfly_rdi_NKL,
+                          meas_satspot_flux=meas_satspot_flux,
                           numthreads=numthreads,PSF_cube=PSF_cube, recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
                           bad_sat_spots=bad_sat_spots, quiet=quiet)
 
@@ -232,7 +234,8 @@ class GPIData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, skipslices=None, highpass=False, butterfly_rdi=False,meas_satspot_flux=False,numthreads = -1,
+    def readdata(self, filepaths, skipslices=None, highpass=False, butterfly_rdi=False,butterfly_rdi_NKL=20,
+                 meas_satspot_flux=False,numthreads = -1,
                  PSF_cube=None, recalc_wvs=True, recalc_centers=True, bad_sat_spots=None, quiet=False):
         """
         Method to open and read a list of GPI data
@@ -246,7 +249,7 @@ class GPIData(Data):
                     modes were computed in H-band using the 10th wavelength channel in H-band: 1.577843082410582mum.
                     If butterfly_rdi is not None, subtract the mean radial profile from each image and subtract the
                     butterfly using user-defined RDI KL modes.
-                    We are using 20 KL modes (Hard-coded).
+            butterfly_rdi_NKL: (default=20) If butterfly_rdi is defined, Number of KL modes to be used.
             meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be done after hp filter)
             numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                         If None, numthreads = mp.cpu_count().
@@ -939,7 +942,8 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=False, meas_satspot_flux=False, numthreads=-1,
+def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=False,butterfly_rdi_NKL=20,
+                      meas_satspot_flux=False, numthreads=-1,
                       psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
     """
     Method to open and parse a GPI file
@@ -953,7 +957,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                     modes were computed in H-band using the 10th wavelength channel in H-band: 1.577843082410582mum.
                     If butterfly_rdi is not None, subtract the mean radial profile from each image and subtract the
                     butterfly using user-defined RDI KL modes.
-                    We are using 20 KL modes (Hard-coded).
+        butterfly_rdi_NKL: (default=20) If butterfly_rdi is defined, Number of KL modes to be used.
         meas_satspot_flux: if True, measure sat spot fluxes. Will be down after high pass filter
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
                     If None, numthreads = mp.cpu_count().
@@ -1143,8 +1147,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
     #subtract the mean radial profile from each image and subtract the butterfly using user-defined RDI KL modes.
     if isinstance(butterfly_rdi, str):
         hdulist = fits.open(butterfly_rdi)
-        # Hard-coded using 20 KL modes
-        butterfly_KLmodes = hdulist[0].data[0:20,:,:]
+        butterfly_KLmodes = hdulist[0].data
+        Nkl = butterfly_KLmodes.shape[0]
+        butterfly_KLmodes = butterfly_KLmodes[0:np.min([butterfly_rdi_NKL,Nkl]),:,:]
         # Wavelength of the KL modes
         wv_KL = 1.577843082410582 #mum (H-band, wvs[10])
         hdulist.close()
@@ -1164,13 +1169,13 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         ny,nx = im.shape
         # Calculate and subtract the radial mean profile
         meanprof_map = get_image_stat_map(im,
-                           centroid = center[0],
+                           centroid = center[10],
                            Dr = 2,r_step=2,
                            type = "mean")
         im_meansub = im-meanprof_map
 
         # Calculate the butterfly angle
-        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0][0], np.arange(ny * 1.)-center[0][1])
+        x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[10][0], np.arange(ny * 1.)-center[10][1])
         r_grid = abs(x_grid +y_grid*1j)
         th_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
         th_samples = np.linspace(0,2*np.pi,100)
@@ -1184,8 +1189,14 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         aziprof_spl = splrep(th_bins_center,azimuthal_intensity,w=1/(0.15*azimuthal_intensity))
         butterfly_phase = np.rad2deg(th_bins_center)[np.argmax(splev(th_bins_center,aziprof_spl))]
 
+        # import matplotlib.pyplot as plt
+        # print(butterfly_phase)
+        # plt.plot(np.rad2deg(th_bins_center),azimuthal_intensity)
+        # plt.plot(np.rad2deg(th_bins_center),splev(th_bins_center,aziprof_spl))
+        # plt.show()
+
         # Rotate the KL modes to the phase angle of the butterfly in the current cube.
-        butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[0],flipx=False)
+        butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[10],flipx=False)
 
         # cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
         cube = butterfly_rdi_imgs(cube,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
