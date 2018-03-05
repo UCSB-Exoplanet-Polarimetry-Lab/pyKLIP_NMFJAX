@@ -145,7 +145,7 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     # And run it again to check that we can reuse the same dataset object
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
-                          calibrate_flux=True, mode="ADI", lite=False, highpass=True)
+                          calibrate_flux=True, mode="ADI", lite=False, highpass=True, time_collapse="weighted-mean")
 
     # look at the output data. Validate the spectral cube
     spec_hdulist = fits.open("{out}/{pre}-KL20-speccube.fits".format(out=outputdir, pre=prefix))
@@ -212,5 +212,5 @@ def test_mock_SDI(mock_klip_parallelized):
 
 
 if __name__ == "__main__":
-    #test_exmaple_gpi_klip_dataset()
-    test_adi_gpi_klip_dataset_with_fakes_twice()
+    test_exmaple_gpi_klip_dataset()
+    #test_adi_gpi_klip_dataset_with_fakes_twice()

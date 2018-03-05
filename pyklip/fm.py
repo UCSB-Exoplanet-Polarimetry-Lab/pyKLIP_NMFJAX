@@ -986,7 +986,8 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
 
 
 def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
-                      movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
+                      movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, corr_smooth=1,
+                      aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=0, save_klipped=True, flipx=True,
                       N_pix_sector = None,mute_progression = False, annuli_spacing="constant"):
     """
@@ -1024,6 +1025,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
                 If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
@@ -1279,7 +1281,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                           numbasis,maxnumbasis,
                                                           movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                          flipx, fm_class))
+                                                          flipx, corr_smooth, fm_class))
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
@@ -1288,7 +1290,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                                   parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                                   numbasis,maxnumbasis,
                                                                   movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                                  flipx, fm_class)
+                                                                  flipx, corr_smooth, fm_class)
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
@@ -1362,7 +1364,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phistart, phiend, parang, wavelength,
                                     wv_index, avg_rad, padding,IOWA,
                                     numbasis,maxnumbasis, minmove,flux_overlap,PSF_FWHM, ref_center, minrot, maxrot,
-                                    mode, spectrum, flipx,
+                                    mode, spectrum, flipx, corr_smooth,
                                     fm_class):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
@@ -1400,6 +1402,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         flipx: if True, flips x axis after rotation to get North up East left
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
 
     Returns:
         sector_index: used for tracking jobs
@@ -1441,16 +1444,43 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
-    #also calculate correlation matrix since we'll use that to select reference PSFs
-    covar_diag_sqrt = np.sqrt(np.diag(covar_psfs))
-    covar_diag_sqrt_inverse = np.zeros(covar_diag_sqrt.shape)
-    where_zeros = np.where(covar_diag_sqrt != 0)
-    covar_diag_sqrt_inverse[where_zeros] = 1./covar_diag_sqrt[where_zeros]
-    # any image where the diagonal is 0 is all NaNs and shouldn't be infinity
-    # covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
-    covar_diag = np.diagflat(covar_diag_sqrt_inverse)
+
+    if corr_smooth > 0:
+        # calcualte the correlation matrix, with possible smoothing  
+        aligned_imgs_3d = aligned_imgs.reshape([aligned_imgs.shape[0], aligned_shape[-2], aligned_shape[-1]]) # make a cube that's not flattened in spatial dimension
+        # smooth only the square that encompasses the segment
+        # we need to figure where that is
+        # figure out the smallest square that encompasses this sector
+        blank_img = np.ones(aligned_shape[-2:]) * np.nan
+        blank_img.ravel()[section_ind] = 0
+        y_good, x_good = np.where(~np.isnan(blank_img))
+        ymin = np.min(y_good)
+        ymax = np.max(y_good)
+        xmin = np.min(x_good)
+        xmax = np.max(x_good)
+        blank_img_crop = blank_img[ymin:ymax+1, xmin:xmax+1]
+        section_ind_smooth_crop = np.where(~np.isnan(blank_img_crop))
+        # now that we figured out only the region of interest for each image to smooth, let's smooth that region'
+        ref_psfs_smoothed = []
+        for aligned_img_2d in aligned_imgs_3d:
+            smooth_sigma = 1
+            smoothed_square_crop = ndimage.gaussian_filter(aligned_img_2d[ymin:ymax+1, xmin:xmax+1], smooth_sigma)
+            smoothed_section = smoothed_square_crop[section_ind_smooth_crop]
+            smoothed_section[np.isnan(smoothed_section)] = 0
+            ref_psfs_smoothed.append(smoothed_section)
     
-    corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+        corr_psfs = np.corrcoef(ref_psfs_smoothed)
+    else:
+        # if we don't smooth, we can use the covariance matrix to calculate the correlation matrix. It'll be slightly faster
+        #also calculate correlation matrix since we'll use that to select reference PSFs
+        covar_diag_sqrt = np.sqrt(np.diag(covar_psfs))
+        covar_diag_sqrt_inverse = np.zeros(covar_diag_sqrt.shape)
+        where_zeros = np.where(covar_diag_sqrt != 0)
+        covar_diag_sqrt_inverse[where_zeros] = 1./covar_diag_sqrt[where_zeros]
+        # any image where the diagonal is 0 is all NaNs and shouldn't be infinity
+        # covar_diag_sqrt_inverse[np.where(covar_diag_sqrt == 0)] = 0
+        covar_diag = np.diagflat(covar_diag_sqrt_inverse)
+        corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
 
 
     # grab the files suitable for reference PSF
@@ -1572,7 +1602,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
 def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
                  OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=0,
-                 numbasis=None, maxnumbasis=None, numthreads=None, calibrate_flux=False, aligned_center=None,
+                 numbasis=None, maxnumbasis=None, numthreads=None, corr_smooth=1, calibrate_flux=False, aligned_center=None,
                  spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False):
     """
     Run KLIP-FM on a dataset object
@@ -1607,7 +1637,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
                 If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
         maxnumbasis: Number of KL modes to be calculated from whcih numbasis modes will be taken.
-
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
         calibrate_flux: if true, flux calibrates the regular KLIP subtracted data. DOES NOT CALIBRATE THE FM
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
@@ -1698,7 +1728,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     klip_outputs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, fm_class,
                                      OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                      flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
-                                     maxnumbasis=maxnumbasis, aligned_center=aligned_center, numthreads=numthreads,
+                                     maxnumbasis=maxnumbasis, corr_smooth=corr_smooth,
+                                     aligned_center=aligned_center, numthreads=numthreads,
                                      minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
                                      flipx=dataset.flipx, annuli_spacing=annuli_spacing,
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression)
