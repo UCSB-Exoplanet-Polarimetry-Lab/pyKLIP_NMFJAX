@@ -316,7 +316,7 @@ class GPIData(Data):
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
-                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,
+                _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,butterfly_rdi_NKL=butterfly_rdi_NKL,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
                                   psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
 
