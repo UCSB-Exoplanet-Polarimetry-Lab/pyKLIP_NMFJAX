@@ -2,6 +2,7 @@ import numpy as np
 import numpy.fft as fft
 import scipy.linalg as la
 import scipy.ndimage as ndimage
+import scipy.interpolate as sinterp
 from scipy.stats import t
 
 
@@ -506,9 +507,15 @@ def high_pass_filter(img, filtersize=10):
     Returns:
         filtered: the filtered image
     """
-    # mask NaNs
+    # mask NaNs if there are any
     nan_index = np.where(np.isnan(img))
-    img[nan_index] = 0
+    if np.size(nan_index) > 0:
+        good_index = np.where(~np.isnan(img))
+        y, x = np.indices(img.shape)
+        good_coords = np.array([x[good_index], y[good_index]]).T # shape of Npix, ndimage
+        nan_fixer = sinterp.NearestNDInterpolator(good_coords, img[good_index])
+        fixed_dat = nan_fixer(x[nan_index], y[nan_index])
+        img[nan_index] = fixed_dat
 
     transform = fft.fft2(img)
 
