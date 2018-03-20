@@ -70,7 +70,7 @@ class MagAOData(object):
         lenslet_scale = float(config.get("instrument", "ifs_lenslet_scale")) #!
         #get IFS rotation
         ifs_rotation = float(config.get("instrument", "ifs_rotation"))
-        bands = ['HA', 'CONT']
+        bands = ['HA', 'CONT’, 'z\'', 'r\'','i\'','Ys']
         for band in bands:
             centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
