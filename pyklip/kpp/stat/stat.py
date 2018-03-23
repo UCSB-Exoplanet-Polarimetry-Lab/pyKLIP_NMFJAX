@@ -342,12 +342,10 @@ class Stat(KPPSuperClass):
                                                                             IOWA = self.IOWA,
                                                                             N = self.N,
                                                                             centroid = self.center[0],
-                                                                            mute = self.mute,
                                                                             N_threads = self.N_threads,
                                                                             Dr= self.Dr,
                                                                             Dth = self.Dth,
-                                                                            type = self.type.replace("pixel based ",""),
-                                                                            resolution = self.resolution)
+                                                                            type = self.type.replace("pixel based ",""))
                 else:
                     self.stat_cube_map[k,:,:] = get_image_stat_map(self.image[k,:,:],
                                                                    self.image_without_planet[k,:,:],
@@ -355,7 +353,6 @@ class Stat(KPPSuperClass):
                                                                    N = self.N,
                                                                    centroid = self.center[0],
                                                                    r_step = self.r_step,
-                                                                   mute = self.mute,
                                                                    Dr= self.Dr,
                                                                    type = self.type,
                                                                    image_wide=self.image_wide)
@@ -368,12 +365,10 @@ class Stat(KPPSuperClass):
                                                                  IOWA = self.IOWA,
                                                                  N = self.N,
                                                                  centroid = self.center[0],
-                                                                 mute = self.mute,
                                                                  N_threads = self.N_threads,
                                                                  Dr= self.Dr,
                                                                  Dth = self.Dth,
-                                                                 type = self.type.replace("pixel based ",""),
-                                                                 resolution = self.resolution)
+                                                                 type = self.type.replace("pixel based ",""))
             else:
                 self.stat_cube_map = get_image_stat_map(self.image,
                                                         self.image_without_planet,
@@ -381,7 +376,6 @@ class Stat(KPPSuperClass):
                                                         N = self.N,
                                                         centroid = self.center[0],
                                                         r_step = self.r_step,
-                                                        mute = self.mute,
                                                         Dr= self.Dr,
                                                         type = self.type,
                                                         image_wide=self.image_wide)
