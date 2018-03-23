@@ -341,6 +341,8 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
         # Make a copy of the criterion map because it will be modified in the following.
         # Local maxima are indeed masked out when checked
         image_cpy = copy(image)
+        stamp_size = mask_radius * 2 + 2
+        image_cpy = np.pad(image_cpy,((stamp_size//2,stamp_size//2),(stamp_size//2,stamp_size//2)),mode="constant",constant_values=np.nan)
 
         # Build as grids of x,y coordinates.
         # The center is in the middle of the array and the unit is the pixel.
@@ -349,7 +351,6 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
 
 
         # Definition of the different masks used in the following.
-        stamp_size = mask_radius * 2 + 2
         # Mask to remove the spots already checked in criterion_map.
         stamp_x_grid, stamp_y_grid = np.meshgrid(np.arange(0,stamp_size,1)-stamp_size//2,np.arange(0,stamp_size,1)-stamp_size//2)
         stamp_mask = np.ones((stamp_size,stamp_size))
@@ -358,7 +359,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
 
         # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
         if maskout_edge is not None:
-            IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = center[0])
+            IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
             conv_kernel = np.ones((maskout_edge,maskout_edge))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
@@ -394,7 +395,8 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
             # Locate the maximum by retrieving its coordinates
             max_ind = np.where( image_cpy == max_val_criter )
             row_id,col_id = max_ind[0][0],max_ind[1][0]
-            x_max_pos, y_max_pos = x_grid[row_id,col_id],y_grid[row_id,col_id]
+            x_max_pos = x_grid[row_id-stamp_size//2,col_id-stamp_size//2]
+            y_max_pos = y_grid[row_id-stamp_size//2,col_id-stamp_size//2]
             sep_pix = np.sqrt(x_max_pos**2+y_max_pos**2)
             if pix2as is not None:
                 sep_arcsec = pix2as *sep_pix
@@ -414,7 +416,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
                     continue
 
             # Store the current local maximum information in the table
-            candidates_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id,col_id])
+            candidates_table.append([k,max_val_criter,pa,sep_pix,sep_arcsec,x_max_pos,y_max_pos,row_id-stamp_size//2,col_id-stamp_size//2])
         ## END WHILE LOOP.
 
         return candidates_table
