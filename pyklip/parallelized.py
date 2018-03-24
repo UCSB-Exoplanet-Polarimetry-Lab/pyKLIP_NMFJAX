@@ -450,6 +450,9 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     include_rdi = "RDI" in mode.upper()
 
     good_file_ind = np.where(goodmv)
+    # Remove reference psfs if they are mostly nans
+    ref2rm = np.where(np.nansum(np.isfinite(ref_psfs[good_file_ind[0], :]),axis=1) < 5)[0]
+    good_file_ind = (np.delete(good_file_ind[0],ref2rm),)
     if (np.size(good_file_ind[0]) < 2) and (not include_rdi):
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False

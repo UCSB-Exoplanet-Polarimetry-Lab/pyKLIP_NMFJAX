@@ -1281,7 +1281,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                           numbasis,maxnumbasis,
                                                           movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                          flipx, corr_smooth, fm_class))
+                                                          flipx, corr_smooth, fm_class,mute_progression))
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
@@ -1290,7 +1290,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                                   parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                                   numbasis,maxnumbasis,
                                                                   movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                                  flipx, corr_smooth, fm_class)
+                                                                  flipx, corr_smooth, fm_class,mute_progression)
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
@@ -1365,7 +1365,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                     wv_index, avg_rad, padding,IOWA,
                                     numbasis,maxnumbasis, minmove,flux_overlap,PSF_FWHM, ref_center, minrot, maxrot,
                                     mode, spectrum, flipx, corr_smooth,
-                                    fm_class):
+                                    fm_class,mute=False):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
 
@@ -1402,7 +1402,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         flipx: if True, flips x axis after rotation to get North up East left
-        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs.
+                            If 0, no smoothing
+        mute: If True, prevent prints about the section size being too small, section being full of nans or number of
+            reference psfs available.
+            _klip_section_multifile_perfile is therefore returning False silently in these cases.
 
     Returns:
         sector_index: used for tracking jobs
@@ -1418,7 +1422,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                                   0, parang,IOWA)
 
     if np.size(section_ind) <= 1:
-        print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
+        if not mute:
+            print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
     #print(np.size(section_ind), np.min(phi_rotate), np.max(phi_rotate), phistart, phiend)
 
@@ -1427,7 +1432,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     ref_psfs = aligned_imgs[:,  section_ind[0]]
 
     if np.sum(np.isfinite(aligned_imgs[img_num, section_ind[0]])) == 0:
-        print("section is full of NaNs ({0} pixels), skipping...".format(np.size(section_ind)))
+        if not mute:
+            print("section is full of NaNs ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
 
     #do the same for the reference PSFs
@@ -1468,8 +1474,10 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
             smoothed_section = smoothed_square_crop[section_ind_smooth_crop]
             smoothed_section[np.isnan(smoothed_section)] = 0
             ref_psfs_smoothed.append(smoothed_section)
-    
-        corr_psfs = np.corrcoef(ref_psfs_smoothed)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            corr_psfs = np.corrcoef(ref_psfs_smoothed)
     else:
         # if we don't smooth, we can use the covariance matrix to calculate the correlation matrix. It'll be slightly faster
         #also calculate correlation matrix since we'll use that to select reference PSFs
@@ -1524,9 +1532,14 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     #     file_ind = np.where(moves >= minmove)
     # select the good reference PSFs
     file_ind = np.where(goodmv)
+    # Remove reference psfs if they are mostly nans
+    ref2rm = np.where(np.nansum(np.isfinite(ref_psfs[file_ind[0], :]),axis=1) < 5)[0]
+    file_ind = (np.delete(file_ind[0],ref2rm),)
     if np.size(file_ind[0]) < 2:
-        print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
+        if not mute:
+            print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
+
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
     covar_files = covar_psfs[file_ind[0].reshape(np.size(file_ind), 1), file_ind[0]]
 
