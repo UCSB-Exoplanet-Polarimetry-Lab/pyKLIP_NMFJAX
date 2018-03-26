@@ -3,19 +3,9 @@ __author__ = 'JB'
 
 import itertools
 
-from scipy.optimize import leastsq
-from astropy.modeling import models, fitting
-from scipy.interpolate import interp1d
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
-
-import numpy as np
-from copy import copy
-
-from pyklip.kpp.utils.mathfunc import *
-from pyklip.kpp.utils.multiproc import *
-from pyklip.kpp.utils.GPIimage import *
 from pyklip.kpp.stat.stat_utils import *
+import multiprocessing as mp
+from pyklip.kpp.utils.multiproc import *
 
 
 def get_image_stat_map_perPixMasking(image,

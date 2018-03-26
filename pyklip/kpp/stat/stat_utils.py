@@ -2,14 +2,10 @@ __author__ = 'JB'
 
 
 import warnings
-from copy import copy
-
-import numpy as np
 from scipy.optimize import leastsq
 from scipy.interpolate import interp1d
 from astropy.modeling import models, fitting
 from pyklip.kpp.utils.mathfunc import *
-from pyklip.kpp.utils.multiproc import *
 from pyklip.kpp.utils.GPIimage import *
 
 
