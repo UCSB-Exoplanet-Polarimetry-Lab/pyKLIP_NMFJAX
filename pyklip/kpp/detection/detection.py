@@ -63,7 +63,7 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
 
         # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
         if maskout_edge is not None:
-            IWA,OWA,inner_mask,outer_mask = get_occ(image, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
+            IWA,OWA,inner_mask,outer_mask = get_occ(image_cpy, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
             conv_kernel = np.ones((maskout_edge,maskout_edge))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
