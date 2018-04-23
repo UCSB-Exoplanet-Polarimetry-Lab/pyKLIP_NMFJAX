@@ -12,6 +12,11 @@ when measuring its spectrum.
 Set up:
 ---------
 
+Here we will just read in the dataset and grab the instrumental PSF. The example code here shows how it is done with GPI, 
+but you will want to refer to the :ref:`instruments-label` for the instrument you are working. 
+As the code notes, it is important what the units of your instrumental PSF is in, as the
+code will return the spectrum relative to the input PSF model. 
+
 ::
 
     import glob
@@ -38,16 +43,18 @@ Set up:
 
 
 Calibrating stellar flux for GPI example:
------------------------------------------------
-Converting to contrast for GPI data is done using the flux of the satellite spots.
-The dataset object has attribute spot_flux that represent the average peak flux of
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Converting to contrast units for GPI data is done using the flux of the satellite spots.
+The GPI dataset object has attribute spot_flux that represent the average peak flux of
 the four spots. The normalization factor is computed by dividing the spot flux 
 spectrum by the ratio between the stellar flux and the spot flux (stored in 
 spot_ratio) and adjusting for the ratio between the peak and the sum of the spot
 PSF. 
 
-For any instrument you can scale your model PSF by the appropriate calibration
-factors.
+For any instrument you can scale your model PSF by its respective calibration
+factors if the model PSF is not already scaled to be the flux of the star. Alternatively,
+you can choose to skip this step and calibrate your spectrum into astrophysical units as the
+very end. 
 
 GPI Example::
 
@@ -63,26 +70,23 @@ GPI Example::
     # star-to-spot calibration factor
     band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
     spot_to_star_ratio = dataset.spot_ratio[band]
-    # DO NOT USE dataset.band !!! (always returns K1)
 
     spot_peak_spectrum = \
-        np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)/nl, nl), axis=0)
+        np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)//nl, nl), axis=0)
     calibfactor = aper_over_peak_ratio*spot_peak_spectrum / spot_to_star_ratio
 
     # calibrated_PSF_model is the stellar flux in counts for each wavelength
     calibrated_PSF_model = PSF_cube*calibfactor
 
 This is your model_psf for generating the forward model and will return the 
-spectrum in contrast units.
+spectrum in contrast units relative to the star. 
 
 
 Computing the forward model and recovering the spectrum with invert_spect_fmodel
---------------------------------------
-gen_fm and invert_spect_fm are modules in pyklip/fmlib/extractSpec
-
-gen_fm generates the forward model array given a pyklip instrument 
-dataset and invert_spect_fm returns a spectrum in contrast units 
-given the forward model array.
+--------------------------------------------------------------------------------
+We will use the `ExtractSpec` class to forward model the PSF of the planet and 
+the `invert_spect_fm` function in `pyklip.fmlib.extractSpec` to recover the spectrum.
+`invert_spect_fm` returns a spectrum in units relative to the input PSF. 
 
 These are the numbers you change::
 
@@ -99,7 +103,7 @@ These are the numbers you change::
     numthreads=4 # number of threads, machine specific
     spectra_template = None # a template spectrum, if you want
     
-Generating the forward model with PyKLIP::
+Generating the forward model with pyKLIP::
 
     ###### The forward model class ######
     fm_class = ExtractSpec(dataset.input.shape,
@@ -143,7 +147,7 @@ Now you can recover the spectrum::
     scale_factor=1.0 # (default) not used if units not set to "scaled"
 
 
-    exspect, fm_matrix = es.invert_spect_fmodel(fmarr, dataset, units=units,
+    exspect, fm_matrix = es.invert_spect_fmodel(dataset.fmout, dataset, units=units,
                                                 scaling_factor=scaling_factor, 
                                                 method="leastsq")
     # method indicates which matrix inversion method to use, they all tend
@@ -156,7 +160,8 @@ Now you can recover the spectrum::
 The units of the spectrum, FM matrix, and klipped data are all in raw data units
 in this example. Calibration of instrument and atmospheric transmmission and 
 stellar spectrum can be done via the input PSF model and optionally applying 
-the scaling factor to invert_spect_fmodel
+the scaling factor to invert_spect_fmodel. It can also be done after extracting
+the spectrum. 
 
 Simulating + recovering a simulated source
 ------------------------------------------
@@ -220,6 +225,7 @@ Recall the klipped data is in fmout::
     plt.colorbar()
 
 Plot the forward model by taking the dot product with the extracted spectrum::
+
     k=0 # choose which numbasis
     fm_image_k = np.dot(fakefm[k,:,:], fake_spect[k].transpose())
     # reshape the image back to 2D
