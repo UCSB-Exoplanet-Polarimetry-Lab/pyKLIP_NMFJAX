@@ -240,6 +240,7 @@ Calculating Errobars
 One may want to calculate errorbars by injecting signals at an annulus of 
 same separation as the real signal and measuring the spread of the recovered
 spectra (loop through the procedure above)::
+
     def recover_fake(files, position, fake_flux):
         # We will need to create a new dataset each time.
         
