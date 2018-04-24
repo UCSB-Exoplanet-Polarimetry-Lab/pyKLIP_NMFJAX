@@ -1367,11 +1367,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         spectra_template = None
 
     # save klip parameters as a string
+    maxbasis_str = maxnumbasis if maxnumbasis is not None else np.max(numbasis) # prefer to use maxnumbasis if possible
     klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}, time_collapse={weighted}".format(mode=mode, annuli=annuli, 
                                               subsections=subsections, movement=movement,
-                                              numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
+                                              numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
                                               weighted=time_collapse)
     dataset.klipparams = klipparams

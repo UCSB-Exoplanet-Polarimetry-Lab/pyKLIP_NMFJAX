@@ -1721,11 +1721,12 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         OWA = dataset.OWA
 
     # save klip parameters as a string
+    maxbasis_str = maxnumbasis if maxnumbasis is not None else np.max(numbasis) # prefer to use maxnumbasis if possible
     klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \
                  "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}, " \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
-                                              numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
+                                              numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
                                               sector_N_pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
                                               fmclass=fm_class)
