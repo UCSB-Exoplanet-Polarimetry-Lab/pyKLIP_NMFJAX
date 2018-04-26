@@ -63,6 +63,8 @@ class MagAOData(object):
     flux_zeropt = {}
     lenslet_scale = 1.0 #arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0 #degrees CCW from +x axis to zenith
+    ghstpeak_ratio = {} #ratio of ghost to peak psf from https://visao.as.arizona.edu/wp-content/uploads/2016/09/nd_cal_2016.09_21.pdf
+
     observatory_latitude = 0.0
 
     #read in MagAO configuration file and set these static variables
@@ -80,6 +82,10 @@ class MagAOData(object):
             centralwave[band] = float(config.get("instrument", "cen_wave_{0}".format(band)))
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
+
+        ghstpeak_ratio['z\''] = float(config.get("instrument",'ghst_psf_z\'')
+        ghstpeak_ratio['i\''] = float(config.get("instrument",'ghst_psf_i\'')
+
     except ConfigParser.Error as e:
         print("Error reading MagAO configuration file: {0}".format(e.message))
         raise e
@@ -291,7 +297,7 @@ class MagAOData(object):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        #print("filenames = " + self._filenames)
+        print("filenames = " + self._filenames)
         filenames = np.unique(self._filenames)
         nfiles = np.size(filenames)
         hdulist[0].header["DRPNFILE"] = nfiles
@@ -341,8 +347,6 @@ class MagAOData(object):
                 #write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = klmode
-                    
-        #removed astr_hdr stuff            
 
         #use the dataset center if none was passed in
         if center is None:
@@ -351,6 +355,10 @@ class MagAOData(object):
             hdulist[0].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
+
+
+
+
 
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
@@ -378,7 +386,7 @@ def _magao_process_file(filepath, filetype=None):
         prihdr: primary header of the FITS file
 
     """
-    #print('trying process magao')
+    print('trying process magao')
     try:
         hdulist = fits.open(filepath)
         header = hdulist[0].header
@@ -422,33 +430,35 @@ def _magao_process_file(filepath, filetype=None):
         parang = angles          
         #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION
 
-        #calculate star flux as ghost peak/scaling factor, depends on filter
+        #calculate star flux as ghost peak/scaling factor, depends on filter, in process should be changed to "if there is ghost peak"
         #check filter for scaling factor:
         if header["INSTRUME"] =='VisAO':
-            ghst_psf = 1.22*10**(-3) #defined in magao.ini
+            ghst_psf = ghstpeak_ratio['z\'']
+            #ghst_psf = 1.22*10**(-3) #defined in magao.ini
 
         else:
-            ghst_psf = 1.998*10**(-3) #defined in magao.ini
+            ghst_psf = ghstpeak_ratio['i\'']
+            #ghst_psf = 1.998*10**(-3) #defined in magao.ini
             
         star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]] 
         #print("flipped_cube shape is " + str(flipped_cube.shape))
         #cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])
         
         cube.reshape([1, cube.shape[0], cube.shape[1]])
-        
 
         #grab the astro header
         w = wcs.WCS(header=header, naxis=[1,2])
         #define empty cd matrix to put values in later
         w.wcs.cd= np.array([[0,0],[0,0]])
-        
+
         #w = wcs.WCS(header=header, naxis=[1,2])
+
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = header['PARANG']
         vert_angle = -(360-parang) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
-        pixel_scale = .008 #arcsec/pixel (hard coded, defined in MagAO.ini)
+        pixel_scale = lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
         cdmatrix = pc * pixel_scale /3600.
         w.wcs.cd[0,0] = cdmatrix[0,0]
         w.wcs.cd[0,1] = cdmatrix[0,1]
