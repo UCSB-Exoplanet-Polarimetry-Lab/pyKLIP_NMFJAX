@@ -376,20 +376,16 @@ def _magao_process_file(filepath, filetype=None):
         spot_fluxes: array of z containing average satellite spot fluxes for each image
         inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         prihdr: primary header of the FITS file
-        exthdr: 1st extention header of the FITS file
 
     """
     #print('trying process magao')
     try:
         hdulist = fits.open(filepath)
         header = hdulist[0].header
-    
+        #prihdr = hdulist[0].header
+        #exthdr = hdulist[0].header
+
         cube = hdulist[0].data
-        #print(hdulist)
-        
-        exthdr = hdulist[0].header
-        #exthdr = None
-        prihdr = hdulist[0].header
 
         if filetype is None:
             try:
@@ -406,18 +402,11 @@ def _magao_process_file(filepath, filetype=None):
                 except KeyError:
                     raise KeyError("No recognized MagAO keywords found")
 
-        #SDI team variables:
-        if filetype == 0:
-            filt_band = "H-Alpha"
-        else:
-            filt_band = "Continuum"
-
         angle=float(header['ROTOFF'])
         angle = 90+angle
         angles = [angle]
         angles = np.array(angles)
         cube = hdulist[0].data
-        prihdr = hdulist[0].header
         
         wvs = header['WLENGTH'] 
 
@@ -449,13 +438,13 @@ def _magao_process_file(filepath, filetype=None):
         
 
         #grab the astro header
-        w = wcs.WCS(header=exthdr, naxis=[1,2])
+        w = wcs.WCS(header=header, naxis=[1,2])
         #define empty cd matrix to put values in later
         w.wcs.cd= np.array([[0,0],[0,0]])
         
-        #w = wcs.WCS(header=exthdr, naxis=[1,2])
+        #w = wcs.WCS(header=header, naxis=[1,2])
         #turns out WCS data can be wrong. Let's recalculate it using avparang
-        parang = exthdr['PARANG']
+        parang = header['PARANG']
         vert_angle = -(360-parang) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
@@ -478,7 +467,7 @@ def _magao_process_file(filepath, filetype=None):
     finally:
         hdulist.close()
 
-    return cube, center, parang, wvs, astr_hdrs, prihdr, star_flux
+    return cube, center, parang, wvs, astr_hdrs, header, star_flux
 
 #comes from NIRC2 or maybe P1640, but not GPI
 #def calc_starflux(cube, center):
