@@ -2,6 +2,8 @@
 
 SPHERE Tutorials
 ================
+The pyKLIP SPHERE interface supports IFS and IRDIS data produced from 
+`Arthur Vigan's SPHERE tools <http://astro.vigan.fr/tools.html>`_ and IFS data from ESO's SPHERE pipeline. 
 These tutorials all assume you have processed the raw SPHERE data into a format like what is produced by 
 `Arthur Vigan's SPHERE tools <http://astro.vigan.fr/tools.html>`_. That is, you will want the following things:
 
@@ -9,6 +11,10 @@ These tutorials all assume you have processed the raw SPHERE data into a format 
 * PSF cube of dimensions (Nwvs, y, x)
 * A fits table with information like parallactic angle and pupil offset
 * For IFS data, a wavelength array that provides the wavelegth solution
+
+The ESO SPHERE IFS pipeline produces similar files, with a parallactic angle FITS file replacing the FITS table described above.
+One should be able to follow the following tutorial, but replacing the four data products mentioend above with the corresponding
+products produced by the ESO pipeline.  
 
 IFS Data
 --------
@@ -26,6 +32,8 @@ trim the edges of the FOV by masking any pixel within 3 pixels of a 0 as a NaN (
 
     print("read in data")
     dataset = SPHERE.Ifs(datacube, psfcube, fitsinfo, wvinfo, nan_mask_boxsize=9)
+
+    print(dataset.psfs.shape) # instrumental PSF at each wavelength stored here if you need it
 
     parallelized.klip_dataset(dataset, outputdir="path/to/save/dir/", fileprefix="myobject",
                               annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
@@ -45,6 +53,8 @@ For IRDIS data, we don't need to specify the wavelength info. Instead we should 
 
     print("read in data")
     dataset = SPHERE.Irdis(datacube, psfcube, fitsinfo, "K1K2")
+
+    print(dataset.psfs.shape) # instrumental PSF at each wavelength stored here if you need it
 
     parallelized.klip_dataset(dataset, outputdir="path/to/save/dir/", fileprefix="myobject",
                               annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],

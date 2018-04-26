@@ -137,7 +137,7 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     prefix = "adionly-betapic-j-k100a9s4m1-fakes50pa50"
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
                           annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
-                          calibrate_flux=False, mode="ADI", lite=True, highpass=False)  
+                          calibrate_flux=False, mode="ADI", lite=True, highpass=False, time_collapse="weighted-mean")  
    
     # before we do it again, check that dataset.centers remains unchanged
     assert(dataset.centers[0][0] == oldcenters[0][0])
@@ -185,7 +185,7 @@ def test_mock_SDI(mock_klip_parallelized):
     """
 
     #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.
-    mock_klip_parallelized.return_value = (np.zeros((4, 111, 281, 281)), np.array([140,140]))
+    mock_klip_parallelized.return_value = (np.zeros((4, 111, 281, 281)), np.array([140,140]), np.ones((4, 111, 281, 281)))
 
     # time it
     t1 = time()
@@ -212,4 +212,5 @@ def test_mock_SDI(mock_klip_parallelized):
 
 
 if __name__ == "__main__":
-    test_exmaple_gpi_klip_dataset()
+    #test_exmaple_gpi_klip_dataset()
+    test_adi_gpi_klip_dataset_with_fakes_twice()

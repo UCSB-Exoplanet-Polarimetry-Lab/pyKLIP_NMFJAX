@@ -1,4 +1,3 @@
-
 import multiprocessing as mp
 import numpy as np
 import os
@@ -6,6 +5,7 @@ import copy
 import pickle
 import glob
 import scipy.ndimage as ndimage
+import ctypes
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
@@ -31,7 +31,6 @@ class DiskFM(NoFM):
         # Attributes of input/output
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
-        self.maxnumbasis = max(numbasis)
         self.numims = inputs_shape[0]
         self.mode = mode
 
@@ -42,13 +41,12 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-        self.imgs_mean_subbed = False
         
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
-
+        self.np_data_type = ctypes.c_float
 
         # Coords where align_and_scale places model center (default is inputs center).
         self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
@@ -106,7 +104,7 @@ class DiskFM(NoFM):
         ''' 
        Allocates shared memory for output image 
         '''
-        fmout_size = np.prod(output_img_shape)
+        fmout_size = int(np.prod(output_img_shape))
         fmout_shape = output_img_shape
         fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
@@ -129,7 +127,7 @@ class DiskFM(NoFM):
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False, refs_mean_subbed = self.aligned_imgs_np)
+        delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, numbasis, sci, model_sci, inputflux = None)
 
         for thisnumbasisindex in range(np.size(numbasis)):
@@ -195,7 +193,7 @@ class DiskFM(NoFM):
 
                                    pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], radstart=radstart,
                                    radend=radend, phistart=phistart, phiend=phiend, padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
-                                   parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,maxnumbasis=self.maxnumbasis,
+                                   parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
                                    fmout=fmout_np,perturbmag = None, klipped=None, covar_files=None)
 
             else:
@@ -286,9 +284,6 @@ class DiskFM(NoFM):
 
 
         self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-        self.aligned_imgs_np = self.aligned_imgs_np - np.nanmean(self.aligned_imgs_np)
-        self.aligned_imgs_np[np.where(np.isnan(self.aligned_imgs_np))] = 0
-        self.imgs_mean_subbed = True
 
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np

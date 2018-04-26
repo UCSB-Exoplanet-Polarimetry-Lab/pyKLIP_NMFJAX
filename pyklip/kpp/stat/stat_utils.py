@@ -2,25 +2,19 @@ __author__ = 'JB'
 
 
 import warnings
-import itertools
-
-from scipy.optimize import leastsq
-from astropy.modeling import models, fitting
-from matplotlib import rcParams
-from scipy.interpolate import interp1d
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
-
-import numpy as np
 from copy import copy
 
+import numpy as np
+from scipy.optimize import leastsq
+from scipy.interpolate import interp1d
+from astropy.modeling import models, fitting
 from pyklip.kpp.utils.mathfunc import *
 from pyklip.kpp.utils.multiproc import *
 from pyklip.kpp.utils.GPIimage import *
 
 
 def get_image_stat_map(image,
-                        image_without_planet,
+                        image_without_planet=None,
                         IOWA = None,
                         N = 3000,
                         centroid = None,
@@ -51,11 +45,19 @@ def get_image_stat_map(image,
                     If "stddev" returns the pure standard deviation map.
                     If "proba" triggers proba calculation with pdf fitting.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
-                    Use the entire image directly. Not available if "pixel based: is defined,
+                    Use the entire image directly.
 
     Return:
         The statistic map for image.
     """
+
+    if image_without_planet is None:
+        image_without_planet = image
+    ny,nx = image.shape
+
+
+    if centroid is None :
+        centroid = ((nx-1)//2 ,(ny-1)//2)
 
     if image_wide is None:
         image_wide = False
@@ -71,8 +73,6 @@ def get_image_stat_map(image,
         pdf_radii = np.array(annulus_radii_list)[:,0]
 
         stat_map = np.zeros(image.shape) + np.nan
-        ny,nx = image.shape
-
         # Build the x and y coordinates grids
         x_grid, y_grid = np.meshgrid(np.arange(nx)-centroid[0], np.arange(ny)-centroid[1])
 
@@ -151,7 +151,18 @@ def get_image_stat_map(image,
         # Calculate the radial distance of each pixel
         r_grid = abs(x_grid +y_grid*1j)
 
-        image_finite = np.where(np.isfinite(image))
+        nanpix = np.where(np.isnan(image))
+        stat_map = stddev_func(r_grid.ravel())
+        stat_map.shape = r_grid.shape
+        stat_map[nanpix] = np.nan
+
+        if type == "SNR":
+            stat_map = image/stat_map
+
+        return stat_map
+        
+
+        image_finite = np.where(np.isfinite(image)) 
 
         for k,l in zip(image_finite[0],image_finite[1]):
             #stdout.flush()
@@ -165,7 +176,7 @@ def get_image_stat_map(image,
         return stat_map
 
 
-def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
+def get_image_PDF(image,IOWA=None,N = 2000,centroid = None, r_step = None,Dr=None,image_wide = None):
     """
     Calculate the PDF of a given image using annuli.
 
@@ -191,7 +202,10 @@ def get_image_PDF(image,IOWA,N = 2000,centroid = None, r_step = None,Dr=None,ima
     """
     if image_wide is None:
         image_wide = False
-    IWA,OWA = IOWA
+    if IOWA is None:
+        IWA,OWA = get_IOWA(image, centroid = centroid)
+    else:
+        IWA,OWA = IOWA
     ny,nx = image.shape
 
     if 0:
@@ -584,6 +598,7 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
 
     if interupt_plot:
         import matplotlib.pyplot as plt
+        from matplotlib import rcParams
         rcParams.update({'font.size': 20})
         fig = 2
         plt.close(2)
@@ -609,6 +624,8 @@ def get_pdf_model(data,interupt_plot = False,pure_gauss = False):
     pdf_model /= np.sum(pdf_model)
 
     if interupt_plot:
+        from mpl_toolkits.axes_grid1 import host_subplot
+        import mpl_toolkits.axisartist as AA
         host = host_subplot(122, axes_class=AA.Axes)
         par1 = host.twinx()
         p1, = host.plot(new_sampling,pdf_model/(new_sampling[1]-new_sampling[0]),'r-',linewidth=5)

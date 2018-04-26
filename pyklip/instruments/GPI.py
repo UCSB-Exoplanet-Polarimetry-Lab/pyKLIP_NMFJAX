@@ -272,6 +272,9 @@ class GPIData(Data):
         prihdrs = []
         exthdrs = []
 
+        #Create a threadpool for high pass filter
+        pool = mp.Pool()
+
         if PSF_cube is not None:
             if isinstance(PSF_cube, np.ndarray):
                 PSF_cube_arr = PSF_cube
@@ -298,7 +301,7 @@ class GPIData(Data):
             cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
-                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet)
+                                  psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
 
             # import matplotlib.pyplot as plt
             # print(filepath)
@@ -321,7 +324,9 @@ class GPIData(Data):
             #filename[:] = filepath
             filenames.append([filepath for i in range(pa.shape[0])])
 
-
+        #Close threadpool
+        pool.close()
+        pool.join()
 
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
@@ -393,9 +398,14 @@ class GPIData(Data):
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
-                 extra_exthdr_keywords = None, extra_prihdr_keywords = None,pyklip_output = True):
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the following attributes:
+                dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -413,8 +423,6 @@ class GPIData(Data):
             user_exthdr: User defined extension headers to be used instead
             extra_exthdr_keywords: Fits keywords to be added to the extension header before saving the file
             extra_prihdr_keywords: Fits keywords to be added to the primary header before saving the file
-            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
-                            have been defined.
 
         """
         hdulist = fits.HDUList()
@@ -505,7 +513,7 @@ class GPIData(Data):
                 hdulist[1].header[name] = value
 
         # write z axis units if necessary
-        if zaxis is not None:
+        if zaxis is not None and filetype is not None:
             #Writing a KL mode Cube
             if "KL Mode" in filetype:
                 hdulist[1].header['CTYPE3'] = 'KLMODES'
@@ -524,10 +532,7 @@ class GPIData(Data):
         if user_exthdr is None:
             #use the dataset astr hdr if none was passed in
             if astr_hdr is None:
-                if not pyklip_output:
-                    astr_hdr = self.wcs[0].deepcopy()
-                else:
-                    astr_hdr = self.output_wcs[0]
+                astr_hdr = self.output_wcs[0]
             if astr_hdr is not None:
                 #update astro header
                 #I don't have a better way doing this so we'll just inject all the values by hand
@@ -554,10 +559,7 @@ class GPIData(Data):
 
             #use the dataset center if none was passed in
             if center is None:
-                if not pyklip_output:
-                    center = self.centers[0]
-                else:
-                    center = self.output_centers[0]
+                center = self.output_centers[0]
             if center is not None:
                 hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
@@ -924,7 +926,7 @@ class GPIData(Data):
 ######################
 
 def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_flux=False, numthreads=-1,
-                      psfs_func_list=None, bad_sat_spots=None, quiet=False):
+                      psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
     """
     Method to open and parse a GPI file
 
@@ -957,17 +959,16 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
         print("Reading File: {0}".format(filepath))
     hdulist = fits.open(filepath)
     try:
-
         #grab the data and headers
         cube = hdulist[1].data
         exthdr = hdulist[1].header
         prihdr = hdulist[0].header
-
+ 
         #get some instrument configuration from the primary header
         filt_band = prihdr['IFSFILT'].split('_')[1]
         fpm_band = prihdr['OCCULTER'].split('_')[1]
         ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
-
+  
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
         #turns out WCS data can be wrong. Let's recalculate it using avparang
@@ -1124,16 +1125,15 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False, meas_satspot_fl
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
-            cube = high_pass_filter_imgs(cube)
+            cube = high_pass_filter_imgs(cube, pool = pool)
             highpassed = True
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
             highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
-            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size, pool = pool)
             highpassed = True
-
 
     # remeasure satellite spot fluxes
     if meas_satspot_flux:

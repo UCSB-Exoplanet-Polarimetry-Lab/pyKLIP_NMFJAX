@@ -9,6 +9,7 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as interp
 from scipy.optimize import minimize
 from scipy.interpolate import interp1d
+import astropy.modeling as modeling
 
 
 
@@ -137,11 +138,6 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
     if thetas is None:
         thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
-    if stampsize is None:
-        stampsize = 3 * fwhm
-    # convert boxsize to an integer
-    stampsize = int(np.ceil(stampsize))
-
     if (np.size(inputflux) == 1):
         #input is probably a number and we want an array
         inputflux = np.ones(frames.shape[0]) * inputflux
@@ -184,27 +180,29 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             ymin = ystamp[0][0]
             ymax = ystamp[-1][-1]
 
+            if xmin>= nx or ymin>= ny or xmax<= 0 or ymax<= 0:
+                continue
             # find corresponding pixels in the PSF
             xpsf = xstamp - x_pl + boxcent
             ypsf = ystamp - y_pl + boxcent
 
             # Crop the edge if injection at the edge of the image
             if xmin < 0:
-                dx = np.min([0,xmin])
-                ypsf = ypsf[:,dx::]
-                xpsf = xpsf[:,dx::]
+                ypsf = ypsf[:,-xmin::]
+                xpsf = xpsf[:,-xmin::]
+                xmin=0
             if ymin < 0:
-                dy = np.min([0,ymin])
-                ypsf = ypsf[dy::,:]
-                xpsf = xpsf[dy::,:]
+                ypsf = ypsf[-ymin::,:]
+                xpsf = xpsf[-ymin::,:]
+                ymin = 0
             if xmax >= nx:
-                dx = np.max([0,xmax-nx + 1])
-                ypsf = ypsf[:,:-dx]
-                xpsf = xpsf[:,:-dx]
+                ypsf = ypsf[:,:-(xmax-nx + 1)]
+                xpsf = xpsf[:,:-(xmax-nx + 1)]
+                xmax = nx
             if ymax >= ny:
-                dy = np.max([0,ymax-ny + 1])
-                ypsf = ypsf[:-dy,:]
-                xpsf = xpsf[:-dy,:]
+                ypsf = ypsf[:-(ymax-ny + 1),:]
+                xpsf = xpsf[:-(ymax-ny + 1),:]
+                ymax = ny
 
             #inject into frame
             frame[ymin:ymax + 1, xmin:xmax + 1] += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
@@ -219,7 +217,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
 
 def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spectrum = None, PSF_cube = None, PSF_cube_wvs = None,
                                 star_type = None, mute = False, SpT_file_csv = None, real_planets_pos = None, sep_skip_real_pl = None,
-                                pa_skip_real_pl = None):
+                                pa_skip_real_pl = None,dn_per_contrast=None):
     '''
     Generate spectral datacubes with fake planets.
     It will do a copy of the cubes read in GPIData after having injected fake planets in them.
@@ -276,6 +274,8 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
                         [(sep1,pa1),(sep2,pa2),...] with the separation in pixels and the position angle in degrees.
         sep_skip_real_pl: Limit in seperation of how close a fake can be injected of a known GOI.
         pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
+        dn_per_contrast: array of the same size as spectrum giving the conversion between the peak flux of a planet in
+                        data number and its contrast.
 
     '''
 
@@ -290,13 +290,39 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         star_name = "noname"
 
     nl, ny, nx = dataset.input.shape
-    dn_per_contrast = 1./dataset.calibrate_output(np.ones((nl,1,1)),spectral=True).squeeze()
-    host_star_spec = dn_per_contrast/np.mean(dn_per_contrast)
+    if dn_per_contrast is None:
+        dn_per_contrast = 1./dataset.calibrate_output(np.ones((nl,1,1)),spectral=True).squeeze()
 
-    if star_type is None:
-        star_type = spec.get_specType(star_name,SpT_file_csv)
-    # Interpolate a spectrum of the star based on its spectral type/temperature
-    wv,star_sp = spec.get_star_spectrum(dataset.wvs,star_type)
+
+    # Make sure the total flux of each PSF is unity for all wavelengths
+    # So the peak value won't be unity.
+    # print("np.sum(PSF_cube)",np.sum(PSF_cube))
+    PSF_cube = PSF_cube/np.nansum(PSF_cube,axis=(1,2))[:,None,None]
+    # print("np.sum(PSF_cube)",np.sum(PSF_cube))
+    # Get the conversion factor from peak spectrum to aperture based spectrum
+    aper_over_peak_ratio = 1/np.nanmax(PSF_cube,axis=(1,2))
+    aper_over_peak_ratio_tiled = np.zeros(nl)#wavelengths
+    for k,wv in enumerate(dataset.wvs):
+        aper_over_peak_ratio_tiled[k] = aper_over_peak_ratio[spec.find_nearest(PSF_cube_wvs,wv)[1]]
+    # Summed DN flux of the star in the entire dataset calculated from dn_per_contrast
+    host_star_spec = aper_over_peak_ratio_tiled*dn_per_contrast
+    star_flux = np.sum(host_star_spec)
+    # print(star_flux,aper_over_peak_ratio_tiled[0],dn_per_contrast[0],aper_over_peak_ratio)
+    # # exit()
+    host_star_spec = host_star_spec/np.mean(host_star_spec)
+    nl_psf, ny_psf, nx_psf = PSF_cube.shape
+    inputpsfs = np.zeros((nl,ny_psf,nx_psf))
+    for k,wv in enumerate(dataset.wvs):
+        inputpsfs[k,:,:] = PSF_cube[spec.find_nearest(PSF_cube_wvs,wv)[1],:,:]
+
+
+    if np.size(np.unique(dataset.wvs)) == 1:
+        star_sp = np.ones(dn_per_contrast.shape)
+    else:
+        if star_type is None:
+            star_type = spec.get_specType(star_name,SpT_file_csv)
+        # Interpolate a spectrum of the star based on its spectral type/temperature
+        wv,star_sp = spec.get_star_spectrum(dataset.wvs,star_type)
 
     # Define the output Foldername
     if isinstance(spectrum, str):
@@ -339,23 +365,6 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
 
     spectrum_vec = spectrum_vec/np.mean(spectrum_vec)
 
-
-    # Make sure the total flux of each PSF is unity for all wavelengths
-    # So the peak value won't be unity.
-    PSF_cube = PSF_cube/np.nansum(PSF_cube,axis=(1,2))[:,None,None]
-    # Get the conversion factor from peak spectrum to aperture based spectrum
-    aper_over_peak_ratio = 1/np.nanmax(PSF_cube,axis=(1,2))
-    aper_over_peak_ratio_tiled = np.zeros(nl)#wavelengths
-    for k,wv in enumerate(dataset.wvs):
-        aper_over_peak_ratio_tiled[k] = aper_over_peak_ratio[spec.find_nearest(PSF_cube_wvs,wv)[1]]
-    # Summed DN flux of the star in the entire dataset calculated from dn_per_contrast
-    star_flux = np.sum(aper_over_peak_ratio_tiled*dn_per_contrast)
-    nl_psf, ny_psf, nx_psf = PSF_cube.shape
-    inputpsfs = np.zeros((nl,ny_psf,nx_psf))
-    for k,wv in enumerate(dataset.wvs):
-        inputpsfs[k,:,:] = PSF_cube[spec.find_nearest(PSF_cube_wvs,wv)[1],:,:]
-
-
     if real_planets_pos is not None:
         sep_real_object_list = [sep for (sep,pa) in real_planets_pos] # in pixels
         pa_real_object_list = [pa for (sep,pa) in real_planets_pos] # in degrees
@@ -396,7 +405,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid[range(2,annuli,3),:] += 60
         pa_grid = pa_grid + 5
 
-        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     if fake_position_dict["mode"] == "sector":
         annuli = fake_position_dict["annuli"]
@@ -409,7 +418,10 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         dims = dataset.input.shape
         x_grid, y_grid = np.meshgrid(np.arange(dims[2] * 1.0), np.arange(dims[1] * 1.0))
         nanpix = np.where(np.isnan(dataset.input[0]))
-        OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
+        if np.size(nanpix) == 0:
+            OWA = np.sqrt(np.max((x_grid) ** 2 + (y_grid) ** 2))
+        else:
+            OWA = np.sqrt(np.min((x_grid[nanpix] - dataset.centers[0][0]) ** 2 + (y_grid[nanpix] - dataset.centers[0][1]) ** 2))
         dr = float(OWA - dataset.IWA) / (annuli)
         delta_th = 360./subsections
 
@@ -421,7 +433,7 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_grid, radii_grid = np.meshgrid(pa_list,radii_list)
         pa_grid[range(1,annuli-1,2),:] += delta_th/2.
 
-        sep_pa_iter_list = zip(np.reshape(radii_grid,np.size(radii_grid)),np.reshape(pa_grid,np.size(pa_grid)))
+        sep_pa_iter_list = [(r, p) for r_arr, p_arr in zip(radii_grid, pa_grid) for r, p in zip(r_arr, p_arr)]
 
     # fake_flux_dict = dict(mode = "SNR",sep_arr = sep_samples, contrast_arr=Ttype_contrast)
     if (fake_flux_dict["mode"] == "contrast"):
@@ -465,7 +477,8 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
             if not mute:
                 print("injecting planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
             # inject fake planet at given radius,pa into dataset.input
-            inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa)
+            inject_planet(dataset.input, dataset.centers, inputpsfs, dataset.wcs, radius, pa,
+                          stampsize=np.min([ny_psf, nx_psf]))#, thetas=pa+dataset.PAs)
 
             # Save fake planet position in headers
             extra_keywords["FKPA{0:02d}".format(fake_id)] = pa
@@ -474,9 +487,11 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
             extra_keywords["FKPOSX{0:02d}".format(fake_id)] = x_max_pos
             extra_keywords["FKPOSY{0:02d}".format(fake_id)] = y_max_pos
             extra_keywords["FKSPEC{0:02d}".format(fake_id).format(fake_id)] = spectrum_name
-        except:
-            if not mute:
-                print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
+        except OverflowError:
+            pass
+        # except:
+        #     if not mute:
+        #         print("Failed to inject planet position ("+str(radius)+"pix,"+str(pa)+"degree)")
 
     return dataset,extra_keywords
 
@@ -661,6 +676,58 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
     yfit = yfit - searchrad + y0
 
     return corrflux, fwhm, xfit, yfit
+
+def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
+    """
+    Fits a 2d airy function to the data at point (xguess, yguess)
+
+    Args:
+        frame: the data - Array of size (y,x)
+        xguess,yguess: location to fit the 2d guassian to (should be pretty accurate)
+        searchrad: 1/2 the length of the box used for the fit
+        guessfwhm: approximate fwhm to fit to
+
+    Returns:
+        peakflux: the peakflux of the Airy function
+        fwhm: diameter between the first minima along one axis
+        xfit: x position
+        yfit: y position
+    """
+    if not isinstance(searchrad, int):
+        raise ValueError("searchrad needs to be an integer")
+
+    x0 = np.rint(xguess).astype(int)
+    y0 = np.rint(yguess).astype(int)
+    #construct our searchbox
+    fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
+
+    #mask bad pixels
+    fitbox[np.where(np.isnan(fitbox))] = 0
+ 
+    # construct an Airy function to fit to the data
+    airy_psf = modeling.functional_models.AiryDisk2D()
+    fity, fitx = np.indices(fitbox.shape)
+    errorfunction = lambda p: np.sum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) - fitbox)**2)
+
+    #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
+    #(2searchrad+1,2searchrad+1)
+
+    guess = np.array((searchrad, searchrad, guesspeak, guessfwhm))
+
+    #p, success = optimize.leastsq(errorfunction, guess)
+    res = optimize.minimize(errorfunction, guess, bounds=((0, 2*searchrad+1), (0, 2*searchrad+1), (0, None), (0, searchrad)))
+    p = res.x
+
+    xfit = p[0]
+    yfit = p[1]
+    peakflux = p[2]
+    fwhm = p[3] 
+
+    # convert xfit, yfit back to image coordinates
+    xfit = xfit - searchrad + x0
+    yfit = yfit - searchrad + y0
+
+    return peakflux, fwhm, xfit, yfit
 
 
 def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):

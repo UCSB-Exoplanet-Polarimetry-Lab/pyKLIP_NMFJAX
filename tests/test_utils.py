@@ -1,6 +1,8 @@
+import pytest
 import math
 import numpy as np
 import scipy
+import astropy.modeling as modeling
 import pyklip.fakes as fakes
 import pyklip.klip as klip
 
@@ -273,7 +275,32 @@ def test_meas_contrast():
     assert contrast3[0] != contrast[0]
 
 
+def test_airy_fit():
+    """
+    Test the fakes.airyfit2d function
+    """
+    y, x = np.indices([281,281])
+
+    # truth values
+    x0 = 131.4
+    y0 = 151.9
+    flux0 = 1.4
+    fwhm0 = 3.2
+
+    # inject data into frame
+    airy_psf = modeling.functional_models.AiryDisk2D()
+    data = airy_psf.evaluate(x, y, flux0, x0, y0, fwhm0/2.)
+
+    # fit it
+    fitflux, fitfwhm, fitx, fity = fakes.airyfit2d(data, int(x0), int(y0))
+
+    threshold = 1e-6
+    assert x0 == pytest.approx(fitx, threshold)
+    assert y0 == pytest.approx(fity, threshold)
+    assert flux0 == pytest.approx(fitflux, threshold)
+    assert fwhm0 == pytest.approx(fitfwhm, threshold)
+
+
+
 if __name__ == "__main__":
-    test_transform_and_centroding()
-    test_transform_and_centroding_with_custom_PSF()
-    test_meas_contrast()
+    test_airy_fit()
