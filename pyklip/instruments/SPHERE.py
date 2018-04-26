@@ -25,12 +25,13 @@ class Ifs(Data):
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        ifs_rdp: Reduction algorithm used to obtain the input data.
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         psfs: Spectral cube of size (Nwv, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
-        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs
         flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
         nfiles: number of datacubes
         nwvs: number of wavelengths
@@ -42,24 +43,34 @@ class Ifs(Data):
     platescale = 0.007462
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info,keepslices=None,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_info, keepslices=None,
                  psf_cube_size=21, nan_mask_boxsize=9, IWA=0.15, object_name = None, disable_minimum_filter = False):
         super(Ifs, self).__init__()
 
         # read in the data
         with fits.open(data_cube) as hdulist:
-            self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx
-            # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
+            self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx for vigan and Nwvs, Nfiles, Nx, Ny for sphere-dc
+            # Read headers to be saved when using savedata. Vigan's or SPHERE-DC code don't include headers but pyklip does it
             # parameters or for the the location of injected planets.
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4:
+                try:
+                    self.prihdr['HIERARCH ESO PRO REC1 ID'] # The SPHERE DC has headers with details of the reduction. We can use that information to differentiate between the two types of reduction
+                except KeyError:
+                    self.prihdr['HIERARCH ESO PRO REC1 ID'] = False # If the keyword is missing, then we know it is data from Arthur Vigan's reduction
+                if self.prihdr['HIERARCH ESO PRO REC1 ID'] == 'sph_ifs_science_dr':
+                    ifs_rdp = "sphere-dc" # Set the reduction process
+                    self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
+                elif self.prihdr['HIERARCH ESO PRO REC1 ID'] == False:
+                    ifs_rdp = "vigan" # Set the reduction process
+                self._ifs_rdp = ifs_rdp # Store the reduction process
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
                 self.nwvs = self.input.shape[1]
                 # collapse files with wavelengths
                 self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
                                                 self.input.shape[3])
-                # zeros are nans, and anything adjacient to a pixel less than zero is 0.
+                # zeros are nans, and anything adjacent to a pixel less than zero is 0.
                 if not disable_minimum_filter:
                     input_minfilter = ndimage.minimum_filter(self.input, (0, nan_mask_boxsize, nan_mask_boxsize))
                     self.input[np.where(input_minfilter <= 0)] = np.nan
@@ -82,7 +93,14 @@ class Ifs(Data):
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
-            self.psfs = hdulist[0].data # Nwvs, Ny, Nx
+            psf_cube = hdulist[0].data # Nwvs, Ny, Nx
+            if np.size(psf_cube.shape) == 4: # If more than 1 PSF was taken during observation
+                if ifs_rdp == "vigan":
+                    self.psfs = np.median(psf_cube ,axis=0) # Take the median of the three PSFs
+                elif ifs_rdp == "sphere-dc":
+                    self.psfs = np.median(psf_cube ,axis=1) # Take the median of the three PSFs
+            else:
+                self.psfs = psf_cube
             self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
 
             # trim the cube
@@ -98,11 +116,15 @@ class Ifs(Data):
             # repeat for all Nfile cubes
             self._wvs = np.tile(self.wvs, self.nfiles)
 
-        # read in PA info among other things
+        # read in PA info among other things. The two reduction processes handle PAs differently and therefore must be extracted differently
         with fits.open(info_fits) as hdulist:
-            metadata = hdulist[1].data
-            self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
-            self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            if ifs_rdp == "vigan":
+                metadata = hdulist[1].data
+                self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
+                self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            elif ifs_rdp == "sphere-dc":
+                self._PAs = -hdulist[0].data # The SPHERE DC inverts the angles and we must correct for it
+                self._PAs = np.repeat(self.PAs, self.nwvs)
 
         # we don't need to flip x for North Up East left
         self.flipx = False
@@ -146,7 +168,6 @@ class Ifs(Data):
             self.dn_per_contrast = self.dn_per_contrast[keepslices]
             self.wcs = self.wcs[keepslices]
 
-
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = object_name
         # self.object_name = os.path.basename(data_cube).split("-")[0].split("_")[0]
@@ -161,6 +182,13 @@ class Ifs(Data):
     @input.setter
     def input(self, newval):
         self._input = newval
+
+    @property
+    def ifs_rdp(self):
+        return self._ifs_rdp
+    @ifs_rdp.setter
+    def ifs_rdp(self, newval):
+        self._ifs_rdp = newval
 
     @property
     def centers(self):
@@ -204,7 +232,6 @@ class Ifs(Data):
     def wcs(self, newval):
         self._wcs = newval
 
-
     @property
     def IWA(self):
         return self._IWA
@@ -231,9 +258,13 @@ class Ifs(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None,pyklip_output=True):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the follwing attributes:
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -243,9 +274,7 @@ class Ifs(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
-                            have been defined.
-        
+
         """
         hdulist = fits.HDUList()
         hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
@@ -253,11 +282,12 @@ class Ifs(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        filenames = np.unique(self.filenames)
-        nfiles = np.size(filenames)
-        hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
-        for i, filename in enumerate(filenames):
-            hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+        if self.ifs_rdp == "vigan":
+            filenames = np.unique(self.filenames)
+            nfiles = np.size(filenames)
+            hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
+            for i, filename in enumerate(filenames):
+                hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
 
 
@@ -312,10 +342,8 @@ class Ifs(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
-        if not pyklip_output:
-            center = self.centers[0]
-        else:
-            center = self.output_centers[0]
+        center = self.output_centers[0]
+            
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
@@ -371,6 +399,7 @@ class Irdis(Data):
         wavelength_str: string to specifiy the band (e.g. "H2H3", "K1K2")
         psf_cube_size: size of the psf cube to save (length along 1 dimension)
         IWA: inner working angle of the data in arcsecs
+        OWA: outer working angle of the data in arcsecs
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -380,9 +409,10 @@ class Irdis(Data):
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        OWA: a floating point scalar (not array). Specifies to out working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         psfs: Spectral cube of size (2, psfy, psfx) where psf_cube_size defines the size of psfy, psfx.
-        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs 
+        psf_center: [x, y] location of the center of the PSF for a frame in self.psfs
         flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
         nfiles: number of datacubes
         nwvs: number of wavelengths (i.e. 2 for dual band imaging)
@@ -393,10 +423,10 @@ class Irdis(Data):
     platescale = 0.012255
     # dual band imaging central wavelengths
     wavelengths = {"Y2Y3" : (1.02, 1.073), "J2J3": (1.190, 1.270), "H2H3": (1.587, 1.667),
-                   "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244)}
+                   "H3H4": (1.667, 1.731), "K1K2": (2.1, 2.244), "B_H": (1.625, 1.625)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2, OWA=None,
                  keepslices=None):
         super(Irdis, self).__init__()
 
@@ -413,6 +443,13 @@ class Irdis(Data):
                 # collapse files with wavelengths
                 self.input = self.input.reshape(self.nfiles*self.nwvs, self.input.shape[2],
                                                 self.input.shape[3])
+                if OWA is not None:
+                    # Trim cube to region of interest to speed up processing
+                    if (OWA / Irdis.platescale) < (0.45*self.input.shape[1]):
+                        # Only do it if the OWA in pixels is a bit less than half the image size
+                        trim_px = int((self.input.shape[1]/2.0) - (OWA / Irdis.platescale))
+                        self.input = self.input[:, trim_px:-trim_px, trim_px:-trim_px]
+
                 # centers are at dim/2
                 self._centers = np.array([[img.shape[1]/2., img.shape[0]/2.] for img in self.input])
             elif np.size(self.input.shape) == 3:
@@ -428,6 +465,8 @@ class Irdis(Data):
                 self.nfiles = 1
                 self.nwvs = 1
                 self.centers = np.array([[self.input.shape[1]/2., self.input.shape[0]/2.]])
+
+
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
@@ -458,6 +497,7 @@ class Irdis(Data):
 
         # I have no idea
         self.IWA = IWA / Irdis.platescale # 0.2" IWA
+        self.OWA = OWA / Irdis.platescale if OWA is not None else None
 
         # Creating WCS info for SPHERE
         self.wcs = []
@@ -551,13 +591,19 @@ class Irdis(Data):
     def wcs(self, newval):
         self._wcs = newval
 
-
     @property
     def IWA(self):
         return self._IWA
     @IWA.setter
     def IWA(self, newval):
         self._IWA = newval
+
+    @property
+    def OWA(self):
+        return self._OWA
+    @OWA.setter
+    def OWA(self, newval):
+        self._OWA = newval
 
     @property
     def output(self):
@@ -578,9 +624,13 @@ class Irdis(Data):
         pass
 
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None,pyklip_output=True):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None , more_keywords=None):
         """
         Save SPHERE Data.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the follwing attribute:
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -590,8 +640,6 @@ class Irdis(Data):
             zaxis: a list of values for the zaxis of the datacub (for KL mode cubes currently)
             more_keywords (dictionary) : a dictionary {key: value, key:value} of header keywords and values which will
                                          written into the primary header
-            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
-                            have been defined.
 
         """
         hdulist = fits.HDUList()
@@ -658,10 +706,8 @@ class Irdis(Data):
             hdulist[0].header['CD3_3'] = uniquewvs[1] - uniquewvs[0]
             # write it out instead
 
-        if not pyklip_output:
-            center = self.centers[0]
-        else:
-            center = self.output_centers[0]
+        center = self.output_centers[0]
+
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
         hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))

@@ -102,12 +102,12 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
 
 
     if object_name is not None:
-        object_name = object_name.replace(" ","_")
+        _object_name = copy(object_name).replace(" ","_")
 
         if not fakes_only and MJDOBS is not None and OI_list_folder is not None:
-            object_GOI_filename = OI_list_folder+os.path.sep+object_name+'_GOI.csv'
+            object_GOI_filename = OI_list_folder+os.path.sep+_object_name+'_GOI.csv'
             if len(glob(object_GOI_filename)) != 0:
-                with open(object_GOI_filename, 'rb') as csvfile_GOI_list:
+                with open(object_GOI_filename, 'r') as csvfile_GOI_list:
                     GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
                     GOI_csv_as_list = list(GOI_list_reader)
                     attrib_name = GOI_csv_as_list[0]
@@ -149,7 +149,7 @@ def get_pos_known_objects(fakeinfohdr,object_name,pix2as,center=None,MJDOBS=None
                                 row_vec.append(y_max_pos+center[1])
                                 col_vec.append(x_max_pos+center[0])
                         except:
-                            print("Missing data in GOI database for {0}".format(object_name))
+                            print("Missing data in GOI database for {0}".format(_object_name))
 
     if not ignore_fakes:
         for fake_id in range(100):
@@ -187,13 +187,13 @@ def make_GOI_list(outputDir,GOI_list_csv,GPI_TID_csv):
     Generate the GOI files from the GOI table and the TID table (queried from the database).
 
     outputDir: Output directory in which to save the GOI files.
-    GOI_list_csv: Table with the list of GOIs (including separation, PA...)
-    GPI_TID_csv: Table giving the TID code for a given object name.
-    :return: One .csv file per target for which at list one GOI exists.
+    GOI_list_csv: Table with the list of GOIs (including separation, PA...). delimiter=','
+    GPI_TID_csv: Table giving the TID code for a given object name. delimiter=','
+    :return: One .csv file per target for which at list one GOI exists. delimiter=';'
             The filename follows: [object]_GOI.csv. For e.g. c_Eri_GOI.csv.
     """
-    with open(GOI_list_csv, 'rb') as csvfile_GOI_list:
-        GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=';')
+    with open(GOI_list_csv, 'r') as csvfile_GOI_list:
+        GOI_list_reader = csv.reader(csvfile_GOI_list, delimiter=',')
         GOI_csv_as_list = list(GOI_list_reader)
         attrib_name = GOI_csv_as_list[0]
         GOI_list = np.array(GOI_csv_as_list[1:len(GOI_csv_as_list)])
@@ -202,8 +202,8 @@ def make_GOI_list(outputDir,GOI_list_csv,GPI_TID_csv):
         TID_GOI = GOI_list[:,TID_id]
         TID_unique = np.unique(TID_GOI)
 
-        with open(GPI_TID_csv, 'rb') as csvfile_TID:
-            TID_reader = csv.reader(csvfile_TID, delimiter=';')
+        with open(GPI_TID_csv, 'r') as csvfile_TID:
+            TID_reader = csv.reader(csvfile_TID, delimiter=',')
             TID_csv_as_list = list(TID_reader)
             TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
             TID_campaign = np.ndarray.tolist(TID_csv_as_nparr[:,0])

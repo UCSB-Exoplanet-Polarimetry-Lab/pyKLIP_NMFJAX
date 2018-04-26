@@ -20,7 +20,7 @@ from pyklip.kpp.stat.stat_utils import *
 
 
 def get_image_stat_map_perPixMasking(image,
-                                     image_without_planet,
+                                     image_without_planet=None,
                                      mask_radius = 7,
                                      IOWA = None,
                                      N = None,
@@ -62,6 +62,8 @@ def get_image_stat_map_perPixMasking(image,
     Return:
         The statistic map for image.
     """
+    if image_without_planet is None:
+        image_without_planet = image
     ny,nx = image.shape
 
     if IOWA is None:
@@ -118,7 +120,7 @@ def get_image_stat_map_perPixMasking(image,
 
         outputs_list = \
             pool.map(get_image_stat_map_perPixMasking_threadTask_star,
-                       itertools.izip(chunks_row_indices,
+                       zip(chunks_row_indices,
                        chunks_col_indices,
                        itertools.repeat(image),
                        itertools.repeat(image_without_planet),

@@ -440,6 +440,12 @@ class P1640Data(Data):
         Save data in a fits file in a GPI-like fashion. Aka, data and header are in the extension HDU.
         For now, the Primary HDU contains the KLIP parameters, scaling, and centering. This may later change 
         storing the data in the Primary HDU, all the headers from the input files in the extension.
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the follwing attributes:
+                dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
+                dataset.output_centers = dataset.centers
+
         Inputs:
             filepath: path to file to output
             data: 2D or 3D data to save

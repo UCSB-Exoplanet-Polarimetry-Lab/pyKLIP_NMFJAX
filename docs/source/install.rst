@@ -35,11 +35,9 @@ Due to the continually developing nature of pyKLIP, we recommend you use the cur
 `Bitbucket <https://bitbucket.org/pyKLIP/pyklip>`_ and keep it updated.
 To install the most up to date developer version, clone this repository if you haven't already::
 
-    $ git clone git@bitbucket.org:pyKLIP/pyklip.git
+    $ git clone https://bitbucket.org/pyKLIP/pyklip.git
 
-This clones the repoistory using SSH authentication. If you get an authentication error, you will want to follow `this guide <https://confluence.atlassian.com/bitbucket/set-up-ssh-for-git-728138079.html>`_ to setup SSH authentication, or `clone using the HTTPS option instead <https://confluence.atlassian.com/bitbucket/clone-a-repository-223217891.html>`_, which just requires a password.
-
-Once the repository is cloned onto your computer, ``cd`` into it and run the setup file::
+This clones the repoistory using HTTPS authentication. Once the repository is cloned onto your computer, ``cd`` into it and run the setup file::
 
     $ python setup.py develop
 
