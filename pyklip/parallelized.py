@@ -1206,7 +1206,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
-        noise_imgs = np.ones(sub_imgs.shape)
+        noise_imgs = np.array([1.])
 
     if save_aligned:
         aligned_and_scaled = _arraytonumpy(recentered_imgs, recentered_imgs_shape, dtype=dtype)
@@ -1479,12 +1479,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # then collapse N/wv together
         dataset.output = np.reshape(dataset.output, (dataset.output.shape[0], dataset.output.shape[1]*dataset.output.shape[2], dataset.output.shape[3], dataset.output.shape[4]) )
 
-        # do the same with the stddev frames
-        stddev_frames = np.swapaxes(stddev_frames, 0, 1) # shape of (b, wv, N, y, x)
-        stddev_frames = np.swapaxes(stddev_frames, 1, 2) # shape of (b, N, wv, y, x)
-        # then collapse N/wv together
-        stddev_frames = np.reshape(stddev_frames, (stddev_frames.shape[0], stddev_frames.shape[1]*stddev_frames.shape[2], stddev_frames.shape[3], stddev_frames.shape[4]) )
-
+        if weighted:
+            # do the same with the stddev frames
+            stddev_frames = np.swapaxes(stddev_frames, 0, 1) # shape of (b, wv, N, y, x)
+            stddev_frames = np.swapaxes(stddev_frames, 1, 2) # shape of (b, N, wv, y, x)
+            # then collapse N/wv together
+            stddev_frames = np.reshape(stddev_frames, (stddev_frames.shape[0], stddev_frames.shape[1]*stddev_frames.shape[2], stddev_frames.shape[3], stddev_frames.shape[4]) )
+        else:
+            stddev_frames = 1
 
 
     # TODO: handling of only a single numbasis
@@ -1492,8 +1494,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # flatten so it's just a 3D array (collapse KL and Nframes dimensions)
     oldshape = dataset.output.shape
     dataset.output = dataset.output.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
-    # do the same for the stddev frames
-    stddev_frames = stddev_frames.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
+    if weighted:
+        # do the same for the stddev frames
+        stddev_frames = stddev_frames.reshape(oldshape[0]*oldshape[1], oldshape[2], oldshape[3])
 
     # we need to duplicate PAs and centers for the different KL mode cutoffs we supplied
     flattend_parangs = np.tile(dataset.PAs, oldshape[0])
@@ -1509,12 +1512,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     print("Derotating Images...")
     rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                            hdrs=dataset.output_wcs, new_center=aligned_center)
-    if weighted:
-        stddev_frames = rotate_imgs(stddev_frames, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx, new_center=aligned_center)
-    
     # re-expand the images in num cubes/num wvs (num KLmode cutoffs, num cubes, num wvs, y, x)
     rot_imgs = rot_imgs.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
-    stddev_frames = stddev_frames.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
+
+    # rotate the weights too if necessary
+    if weighted:
+        stddev_frames = rotate_imgs(stddev_frames, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx, new_center=aligned_center)
+        stddev_frames = stddev_frames.reshape(oldshape[0], oldshape[1]//num_wvs, num_wvs, oldshape[2], oldshape[3])
 
     # save modified data and centers
     dataset.output = rot_imgs
@@ -1531,7 +1535,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
     # collapse in time and wavelength to examine KL modes
     if spectrum is None or num_wvs == 1:
-        KLmode_cube = np.nanmean(pixel_weights * dataset.output, axis=(1,2))/np.nanmean(pixel_weights, axis=(1,2))
+        KLmode_cube = np.nanmean(pixel_weights * dataset.output, axis=(1,2))
+        if weighted:
+            # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
+            KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))
     else:
         #do the mean combine by weighting by the spectrum
         spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
@@ -1548,7 +1555,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # if there is more than one wavelenght channel, save spectral data cubes too
     if num_wvs > 1:
         # for each KL mode, collapse in time to examine spectra
-        KLmode_spectral_cubes = np.nanmean(pixel_weights * dataset.output, axis=1)/np.nanmean(pixel_weights, axis=1)
+        KLmode_spectral_cubes = np.nanmean(pixel_weights * dataset.output, axis=1)
+        if weighted:
+            # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that. 
+            KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
+
         for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
             # calibrate spectral cube if needed
             if calibrate_flux:
