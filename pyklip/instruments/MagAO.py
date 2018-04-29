@@ -383,7 +383,7 @@ def _magao_process_file(filepath, filetype=None):
         ppm_band: which apodizer was used (string)
         spot_fluxes: array of z containing average satellite spot fluxes for each image
         inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
-        prihdr: primary header of the FITS file
+        header: primary header of the FITS file
 
     """
     print('trying process magao')
