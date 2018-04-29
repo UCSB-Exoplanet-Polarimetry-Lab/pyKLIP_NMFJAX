@@ -10,13 +10,18 @@ import numpy as np
 import scipy.ndimage as ndimage
 import scipy.stats
 
+#different imports depending on if python2.7 or python3
 import sys
 from copy import copy
-import configparser as ConfigParser
-
-#from pyklip.instruments.P1640_support import P1640spots
-#from pyklip.instruments.P1640_support import P1640utils
-#from pyklip.instruments.P1640_support import P1640_cube_checker
+if sys.version_info < (3,0):
+    #python 2.7 behavior
+    import ConfigParser
+    from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
+else:
+    import configparser as ConfigParser
+    from pyklip.instruments.Instrument import Data
+    from pyklip.instruments.utils.nair import nMathar
 
 from scipy.interpolate import interp1d
 
@@ -351,12 +356,63 @@ class MagAOData(object):
         hdulist.close()
 
         
-def _magao_process_file(self, filepath, filetype):
+def _magao_process_file(filepath, filetype=None):
+    """
+    Method to open and parse a MagAO file
 
+    Args:
+        filepath: the file to open
+
+
+    Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
+        cube: 3D data cube from the file. Shape is (z,281,281)
+        center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
+        parang: array of z of the parallactic angle of the target (same value just repeated z times)
+        wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
+        astr_hdrs: array of z of the WCS header for each datacube slice
+        filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string)
+        fpm_band: which coronagraph was used (string)
+        ppm_band: which apodizer was used (string)
+        spot_fluxes: array of z containing average satellite spot fluxes for each image
+        inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
+        prihdr: primary header of the FITS file
+        exthdr: 1st extention header of the FITS file
+
+    """
+    #print('trying process magao')
     try:
         hdulist = fits.open(filepath)
         header = hdulist[0].header
-        angle = float(header['ROTOFF'])
+    
+        cube = hdulist[0].data
+        #print(hdulist)
+        
+        exthdr = hdulist[0].header
+        #exthdr = None
+        prihdr = hdulist[0].header
+
+        if filetype is None:
+            try:
+                if header["INSTRUME"] =='VisAO':
+                    #Get VisAO filter
+                    filt_band = header["VFW2POSN"]
+                    #fpm_band = None
+            except KeyError:
+                #check for Clio header
+                #get Clio header keywords:
+                try:
+                    filt_band = header["FILT3"]
+                    fpm_band =  header["FILT2"]
+                except KeyError:
+                    raise KeyError("No recognized MagAO keywords found")
+
+        #SDI team variables:
+        if filetype == 0:
+            filt_band = "H-Alpha"
+        else:
+            filt_band = "Continuum"
+
+        angle=float(header['ROTOFF'])
         angle = 90+angle
         angles = [angle]
         angles = np.array(angles)
@@ -370,13 +426,55 @@ def _magao_process_file(self, filepath, filetype):
         
         dims = cube.shape
         x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-        
-        star_flux = [[1]]
-       
-        cube.reshape([1, cube.shape[0], cube.shape[1]]) #makes a 2D y by x image into a 1 by y by x cube
-        parang = angles
-        astr_hdrs = np.repeat(None, 1)
+        nx = center[0][0] - (x - center[0][0])
+        #print("nx is " + str(nx))
+        minval = np.min([np.nanmin(cube), 0.0])
+        #flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
+        parang = angles          
+        #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION
 
+        #calculate star flux as ghost peak/scaling factor, depends on filter
+        #check filter for scaling factor:
+        if header["INSTRUME"] =='VisAO':
+            ghst_psf = 1.22*10**(-3) #defined in magao.ini
+
+        else:
+            ghst_psf = 1.998*10**(-3) #defined in magao.ini
+            
+        star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]] 
+        #print("flipped_cube shape is " + str(flipped_cube.shape))
+        #cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])
+        
+        cube.reshape([1, cube.shape[0], cube.shape[1]])
+        
+
+        #grab the astro header
+        w = wcs.WCS(header=exthdr, naxis=[1,2])
+        #define empty cd matrix to put values in later
+        w.wcs.cd= np.array([[0,0],[0,0]])
+        
+        #w = wcs.WCS(header=exthdr, naxis=[1,2])
+        #turns out WCS data can be wrong. Let's recalculate it using avparang
+        parang = exthdr['PARANG']
+        vert_angle = -(360-parang) 
+        vert_angle = np.radians(vert_angle)
+        pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
+        pixel_scale = .008 #arcsec/pixel (hard coded, defined in MagAO.ini)
+        cdmatrix = pc * pixel_scale /3600.
+        w.wcs.cd[0,0] = cdmatrix[0,0]
+        w.wcs.cd[0,1] = cdmatrix[0,1]
+        w.wcs.cd[1,0] = cdmatrix[1,0]
+        w.wcs.cd[1,1] = cdmatrix[1,1]
+        #print(w.wcs.cd)
+        #astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
+        #print(header)
+        astr_hdrs = w
+        #astr_hdrs = np.repeat(None, 1)
+        spot_fluxes = [[1]] #!
+
+    except Exception as e: print('exception: ' +str(e))
+            
+        
     finally:
         hdulist.close()
 
