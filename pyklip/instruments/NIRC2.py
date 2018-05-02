@@ -37,6 +37,11 @@ class NIRC2Data(Data):
         filepaths: list of filepaths to files
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
+                  header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -218,8 +223,9 @@ class NIRC2Data(Data):
                   can also be a number specifying FWHM of box in pixel units
             find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
                   header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
-                  locate the star via the diffraction spikes. True will force the Radon transform; False
-                  will skip the Radon transform even if no center is found in the header.
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
 
         Returns:
             Technically none. It saves things to fields of the NIRC2Data object. See object doc string
@@ -494,8 +500,9 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
                   can also be a number specifying FWHM of box in pixel units
         find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
                   header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
-                  locate the star via the diffraction spikes. True will force the Radon transform; False
-                  will skip the Radon transform even if no center is found in the header.
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
         meas_star_flux: if True, measures the stellar flux
         pool: optional to pass along a threadpool (mainly for highpass filtering multiple images)
 
