@@ -4,7 +4,7 @@ import subprocess
 import glob
 import astropy.io.fits as fits
 
-#from astropy import wcs
+from astropy import wcs
 from astropy.modeling import models, fitting
 import numpy as np
 import scipy.ndimage as ndimage
@@ -198,7 +198,7 @@ class MagAOData(object):
         filenums = []
         filenames = []
         rot_angles = []
-        #wcs_hdrs = []
+        wcs_hdrs = []
         wvs = []
         centers = []
         star_fluxes = []
@@ -211,7 +211,7 @@ class MagAOData(object):
             star_fluxes.append(star_flux)
             rot_angles.append(pa)
             wvs.append(wv)
-            #wcs_hdrs.append(astr_hdrs)
+            wcs_hdrs.append(astr_hdrs)
             filenums.append(np.ones(pa.shape[0]) * index)
             prihdrs.append(prihdr)
             filenames.append([filepath for i in range(pa.shape[0])])
@@ -226,7 +226,7 @@ class MagAOData(object):
         rot_angles = np.array(rot_angles).reshape([dims[0]])
         wvs = np.array(wvs).reshape([dims[0]])
         print("wvs is ",wvs)
-        #wcs_hdrs = np.array(wcs_hdrs)
+        wcs_hdrs = np.array(wcs_hdrs)
         dsize = dims[0]
         centers = np.zeros((dsize,2))
         for y in range(dsize):
@@ -240,7 +240,7 @@ class MagAOData(object):
         self._filenames = filenames
         self._PAs = rot_angles
         self._wvs = wvs
-        self._wcs = None
+        self._wcs = wcs
         self._flipx = False #set to false, this is used in parallelized.py
         #IWA gets reset by GUI. This is the default value.
         self.IWA = 10
@@ -306,7 +306,7 @@ class MagAOData(object):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        print("filenames = " + self._filenames)
+        print("filenames = " ,self._filenames)
         filenames = np.unique(self._filenames)
         nfiles = np.size(filenames)
         hdulist[0].header["DRPNFILE"] = nfiles
@@ -410,6 +410,7 @@ def _magao_process_file(filepath, filetype=None):
                     #Get VisAO filter
                     filt_band = header["VFW2POSN"]
                     #fpm_band = None
+                    wvs = 1.0
             except KeyError:
                 #check for Clio header
                 #get Clio header keywords:
@@ -425,7 +426,7 @@ def _magao_process_file(filepath, filetype=None):
         angles = np.array(angles)
         cube = hdulist[0].data
         
-        wvs = header['WLENGTH'] 
+        #wvs = header['WLENGTH'] 
 
         datasize = cube.shape[1] #ours will be 2D
         center = [[(datasize-1)/2, (datasize-1)/2]]
@@ -455,32 +456,63 @@ def _magao_process_file(filepath, filetype=None):
         
         cube.reshape([1, cube.shape[0], cube.shape[1]])
 
+        
         #grab the astro header
+        
         w = wcs.WCS(header=header, naxis=[1,2])
+        
         #define empty cd matrix to put values in later
         w.wcs.cd= np.array([[0,0],[0,0]])
+    
 
-        #w = wcs.WCS(header=header, naxis=[1,2])
+
+        #add WCS info to headers:
+        header['CDELT1'] = 2.2222e-6 #coordinate increment, calculated from plate scale
+        header['CDELT2'] = 2.2222e-6 #coordinate increment, calculated from plate scale 
+        header['CRPIX1'] = 512.0 #x-coordinate of ref pixel
+        header['CRPIX2'] = 512.0 #y-coordinate of ref pixel
+        header['CRVAL1'] = header['RA'] #Right ascension at ref point , calculated from simbad location of eps eri
+        header['CRVAL2'] = header['DEC'] #declination at ref point , calculated from simbad location of eps eri
+        header['CTYPE1']  = 'RA---TAN'           #/ First axis is Right Ascension                  
+        header['CTYPE2']  = 'DEC--TAN'          # / Second axis is Declination                     
+        header['CUNIT1']  = 'deg     '         #  / Units of data                                  
+        header['CUNIT2']  = 'deg     '          # / Units of data                                  
+        header['RADESYS'] = 'FK5     '           #/ R.A DEC coordinate system reference
+        #print('header update check:', header['CDELT1'])
+        #move data to wcs data format:
+        w.wcs.crpix = [header['CRPIX1'], header['CRPIX2']]
+        w.wcs.cdelt = np.array([header['CDELT1'], header['CDELT2']])
+        w.wcs.crval = [header['CRVAL1'], header['CRVAL2']]
+        w.wcs.ctype = [header['CTYPE1'], header['CTYPE2']]
+        #w.wcs.set_pv([(2, 1, 45.0)])
 
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = header['PARANG']
         vert_angle = -(360-parang) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
-        pixel_scale = lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
+        pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
+        #print('pixel scale: ', pixel_scale)
         cdmatrix = pc * pixel_scale /3600.
         w.wcs.cd[0,0] = cdmatrix[0,0]
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
-        #print(w.wcs.cd)
+        #print('cd: ',w.wcs.cd)
+        #print('wcs: w', w)
         #astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #print(header)
-        astr_hdrs = w
+        astr_hdr = w
         #astr_hdrs = np.repeat(None, 1)
-        spot_fluxes = [[1]] #!
+        #spot_fluxes = [[1]] #!
+        
+        #grab the astro header
+        w = wcs.WCS(header=header, naxis=[1,2])
+        #define empty cd matrix to put values in later
+        w.wcs.cd= np.array([[0,0],[0,0]])
 
-    except Exception as e: print('exception: ' +str(e))
+
+    except Exception as e: print('exception: ' ,str(e))
             
         
     finally:
