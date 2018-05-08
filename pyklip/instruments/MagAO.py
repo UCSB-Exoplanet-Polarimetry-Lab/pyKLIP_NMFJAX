@@ -167,6 +167,14 @@ class MagAOData(object):
     @OWA.setter
     def OWA(self, newval):
         self._OWA = newval
+                                     
+    @property
+    def flipx(self):
+        return self._flipx
+
+    @flipx.setter
+    def output(self, newval):
+        self._flipx = newval
     
     @property
     def output(self):
@@ -233,6 +241,7 @@ class MagAOData(object):
         self._PAs = rot_angles
         self._wvs = wvs
         self._wcs = None
+        self._flipx = False #set to false, this is used in parallelized.py
         #IWA gets reset by GUI. This is the default value.
         self.IWA = 10
         # half the size of the array
