@@ -84,8 +84,8 @@ class MagAOData(object):
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
 
-        ghstpeak_ratio['z\''] = float(config.get("instrument",'ghst_psf_z\'')
-        ghstpeak_ratio['i\''] = float(config.get("instrument",'ghst_psf_i\'')
+        ghstpeak_ratio['z\''] = float(config.get("instrument",'ghst_psf_z\''))
+        ghstpeak_ratio['i\''] = float(config.get("instrument",'ghst_psf_i\''))
 
     except ConfigParser.Error as e:
         print("Error reading MagAO configuration file: {0}".format(e.message))
