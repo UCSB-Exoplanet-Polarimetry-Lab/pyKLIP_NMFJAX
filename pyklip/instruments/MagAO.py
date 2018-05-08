@@ -205,7 +205,7 @@ class MagAOData(object):
         prihdrs = []
 
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, prihdr, star_flux = _magao_process_file(self, filepath, index)
+            cube, center, pa, wv, astr_hdrs, prihdr, star_flux = _magao_process_file(self, filepath)
             data.append(cube)
             centers.append(center)
             star_fluxes.append(star_flux)
