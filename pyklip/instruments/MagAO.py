@@ -173,7 +173,7 @@ class MagAOData(object):
         return self._flipx
 
     @flipx.setter
-    def output(self, newval):
+    def flipx(self, newval):
         self._flipx = newval
     
     @property
@@ -245,7 +245,7 @@ class MagAOData(object):
         #IWA gets reset by GUI. This is the default value.
         self.IWA = 10
         # half the size of the array
-        self.OWA = data.shape[0]/2
+        self.OWA = data.shape[1]/2
         #CHECK IWA AND OWA
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes
