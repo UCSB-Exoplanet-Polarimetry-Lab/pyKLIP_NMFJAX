@@ -76,7 +76,7 @@ class MatchedFilter(NoFM):
             planet_radius: Radius of the aperture to be used for the matched filter (pick something of the order of the
                             2xFWHM)
             background_width: Half the width of the arc in which the local standard deviation will be calculated.
-            save_bbfm: path of the file where to save the broadband forward models
+            save_bbfm: If true, saves the broadband forward models
 
         '''
         # allocate super class
