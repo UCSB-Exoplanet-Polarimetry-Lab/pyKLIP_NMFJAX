@@ -759,3 +759,97 @@ class ParamRange(object):
         elif len(err_range) == 2:
             self.error_2sided = np.array(err_range)
             self.error = np.mean(np.abs(err_range))
+
+
+import scipy.ndimage as ndimage
+from copy import copy
+from scipy.optimize import minimize
+
+def place_model_PSF(PSF_template,x_cen,y_cen,output_shape, x_grid = None, y_grid = None):
+    """
+    Interpolate PSF_template to recenter it at at x_cen,y_cen
+
+    Args:
+        PSF_template: PSF model
+        x_cen: x center of the PSF
+        y_cen: y center of the PSF
+        output_shape: shape of the original image
+        x_grid: grid of x coordinates (from meshgrid)
+        y_grid: grid of y coordinates (from meshgrid)
+
+    Returns: stamp with PSF template centered at x_cen,y_cen
+    """
+
+    ny_template, nx_template = PSF_template.shape
+    if x_grid is None and y_grid is None:
+        x_grid, y_grid = np.meshgrid(np.arange(0,output_shape[1],1),np.arange(0,output_shape[0],1))
+
+    x_grid = x_grid.astype(np.float)
+    y_grid = y_grid.astype(np.float)
+
+    x_grid -= x_cen - nx_template//2
+    y_grid -= y_cen - ny_template//2
+
+    return ndimage.map_coordinates(PSF_template, [y_grid,x_grid], mode='constant', cval=0.0)
+
+def LSQ_place_model_PSF(PSF_template,x_cen,y_cen,planet_image, x_grid = None, y_grid = None):
+    """
+    Calculate the least square value of (planet_image - PSF_template(x_cen,y_cen))
+
+    Args:
+        PSF_template: PSF model
+        x_cen: x center of the PSF
+        y_cen: y center of the PSF
+        planet_image: Image to be fitted
+        x_grid: grid of x coordinates (from meshgrid)
+        y_grid: grid of y coordinates (from meshgrid)
+
+    Returns: least square value
+    """
+    model = place_model_PSF(PSF_template,x_cen,y_cen,planet_image.shape, x_grid = x_grid, y_grid = y_grid)
+    return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
+
+
+def simplecentroid(image, PSF, guessx,guessy):
+    """
+    Fit a PSF array to image and return the centroid.
+
+    Info:
+    - model is fitted using ndimage.map_coordinates()
+    - optimization is performed with scipy.optimize.minimize().
+
+    Args:
+        image: Image to be fitted
+        PSF: model of the point source
+        guessx: first guess x-axis (ie columns) position
+        guessy: first guess y-axis (ie rows) position
+
+    Returns: (x_cen,y_cen)
+    """
+
+    ny,nx = image.shape
+    row_id,col_id = int(round(guessy)),int(round(guessx))
+    ny_PSF,nx_PSF = PSF.shape
+
+    row_m = int(np.floor(ny_PSF/2.0))
+    row_p = int(np.ceil(ny_PSF/2.0))
+    col_m = int(np.floor(nx_PSF/2.0))
+    col_p = int(np.ceil(nx_PSF/2.0))
+    stamp = copy(image[np.max([0,(row_id-row_m)]):np.min([ny-1,(row_id+row_p)]), np.max([0,(col_id-col_m)]):np.min([nx-1,(col_id+col_p)])])
+    if np.sum(np.isfinite(stamp)) <= 0.1*nx_PSF*ny_PSF:
+        return None,None
+    stamp /= np.nanmax(stamp)
+    _PSF= copy(PSF)
+    _PSF /= np.nanmax(_PSF)
+
+    nanargmax_flat_stamp= np.nanargmax(stamp)
+    max_row_id = np.floor(nanargmax_flat_stamp/nx_PSF)
+    max_col_id = nanargmax_flat_stamp-nx_PSF*max_row_id
+
+    param0 = (float(max_col_id),float(max_row_id))
+
+    LSQ_func = lambda para: LSQ_place_model_PSF(_PSF,para[0],para[1],stamp)
+    param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
+
+    return (param_fit[0]+col_id-col_m),(param_fit[1]+row_id-row_m)
+
