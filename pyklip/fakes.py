@@ -778,6 +778,12 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     x0 = int(np.round(xguess))
     y0 = int(np.round(yguess))
     #construct our searchbox
+    if (y0-searchrad)<0 or (y0+searchrad+1)>=frame.shape[0] or (x0-searchrad)<0 or (x0+searchrad+1)>=frame.shape[1]:
+        # To close to the edge
+        if residuals:
+            return None,None
+        else:
+            return None
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 
     xguess_box = xguess-x0 + searchrad
@@ -818,7 +824,7 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     model = psfs_func_list[new_wave_index](np.arange(0,2* searchrad+1, 1.0)-xguess_box,np.arange(0, 2*searchrad+1, 1.0)-yguess_box).transpose()
     # model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)+(xguess-x0) - searchrad,np.arange(0, 2*searchrad+1, 1.0)+(yguess-y0) - searchrad)#.transpose()
 
-    returned_flux = np.sum(model[small_aper_indices]*fitbox[small_aper_indices])/np.sum(model[small_aper_indices]**2)*model[searchrad,searchrad]
+    returned_flux = np.nansum(model[small_aper_indices]*fitbox[small_aper_indices])/np.nansum(model[small_aper_indices]**2)*model[searchrad,searchrad]
 
     if residuals:
         residuals_map = fitbox - returned_flux*model/model[searchrad,searchrad]
