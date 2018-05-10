@@ -168,6 +168,14 @@ class MagAOData(object):
     @OWA.setter
     def OWA(self, newval):
         self._OWA = newval
+
+    @property
+    def flipx(self):
+        return self._flipx
+
+    @flipx.setter
+    def flipx(self, newval):
+        self._flipx = newval
     
     @property
     def output(self):
@@ -238,6 +246,7 @@ class MagAOData(object):
         self._PAs = rot_angles
         self._wvs = wvs
         self._wcs = wcs_hdrs
+        self._flipx = False #set to false, this is used in parallelized.py
         #IWA gets reset by GUI. This is the default value.
         self.IWA = 10
         # half the size of the array
@@ -252,10 +261,8 @@ class MagAOData(object):
         """
        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.
-
         Assumes the broadband flux calibration is just multiplication by a single scalar number whereas spectral
         datacubes may have a separate calibration value for each wavelength
-
         Args:
             img: unclaibrated image.
                  If spectral is not set, this can either be a 2-D or 3-D broadband image
@@ -263,7 +270,6 @@ class MagAOData(object):
                  If specetral is True, this is a 3-D spectral cube with shape [wv,y,x]
             spectral: if True, this is a spectral datacube. Otherwise, it is a broadband image.
             units: currently only support "contrast" w.r.t central star
-
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
@@ -372,11 +378,8 @@ class MagAOData(object):
 def _magao_process_file(self, filepath, filetype=None):
     """
     Method to open and parse a MagAO file
-
     Args:
         filepath: the file to open
-
-
     Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
         cube: 3D data cube from the file. Shape is (z,281,281)
         center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
@@ -389,6 +392,7 @@ def _magao_process_file(self, filepath, filetype=None):
         spot_fluxes: array of z containing average satellite spot fluxes for each image
         inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         header: primary header of the FITS file
+
 
     """
     #print('trying process magao')
@@ -486,7 +490,8 @@ def _magao_process_file(self, filepath, filetype=None):
 
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = header['PARANG']
-        vert_angle = -(360-parang) 
+        #changed the minus sign in front of vert_angle to fix direction of derotation 
+        vert_angle = (360-parang) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
@@ -512,13 +517,3 @@ def _magao_process_file(self, filepath, filetype=None):
 
     return cube, center, parang, wvs, astr_hdr, header, star_flux
 
-#comes from NIRC2 or maybe P1640, but not GPI
-#def calc_starflux(cube, center):
- #   dims = cube.shape
- #   y, x = np.meshgrid(np.arange(dims[0]), np.arange(dims[1]))
- #   g_init = models.Gaussian2D(cube.max(), x_mean=center[0][0], y_mean=center[0][1], x_stddev=5, y_stddev=5, fixed={'x_mean':True,'y_mean':True,'theta':True})
- #   fit_g = fitting.LevMarLSQFitter()
- #   g = fit_g(g_init, y, x, cube)
- #   return [[g.amplitude]]
-    
-    
