@@ -392,6 +392,8 @@ def _magao_process_file(self, filepath, filetype=None):
         spot_fluxes: array of z containing average satellite spot fluxes for each image
         inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         header: primary header of the FITS file
+
+
     """
     #print('trying process magao')
     try:
@@ -514,3 +516,4 @@ def _magao_process_file(self, filepath, filetype=None):
         hdulist.close()
 
     return cube, center, parang, wvs, astr_hdr, header, star_flux
+
