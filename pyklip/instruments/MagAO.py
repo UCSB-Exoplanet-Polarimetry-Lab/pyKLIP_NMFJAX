@@ -488,7 +488,8 @@ def _magao_process_file(self, filepath, filetype=None):
 
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = header['PARANG']
-        vert_angle = -(360-parang) 
+        #changed the minus sign in front of vert_angle to fix direction of derotation 
+        vert_angle = (360-parang) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
