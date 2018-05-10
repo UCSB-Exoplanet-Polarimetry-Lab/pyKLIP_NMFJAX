@@ -56,6 +56,8 @@ class GPIData(Data):
                     modes were computed in H-band using the 10th wavelength channel in H-band: 1.577843082410582mum.
                     If butterfly_rdi is not None, subtract the mean radial profile from each image and subtract the
                     butterfly using user-defined RDI KL modes.
+                    Also subtracts the sat spot (primary and secondary) and applies a wide HPF.
+                    /!\ Require the PSF_cube to be defined.
         butterfly_rdi_NKL: (default=20) If butterfly_rdi is defined, Number of KL modes to be used.
         meas_satspot_flux: if True, remeasure the satellite spot fluxes (would be down after hp filter)
         numthreads: Number of threads to be used. Default -1 sequential sat spot flux calc.
@@ -1156,7 +1158,60 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         # Number of KL modes
         Nkl = butterfly_KLmodes.shape[0]
 
-        im = np.nansum(cube,axis=0)
+        if psfs_func_list is not None:
+            boxw=20
+            cube_nospots = copy(cube)
+            # cube_nospots = cube
+
+            # Loop over the 4 spots in the current slice
+            for slice_id, (spots_xloc_thisslice,spots_yloc_thisslice,center_thisslice) in enumerate(zip(spots_xloc,spots_yloc,center)):
+                slice = cube_nospots[slice_id,:,:]
+                for loc_id, (spotx,spoty) in enumerate(zip(spots_xloc_thisslice,spots_yloc_thisslice)):
+                    searchrad=10
+                    from pyklip.fitpsf import simplecentroid
+                    ny_psf,nx_psf = 21,21
+                    local_PSF = psfs_func_list[slice_id](np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2).transpose()
+                    newspotx,newspoty = simplecentroid(slice,local_PSF, spotx,spoty)
+                    if newspotx is None or newspoty is None:
+                        continue
+                    if np.sqrt((newspotx-spotx)**2+(newspoty-spoty)**2) > 2:
+                        newspotx = spotx
+                        newspoty = spoty
+                    returned_flux,res_stamp = PSFcubefit(slice, newspotx,newspoty, searchrad=searchrad,psfs_func_list=psfs_func_list,
+                                                     wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
+                    x0 = int(np.round(newspotx))
+                    y0 = int(np.round(newspoty))
+                    if res_stamp is not None:
+                        slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
+                    # else:
+                    #     print("Whatttttt1?!")
+
+                    #Remove secondary sat spot
+                    spotx2 = (spotx - center_thisslice[0])*2+center_thisslice[0]
+                    spoty2 = (spoty - center_thisslice[1])*2+center_thisslice[1]
+                    newspotx2,newspoty2 = simplecentroid(slice,local_PSF, spotx2,spoty2)
+                    if newspotx2 is None or newspoty2 is None:
+                        continue
+                    if np.sqrt((newspotx2-spotx2)**2+(newspoty2-spoty2)**2) > 2 :
+                        newspotx2 = spotx2
+                        newspoty2 = spoty2
+                    returned_flux,res_stamp = PSFcubefit(slice, newspotx2,newspoty2, searchrad=searchrad,psfs_func_list=psfs_func_list,
+                                                     wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
+                    x0 = int(np.round(newspotx2))
+                    y0 = int(np.round(newspoty2))
+                    if res_stamp is not None:
+                        slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
+                    # else:
+                    #     print("Whatttttt2?!")
+
+                    # if slice_id == 36:
+                    #     import matplotlib.pyplot as plt
+                    #     plt.subplot(1,2,1)
+                    #     plt.imshow(res_stamp,interpolation="nearest")
+                    #     plt.subplot(1,2,2)
+                    #     plt.imshow(cube[slice_id,y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1],interpolation="nearest")
+                    #     plt.show()
+        im = np.nansum(cube_nospots,axis=0)
         try:
             if float(prihdr["AOFRAMES"]) <= 750:
                 # Mask 500kHz artifact
@@ -1174,15 +1229,16 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                            type = "mean")
         im_meansub = im-meanprof_map
 
+        IWA = GPIData.fpm_diam[fpm_band]/2.0
         # Calculate the butterfly angle
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[10][0], np.arange(ny * 1.)-center[10][1])
-        r_grid = abs(x_grid +y_grid*1j)
+        r_grid = np.sqrt(x_grid**2+y_grid**2)
         th_grid = np.arctan2( -x_grid,y_grid) % (2.0 * np.pi)
         th_samples = np.linspace(0,2*np.pi,100)
         th_bins = [(th_samples[l],th_samples[l+1]) for l in range(np.size(th_samples)-1)]
         th_bins_center = np.array([(th_samples[l]+th_samples[l+1])/2. for l in range(np.size(th_samples)-1)])
         azimuthal_intensity = np.zeros(th_bins_center.shape)
-        im_meansub[np.where((r_grid<2*8.7)|(r_grid>50))] = np.nan
+        im_meansub[np.where((r_grid<2*IWA)|(r_grid>50))] = np.nan
         for l,th_bin in enumerate(th_bins):
             sector = np.where((th_grid>th_bin[0])&(th_grid<th_bin[1]))
             azimuthal_intensity[l] = np.nansum(im_meansub[sector])
@@ -1199,7 +1255,29 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[10],flipx=False)
 
         # cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
-        cube = butterfly_rdi_imgs(cube,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
+        model_cube = butterfly_rdi_imgs(cube_nospots,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
+        cube_nospots = cube_nospots - model_cube
+        cube = cube - model_cube
+
+        where_IWA = np.where(r_grid<IWA)
+        for k in range(cube_nospots.shape[0]):
+            slice = cube_nospots[k,:,:]
+            slice[where_IWA] = 0
+        fourier_sigma_size = (cube_nospots.shape[1]/(20)) / (2*np.sqrt(2*np.log(2)))
+        cube_nospots = high_pass_filter_imgs(cube_nospots, filtersize=fourier_sigma_size, pool = pool)
+
+        # xx_filt, yy_filt = np.meshgrid(np.arange(40 * 1.)-40//2, np.arange(40 * 1.)-40//2)
+        # rr_filt = np.sqrt(xx_filt**2+yy_filt**2)
+        # filter_mask = rr_filt <= 20
+        # from scipy.ndimage.filters import median_filter
+        # for k in range(cube_nospots.shape[0]):
+        #     slice = cube_nospots[k,:,:]
+        #     where_nans = np.where(np.isnan(slice))
+        #     slice[where_nans]=0
+        #     med_slice = median_filter(slice,footprint=filter_mask)
+        #     med_slice[where_nans] = np.nan
+        #     slice = slice-med_slice
+
 
     #high pass and remeasure the satellite spot fluxes if necessary
     highpassed = False
@@ -1247,6 +1325,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                     spot_fluxes.append(np.nanmean(new_spotfluxes))
                 tpool.close()
         #print(spot_fluxes)
+
+    if isinstance(butterfly_rdi, str):
+        cube = cube_nospots
 
     return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
 
@@ -1296,7 +1377,7 @@ def butterfly_rdi_imgs(imgs,KLmodes,wv_KL,centers,wvs, numthreads=None, pool=Non
         pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
 
     Output:
-        filtered: array of shape (N,y,x) containing the filtered images
+        model: array of shape (N,y,x) containing the butterfly models to be subtracted
     """
 
     if pool is None:
@@ -1307,16 +1388,16 @@ def butterfly_rdi_imgs(imgs,KLmodes,wv_KL,centers,wvs, numthreads=None, pool=Non
     tasks = [tpool.apply_async(butterfly_rdi_img, args=(img,KLmodes,wv_KL,center,wv)) for img,center,wv in zip(imgs,centers,wvs)]
 
     #reform back into a giant array
-    filtered = np.array([task.get() for task in tasks])
+    models = np.array([task.get() for task in tasks])
 
     if pool is None:
         tpool.close()
 
-    return filtered
+    return models
 
 def butterfly_rdi_img(img,KLmodes,wv_KL,center,wv):
     """
-    Remove the mean (calculate in concentric annuli) of the image.
+    Return a butterfly model to be subtracted
 
     Args:
         img: image
@@ -1326,7 +1407,7 @@ def butterfly_rdi_img(img,KLmodes,wv_KL,center,wv):
         ws: wavelength of the img
 
     Returns:
-        filtered: the filtered image
+        model: Array of same size as img
     """
 
     butterfly_KLmodes_rot= np.zeros(KLmodes.shape)
@@ -1339,7 +1420,7 @@ def butterfly_rdi_img(img,KLmodes,wv_KL,center,wv):
     # Subtract radial mean profile from the image
     ny,nx = img.shape
     x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0], np.arange(ny * 1.)-center[1])
-    r_grid = abs(x_grid +y_grid*1j)
+    r_grid = np.sqrt(x_grid**2 +y_grid**2)
     meanprof_map = get_image_stat_map(img,
                        centroid = center,
                        Dr = 2,r_step=2,
@@ -1371,8 +1452,7 @@ def butterfly_rdi_img(img,KLmodes,wv_KL,center,wv):
     mask = (np.pi/2+ np.arctan(-(r_grid-50)/10))/(np.pi)
     butterfly_model *= mask
 
-    filtered = im_meansub-butterfly_model
-    return filtered
+    return meanprof_map+butterfly_model
 
 def remove_radial_mean_profile(img,center,IWA=None,OWA=None,sub_azi_pro = False):
     """
