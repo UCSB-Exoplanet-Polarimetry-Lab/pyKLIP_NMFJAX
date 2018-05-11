@@ -1257,7 +1257,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         # cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
         model_cube = butterfly_rdi_imgs(cube_nospots,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
         cube_nospots = cube_nospots - model_cube
-        cube = cube - model_cube
+        # cube = cube - model_cube
 
         where_IWA = np.where(r_grid<IWA)
         for k in range(cube_nospots.shape[0]):
