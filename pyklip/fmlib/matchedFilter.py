@@ -41,7 +41,8 @@ class MatchedFilter(NoFM):
                  edge_threshold = None,
                  planet_radius = None,
                  background_width = None,
-                 save_bbfm = None):
+                 save_bbfm = None,
+                 save_fmout_path = None):
         '''
         Defining the forward model matched filter parameters
 
@@ -77,12 +78,14 @@ class MatchedFilter(NoFM):
                             2xFWHM)
             background_width: Half the width of the arc in which the local standard deviation will be calculated.
             save_bbfm: If true, saves the broadband forward models
+            save_fmout_path: If not None, path to a directory where to save fmout at the end.
 
         '''
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
 
         self.save_bbfm = save_bbfm
+        self.save_fmout_path = save_fmout_path
 
         if rm_edge is not None:
             self.rm_edge = rm_edge
@@ -692,9 +695,14 @@ class MatchedFilter(NoFM):
         else:
             fmout1 = fmout
 
-        # hdu = pyfits.PrimaryHDU(fmout1)
-        # hdulist = pyfits.HDUList([hdu])
-        # hdulist.writeto(outputdir+os.path.sep+'fmout1_test_before3.fits',clobber=True)
+        if self.save_fmout_path is not None:
+            hdu = pyfits.PrimaryHDU(fmout1)
+            hdulist = pyfits.HDUList([hdu])
+            suffix = "fmout"
+            try:
+                hdulist.writeto(os.path.join(self.save_fmout_path,fileprefix+'-'+suffix+'.fits'), overwrite=True)
+            except TypeError:
+                hdulist.writeto(os.path.join(self.save_fmout_path,fileprefix+'-'+suffix+'.fits'), clobber=True)
 
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         fmout1[np.where(fmout1==0)] = np.nan
