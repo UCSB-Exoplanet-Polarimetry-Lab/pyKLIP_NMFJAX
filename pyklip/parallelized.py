@@ -913,7 +913,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
         sub_imgs_shape = sub_imgs.shape
         sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
-        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1], numthreads=numthreads)
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
@@ -1202,7 +1202,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
         sub_imgs_shape = sub_imgs.shape
         sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
-        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1], numthreads=numthreads)
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
