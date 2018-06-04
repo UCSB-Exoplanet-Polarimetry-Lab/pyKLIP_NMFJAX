@@ -338,6 +338,10 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     Returns:
         resampled_img: new 2D image
     """
+    # skip this step if img is all nans
+    if np.size(np.where(~np.isnan(img))) == 0:
+        return np.copy(img)
+
     #convert angle to radians
     angle_rad = np.radians(angle)
 
