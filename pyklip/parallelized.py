@@ -328,6 +328,9 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
+    if ref_psfs_mean_sub.shape[0] == 1:
+        # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
+        covar_psfs = covar_psfs.reshape((1,1))
 
     if corr_smooth > 0:
         # calcualte the correlation matrix, with possible smoothing  
@@ -1544,7 +1547,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if calibrate_flux:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+    dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                      klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                      zaxis=numbasis)
 
@@ -1556,7 +1559,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # calibrate spectral cube if needed
             if calibrate_flux:
                 spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+            dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
                              spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                              filetype="PSF Subtracted Spectral Cube")
 
