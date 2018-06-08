@@ -109,13 +109,13 @@ class PSFLibrary(object):
             self.correlation_mask = mask
 
         #Loop the correlation matrix calculation
-        for i in np.arange(0,self.nfiles-1):
+        for i in np.arange(0, self.nfiles):
             self.master_correlation[i,i]=1.
 
             #TODO: PARALLELIZE THIS STEP. 
 
             #Cycle through every file that comes AFTER the current file 
-            for j in np.arange(i+1,self.nfiles-1):
+            for j in np.arange(i+1, self.nfiles):
 
                 if verbose:
                     # print("Correlating file "+ str(i) + " with file "+str(j) + "  \r")

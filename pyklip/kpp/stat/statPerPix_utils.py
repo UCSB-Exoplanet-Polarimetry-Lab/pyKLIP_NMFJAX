@@ -3,20 +3,9 @@ __author__ = 'JB'
 
 import itertools
 
-from scipy.optimize import leastsq
-from astropy.modeling import models, fitting
-from matplotlib import rcParams
-from scipy.interpolate import interp1d
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as AA
-
-import numpy as np
-from copy import copy
-
-from pyklip.kpp.utils.mathfunc import *
-from pyklip.kpp.utils.multiproc import *
-from pyklip.kpp.utils.GPIimage import *
 from pyklip.kpp.stat.stat_utils import *
+import multiprocessing as mp
+from pyklip.kpp.utils.multiproc import *
 
 
 def get_image_stat_map_perPixMasking(image,
@@ -25,21 +14,21 @@ def get_image_stat_map_perPixMasking(image,
                                      IOWA = None,
                                      N = None,
                                      centroid = None,
-                                     mute = True,
                                      N_threads = None,
-                                     Dr = None,
+                                     Dr = 2,
                                      Dth = None,
-                                     type = "SNR",
-                                     resolution = None):
+                                     type = "SNR"):
     """
     Calculate the SNR, the standard deviation or the probability (tail distribution) of a given image on a per pixel
     basis, which means that for each pixel the standard deviation is calculated after masking its surroundings.
 
     Args:
-        image: The image or cubes for which one wants the statistic.
-        image_without_planet: Same as image but where real signal has been masked out. The code will actually use
-                                    map to calculate the standard deviation or the PDF.
-        mask_radius: Radius of the mask used around the current pixel.
+        image: The image for which one wants the statistic.
+        image_without_planet: Same as image but where real signal has been masked out. The
+        image_without_planet: Same as image but where any real signal has been masked out. The code will use
+                            "image_without_planet" to calculate the standard deviation or the PDF.
+                            This can be a negatively derotated image in the context of ADI.
+        mask_radius: (default=7pix) Radius of the mask used around the current pixel.
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
@@ -47,17 +36,13 @@ def get_image_stat_map_perPixMasking(image,
                 The width of the annuli will therefore vary with sepration.
         centroid: (x_cen,y_cen) Define the center of the image.
                 Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
-        mute: Won't print any logs.
         N_threads: Number of threads to be used. If None run sequentially.
-        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        Dr: (default=2pix) Width of the annulus (in pixel).
         Dth: Define the angular size of a sector in degree (will apply for either Dr or N)
         type: Indicate the type of statistic to be calculated.
                     If "SNR" (default) simple stddev calculation and returns SNR.
                     If "stddev" returns the pure standard deviation map.
                     If "proba" triggers proba calculation with pdf fitting.
-        resolution: Diameter of the resolution elements (in pix) used to do do the small sample statistic.
-                For e.g., FWHM of the PSF.
-                /!\ I am not sure the implementation is correct. We should probably do better.
 
     Return:
         The statistic map for image.
@@ -130,8 +115,7 @@ def get_image_stat_map_perPixMasking(image,
                        itertools.repeat(mask_radius),
                        itertools.repeat(Dr),
                        itertools.repeat(Dth),
-                       itertools.repeat(type),
-                       itertools.repeat(resolution)))
+                       itertools.repeat(type)))
 
         for row_indices,col_indices,out in zip(chunks_row_indices,chunks_col_indices,outputs_list):
             stat_map[(row_indices,col_indices)] = out
@@ -147,8 +131,7 @@ def get_image_stat_map_perPixMasking(image,
                                                                             mask_radius,
                                                                             Dr = Dr,
                                                                             Dth = Dth,
-                                                                            type = type,
-                                                                            resolution=resolution)
+                                                                            type = type)
         
     if type == "proba":
         return -np.log10(stat_map)
@@ -170,10 +153,9 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                                                y_grid,
                                                N,
                                                mask_radius,
-                                               Dr = None,
+                                               Dr = 2,
                                                Dth = None,
-                                               type = "SNR",
-                                               resolution = None):
+                                               type = "SNR"):
     """
     Helper function for get_image_stat_map_perPixMasking().
     Calculate the SNR on the subset of pixels defined by row_indices,col_indices.
@@ -197,15 +179,12 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
         centroid: Define the cente rof the image. Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
         mute: Won't print any logs.
         N_threads: Number of threads to be used. If None run sequentially.
-        Dr: If not None defines the width of the ring as Dr. N is then ignored.
+        Dr: (default=2pix) Defines the width of the ring (in pixel). N is then ignored.
         Dth: Define the angular size of a sector in degree (will apply for either Dr or N)
         type: Indicate the type of statistic to be calculated.
                     If "SNR" (default) simple stddev calculation and returns SNR.
                     If "stddev" returns the pure standard deviation map.
                     If "proba" triggers proba calculation with pdf fitting.
-        resolution: Diameter of the resolution elements (in pix) used to do do the small sample statistic.
-                For e.g., FWHM of the PSF.
-                /!\ I am not sure the implementation is correct. We should probably do better.
 
     Return: The statistic map for image.
     """
@@ -240,7 +219,7 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 r_min,r_max = (r-dr, r+dr)
 
             else:
-                r_min,r_max = (r-Dr, r+Dr)
+                r_min,r_max = (r-Dr/2., r+Dr/2.)
 
             if Dth is None:
                 if N is None:
@@ -288,14 +267,8 @@ def get_image_stat_map_perPixMasking_threadTask(row_indices,
                 stat_map[id] = 1-cdf_fit(image[k,l])
             elif type == "SNR":
                 stat_map[id] = image[k,l]/np.nanstd(data)
-                if resolution is not None and np.size(data) != 0:
-                    N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
-                    stat_map[id] = stat_map[id]/np.sqrt(1+1/N_res_elt)
             elif type == "stddev":
                 stat_map[id] = np.nanstd(data)
-                if resolution is not None and np.size(data) != 0:
-                    N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
-                    stat_map[id] = stat_map[id]*np.sqrt(1+1/N_res_elt)
 
     return stat_map
 

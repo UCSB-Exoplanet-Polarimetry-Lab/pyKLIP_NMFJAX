@@ -12,6 +12,7 @@ import copy
 import astropy.io.fits as fits
 import scipy.interpolate as interp
 from scipy.stats import norm
+import scipy.ndimage as ndi
 
 #Logic to test mkl exists
 try:
@@ -24,7 +25,7 @@ except ImportError:
 parallel = True
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
-                pa_imgs, wvs_imgs, centers_imgs, psf_library, psf_library_shape):
+                pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_library, psf_library_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array).
@@ -38,10 +39,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         output_imgs_shape: (b, N, y, x), b = number of different KL basis cutoffs for KLIP routine
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
+        filenums_imgs (np.array): array of size N with the filenumber corresponding to each image. 
         psf_library: array of shape (N_lib, y, x) with N_lib PSF library images
     """
-    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, psf_lib, \
-        psf_lib_shape
+    global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, img_filenums, \
+        psf_lib, psf_lib_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -51,10 +53,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     # output images after KLIP processing
     output = output_imgs
     output_shape = output_imgs_shape
-    # parameters for each image (PA, wavelegnth, image center)
+    # parameters for each image (PA, wavelegnth, image center, image number)
     img_pa = pa_imgs
     img_wv = wvs_imgs
     img_center = centers_imgs
+    img_filenums = filenums_imgs
     psf_lib = psf_library
     psf_lib_shape = psf_library_shape
 
@@ -234,7 +237,7 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
     return True
 
 
-def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, phistart,
+def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numbasis, radstart, radend, phistart,
                                      phiend, minmove, ref_center=None, minrot=0):
     """
     Profiler wrapper for _klip_section_multifile. Outputs a file openable by pstats.Stats for each annulus wavelength.
@@ -244,14 +247,14 @@ def _klip_section_multifile_profiler(scidata_indicies, wavelength, wv_index, num
 
     Args: Same arguments as _klip_section_multifile()
     """
-    cProfile.runctx("_klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, radstart, radend, "
+    cProfile.runctx("_klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, radstart, radend, "
                     "phistart, phiend, minmove, ref_center, minrot)", globals(), locals(),
                     'profile-{0}.out'.format(int(radstart + radend)/2))
     return True
 
-
-def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
-                            phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, psflib_good=None,
+                     
+def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
+                            phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, corr_smooth=1, psflib_good=None,
                             psflib_corr=None, lite=False, dtype=None, algo='klip'):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
@@ -259,7 +262,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     break it down even smaller when running on machines on the order of 32 cores.
 
     Args:
-        scidata_indicies: array of file indicies that are the science images for this wavelength
+        scidata_indices: array of file indicies that are the science images for this wavelength
         wavelength: value of the wavelength we are processing
         wv_index: index of the wavelenght we are processing
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
@@ -277,6 +280,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
                     (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         lite: if True, use low memory footprint mode
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf')
@@ -287,7 +291,7 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     """
     if dtype is None:
         dtype = ctypes.c_float
-
+    
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
@@ -312,9 +316,8 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     else:
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
 
-
     ref_psfs = aligned_imgs[:,  section_ind[0]]
-
+    
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
     ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
@@ -325,17 +328,49 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
-    #also calculate correlation matrix since we'll use that to select reference PSFs
-    covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
-    corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+    if ref_psfs_mean_sub.shape[0] == 1:
+        # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
+        covar_psfs = covar_psfs.reshape((1,1))
+
+    if corr_smooth > 0:
+        # calcualte the correlation matrix, with possible smoothing  
+        aligned_imgs_3d = aligned_imgs.reshape([aligned_imgs.shape[0], aligned_shape[-2], aligned_shape[-1]]) # make a cube that's not flattened in spatial dimension
+        # smooth only the square that encompasses the segment
+        # we need to figure where that is
+        # figure out the smallest square that encompasses this sector
+        blank_img = np.ones(aligned_shape[-2:]) * np.nan
+        blank_img.ravel()[section_ind] = 0
+        y_good, x_good = np.where(~np.isnan(blank_img))
+        ymin = np.min(y_good)
+        ymax = np.max(y_good)
+        xmin = np.min(x_good)
+        xmax = np.max(x_good)
+        blank_img_crop = blank_img[ymin:ymax+1, xmin:xmax+1]
+        section_ind_smooth_crop = np.where(~np.isnan(blank_img_crop))
+        # now that we figured out only the region of interest for each image to smooth, let's smooth that region'
+        ref_psfs_smoothed = []
+        for aligned_img_2d in aligned_imgs_3d:
+            smooth_sigma = 1
+            smoothed_square_crop = ndi.gaussian_filter(aligned_img_2d[ymin:ymax+1, xmin:xmax+1], smooth_sigma)
+            smoothed_section = smoothed_square_crop[section_ind_smooth_crop]
+            smoothed_section[np.isnan(smoothed_section)] = 0
+            ref_psfs_smoothed.append(smoothed_section)
+    
+        corr_psfs = np.corrcoef(ref_psfs_smoothed)
+    else:
+        # if we don't smooth, we can use the covariance matrix to calculate the correlation matrix. It'll be slightly faster
+        covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
+        corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
+        
 
     #grab the parangs
-    parangs = _arraytonumpy(img_pa,dtype=dtype)
+    parangs = _arraytonumpy(img_pa, dtype=dtype)
+    filenums = _arraytonumpy(img_filenums, dtype=dtype)
 
-    for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies]):
+    for file_index, parang, filenum in zip(scidata_indices, parangs[scidata_indices], filenums[scidata_indices]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
-                                            parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
+                                            parang, filenum, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
                                             maxnumbasis, minmove, minrot, maxrot, mode, psflib_good=psflib_good,
                                             psflib_corr=psflib_corr, spectrum=spectrum, lite=lite, dtype=dtype,
                                             algo=algo)
@@ -346,12 +381,12 @@ def _klip_section_multifile(scidata_indicies, wavelength, wv_index, numbasis, ma
 
     #   [_klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs,
     #                                   parang, wavelength, wv_index, (radstart + radend) / 2.0, numbasis, minmove)
-    #      for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+    #      for file_index,parang in zip(scidata_indices, parangs[scidata_indices])]
 
     return True
 
 
-def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, wavelength, wv_index, avg_rad,
+def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, filenum, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
                                     psflib_good=None, psflib_corr=None,
                                     spectrum=None, lite=False, dtype=None, algo='klip'):
@@ -364,7 +399,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         ref_psfs: reference psf images of this section
         covar: the covariance matrix of the reference PSFs. Shape of (N,N)
         corr: the correlation matrix of the refernece PSFs. Shape of (N,N)
-        parang: PA of science iamge
+        parang: PA of science iamage
+        filenum (int): file number of science image
         wavelength: wavelength of science image
         wv_index: array index of the wavelength of the science image
         avg_rad: average radius of this annulus
@@ -390,9 +426,10 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         dtype = ctypes.c_float
         
     # grab the files suitable for reference PSF
-    # load shared arrays for wavelengths and PAs
-    wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
-    pa_imgs = _arraytonumpy(img_pa,dtype=dtype)
+    # load shared arrays for wavelengths, PAs, and filenumbers
+    wvs_imgs = _arraytonumpy(img_wv, dtype=dtype)
+    pa_imgs = _arraytonumpy(img_pa, dtype=dtype)
+    filenums_imgs = _arraytonumpy(img_filenums, dtype=dtype)
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -401,7 +438,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         goodmv = (moves >= minmove)
     else:
         # optimize the selection based on the spectral template rather than just an exclusion principle
-        goodmv = (spectrum * norm.sf(moves-minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
+        goodmv = (spectrum * norm.sf(moves  -minmove/2.355, scale=minmove/2.355) <= 0.1 * spectrum[wv_index])
 
     # enough field rotation
     if minrot > 0:
@@ -412,10 +449,16 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         goodmv = (goodmv) & (wvs_imgs == wavelength)
     # if no ADI, don't use other parallactic angles
     if "ADI" not in mode.upper():
-        goodmv = (goodmv) & (pa_imgs == parang)
+        goodmv = (goodmv) & (filenums_imgs == filenum)
+    # if both aren't in here, we shouldn't be using any frames in the sequence
+    if "ADI" not in mode.upper() and "SDI" not in mode.upper():
+        goodmv = (goodmv) & False
     include_rdi = "RDI" in mode.upper()
 
     good_file_ind = np.where(goodmv)
+    # Remove reference psfs if they are mostly nans
+    ref2rm = np.where(np.nansum(np.isfinite(ref_psfs[good_file_ind[0], :]),axis=1) < 5)[0]
+    good_file_ind = (np.delete(good_file_ind[0],ref2rm),)
     if (np.size(good_file_ind[0]) < 2) and (not include_rdi):
         print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
@@ -497,7 +540,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         ref_psfs_selected = ref_psfs[good_file_ind[0], :]
 
         if include_rdi:
-            rdi_psfs_selected = psf_library[:, section_ind[0]]
+            rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
 
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
@@ -582,6 +625,7 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     derotated = np.array([task.get() for task in tasks])
 
     tpool.close()
+    tpool.join()
 
     return derotated
 
@@ -589,13 +633,13 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
     """
     filters a sequences of images using a FFT
 
-    Inputs:
+    Args:
         imgs: array of shape (N,y,x) containing N images
         numthreads: number of threads to be used
         filtersize: size in Fourier space of the size of the space. In image space, size=img_size/filtersize
         pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
 
-    Output:
+    Returns:
         filtered: array of shape (N,y,x) containing the filtered images
     """
 
@@ -611,13 +655,54 @@ def high_pass_filter_imgs(imgs, numthreads=None, filtersize=10, pool=None):
 
     if pool is None:
         tpool.close()
+        tpool.join()
 
     return filtered
 
+def generate_noise_maps(imgs, aligned_center, dr, IWA=None, OWA=None, numthreads=None, pool=None):
+    """
+    Create a noise map for each image.  
+    The noise levels are computed using azimuthally averaged noise in the images
 
-def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
+    Args: 
+        imgs: array of shape (N,y,x) containing N images
+        aligned_center: [x,y] location of the center. All images should be aligned to common center
+        dr (float): how mnay pixels wide the annulus to compute the noise should be
+        IWA (float): inner working angle (how close to the center of the image to start). If none, this is 0
+        OWA (float): outer working angle (if None, it is the entire image.)
+        numthreads: number of threads to be used
+        pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
+
+    Returns:
+        noise_maps: array of shape (N,y,x) containing N noise maps
+    """
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
+
+    if IWA is None:
+        IWA = 0
+    if OWA is None:
+        OWA = np.max(imgs.shape[1:])
+
+    tasks = [tpool.apply_async(stat_utils.get_image_stat_map, args=(img,),
+                                kwds={'IOWA' : (IWA,OWA), 'centroid': aligned_center, 'N' : None, 'Dr' : dr, 'type' : 'stddev' }) 
+            for img in imgs]
+
+    #reform back into a giant array
+    noise_maps = np.array([task.get() for task in tasks])
+
+    if pool is None:
+        tpool.close()
+        tpool.join()
+
+    return noise_maps
+
+
+def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
-                           annuli_spacing="constant", maxnumbasis=None,
+                           annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, 
                            spectrum=None, dtype=None, algo='klip', compute_noise_cube=False, **kwargs):
     """
     multithreaded KLIP PSF Subtraction, has a smaller memory foot print than the original
@@ -627,6 +712,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         centers: N by 2 array of (x,y) coordinates of image centers
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
+        filenums (np.array): array of length N of the filenumber for each image
         IWA: inner working angle (in pixels)
         OWA: outer working angle (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
@@ -637,7 +723,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
                 log (logarithmical expansion with r), and linear (linearly expansion with r)
-        maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)           
+        maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis) 
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing          
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
         numthreads: number of threads to use. If none, defaults to using all the cores of the cpu
@@ -698,7 +785,6 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
 
     #error checking for too small of annuli go here
 
-
     #calculate the annuli ranges
     rad_bounds = klip.define_annuli_bounds(annuli, IWA, OWA, annuli_spacing)
 
@@ -752,10 +838,13 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
     centers_imgs = mp.Array(mp_data_type, np.size(centers))
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=dtype)
     centers_imgs_np[:] = centers
+    filenums_imgs = mp.Array(mp_data_type, np.size(filenums))
+    filenums_imgs_np = _arraytonumpy(filenums_imgs,dtype=dtype)
+    filenums_imgs_np[:] = filenums
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, None, None), maxtasksperchild=50)
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
@@ -779,22 +868,22 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
         print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, this_wv))
 
         #pick out the science images that need PSF subtraction for this wavelength
-        scidata_indicies = np.where(wvs == this_wv)[0]
+        scidata_indices = np.where(wvs == this_wv)[0]
 
         # commented out code to do _klip_section instead of _klip_section_multifile
         # outputs += [tpool.apply_async(_klip_section_profiler, args=(file_index, parang, wv_value, wv_index, numbasis,
         #                                                   radstart, radend, phistart, phiend, movement))
         #                     for phistart,phiend in phi_bounds
         #                 for radstart, radend in rad_bounds
-        #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+        #             for file_index,parang in zip(scidata_indices, parangs[scidata_indices])]
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
-        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, this_wv, wv_index, numbasis,
+        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indices, this_wv, wv_index, numbasis,
                                                                      maxnumbasis,
                                                                      radstart, radend, phistart, phiend, movement,
                                                                      aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, None, None, lite, dtype, algo))
+                                                                     mode, corr_smooth, None, None, lite, dtype, algo))
                     for phistart,phiend in phi_bounds
                     for radstart, radend in rad_bounds]
 
@@ -824,13 +913,15 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
     # calculate weights for weighted mean if necessary
     if compute_noise_cube:
         print("Computing weights for weighted collapse")
-        noise_imgs = []
-        for kl_cube in sub_imgs:
-                for frame in kl_cube:
-                    annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
-                    dr_spacing = np.median(annuli_widths)/2.
-                    noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,rad_bounds[-1][1]), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
-        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape) # reshape into a cube with same shape as sub_imgs
+        # figure out ~how wide to make it
+        annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
+        dr_spacing = np.min(annuli_widths)
+        # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
+        sub_imgs_shape = sub_imgs.shape
+        sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1], numthreads=numthreads)
+        # reform the 4-D cubes
+        noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
@@ -838,9 +929,9 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI
 
 
 
-def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
+def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
-                      annuli_spacing="constant", maxnumbasis=None,
+                      annuli_spacing="constant", maxnumbasis=None, corr_smooth=1,
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
                       save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False):
     """
@@ -851,6 +942,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         centers: N by 2 array of (x,y) coordinates of image centers
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
+        filenums (np.array): array of length N of the filenumber for each image
         IWA: inner working angle (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: number of annuli to use for KLIP
@@ -866,6 +958,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
                         log (logarithmical expansion with r), and linear (linearly expansion with r)
         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
                     minmove to determine the separation from the center of the segment to determine contamination and
                     the size of the PSF (TODO: make PSF size another quanitity)
@@ -998,7 +1091,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     output_imgs_np = _arraytonumpy(output_imgs,dtype=dtype)
     output_imgs_np[:] = np.nan
     output_imgs_shape = imgs.shape + numbasis.shape
-    #remake the PA, wv, and center arrays as shared arrays
+    #remake the PA, wv, filenums, and center arrays as shared arrays
     pa_imgs = mp.Array(mp_data_type, np.size(parangs))
     pa_imgs_np = _arraytonumpy(pa_imgs,dtype=dtype)
     pa_imgs_np[:] = parangs
@@ -1008,6 +1101,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     centers_imgs = mp.Array(mp_data_type, np.size(centers))
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=dtype)
     centers_imgs_np[:] = centers
+    filenums_imgs = mp.Array(mp_data_type, np.size(filenums))
+    filenums_imgs_np = _arraytonumpy(filenums_imgs,dtype=dtype)
+    filenums_imgs_np[:] = filenums
     if psf_library is not None:
         psf_lib = mp.Array(mp_data_type, np.size(psf_library))
         psf_lib_np = _arraytonumpy(psf_lib, psf_library.shape, dtype=dtype)
@@ -1023,13 +1119,13 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape),
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape),
                     maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if not parallel:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, psf_lib, psf_lib_shape)
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape)
 
 
     if restored_aligned is None:
@@ -1047,33 +1143,35 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
         print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
 
         #pick out the science images that need PSF subtraction for this wavelength
-        scidata_indicies = np.where(wvs == wv_value)[0]
+        scidata_indices = np.where(wvs == wv_value)[0]
 
         # commented out code to do _klip_section instead of _klip_section_multifile
         # outputs += [tpool.apply_async(_klip_section_profiler, args=(file_index, parang, wv_value, wv_index, numbasis,
         #                                                   radstart, radend, phistart, phiend, movement))
         #                     for phistart,phiend in phi_bounds
         #                 for radstart, radend in rad_bounds
-        #             for file_index,parang in zip(scidata_indicies, parangs[scidata_indicies])]
+        #             for file_index,parang in zip(scidata_indices, parangs[scidata_indices])]
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
         if parallel:
-            outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indicies, wv_value, wv_index, numbasis,
+            outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
                                                                         radstart, radend, phistart, phiend, movement,
                                                                         aligned_center, minrot, maxrot, spectrum,
-                                                                        mode, psf_library_good, psf_library_corr, False,
+                                                                        mode, corr_smooth, 
+                                                                        psf_library_good, psf_library_corr, False,
                                                                         dtype, algo))
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
-            outputs += [_klip_section_multifile(scidata_indicies, wv_value, wv_index, numbasis,
+            outputs += [_klip_section_multifile(scidata_indices, wv_value, wv_index, numbasis,
                                                 maxnumbasis,
                                                 radstart, radend, phistart, phiend, movement,
                                                 aligned_center, minrot, maxrot, spectrum,
-                                                mode, psf_library_good, psf_library_corr, False,
+                                                mode, corr_smooth,
+                                                psf_library_good, psf_library_corr, False,
                                                 dtype, algo)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
@@ -1104,13 +1202,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
     # calculate weights for weighted mean if necessary
     if compute_noise_cube:
         print("Computing weights for weighted collapse")
-        noise_imgs = []
-        for kl_cube in sub_imgs:
-            for frame in kl_cube:
-                annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
-                dr_spacing = np.median(annuli_widths)/2.
-                noise_imgs.append(stat_utils.get_image_stat_map(frame, IOWA=(IWA,rad_bounds[-1][1]), centroid=aligned_center, N=None, Dr=dr_spacing, type="stddev"))
-        noise_imgs = np.array(noise_imgs).reshape(sub_imgs.shape) # reshape into a cube with same shape as sub_imgs
+        # figure out ~how wide to make it
+        annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
+        dr_spacing = np.min(annuli_widths)
+        # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
+        sub_imgs_shape = sub_imgs.shape
+        sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
+        noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=IWA, OWA=rad_bounds[-1][1], numthreads=numthreads)
+        # reform the 4-D cubes
+        noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
         noise_imgs = np.ones(sub_imgs.shape)
 
@@ -1123,8 +1223,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, OWA=None, mode='ADI+SDI'
 
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
-                 annuli_spacing="constant", maxnumbasis=None, spectrum=None, psf_library=None, highpass=False,
-                 lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
+                 annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
+                 highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
                  time_collapse="mean"):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
@@ -1147,7 +1247,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
                         log (logarithmical expansion with r), and linear (linearly expansion with r)
         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
-
+        corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         spectrum:       (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
                         spectrum shape. Currently only supports "methane" between 1 and 10 microns.
         psf_library:    if not None, a rdi.PSFLibrary object with a PSF Library for RDI
@@ -1189,6 +1289,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         raise ValueError("Cannot collpase data using {0}. Valid options are {1}".format(time_collapse, valid_time_collapse))
     time_collapse = time_collapse.lower()
     weighted = "weighted" in time_collapse # boolean whether to use weights
+
+    if corr_smooth < 0:
+        raise ValueError("corr_smooth needs be non-negative. Supplied value is {0}".format(corr_smooth))
 
     # RDI Sanity Checks to make sure PSF Library is properly configured
     if "RDI" in mode:
@@ -1270,11 +1373,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         spectra_template = None
 
     # save klip parameters as a string
+    maxbasis_str = maxnumbasis if maxnumbasis is not None else np.max(numbasis) # prefer to use maxnumbasis if possible
     klipparams = "mode={mode},annuli={annuli},subsect={subsections},minmove={movement}," \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}, time_collapse={weighted}".format(mode=mode, annuli=annuli, 
                                               subsections=subsections, movement=movement,
-                                              numbasis="{numbasis}", maxbasis=np.max(numbasis), minrot=minrot,
+                                              numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
                                               weighted=time_collapse)
     dataset.klipparams = klipparams
@@ -1296,11 +1400,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         print("Beginning {0} KLIP".format(mode))
 
         # Actually run the PSF Subtraction with all the arguments
-        klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA,
-                                     OWA=dataset.OWA, mode=mode,
+        klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.filenums,
+                                     dataset.IWA, OWA=dataset.OWA, mode=mode,
                                      annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
                                      numthreads=numthreads, minrot=minrot, aligned_center=aligned_center,
-                                     annuli_spacing=annuli_spacing, maxnumbasis=maxnumbasis,
+                                     annuli_spacing=annuli_spacing, maxnumbasis=maxnumbasis, corr_smooth=corr_smooth,
                                      spectrum=spectra_template, psf_library=master_library,
                                      psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
                                      save_aligned = save_aligned, restored_aligned = restored_aligned, dtype=dtype,
@@ -1344,6 +1448,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                 restored_aligned_thiswv = None
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
+                                        dataset.filenums[thiswv],
                                         dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
                                         movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
                                         maxnumbasis=maxnumbasis, annuli_spacing=annuli_spacing,
@@ -1442,7 +1547,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if calibrate_flux:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+    dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                      klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                      zaxis=numbasis)
 
@@ -1454,7 +1559,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # calibrate spectral cube if needed
             if calibrate_flux:
                 spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+            dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
                              spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                              filetype="PSF Subtracted Spectral Cube")
 

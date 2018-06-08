@@ -754,7 +754,7 @@ def LSQ_gauss2d(planet_image, x_grid, y_grid,a,x_cen,y_cen,sig):
     return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
 
 
-def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_index=None,residuals=False):
+def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_index=None,residuals=False,rmbackground=True,add_background2residual=False):
     """
     Estimate satellite spot amplitude (peak value) by fitting a symmetric 2d gaussian.
     Fit parameters: x,y position, amplitude, standard deviation (same in x and y direction)
@@ -767,6 +767,9 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
         psfs_func_list: List of spline fit function for the PSF_cube.
         wave_index: Index of the current wavelength. In [0,36] for GPI. Only used when psfs_func_list is not None.
         residuals: If True (Default = False) then calculate the residuals of the sat spot fit (gaussian or PSF cube).
+        rmbackground: If true (default), remove any background slope to the data stamp.
+        add_background2residual: If True (default is false) and if rmbackground was true, it adds the background that
+                        was removed to the returned residuals.
 
     Returns:
         returned_flux: scalar, Estimation of the peak flux of the satellite spot.
@@ -775,6 +778,12 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     x0 = int(np.round(xguess))
     y0 = int(np.round(yguess))
     #construct our searchbox
+    if (y0-searchrad)<0 or (y0+searchrad+1)>=frame.shape[0] or (x0-searchrad)<0 or (x0+searchrad+1)>=frame.shape[1]:
+        # To close to the edge
+        if residuals:
+            return None,None
+        else:
+            return None
     fitbox = np.copy(frame[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1])
 
     xguess_box = xguess-x0 + searchrad
@@ -786,7 +795,7 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     big_aper_indices = np.where(stamp_r<7)
 
     # try to remove background
-    if 1:
+    if rmbackground:
         stamp_masked = copy(fitbox)
         stamp_x_masked = copy(xfitbox)
         stamp_y_masked = copy(yfitbox)
@@ -804,7 +813,8 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
         #Cramer's rule
         a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
         b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
-        fitbox = fitbox - (a*(xfitbox)+b*(yfitbox) + background_med)
+        background =(a*(xfitbox)+b*(yfitbox) + background_med)
+        fitbox = fitbox - background
 
     if isinstance(wave_index,(np.ndarray)):
         # Get a deprecation warning when wave_index = [5] instead of an integer. So this picks the integer...
@@ -814,10 +824,12 @@ def PSFcubefit(frame, xguess, yguess, searchrad=10,psfs_func_list=None,wave_inde
     model = psfs_func_list[new_wave_index](np.arange(0,2* searchrad+1, 1.0)-xguess_box,np.arange(0, 2*searchrad+1, 1.0)-yguess_box).transpose()
     # model = psfs_func_list[wave_index](np.arange(0,2* searchrad+1, 1.0)+(xguess-x0) - searchrad,np.arange(0, 2*searchrad+1, 1.0)+(yguess-y0) - searchrad)#.transpose()
 
-    returned_flux = np.sum(model[small_aper_indices]*fitbox[small_aper_indices])/np.sum(model[small_aper_indices]**2)*model[searchrad,searchrad]
+    returned_flux = np.nansum(model[small_aper_indices]*fitbox[small_aper_indices])/np.nansum(model[small_aper_indices]**2)*model[searchrad,searchrad]
 
     if residuals:
         residuals_map = fitbox - returned_flux*model/model[searchrad,searchrad]
+        if add_background2residual and rmbackground:
+            residuals_map = residuals_map + background
         return returned_flux,residuals_map
     else:
         return returned_flux
