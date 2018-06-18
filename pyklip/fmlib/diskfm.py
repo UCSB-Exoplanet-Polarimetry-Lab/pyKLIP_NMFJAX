@@ -317,7 +317,7 @@ class DiskFM(NoFM):
         '''
 
         #Collapsed across all files (and wavelenths) and divide by number of images to keep units as ADU/coadd
-        KLmode_cube = np.nanmean(fmout, axis = 1)/self.inputs_shape[0] 
+        KLmode_cube = np.nanmean(fmout, axis = 1) #/ self.inputs_shape[0] 
 
         #Check if we have a disk model at multiple wavelengths
         model_disk_shape = np.shape(self.model_disk)        
@@ -364,6 +364,7 @@ class DiskFM(NoFM):
             pickle.dump(dict(section_ind_dict), f)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
+        fmout = np.nanmean(fmout, axis = 1) #/ self.inputs_shape[0] 
         return fmout
 
     def update_disk(self, model_disk):
