@@ -28,13 +28,21 @@ class DiskFM(NoFM):
         '''
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
-        # Attributes of input/output
-        self.inputs_shape = inputs_shape
+
 
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+
+        if hasattr(inputs_shape, "__len__"):
+            inputs_shape = np.array(inputs_shape)
+        else:
+            inputs_shape = np.array([inputs_shape])
+
+        # Attributes of input/output
+        self.inputs_shape = inputs_shape
         self.numbasis = numbasis
 
         self.numims = inputs_shape[0]
