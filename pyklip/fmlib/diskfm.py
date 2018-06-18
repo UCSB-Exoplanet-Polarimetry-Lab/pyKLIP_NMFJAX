@@ -30,7 +30,13 @@ class DiskFM(NoFM):
 
         # Attributes of input/output
         self.inputs_shape = inputs_shape
+
+        if hasattr(numbasis, "__len__"):
+            numbasis = np.array(numbasis)
+        else:
+            numbasis = np.array([numbasis])
         self.numbasis = numbasis
+
         self.numims = inputs_shape[0]
         self.mode = mode
 
@@ -41,7 +47,7 @@ class DiskFM(NoFM):
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
-        
+
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
@@ -212,7 +218,7 @@ class DiskFM(NoFM):
         '''
 
         # Load in file
-        f = open(basis_file_pattern)
+        f = open(basis_file_pattern, 'rb')
         self.klmodes_dict = pickle.load(f)
         self.evecs_dict = pickle.load(f)
         self.evals_dict = pickle.load(f)
@@ -325,7 +331,7 @@ class DiskFM(NoFM):
         if np.size(model_disk_shape) > 2: 
 
             nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
-            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+            n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
             KLmode_spectral_cubes = np.zeros([np.size(numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
