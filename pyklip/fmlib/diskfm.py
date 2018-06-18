@@ -403,7 +403,7 @@ class DiskFM(NoFM):
             #If we do, then let's make sure that the number of wavelenth channels matches the data. 
             #Note this only works if all your data files have the same number of wavelenth channels. Which it likely does. 
             nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
-            n_wv_per_file = self.inputs_shape[0]/nfiles #Number of wavelenths per file. 
+            n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
             n_disk_wvs = model_disk_shape[0]
 
             if n_disk_wvs == n_wv_per_file: #If your model wvs match the number of dataset wvs
