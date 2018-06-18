@@ -31,7 +31,7 @@ To run the forward modelling, run::
 
     fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1, mode = 'ADI')
 
-Note that in the case that annuli = 1, you will need to set padding = 0 in klip_dataset
+Note that in the case that annuli = 1, you will need to set padding = 0.001 in klip_dataset
 
 
 
