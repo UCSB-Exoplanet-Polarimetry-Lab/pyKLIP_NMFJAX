@@ -26,7 +26,6 @@ class DiskFM(NoFM):
 
         Currently only supports mode = ADI
         '''
-        super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
@@ -39,6 +38,7 @@ class DiskFM(NoFM):
         else:
             inputs_shape = np.array([inputs_shape])
 
+        super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         # Attributes of input/output
         self.inputs_shape = inputs_shape
