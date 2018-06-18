@@ -214,7 +214,7 @@ class DiskFM(NoFM):
 
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
-
+        fmout_np = np.nanmean(fmout_np, axis = 1)
         return fmout_np
             
 
@@ -377,7 +377,6 @@ class DiskFM(NoFM):
             pickle.dump(dict(section_ind_dict), f)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
-        fmout = np.nanmean(fmout, axis = 1) #/ self.inputs_shape[0] 
         return fmout
 
     def update_disk(self, model_disk):
