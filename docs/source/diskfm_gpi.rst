@@ -13,23 +13,24 @@ Running
 How to use::
 
     import glob
-    import pyklip.parallelized.GPI as GPI
+    import pyklip.instruments.GPI as GPI
     from pyklip.fmlib.diskfm import DiskFM
     import pyklip.fm as FM
+    import numpy as np
     
     filelist = glob.glob("path/to/dataset/*.fits")
     dataset = GPI.GPIData(filelist)
-    model = [some 2D image array]
+    model_disk = [some 2D image array]
 
 
 You will then need to create a disk object::
 
-    numbasis = n.array([1, 2, ... ])
-    diskobj = DiskFM(n.array([n_files, data_xshape, data_yshape]), numbasis, dataset, model_disk, annuli = 2, subsections = 1)
+    numbasis = [1, 2, ... ]
+    diskobj = DiskFM([n_files, data_xshape, data_yshape], numbasis, dataset, model_disk, annuli = 2, subsections = 1)
 
 To run the forward modelling, run::
 
-    fmout = fm.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1, mode = 'ADI')
+    fmout = FM.klip_dataset(dataset, diskobj, numbasis = numbasis, annuli = 2, subsections = 1, mode = 'ADI')
 
 Note that in the case that annuli = 1, you will need to set padding = 0.001 in klip_dataset
 
