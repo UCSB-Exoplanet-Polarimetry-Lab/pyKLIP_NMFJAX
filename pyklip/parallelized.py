@@ -585,7 +585,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
 
 def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,
-                disable_wcs_rotation = False):
+                disable_wcs_rotation = False,pool=None):
     """
     derotate a sequences of images by their respective angles
 
@@ -602,8 +602,10 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     Returns:
         derotated: array of shape (N,y,x) containing the derotated images
     """
-
-    tpool = mp.Pool(processes=numthreads)
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
 
     # klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
     # multithreading the rotation for each image
@@ -624,8 +626,9 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     # reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
 
-    tpool.close()
-    tpool.join()
+    if pool is None:
+        tpool.close()
+        tpool.join()
 
     return derotated
 
@@ -1270,7 +1273,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                             For ADI only, the wv is omitted so only 4D cube
     """
     ######### Check inputs ##########
-
+    
     # defaullt numbasis if none
     if numbasis is None:
         totalimgs = dataset.input.shape[0]
@@ -1333,7 +1336,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # restored_aligned = None
     else:
         klip_function = klip_parallelized
-
+    
     # If re-running KLIP with same data, restore centers to old value
     # We don't need to highpass the data if the aligned and scaled images are being restored
     if restored_aligned is not None:

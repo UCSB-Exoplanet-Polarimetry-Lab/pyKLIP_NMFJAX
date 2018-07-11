@@ -1252,10 +1252,11 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
         # plt.show()
 
         # Rotate the KL modes to the phase angle of the butterfly in the current cube.
-        butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[10],flipx=False)
-
+        butterfly_KLmodes_rot = rotate_imgs(butterfly_KLmodes, [butterfly_phase,]*Nkl, [[nx//2,ny//2],]*Nkl, new_center=center[10],flipx=False,pool=pool)
+        
         # cube = remove_radial_mean_profile_imgs(cube,center,IWA=1.2*GPIData.fpm_diam[fpm_band]/2.0,OWA=50,sub_azi_pro=True, pool = pool)
         model_cube = butterfly_rdi_imgs(cube_nospots,butterfly_KLmodes_rot,wv_KL,center,wvs, pool = pool)
+        
         cube_nospots = cube_nospots - model_cube
         # cube = cube - model_cube
 
@@ -1314,7 +1315,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                 # JB: On going test..
                 if numthreads is None:
                     numthreads = mp.cpu_count()
-                tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+                if pool is None:
+                    tpool = mp.Pool(processes=numthreads, maxtasksperchild=50)
+                else:
+                    tpool=pool
                 tpool_outputs = [tpool.apply_async(measure_sat_spot_fluxes,
                                                    args=(slice, spots_xs, spots_ys,psfs_func_list,wv_indices))
                                  for id,(slice, spots_xs, spots_ys, wv, wv_index) in enumerate(zip(cube, spots_xloc, spots_yloc, wvs, wv_indices))]
@@ -1323,7 +1327,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                     out.wait()
                     new_spotfluxes = out.get()
                     spot_fluxes.append(np.nanmean(new_spotfluxes))
-                tpool.close()
+                if pool is None:
+                    tpool.close()
         #print(spot_fluxes)
 
     if isinstance(butterfly_rdi, str):
