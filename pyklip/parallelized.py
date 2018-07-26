@@ -1386,6 +1386,15 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                               weighted=time_collapse)
     dataset.klipparams = klipparams
 
+    # set all the klip_parallelized.py args here
+    pyklip_args = {'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement, 
+                    'numbasis':numbasis, 'numthreads':numthreads, 'minrot':minrot, 'aligned_center':aligned_center,
+                    'annuli_spacing':annuli_spacing, 'maxnumbasis':maxnumbasis, 'corr_smooth':corr_smooth,
+                    'spectrum':spectra_template, 'psf_library':master_library,
+                    'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
+                    'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
+                    'algo':algo, 'compute_noise_cube':weighted}
+
     #Set MLK parameters
     if mkl_exists:
         old_mkl = mkl.get_max_threads()
@@ -1404,14 +1413,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # Actually run the PSF Subtraction with all the arguments
         klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.filenums,
-                                     dataset.IWA, OWA=dataset.OWA, mode=mode,
-                                     annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
-                                     numthreads=numthreads, minrot=minrot, aligned_center=aligned_center,
-                                     annuli_spacing=annuli_spacing, maxnumbasis=maxnumbasis, corr_smooth=corr_smooth,
-                                     spectrum=spectra_template, psf_library=master_library,
-                                     psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                     save_aligned = save_aligned, restored_aligned = restored_aligned, dtype=dtype,
-                                     algo=algo, compute_noise_cube=weighted)
+                                     dataset.IWA, **pyklip_args)
 
         # parse the output of klip. Normally, it is just the klipped_imgs,
         # but some optional arguments return more things
@@ -1452,13 +1454,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                         dataset.filenums[thiswv],
-                                        dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
-                                        movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                        maxnumbasis=maxnumbasis, annuli_spacing=annuli_spacing,
-                                        aligned_center=aligned_center, psf_library=master_library,
-                                        psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                        save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
-                                        dtype=dtype, compute_noise_cube=weighted)
+                                        dataset.IWA, **pyklip_args)
             
             klipped_imgs = klip_output[0]
             klipped_center = klip_output[1]
