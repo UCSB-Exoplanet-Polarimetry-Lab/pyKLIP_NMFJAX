@@ -404,7 +404,7 @@ def _magao_process_file(self, filepath, filetype=None):
 
         cube = hdulist[0].data
 
-        if filetype is None:
+        if filetype is None and 'INSTRUME' in header:
             try:
                 if header["INSTRUME"] =='VisAO':
                     #Get VisAO filter
@@ -420,12 +420,23 @@ def _magao_process_file(self, filepath, filetype=None):
                     #note: need to add wvs of clio here
                 except KeyError:
                     raise KeyError("No recognized MagAO keywords found")
+                
+        if 'WLENGTH' in header:
+            wvs = header['WLENGTH']
+            #check if provided separately from instrument knowledge
 
         angle=float(header['ROTOFF'])
-        #print('angle from process data: ', angle)
-        angle = 90+angle
-        angles = [angle]
-        angles = np.array(angles)
+        
+
+        #vert_angle = -(90 +angle)
+##        angles = [angle]
+##        angles = np.array(angles)
+##        parang = angles
+        parang = angle - 360  #note this is not exact formula, from analyzing Ewan's data this is the relation btw them (to within a degree)
+        vert_angle = 360 - parang 
+        #note: i think these angles are weird (questions about rotoff vs parang keyword and when to use which), need to review
+        #print('angle from process data: ', parang)
+        
         cube = hdulist[0].data
         
         #wvs = header['WLENGTH']
@@ -440,20 +451,27 @@ def _magao_process_file(self, filepath, filetype=None):
         #print("nx is " + str(nx))
         minval = np.min([np.nanmin(cube), 0.0])
         #flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
-        parang = angles          
-        #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION
+                 
+        #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION #old
 
-        #calculate star flux as ghost peak/scaling factor, depends on filter, in process should be changed to "if there is ghost peak"
-        #check filter for scaling factor:
-        if header["INSTRUME"] =='VisAO':
-            ghst_psf = self.ghstpeak_ratio['z\'']
-            #ghst_psf = 1.22*10**(-3) #defined in magao.ini, initialized at top of this file
 
-        else:
-            ghst_psf = self.ghstpeak_ratio['i\'']
-            #ghst_psf = 1.998*10**(-3) #defined in magao.ini
-            
-        star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]] 
+        if 'GHSTPEAK' in header:
+            #calculate star flux as ghost peak/scaling factor, depends on filter
+            #check filter for scaling factor:
+            if header["INSTRUME"] =='VisAO':
+                ghst_psf = self.ghstpeak_ratio['z\'']
+                #ghst_psf = 1.22*10**(-3) #defined in magao.ini, initialized at top of this file
+
+            else:
+                ghst_psf = self.ghstpeak_ratio['i\'']
+                #ghst_psf = 1.998*10**(-3) #defined in magao.ini
+                
+            star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]]
+
+        if 'STARPEAK' in header:
+            star_flux = [[header['STARPEAK']]]
+
+        #old:    
         #print("flipped_cube shape is " + str(flipped_cube.shape))
         #cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])
         
@@ -488,10 +506,13 @@ def _magao_process_file(self, filepath, filetype=None):
         w.wcs.ctype = [header['CTYPE1'], header['CTYPE2']]
         #w.wcs.set_pv([(2, 1, 45.0)])
 
-        #turns out WCS data can be wrong. Let's recalculate it using avparang
-        parang = header['PARANG']
-        #changed the minus sign in front of vert_angle to fix direction of derotation 
-        vert_angle = (360-parang) 
+        if 'PARANG' in header:
+            #turns out WCS data can be wrong. Let's recalculate it using avparang
+            #note: i think these angles are weired, need to review
+            parang = header['PARANG']
+            #changed the minus sign in front of vert_angle to fix direction of derotation 
+            vert_angle = (360-parang)
+            
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
