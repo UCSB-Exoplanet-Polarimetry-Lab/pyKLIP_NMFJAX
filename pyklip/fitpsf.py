@@ -6,6 +6,7 @@ import numpy as np
 import scipy.linalg as linalg
 import scipy.ndimage as ndi
 import scipy.ndimage.interpolation as sinterp
+import scipy.optimize as optimize
 
 import pyklip.covars as covars
 import astropy.stats.circstats as circstats
@@ -17,12 +18,13 @@ import emcee
 
 class FMAstrometry(object):
     """
-    Base class to perform astrometry on direct imaging data_stamp using MCMC and GP regression
+    Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
     Args:
         guess_sep: the guessed separation (pixels)
         guess_pa: the guessed position angle (degrees)
         fitboxsize: fitting box side length (pixels)
+        method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'maxl'. 
 
     Attributes:
         guess_sep (float): (initialization) guess separation for planet [pixels]
@@ -43,11 +45,11 @@ class FMAstrometry(object):
         data_stamp (np.array): (fitting) The 2-D stamp of the data (centered at the nearest pixel to the guessed location)
         noise_map (np.array): (fitting) The 2-D stamp of the noise for each pixel the data computed assuming azimuthally similar noise
         padding (int): amount of pixels on one side to pad the data/forward model stamp
-        sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. See emcee docs for more details. 
+        sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. Only for Bayesian fit. See emcee docs for more details. 
     
 
     """
-    def __init__(self, guess_sep, guess_pa, fitboxsize):
+    def __init__(self, guess_sep, guess_pa, fitboxsize, method='maxl'):
         """
         Initilaizes the FMAstrometry class
         """
@@ -55,6 +57,12 @@ class FMAstrometry(object):
         self.guess_sep = guess_sep
         self.guess_pa = guess_pa
         self.fitboxsize = fitboxsize
+        if method.lower() == "maxl":
+            self.isbayesian = False
+        elif method.lower() == "mcmc":
+            self.isbayesian = True
+        else:
+            raise ValueError("method needs to be either 'maxl' or 'mcmc'. Received {0}.".format(method))
 
         # derive delta RA and delta Dec
         # in pixels
@@ -335,6 +343,27 @@ class FMAstrometry(object):
     def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
         """
+        Fits the astrometry of the planet in either a frequentist or Bayesian way depending on initialization. 
+
+        Args:
+            nwalkers: number of walkers (mcmc-only)
+            nburn: numbe of samples of burn-in for each walker (mcmc-only)
+            nsteps: number of samples each walker takes (mcmc-only)
+            save_chain: if True, save the output in a pickled file (mcmc-only)
+            chain_output: filename to output the chain to (mcmc-only)
+            numthreads: number of threads to use (mcmc-only)
+
+        Returns:
+
+        """
+        if self.isbayesian:
+            return self._mcmc_fit_astrometry(nwalkers=nwalkers, nburn=nburn, nsteps=nsteps, save_chain=save_chain, 
+                                        chain_output=chain_output, numthreads=numthreads)
+                    
+
+    def _mcmc_fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
+                       numthreads=None):
+        """
         Run a Bayesian fit of the astrometry using MCMC
         Saves to self.chian
 
@@ -402,6 +431,60 @@ class FMAstrometry(object):
             #pickle.dump(sampler.acor, pickle_file)
             pickle_file.close()
 
+    def _lsqr_fit_astrometry(self):
+        """
+        Do a frequentist maximum likelihood fit to the data. Approximate errors using the Hessian of the likelihood function.
+        """
+        # create array of initial guesses
+        # array of guess RA, Dec, and flux
+        # for everything that's not RA/Dec offset, should be converted to log space for MCMC sampling
+        init_guess = np.array([self.guess_RA_offset, self.guess_Dec_offset, math.log(self.guess_flux)])
+        # append hyperparams for covariance matrix, which also need to be converted to log space
+        init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
+        # number of dimensions of MCMC fit
+        ndim = np.size(init_guess)
+
+        if self.bounds is None:
+            cost_function = lnlike
+            cost_function_args = (self, self.covar)
+        else:
+            # prior bounds also need to be put in log space
+            sampler_bounds = np.copy(self.bounds)
+            sampler_bounds[2:] = np.log(sampler_bounds[2:])
+
+            cost_function = lnprob
+            cost_function_args = (self, sampler_bounds, self.covar)
+
+        cost_function_args += (self.include_readnoise, True)
+
+
+        global cost_function
+        nm_result = optimize.minimize(cost_function, init_guess, args=cost_function_args, method="Nelder-Mead")
+        result = optimize.minimize(cost_function, nm_result.x, args=cost_function_args, method="BFGS")
+
+        # best fit values, and use the Hessian to approximate the uncertainties in the parameters
+        ra_best = result.x[0]
+        dec_best = result.x[1]
+        flux_best = (result.x[2])
+        covar_params_best = [result.x[i] for i in range(3, np.size(result.x))]
+        ra_err = np.sqrt(np.abs(result.hess_inv[0,0]))
+        dec_err = np.sqrt(np.abs(result.hess_inv[1,1]))
+        flux_err = np.sqrt(np.abs(result.hess_inv[2,2]))
+
+        # convert to linear space the flux and covariance parameters
+        covar_params_best = np.exp(covar_params_best)
+        # flux error is approx symmetric in log space
+        flux_err_two_sided = np.array([np.exp(flux_best - flux_err), np.exp(flux_best + flux_err)])
+        flux_best = math.exp(flux_best)
+
+        # save best fit values
+        # percentiles has shape [ndims, 3]
+        self.raw_RA_offset = ParamRange(ra_best, ra_err)
+        self.raw_Dec_offset = ParamRange(dec_best, dec_err)
+        self.raw_flux =  ParamRange(flux_best, flux_err_two_sided)
+        self.covar_params = [ParamRange(param_best, 0) for param_best in covar_params_best]
+
+
 
     def make_corner_plot(self, fig=None):
         """
@@ -413,6 +496,9 @@ class FMAstrometry(object):
             fig: the Figure object. If input fig is None, function will make a new one
 
         """
+        if not self.isbayesian:
+            raise AttributeError("Corner plot is only available if using Bayesian MCMC framework")
+        
         import corner
 
         all_labels = [r"x", r"y", r"$\alpha$"]
@@ -495,34 +581,55 @@ class FMAstrometry(object):
             pa_offset (float): Offset, in the same direction as position angle, to set North up (degrees)
             pa_uncertainity (float): Error on position angle/true North calibration (Degrees)
         """
-        # ensure numpy arrays
-        x_mcmc = self.sampler.chain[:,:,0].flatten()
-        y_mcmc = self.sampler.chain[:,:,1].flatten()
+        if self.isbayesian:
+            # format MCMC chains
+            # ensure numpy arrays
+            x_fit = self.sampler.chain[:,:,0].flatten()
+            y_fit = self.sampler.chain[:,:,1].flatten()
+
+        else:
+            x_fit = self.raw_RA_offset.bestfit
+            y_fit = self.raw_Dec_offset.bestfit
 
         # calcualte statistial errors in x and y
-        x_best = np.median(x_mcmc)
-        y_best = np.median(y_mcmc)
-        x_1sigma_raw = (np.percentile(x_mcmc, [84,16]) - x_best)
-        y_1sigma_raw = (np.percentile(y_mcmc, [84,16]) - y_best)
+        x_best = self.raw_RA_offset.bestfit
+        y_best = self.raw_Dec_offset.bestfit
+        x_1sigma_raw = self.raw_RA_offset.error_2sided
+        y_1sigma_raw = self.raw_Dec_offset.error_2sided
 
         print("Raw X/Y Centroid = ({0}, {1}) with statistical error of {2} pix in X and {3} pix in Y".format(x_best, y_best, x_1sigma_raw, y_1sigma_raw))
 
         # calculate sep and pa from x/y separation
-        sep_mcmc = np.sqrt((x_mcmc)**2 + (y_mcmc)**2)
+        sep_fit = np.sqrt((x_fit)**2 + (y_fit)**2)
         # For PA compute mean using circstats package, find delta_pa between all points and the mean,
         # then compute median/precentiles
-        pa_mcmc = (np.arctan2(y_mcmc, -x_mcmc) - (np.pi/2.0)) % (2.0*np.pi) # Radians!
-        pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
-        d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
-        pa_median = np.median(d_pa) + pa_mean
-        pa_percentile = np.nanpercentile(d_pa, [84,16])  - np.median(d_pa) # median of d_pa should be small
-        pa_mcmc = np.degrees(pa_mcmc) # Convert to degrees
+        pa_fit = (np.arctan2(y_fit, -x_fit) - (np.pi/2.0)) % (2.0*np.pi) # Radians!
 
-        # calculate sep and pa statistical errors
-        sep_best = np.median(sep_mcmc)
-        pa_best = np.degrees(pa_median)
-        sep_1sigma_raw = (np.percentile(sep_mcmc, [84,16]) - sep_best)
-        pa_1sigma_raw = np.degrees(pa_percentile)
+        if self.isbayesian:
+            # for Bayesian, convert the chains to sep/pa to get uncertainity
+            pa_mean = circstats.circmean(pa_fit - np.pi) + np.pi # Circmean [-pi, pi]
+            d_pa = np.arctan2(np.sin(pa_fit-pa_mean), np.cos(pa_fit-pa_mean))
+            pa_median = np.median(d_pa) + pa_mean
+            pa_percentile = np.nanpercentile(d_pa, [84,16])  - np.median(d_pa) # median of d_pa should be small
+            pa_fit = np.degrees(pa_fit) # Convert to degrees
+
+            # calculate sep and pa statistical errors
+            sep_best = np.median(sep_fit)
+            pa_best = np.degrees(pa_median)
+            sep_1sigma_raw = (np.percentile(sep_fit, [84,16]) - sep_best)
+            pa_1sigma_raw = np.degrees(pa_percentile)
+        else:
+            # since we just have point estimates, use analytical error propogration
+            sep_best = sep_fit
+            pa_fit = np.degrees(pa_fit)
+            pa_best = pa_fit
+
+            sep_1sigma_raw = (x_fit/sep_fit)**2 * x_1sigma_raw**2 + (y_fit/sep_fit)**2 * y_1sigma_raw**2
+            sep_1sigma_raw = np.sqrt(sep_1sigma_raw)
+
+            pa_1sigma_raw = (y_fit/sep_fit**2)**2 * x_1sigma_raw**2 + (x_fit/sep_fit**2)**2 * y_1sigma_raw**2
+            pa_1sigma_raw = np.sqrt(pa_1sigma_raw)
+            pa_1sigma_raw = np.degrees(pa_1sigma_raw)
 
         print("Raw Sep/PA Centroid = ({0}, {1}) with statistical error of {2} pix in Sep and {3} pix in PA".format(sep_best, pa_best, sep_1sigma_raw, pa_1sigma_raw))
         
@@ -557,13 +664,16 @@ class FMAstrometry(object):
         if pa_offset is not None:
             print("Adding in a PA/North angle offset")
             # Have to repeat wrapping procedure above in case pa_offset is large
-            pa_mcmc = np.radians((pa_mcmc + pa_offset) % 360) # Convert back to radians for circstats
-            pa_mean = circstats.circmean(pa_mcmc - np.pi) + np.pi # Circmean [-pi, pi]
-            d_pa = np.arctan2(np.sin(pa_mcmc-pa_mean), np.cos(pa_mcmc-pa_mean))
+            pa_fit = np.radians((pa_fit + pa_offset) % 360) # Convert back to radians for circstats
+            if self.isbayesian:
+                pa_mean = circstats.circmean(pa_fit - np.pi) + np.pi # Circmean [-pi, pi]
+                d_pa = np.arctan2(np.sin(pa_fit-pa_mean), np.cos(pa_fit-pa_mean))
 
-            pa_median = np.median(d_pa) + pa_mean
-            pa_best = np.degrees(pa_median)
-            pa_mcmc = np.degrees(pa_mcmc) # Convert back to degrees
+                pa_median = np.median(d_pa) + pa_mean
+                pa_best = np.degrees(pa_median)
+            else:
+                pa_best = np.degrees(pa_fit)
+            pa_fit = np.degrees(pa_fit) # Convert back to degrees
         
         # PA Uncertainity
         if pa_uncertainty is None:
@@ -592,14 +702,23 @@ class FMAstrometry(object):
             self.sep = ParamRange(sep_best*platescale, sep_err_mas)
 
         # convert PA errors back into x y (RA/Dec)
-        ra_mcmc = -sep_mcmc * np.cos(np.radians(pa_mcmc+90))
-        dec_mcmc = sep_mcmc * np.sin(np.radians(pa_mcmc+90))
+        ra_fit = -sep_fit * np.cos(np.radians(pa_fit+90))
+        dec_fit = sep_fit * np.sin(np.radians(pa_fit+90))
 
-        # ra/dec statistical errors
-        ra_best = np.median(ra_mcmc)
-        dec_best = np.median(dec_mcmc)
-        ra_1sigma_raw = np.percentile(ra_mcmc, [84,16]) - ra_best
-        dec_1sigma_raw = np.percentile(dec_mcmc, [84,16]) - dec_best
+        # ra/dec statistical errors. This is after the rotation from pa_offset is applied
+        if self.isbayesian:
+            ra_best = np.median(ra_fit)
+            dec_best = np.median(dec_fit)
+            ra_1sigma_raw = np.percentile(ra_fit, [84,16]) - ra_best
+            dec_1sigma_raw = np.percentile(dec_fit, [84,16]) - dec_best
+        else:
+            ra_best = ra_fit
+            dec_best = dec_fit
+
+            # this should depend on sine and cosine of pa_offset
+            pa_offset_rad = np.radians(pa_offset)
+            ra_1sigma_raw = np.sqrt(math.cos(pa_offset_rad)**2 * x_1sigma_raw**2 + math.sin(pa_offset_rad)**2 * y_1sigma_raw**2)
+            dec_1sigma_raw = np.sqrt(math.sin(pa_offset_rad)**2 * x_1sigma_raw**2 + math.cos(pa_offset_rad)**2 * y_1sigma_raw**2)
 
         ra_err_full_pix = np.sqrt((ra_1sigma_raw**2)  + (star_center_err)**2 + (dec_best * np.radians(pa_uncertainty))**2 )
         dec_err_full_pix = np.sqrt((dec_1sigma_raw**2)  + (star_center_err)**2 + (ra_best * np.radians(pa_uncertainty))**2 )
@@ -625,7 +744,7 @@ class FMAstrometry(object):
 
 
 
-def lnprior(fitparams, bounds, readnoise=False):
+def lnprior(fitparams, bounds, readnoise=False, negate=False):
     """
     Bayesian prior
 
@@ -634,7 +753,8 @@ def lnprior(fitparams, bounds, readnoise=False):
 
         bounds: array of (N,2) with corresponding lower and upper bound of params
                 bounds[i,0] <= fitparams[i] < bounds[i,1]
-        readnoise: boolean. If True, the last fitparam fits for diagonal noise
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
 
     Returns:
         prior: 0 if inside bound ranges, -inf if outside
@@ -647,10 +767,13 @@ def lnprior(fitparams, bounds, readnoise=False):
             prior *= -np.inf
             break
 
+    if negate:
+        prior *= -1
+
     return prior
 
 
-def lnlike(fitparams, fma, cov_func, readnoise=False):
+def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     """
     Likelihood function
     Args:
@@ -660,7 +783,8 @@ def lnlike(fitparams, fma, cov_func, readnoise=False):
         fma (FMAstrometry): a FMAstrometry object that has been fully set up to run
         cov_func (function): function that given an input [x,y] coordinate array returns the covariance matrix
                   e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise: boolean. If True, the last fitparam fits for diagonal noise
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
 
     Returns:
         likeli: log of likelihood function (minus a constant factor)
@@ -710,10 +834,15 @@ def lnlike(fitparams, fma, cov_func, readnoise=False):
     logdet = 2*np.sum(np.log(np.diag(L_cov)))
     constant = logdet
 
-    return -0.5 * (residuals + constant)
+    loglikelihood = -0.5 * (residuals + constant)
+
+    if negate:
+        loglikelihood *= -1
+    
+    return loglikelihood
 
 
-def lnprob(fitparams, fma, bounds, cov_func, readnoise=False):
+def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
     """
     Function to compute the relative posterior probabiltiy. Product of likelihood and prior
     Args:
@@ -725,16 +854,17 @@ def lnprob(fitparams, fma, bounds, cov_func, readnoise=False):
                 bounds[i,0] <= fitparams[i] < bounds[i,1]
         cov_func: function that given an input [x,y] coordinate array returns the covariance matrix
                   e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise: boolean. If True, the last fitparam fits for diagonal noise
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
 
     Returns:
 
     """
-    lp = lnprior(fitparams, bounds, readnoise=readnoise)
+    lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
 
     if not np.isfinite(lp):
-        return -np.inf
-    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise)
+        return lp
+    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
 
 
 class ParamRange(object):
