@@ -944,7 +944,8 @@ class GPIData(Data):
 ## Static Functions ##
 ######################
 
-def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=False,butterfly_rdi_NKL=20,
+def _gpi_process_file(filepath, skipslices=None, highpass=False,
+                      butterfly_rdi=False,butterfly_rdi_NKL=20,
                       meas_satspot_flux=False, numthreads=-1,
                       psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
     """

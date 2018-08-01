@@ -12,6 +12,8 @@ from scipy.interpolate import interp1d
 import time
 from copy import copy
 
+import multiprocessing as mp
+
 #different imports depending on if python2.7 or python3
 import sys
 if sys.version_info < (3,0):
@@ -35,6 +37,11 @@ class NIRC2Data(Data):
         filepaths: list of filepaths to files
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
+                  header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -61,12 +68,13 @@ class NIRC2Data(Data):
     lenslet_scales = {}  # in arcsec/pixel
     centralwave = {}  # in microns
     fpm_diam = {}  # in pixels
+    fpm_yx = {}  # in pixels
     flux_zeropt = {}
     pupil_diam = {}  # in meters
     #spot_ratio = {} #w.r.t. central star
     #ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
-    observatory_latitude = 0.0
+    observatory_latitude = None
 
     ## read in GPI configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
@@ -90,6 +98,10 @@ class NIRC2Data(Data):
                 'corona600', 'corona800', 'corona1000', 'corona1500', 'corona2000']
         for fpm in fpms:
             fpm_diam[fpm] = float(config.get("instrument", "fpm_diam_{0}".format(fpm))) # arcsec
+        for fpm in fpms:
+            fpm_yx['narrow_' + fpm] = eval(config.get("instrument", "fpm_yx_narrow_{0}".format(fpm))) # (y,x) tuple [pixels]
+            fpm_yx['medium_' + fpm] = eval(config.get("instrument", "fpm_yx_medium_{0}".format(fpm))) # (y,x) tuple [pixels]
+            fpm_yx['wide_' + fpm] = eval(config.get("instrument", "fpm_yx_wide_{0}".format(fpm))) # (y,x) tuple [pixels]
         pupils = ['incircle', 'largehex', 'smallhex', 'open']
         for pupil in pupils:
             pupil_diam[pupil] = float(config.get("instrument", "pupil_diam_{0}".format(pupil))) # meters
@@ -102,7 +114,7 @@ class NIRC2Data(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, highpass=False):
+    def __init__(self, filepaths=None, highpass=False, find_star='auto', meas_star_flux=False):
         """
         Initialization code for NIRC2Data
 
@@ -128,7 +140,8 @@ class NIRC2Data(Data):
             self.lenslet_scale = None
             self.pupil_diam = None
         else:
-            self.readdata(filepaths, highpass=highpass)
+            self.readdata(filepaths, highpass=highpass, find_star=find_star, meas_star_flux=meas_star_flux)
+
 
     ################################
     ### Instance Required Fields ###
@@ -200,7 +213,7 @@ class NIRC2Data(Data):
     ###############
     ### Methods ###
     ###############
-    def readdata(self, filepaths, highpass=False):
+    def readdata(self, filepaths, highpass=False, find_star='auto', meas_star_flux=False):
         """
         Method to open and read a list of NIRC2 data
 
@@ -208,6 +221,11 @@ class NIRC2Data(Data):
             filespaths: a list of filepaths
             highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+            find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
+                  header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
 
         Returns:
             Technically none. It saves things to fields of the NIRC2Data object. See object doc string
@@ -227,12 +245,17 @@ class NIRC2Data(Data):
         star_fluxes = []
         spot_fluxes = []
         prihdrs = []
+        
+        #Create a threadpool for high pass filter
+        pool = None
+        if highpass:
+            pool = mp.Pool()
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
             cube, center, pa, wv, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_flux, prihdr, exthdr, camera, obsdate =\
-                _nirc2_process_file(filepath, highpass=highpass)
-
+                _nirc2_process_file(filepath, highpass=highpass, find_star=find_star, meas_star_flux=meas_star_flux, pool=pool)
+            
             data.append(cube)
             centers.append(center)
             star_fluxes.append(star_flux)
@@ -246,6 +269,12 @@ class NIRC2Data(Data):
             #filename = np.chararray(pa.shape[0])
             #filename[:] = filepath
             filenames.append([filepath for i in range(pa.shape[0])])
+        
+        # Close threadpool
+        if highpass:
+            pool.close()
+            pool.join()
+        
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
         data = np.array(data)
@@ -279,9 +308,9 @@ class NIRC2Data(Data):
         self._filenames = filenames
         self._PAs = rot_angles
         self._wvs = wvs
-        self._wcs = None #wcs_hdrs
+        self._wcs = [None] #wcs_hdrs
         self.spot_flux = spot_fluxes
-        self._IWA = NIRC2Data.fpm_diam[fpm_band]*lenslet_scale/2.0
+        self._IWA = NIRC2Data.fpm_diam[fpm_band]/lenslet_scale/2.0
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes #GPIData.spot_ratio[ppm_band]/np.tile(np.mean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0])
         self.prihdrs = prihdrs
@@ -371,7 +400,7 @@ class NIRC2Data(Data):
 
         #use the dataset astr hdr if none was passed in
         #if astr_hdr is None:
-        #    print self.wcs[0]
+        #    print(self.wcs[0])
         #    astr_hdr = self.wcs[0]
         if astr_hdr is not None:
             #update astro header
@@ -465,7 +494,7 @@ class NIRC2Data(Data):
 ## Static Functions ##
 ######################
 
-def _nirc2_process_file(filepath, highpass=False):
+def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_flux=False, pool=None):
     """
     Method to open and parse a NIRC2 file
 
@@ -473,6 +502,13 @@ def _nirc2_process_file(filepath, highpass=False):
         filepath: the file to open
         highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                   can also be a number specifying FWHM of box in pixel units
+        find_star: (default) 'auto' will first try to get the star center coordinates from the FITS
+                  header PSFCENTX & PSFCENTY keywords, and if that fails it will do a Radon transform to
+                  locate the star via the diffraction spikes (and store the star center in the header for
+                  future use). True will force the Radon transform; False will skip the Radon transform
+                  even if no center is found in the header.
+        meas_star_flux: if True, measures the stellar flux
+        pool: optional to pass along a threadpool (mainly for highpass filtering multiple images)
 
     Returns: (using z as size of 3rd dimension, z=1 for NIRC2)
         cube: 3D data cube from the file. Shape is (z,256,256)
@@ -488,7 +524,7 @@ def _nirc2_process_file(filepath, highpass=False):
         exthdr: For NIRC2, None
     """
     print("Reading File: {0}".format(filepath))
-    hdulist = fits.open(filepath)
+    hdulist = fits.open(filepath, mode='update', ignore_missing_end=True) # some NIRC2 FITS files are missing END card
     try:
         #grab the data and headers
         cube = hdulist[0].data
@@ -506,15 +542,44 @@ def _nirc2_process_file(filepath, highpass=False):
         #for NIRC2, we only have broadband but want to keep the GPI array shape to make processing easier
         if prihdr['CURRINST'].strip() == 'NIRC2':
             wvs = [1.0]
-            if 'PSFCENTX' and 'PSFCENTY' in prihdr.keys():
-                center = [[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
-            else:
-                center = [[np.nan, np.nan]]
             
+            # Pull PA from header if already there, or try to calculate it from header.
             if 'ROTNORTH' in prihdr.keys():
                 parang = prihdr['ROTNORTH']*np.ones(1)
             else:
-                parang = np.nan*np.ones(1)
+                try:
+                    parang = get_pa(hdulist, obsdate=obsdate, rotmode='vertical angle', write_hdr=True)*np.ones(1)
+                except:
+                    parang = np.nan*np.ones(1)
+            
+            if find_star is True:
+                # Ignore header and use Radon transform to find star center.
+                try:
+                    center = [get_star(hdulist, ctr=NIRC2Data.fpm_yx[('_').join([camera, fpm_band])], obsdate=obsdate,
+                                    hp_size=0, im_smooth=0, sp_width=31, rad=100, radon_wdw=400, smooth=1,
+                                    write_hdr=True, pool=pool, silent=True)]
+                except:
+                    center = [[np.nan, np.nan]]
+            elif find_star is False:
+                # Only try to get star center from headers (no Radon transform).
+                try:
+                    center = [[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
+                except:
+                    center = [[np.nan, np.nan]]
+            elif find_star=='auto':
+                # Pull star center from header if already there, or try to find it via Radon transform.
+                # Radon assumes star is near center of FPM and may fail if otherwise.
+                if 'PSFCENTX' and 'PSFCENTY' in prihdr.keys():
+                    center = [[prihdr['PSFCENTX'], prihdr['PSFCENTY']]]
+                else:
+                    try:
+                        center = [get_star(hdulist, ctr=NIRC2Data.fpm_yx[('_').join([camera, fpm_band])], obsdate=obsdate,
+                                        hp_size=0, im_smooth=0, sp_width=31, rad=100, radon_wdw=400, smooth=1,
+                                        write_hdr=True, pool=pool, silent=True)]
+                    except:
+                        center = [[np.nan, np.nan]]
+            else:
+                raise ValueError("Unsupported value for find_star; only 'auto', True, or False are accepted.")
             
             # Flipping x-axis to enable use of GPI data rotation code without modification
             dims = cube.shape
@@ -522,8 +587,9 @@ def _nirc2_process_file(filepath, highpass=False):
             nx = center[0][0] - (x - center[0][0])
             minval = np.min([np.nanmin(cube), 0.0])
             flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
-
-            star_flux = calc_starflux(flipped_cube, center)
+            star_flux = np.nan
+            if meas_star_flux:
+                star_flux = calc_starflux(flipped_cube, center)
             cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])  #maintain 3d-ness
             astr_hdrs = np.repeat(None, 1)
             spot_fluxes = [[1]] #not suported currently
@@ -534,14 +600,14 @@ def _nirc2_process_file(filepath, highpass=False):
     highpassed = False
     if isinstance(highpass, bool):
         if highpass:
-            cube = high_pass_filter_imgs(cube)
+            cube = high_pass_filter_imgs(cube, pool=pool)
             highpassed = True
     else:
         # should be a number
         if isinstance(highpass, (float, int)):
             highpass = float(highpass)
             fourier_sigma_size = (cube.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
-            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size)
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size, pool=pool)
             highpassed = True
 
     return cube, center, parang, wvs, astr_hdrs, filt_band, fpm_band, pupil, star_flux, spot_fluxes, prihdr, exthdr, camera, obsdate
@@ -591,6 +657,288 @@ def measure_star_flux(img, star_x, star_y):
 
     return flux
 
+def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
+    """
+    Given a FITS data-header unit list (HDUList), returns the NIRC2 PA in [radians].
+    PA is angle of detector relative to sky; ROTMODE is rotator tracking mode;
+    PARANG is parallactic angle astrometric; INSTANGL is instrument angle;
+    ROTPOSN is rotator physical position.
+    Additional PA offset of -0.252 or -0.262 deg is applied for NIRC2 narrow cam
+    depending on observation date.
+    NOTE that the PA sign is flipped at the very end before output to conform to
+    pyKLIP's rotation convention.
+    
+    Inputs:
+        hdulist: a FITS HDUList (NOT a single HDU).
+        obsdate: date of observation; will try to get from prihdr if not provided.
+        rotmode: 'vertical angle' for ADI mode with PA rotating on detector, or
+                 'position angle' for mode with PA orientation fixed on detector.
+                 ('position angle' currently UNSUPPORTED)
+        mean_pa: if True (default), return the mean PA during the exposure.
+                 If False, return the PA at the start of the exposure only.
+        write_hdr: if True (default), writes keys to file header and saves them.
+    """
+    
+    prihdr = hdulist[0].header
+    
+    # Date of NIRC2 servicing that changed PA offset.
+    date_2015_4_13 = time.strptime("2015-4-13", "%Y-%m-%d")
+    
+    # If don't have it, get observation date (UT) from header and make a time object.
+    if obsdate is None:
+        obsdate = time.strptime(prihdr['DATE-OBS'], "%Y-%m-%d")
+    
+    # Additional offset to narrow cam PA not included in INSTANGL keyword.
+    # This offset changed after instrument servicing on April 13, 2015.
+    if prihdr['CAMNAME']=='narrow':
+        if obsdate < date_2015_4_13:
+            zp_offset = -0.252 # [deg]; from Yelda et al. 2010
+        elif obsdate >= date_2015_4_13:
+            zp_offset = -0.262 # [deg]; from Service et al. 2016
+    else:
+        zp_offset = 0.
+        print("WARNING: No PA offset applied.")
+    
+    if rotmode is None:
+        global _last_rotmode
+        try:
+            rotmode = prihdr['ROTMODE'].strip()
+            _last_rotmode = rotmode
+        except:
+            rotmode = _last_rotmode
+    rotposn = prihdr['ROTPOSN'] # [deg]
+    instangl = prihdr['INSTANGL'] # [deg]
 
+    if rotmode == 'vertical angle':
+        parang = prihdr['PARANG'] # [deg]
+        pa_deg = parang + rotposn - instangl + zp_offset # [deg]
+    elif rotmode == 'position angle':
+        pa_deg = rotposn - instangl + zp_offset # [deg]
+    else:
+        raise NotImplementedError
+    
+    if mean_PA:
+        # Get info for PA smearing calculation.
+        epochobj = prihdr['DATE-OBS']
+        name = prihdr['targname']
+        expref = prihdr['itime']
+        coaddref = prihdr['coadds']
+        sampref =  prihdr['sampmode']
+        msrref =   prihdr['MULTISAM']
+        xdimref =  prihdr['naxis1']
+        ydimref =  prihdr['naxis2']
+        tel = prihdr['TELESCOP']
+        dec = prihdr['DEC'] + prihdr['DECOFF']
+        if tel=='Keck II':
+            tel = 'keck2' # just cleaning up str
+        
+        # Calculate total time of exposure (integration + readout).
+        if sampref == 2: totexp = ( expref + 0.18*(xdimref/1024.)**2) * coaddref
+        if sampref == 3: totexp = ( expref + (msrref-1)*0.18*(xdimref/1024.)**2)*coaddref
+        
+        tinteg = totexp # [seconds]
+        totexp = totexp/3600. # [hours]
+        
+        # Get hour angle at start of exposure.
+        tmpahinit = prihdr['HA'] # [deg]
+        ahobs = 24.*tmpahinit/360. # [hours]
+        
+        # Estimate vertical position angle at each second of the exposure.
+        vp = [] #fltarr(round(3600.*totexp))
+        for j in range(0, int(round(3600.*totexp))-1):
+            ahtmp = ahobs + (j*1.+0.001)/3600. # [hours]
+            vp.append(par_angle(ahtmp, dec, NIRC2Data.observatory_latitude))
+            if j == 0: vpref = vp[0]
+        vp = np.array(vp)
+        
+        # Handle case where PA crosses 0 <--> 360.
+        vp[vp < 0.] += 360.
+        vp[vp > 360.] -= 360.
+        if vpref < 0.: vpref += 360.
+        if vpref > 360.: vpref -= 360.
+        
+        # Check that images near PA=0 are handled correctly.
+        if any(vp > 350) & any(vp < 10):
+            vp[vp > 350] -= 360
+        
+        vpmean = np.nanmean(vp)
+        
+        if (vpmean < 0) & (vpref > 350):
+            vpmean += 360.
+        
+        pa_deg_mean = pa_deg + (vpmean - vpref)
+    else:
+        pa_deg_mean = pa_deg
+        vpmean = np.nan
+        vpref = np.nan
+        totexp = np.nan
+    
+    if write_hdr:
+        # Flip signs to conform to pyKLIP rotation convention.
+        prihdr['TOTEXP'] = (totexp, 'Total exposure time [hours]')
+        prihdr['PASTART'] = (-1*pa_deg, "Position angle at exposure start [deg]")
+        prihdr['PASMEAR'] = (-1*(vpmean - vpref), "Position angle rotation during exposure [deg]")
+        prihdr['ROTNORTH'] = (-1*pa_deg_mean, "Mean position angle of exposure [deg]")
+        
+        hdulist.flush()
+    
+    # Flip sign to conform to pyKLIP rotation convention.
+    return -1*pa_deg_mean
 
+def par_angle(HA, dec, lat):
+    """
+    Compute the parallactic angle, given hour angle (HA [hours]),
+    declination (dec [deg]), and latitude (lat [deg]).  Returns
+    parallactic angle in [deg].
+    """
+    HA_rad = np.radians(HA*15.) # [hours] -> [rad]
+    dec_rad = np.radians(dec)   # [deg] -> [rad]
+    lat_rad = np.radians(lat)   # [deg] -> [rad]
+
+    parallang = -np.arctan2(-np.sin(HA_rad),  # [rad]
+                          np.cos(dec_rad)*np.tan(lat_rad) - np.sin(dec_rad)*np.cos(HA_rad))
+    
+    return np.degrees(parallang) # [deg]
+
+def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
+              r_mask='all', rad=100, rad_out=np.inf, radon_wdw=400, smooth=1, PAadj=0.,
+              write_hdr=True, pool=None, silent=True):
+    """
+    Runs Radon transform star-finding algorithm on image and (by default) saves the results
+    in the original FITS header.
+    
+    Inputs:
+        hdulist: a FITS HDUList (NOT a single HDU).
+        ctr: (y,x) coordinate pair estimate for star position for image [pix].
+        obsdate: date of observation; will try to get from prihdr if not provided.
+        hp_size: size of high-pass filter median boxcar in [pix].
+        im_smooth: size of high-pass filter median boxcar in [pix].
+        sp_width: width of diffraction spike mask in [pix].
+        r_mask: 'all' to mask out circle around ctr coords; anything else to do no radial masking.
+        rad: r_mask=='all' will mask out all r <= rad [pix].
+        rad_out: r_mask=='all' will mask out all r > rad_out [pix].
+        radon_window: half width of the radon sampling region; size_window = image.shape[0]/2 is suggested.
+            m & M:  The sampling region will be (-M*size_window, -m*size_window)U(m*size_window, M*size_window).
+        smooth: smooth the radon cost function; for one pixel, replace it by the
+            average of its +/- smooth neighbours; default = 2.
+        PAadj: optional angle by which to rotate diffraction spike angles in [radians].
+        write_hdr: (default) True will write the Radon transform star center to the original
+            FITS header in PSFCENTX & PSFCENTY keywords.
+        pool: multiprocessing pool for highpass filtering and other parallel uses.
+        silent: (default) True to suppress additional output to stdout.
+    
+    Outputs:
+        Returns [X,Y] list of Radon transform star center. Default is to also write
+        the star coordinates to PSFCENTX & PSFCENTY in original FITS header.
+    """
+    from pyklip.instruments.utils.radonCenter import searchCenter
+    from scipy.ndimage.filters import median_filter, gaussian_filter
+    
+    if not silent: print("Finding star...")
+    data = hdulist[0].data.copy()
+    hdr = hdulist[0].header
+    
+    # median filter data to replace NaN's with median values of neighbors.
+    wh = np.where(np.isnan(data))
+    data_medfilt = median_filter(np.nan_to_num(data), size=9)
+    # replace all NaN in f with median values of neighbors.
+    data[wh] = data_medfilt[wh]
+    
+    data = np.ma.masked_invalid(data)
+    
+    # Highpass filtering.
+    if hp_size != 0:
+        # should be a number
+        fourier_sigma_size = (data.shape[1]/float(hp_size)) / (2*np.sqrt(2*np.log(2)))
+        data_filt = high_pass_filter_imgs(np.array([data]), filtersize=fourier_sigma_size, pool=pool)[0]
+    else:
+        data_filt = data
+    
+    # Image smoothing.
+    if im_smooth != 0:
+        data_filt = gaussian_filter(data_filt, im_smooth)
+    
+    # Build cartesian coordinate grid and radius map.
+    yy, xx = np.mgrid[0:data_filt.shape[0]:1, 0:data_filt.shape[1]:1]
+    radii = np.sqrt((yy - ctr[0])**2 + (xx - ctr[1])**2)
+    
+    # Additional offset to narrow cam PA not included in INSTANGL keyword.
+    # This offset changed after instrument servicing on April 13, 2015.
+    date_2015_4_13 = time.strptime("2015-4-13", "%Y-%m-%d")
+    if hdr['CAMNAME']=='narrow':
+        if obsdate < date_2015_4_13:
+            zp_offset = -0.252 # [deg]; from Yelda et al. 2010
+        elif obsdate >= date_2015_4_13:
+            zp_offset = -0.262 # [deg]; from Service et al. 2016
+    elif hdr['CAMNAME']=='wide':
+        zp_offset = 0.
+    
+    # Position angle (pa) of telescope optics only, from header info.
+    pa_tele = hdr['INSTANGL'] - zp_offset - hdr['ROTPOSN'] # [deg]
+    # Angles at which diffraction spikes occur in NIRC2 data [deg].
+    spike_angles = pa_tele + 30.0 + np.arange(3)*60.0 + PAadj # [deg]
+    # Boolen mask excluding everything except diffraction spikes.
+    spikemask = ~ make_spikemask(data_filt, hdr, ctr, spike_angles, yy, xx, sp_width) # ~ is inverse boolean
+    
+    mask_total = spikemask.copy()
+    
+    # Optionally mask stellar halo with additional circular mask centered on ctr.
+    # Masked regions are r <= rad and r > rad_out.
+    if r_mask=='all':
+        mask_total[(spikemask==False) & (radii <= rad)] = True
+        mask_total[(spikemask==False) & (radii > rad_out)] = True
+    else:
+        pass
+    
+    data_masked = np.ma.array(data_filt, mask=mask_total)
+    
+    # Perform radon transform search for star.
+    if not silent: print("Performing radon transform search...")
+    (x_radon, y_radon) = searchCenter(data_masked.filled(0.), ctr[1], ctr[0],
+                            size_window=radon_wdw, size_cost=7, m=0.2, M=0.8,
+                            smooth=smooth, theta=spike_angles)
+    
+    if not silent: print("radon y,x = {0}, {1}".format(y_radon, x_radon))
+    
+    if write_hdr:
+        # Update the original FITS header with new star coordinates.
+        hdr['PSFCENTX'] = (x_radon, 'Star X numpy coord')
+        hdr['PSFCENTY'] = (y_radon, 'Star Y numpy coord')
+        
+        hdulist.flush()
+        if not silent: print("Wrote new star coordinates to FITS header in PSFCENTX & PSFCENTY.")
+    
+    return [x_radon, y_radon]
+
+def make_spikemask(data, hdr, ctr, spike_angles, yy, xx, width=31):
+    """
+    Construct diffraction spike mask from FITS header information.
+    
+    data: 2-D ndarray image to be masked (just to get size of array).
+    hdr: FITS header for image constructing mask for.
+    ctr: (y,x) coordinates for center of diffraction spike pattern
+            (usually the estimated star location).
+    spike_angles: position angles for diffraction spikes in image [radians].
+    yy: mgrid or indices 2-D array of pixel y-coordinates.
+    xx: mgrid or indices 2-D array of pixel x-coordinates.
+    width: int or float width of spike mask in [pixels]; 0 for no mask.
+    """
+    
+    mask = np.zeros(data.shape, dtype=np.bool)
+    
+    if width != 0.:
+        yy_ctr = yy - ctr[0]
+        xx_ctr = xx - ctr[1]
+        
+        for ang in np.radians(spike_angles):
+            # Slope times x for each spike.
+            mx = np.tan(ang)*xx_ctr
+            # Mask with span 0.5*width above and below spike.
+            band = np.abs(0.5*width/np.cos(ang))
+            # Change spikemask to True anywhere inside mask.
+            spikemask = (yy_ctr <= (mx + band)) & (yy_ctr >= (mx - band))
+            # Replace False with True in mask wherever either spikemask or mask is True.
+            mask = mask | spikemask
+    
+    return mask
 
