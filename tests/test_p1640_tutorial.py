@@ -27,7 +27,7 @@ def test_p1640_tutorial(mock_klip_parallelized):
     """
 
     #create a mocked klip parallelized
-    mock_klip_parallelized.return_value = (np.zeros((3, 96, 281, 281)), np.array([140, 140]), np.ones((3, 96, 281, 281)))
+    mock_klip_parallelized.return_value = (np.zeros((3, 96, 281, 281)), np.array([140, 140]), np.array([1.]))
 
     directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', 'pyklip', 'instruments',
                                                                                         'P1640_support', 'tutorial')

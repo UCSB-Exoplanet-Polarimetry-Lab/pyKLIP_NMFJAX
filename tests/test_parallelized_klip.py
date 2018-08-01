@@ -185,7 +185,7 @@ def test_mock_SDI(mock_klip_parallelized):
     """
 
     #create a mocked return value for klip_parallelized that returns a 4d array of size (b,N,y,x) of zeros.
-    mock_klip_parallelized.return_value = (np.zeros((4, 111, 281, 281)), np.array([140,140]), np.ones((4, 111, 281, 281)))
+    mock_klip_parallelized.return_value = (np.zeros((4, 111, 281, 281)), np.array([140,140]), np.array([1.]))
 
     # time it
     t1 = time()
