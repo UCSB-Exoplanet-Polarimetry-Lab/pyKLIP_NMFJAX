@@ -328,6 +328,9 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
+    if ref_psfs_mean_sub.shape[0] == 1:
+        # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
+        covar_psfs = covar_psfs.reshape((1,1))
 
     if corr_smooth > 0:
         # calcualte the correlation matrix, with possible smoothing  
@@ -447,6 +450,9 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     # if no ADI, don't use other parallactic angles
     if "ADI" not in mode.upper():
         goodmv = (goodmv) & (filenums_imgs == filenum)
+    # if both aren't in here, we shouldn't be using any frames in the sequence
+    if "ADI" not in mode.upper() and "SDI" not in mode.upper():
+        goodmv = (goodmv) & False
     include_rdi = "RDI" in mode.upper()
 
     good_file_ind = np.where(goodmv)
@@ -579,7 +585,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
 
 def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,
-                disable_wcs_rotation = False):
+                disable_wcs_rotation = False,pool=None):
     """
     derotate a sequences of images by their respective angles
 
@@ -596,8 +602,10 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     Returns:
         derotated: array of shape (N,y,x) containing the derotated images
     """
-
-    tpool = mp.Pool(processes=numthreads)
+    if pool is None:
+        tpool = mp.Pool(processes=numthreads)
+    else:
+        tpool = pool
 
     # klip.rotate(img, -angle, oldcenter, [152,152]) for img, angle, oldcenter
     # multithreading the rotation for each image
@@ -618,8 +626,9 @@ def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=T
     # reform back into a giant array
     derotated = np.array([task.get() for task in tasks])
 
-    tpool.close()
-    tpool.join()
+    if pool is None:
+        tpool.close()
+        tpool.join()
 
     return derotated
 
@@ -1264,7 +1273,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                             For ADI only, the wv is omitted so only 4D cube
     """
     ######### Check inputs ##########
-
+    
     # defaullt numbasis if none
     if numbasis is None:
         totalimgs = dataset.input.shape[0]
@@ -1327,7 +1336,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # restored_aligned = None
     else:
         klip_function = klip_parallelized
-
+    
     # If re-running KLIP with same data, restore centers to old value
     # We don't need to highpass the data if the aligned and scaled images are being restored
     if restored_aligned is not None:
@@ -1377,6 +1386,15 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                                               weighted=time_collapse)
     dataset.klipparams = klipparams
 
+    # set all the klip_parallelized.py args here
+    pyklip_args = {'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement, 
+                    'numbasis':numbasis, 'numthreads':numthreads, 'minrot':minrot, 'aligned_center':aligned_center,
+                    'annuli_spacing':annuli_spacing, 'maxnumbasis':maxnumbasis, 'corr_smooth':corr_smooth,
+                    'spectrum':spectra_template, 'psf_library':master_library,
+                    'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
+                    'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
+                    'algo':algo, 'compute_noise_cube':weighted}
+
     #Set MLK parameters
     if mkl_exists:
         old_mkl = mkl.get_max_threads()
@@ -1395,14 +1413,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         # Actually run the PSF Subtraction with all the arguments
         klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.filenums,
-                                     dataset.IWA, OWA=dataset.OWA, mode=mode,
-                                     annuli=annuli, subsections=subsections, movement=movement, numbasis=numbasis,
-                                     numthreads=numthreads, minrot=minrot, aligned_center=aligned_center,
-                                     annuli_spacing=annuli_spacing, maxnumbasis=maxnumbasis, corr_smooth=corr_smooth,
-                                     spectrum=spectra_template, psf_library=master_library,
-                                     psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                     save_aligned = save_aligned, restored_aligned = restored_aligned, dtype=dtype,
-                                     algo=algo, compute_noise_cube=weighted)
+                                     dataset.IWA, **pyklip_args)
 
         # parse the output of klip. Normally, it is just the klipped_imgs,
         # but some optional arguments return more things
@@ -1443,13 +1454,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
             klip_output = klip_function(dataset.input[thiswv], dataset.centers[thiswv], dataset.PAs[thiswv], dataset.wvs[thiswv],
                                         dataset.filenums[thiswv],
-                                        dataset.IWA, OWA=dataset.OWA, mode=mode, annuli=annuli, subsections=subsections,
-                                        movement=movement, numbasis=numbasis, numthreads=numthreads, minrot=minrot,
-                                        maxnumbasis=maxnumbasis, annuli_spacing=annuli_spacing,
-                                        aligned_center=aligned_center, psf_library=master_library,
-                                        psf_library_corr=rdi_corr_matrix, psf_library_good=rdi_good_psfs,
-                                        save_aligned = save_aligned, restored_aligned=restored_aligned_thiswv,
-                                        dtype=dtype, compute_noise_cube=weighted)
+                                        dataset.IWA, **pyklip_args)
             
             klipped_imgs = klip_output[0]
             klipped_center = klip_output[1]
@@ -1548,7 +1553,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if calibrate_flux:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    dataset.savedata(outputdirpath + '/' + fileprefix + "-KLmodes-all.fits", KLmode_cube,
+    dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KLmodes-all.fits", KLmode_cube,
                      klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                      zaxis=numbasis)
 
@@ -1564,7 +1569,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # calibrate spectral cube if needed
             if calibrate_flux:
                 spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
-            dataset.savedata(outputdirpath + '/' + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
+            dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
                              spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
                              filetype="PSF Subtracted Spectral Cube")
 

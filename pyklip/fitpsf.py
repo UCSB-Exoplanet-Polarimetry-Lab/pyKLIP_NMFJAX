@@ -838,7 +838,11 @@ def simplecentroid(image, PSF, guessx,guessy):
     stamp = copy(image[np.max([0,(row_id-row_m)]):np.min([ny-1,(row_id+row_p)]), np.max([0,(col_id-col_m)]):np.min([nx-1,(col_id+col_p)])])
     if np.sum(np.isfinite(stamp)) <= 0.1*nx_PSF*ny_PSF:
         return None,None
-    stamp /= np.nanmax(stamp)
+    stamp_max = np.nanmax(stamp)
+    if stamp_max != 0:
+        stamp /= stamp_max
+    else:
+        return None,None
     _PSF= copy(PSF)
     _PSF /= np.nanmax(_PSF)
 

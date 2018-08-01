@@ -7,6 +7,8 @@ image: continuumio/anaconda3
 pipelines:
   default:
     - step:
+        caches:
+          - pip
         script: # Modify the commands below to build your repository.
           # - git clone https://semaphoreP@bitbucket.org/pyKLIP/pyklip.git pyklip
           - ls 
@@ -24,7 +26,7 @@ pipelines:
           
           # setup coveralls
           - pip install coveralls
-          - conda install -c https://conda.anaconda.org/astropy photutils
+          - conda install -y -c https://conda.anaconda.org/astropy photutils
 
 
           #Coverage and Coverall hooking

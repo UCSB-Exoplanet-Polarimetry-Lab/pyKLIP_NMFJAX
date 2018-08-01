@@ -42,6 +42,7 @@ class MatchedFilter(NoFM):
                  planet_radius = None,
                  background_width = None,
                  save_bbfm = None,
+                 save_fm = None,
                  save_fmout_path = None):
         '''
         Defining the forward model matched filter parameters
@@ -78,6 +79,7 @@ class MatchedFilter(NoFM):
                             2xFWHM)
             background_width: Half the width of the arc in which the local standard deviation will be calculated.
             save_bbfm: If true, saves the broadband forward models
+            savebfm: If true, saves all the forward models. This is only tractable for extremely small dataset.
             save_fmout_path: If not None, path to a directory where to save fmout at the end.
 
         '''
@@ -85,6 +87,11 @@ class MatchedFilter(NoFM):
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
 
         self.save_bbfm = save_bbfm
+        self.save_fm = save_fm
+        if (self.save_bbfm or self.save_fm) and (np.size(numbasis) != 1 or len(spectrallib) != 1):
+            raise ValueError("save_bbfm or save_fm only work when np.size(numbasis)==1 and len(self.spectrallib)==1 ")
+        if (self.save_bbfm and self.save_fm):
+            raise ValueError("save_bbfm or save_fm cannot be used at the same time ")
         self.save_fmout_path = save_fmout_path
 
         if rm_edge is not None:
@@ -239,16 +246,22 @@ class MatchedFilter(NoFM):
                             3: Number of pixels used in the matched filter
 
         """
-        if not self.save_bbfm:
-            fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
-            fmout = mp.Array(self.data_type, fmout_size)
-            fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
-        else:
+        if self.save_bbfm:
             fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
                          2*self.planet_radius*2*self.planet_radius*self.ny*self.nx
             fmout = mp.Array(self.data_type, fmout_size)
             fmout_shape = (4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
                          2*self.planet_radius*2*self.planet_radius*self.ny*self.nx,1)
+        elif self.save_fm:
+            fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
+                         self.N_frames*2*self.planet_radius*2*self.planet_radius*self.ny*self.nx
+            fmout = mp.Array(self.data_type, fmout_size)
+            fmout_shape = (4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx + \
+                         self.N_frames*2*self.planet_radius*2*self.planet_radius*self.ny*self.nx,1)
+        else:
+            fmout_size = 4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx
+            fmout = mp.Array(self.data_type, fmout_size)
+            fmout_shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
 
 
         return fmout, fmout_shape
@@ -342,6 +355,11 @@ class MatchedFilter(NoFM):
             fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
             fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
             fmout2.shape = (self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
+        elif self.save_fm:
+            fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
+            fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+            fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
+            fmout2.shape = (self.N_frames,self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
         else:
             fmout1 = fmout
 
@@ -581,6 +599,23 @@ class MatchedFilter(NoFM):
                     rot_stamp.shape = [2*self.planet_radius,2*self.planet_radius]
 
                     fmout2[row_id,col_id,:,:] = fmout2[row_id,col_id,:,:]+rot_stamp
+                elif self.save_fm:
+                    greenboard.shape = [input_img_shape[0] * input_img_shape[1]]
+                    greenboard[section_ind[0][where_fk]] = postklip_psf[N_KL_id,:]
+                    greenboard.shape = [input_img_shape[0],input_img_shape[1]]
+                    greenboard_pad = np.pad(greenboard,((self.bbfm_m,self.bbfm_p),(self.bbfm_m,self.bbfm_p)),mode="constant",constant_values=np.nan)
+                    mystamp = copy(greenboard_pad[(row_id):(row_id+self.bbfm_m+self.bbfm_p),
+                                                            (col_id):(col_id+self.bbfm_m+self.bbfm_p)])
+                    # print((row_id-self.bbfm_m),(row_id+self.bbfm_p),
+                    #                                         (col_id-self.bbfm_m),(col_id+self.bbfm_p))
+                    # import matplotlib.pyplot as plt
+                    # plt.subplot(1,2,1)
+                    # plt.imshow(greenboard, interpolation="nearest")
+                    # plt.subplot(1,2,2)
+                    # plt.imshow(mystamp, interpolation="nearest")
+                    # plt.show()
+
+                    fmout2[input_img_num,row_id,col_id,:,:] = mystamp
 
                 if 0:
                     print(dot_prod,model_norm,variance,npix)
@@ -659,7 +694,7 @@ class MatchedFilter(NoFM):
         """
         #fmout_shape = (3,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
         if self.save_raw_fmout:
-            if self.save_bbfm:
+            if self.save_bbfm or self.save_fm:
                 fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
                 fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
             else:
@@ -692,6 +727,11 @@ class MatchedFilter(NoFM):
             fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
             fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
             fmout2.shape = (self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
+        elif self.save_fm:
+            fmout1 = fmout[:4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx]
+            fmout1.shape = (4,self.N_spectra,self.N_numbasis,self.N_frames,self.ny,self.nx)
+            fmout2 = fmout[4*self.N_spectra*self.N_numbasis*self.N_frames*self.ny*self.nx::]
+            fmout2.shape = (self.N_frames,self.ny,self.nx,2*self.planet_radius,2*self.planet_radius)
         else:
             fmout1 = fmout
 
@@ -758,6 +798,11 @@ class MatchedFilter(NoFM):
 
             if self.save_bbfm:
                 suffix = "BBFM-KL{0}".format(self.numbasis[k])
+                dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
+                                 fmout2,
+                                 filetype=suffix)
+            elif self.save_fm:
+                suffix = "AllFM-KL{0}".format(self.numbasis[k])
                 dataset.savedata(outputdir+os.path.sep+fileprefix+'-'+suffix+'.fits',
                                  fmout2,
                                  filetype=suffix)

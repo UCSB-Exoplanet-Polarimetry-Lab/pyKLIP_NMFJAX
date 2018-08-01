@@ -137,7 +137,7 @@ We now will read in the output of the KLIP reducation with fake planets. Since w
     dat_with_fakes_centers = [kl_hdulist[1].header['PSFCENTX'], kl_hdulist[1].header['PSFCENTY'] ]
 
 
-We will measure the flux of each fake in the reduced image using :py:meth:`pyklip.fakes.retrieve_planet_flux`. Our strategy here is to assume the throughput is constant azimuthally, and for each 4 planets at a separation, average their fluxes together to reduce noise. Note that we need to again specify a WCS header to tell the code where to look for the planet in the image. You can grab that from the header of the reduced image, or we will be lazy here are use the ``dataset.wcs`` field from our fake dataset, which automatically gets rotated after KLIP.
+We will measure the flux of each fake in the reduced image using :py:meth:`pyklip.fakes.retrieve_planet_flux`. Our strategy here is to assume the throughput is constant azimuthally, and for each 4 planets at a separation, average their fluxes together to reduce noise. Note that we need to again specify a WCS header (the one corresponding to the output images) to tell the code where to look for the planet in the image. You can grab that from the header of the reduced image, or we will be lazy here are use the ``dataset.output_wcs`` field from our fake dataset, which automatically gets rotated after KLIP.
 
 .. code-block:: python
 
@@ -146,7 +146,7 @@ We will measure the flux of each fake in the reduced image using :py:meth:`pykli
     for input_planet_flux, sep in zip(input_planet_fluxes, seps):
         fake_planet_fluxes = []
         for pa in [0, 90, 270, 360]:
-            fake_flux = fakes.retrieve_planet_flux(dat_with_fakes, dat_with_fakes_centers, dataset.wcs[0], sep, pa, searchrad=7)
+            fake_flux = fakes.retrieve_planet_flux(dat_with_fakes, dat_with_fakes_centers, dataset.output_wcs[0], sep, pa, searchrad=7)
             fake_planet_fluxes.append(fake_flux)
         retrieved_fluxes.append(np.mean(fake_planet_fluxes))
 
