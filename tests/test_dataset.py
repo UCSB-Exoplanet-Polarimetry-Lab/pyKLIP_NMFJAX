@@ -30,6 +30,8 @@ def test_generic_dataset():
     filenames = np.repeat([filename], 37)
 
     dataset = Instrument.GenericData(inputdata, fakecenters, parangs=fakepas, wvs=fakewvs, filenames=filenames)
+    dataset.output_centers = dataset.centers
+    dataset.outputwcs = dataset.wcs
 
     dataset.savedata(os.path.join(testdir, "generic_dataset.fits"), dataset.input)
     # it didn't crash? Good enough

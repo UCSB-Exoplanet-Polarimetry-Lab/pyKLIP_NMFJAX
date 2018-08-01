@@ -68,16 +68,18 @@ class ExtractSpec(NoFM):
         self.pa = pa
 
 
+        # 2018-04-10 AG: Generalizing so everything is in units of input PSF
+        # Specifically removing the normlization of the input PSF
         self.input_psfs = input_psfs
         self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.data_type))
         self.nl = np.size(input_psfs_wvs)
-        #self.flux_conversion = flux_conversion
+
         # Make sure the peak value is unity for all wavelengths
-        self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
-        self.aper_over_peak_ratio = np.zeros(np.size(self.input_psfs_wvs))
-        for l_id in range(self.input_psfs.shape[0]):
-            self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
-            self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
+        #self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
+        #self.aper_over_peak_ratio = np.zeros(np.size(self.input_psfs_wvs))
+        #for l_id in range(self.input_psfs.shape[0]):
+        #    self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
+        #    self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
 
         self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
@@ -85,7 +87,7 @@ class ExtractSpec(NoFM):
         self.psf_centy_notscaled = {}
 
         numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf/2,np.arange(ny_psf* 1.)-ny_psf/2)
+        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
         psfs_func_list = []
         for wv_index in range(numwv):
             model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
@@ -132,7 +134,8 @@ class ExtractSpec(NoFM):
         # The 3rd dimension (self.N_frames corresponds to the spectrum)
         # The +1 in (self.N_frames+1) is for the klipped image
         fmout_size = self.N_numbasis*self.N_frames*(self.N_frames+1)*self.stamp_size*self.stamp_size
-        fmout = mp.Array(self.data_type, fmout_size)
+        # 2018-04-10 AG: force fmout to be type int
+        fmout = mp.Array(self.data_type, int(fmout_size))
         # fmout shape is defined as:
         #   (self.N_numbasis,self.N_frames,(self.N_frames+1),self.stamp_size*self.stamp_size)
         # 1st dim: The size of the numbasis input. numasis gives the list of the number of KL modes we want to try out
@@ -170,7 +173,7 @@ class ExtractSpec(NoFM):
     #     return perturbmag, perturbmag_shape
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size = None):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, stamp_size = None):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -186,6 +189,7 @@ class ExtractSpec(NoFM):
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
             stamp_size: size of the stamp for spectral extraction
+            flipx: if True, flip x coordinate in final image
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -229,8 +233,12 @@ class ExtractSpec(NoFM):
             # find center of psf
             # to reduce calculation of sin and cos, see if it has already been calculated before
             if pa not in self.psf_centx_notscaled:
-                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - self.pa - pa))
-                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - self.pa - pa))
+                # flipx requires the opposite rotation
+                sign = -1.
+                if flipx:
+                    sign = 1.
+                self.psf_centx_notscaled[pa] = self.sep * np.cos(np.radians(90. - sign*self.pa - pa))
+                self.psf_centy_notscaled[pa] = self.sep * np.sin(np.radians(90. - sign*self.pa - pa))
             psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
             psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
@@ -256,7 +264,6 @@ class ExtractSpec(NoFM):
             whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
             models.append(segment_with_model)
-
             if stamp_size is not None:
                 # These are actually indices of indices. they indicate which indices correspond to the stamp in section_ind
                 stamp_mask[int(k-row_m_stamp):int(k+row_p_stamp), int(l-col_m_stamp):int(l+col_p_stamp)] = 1
@@ -275,7 +282,7 @@ class ExtractSpec(NoFM):
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, flipx=True, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -314,12 +321,12 @@ class ExtractSpec(NoFM):
 
 
         # generate models for the PSF of the science image
-        model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,stamp_size=self.stamp_size)
+        model_sci, stamp_indices = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, stamp_size=self.stamp_size)
         model_sci = model_sci[0]
         stamp_indices = stamp_indices[0]
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)
 
         # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
         #delta_KL = fm.perturb_specIncluded(evals, evecs, klmodes, refs, models_ref)
@@ -378,78 +385,8 @@ class ExtractSpec(NoFM):
 
         return fmout
 
-def gen_fm(dataset, pars, numbasis = 20, mv = 2.0, stamp=10, numthreads=4,
-           maxnumbasis = 100, spectra_template=None, manual_psfs=None, aligned_center=None):
-    """
-    inputs: 
-    - pars              - tuple of planet position (sep (pixels), pa (deg)).
-    - numbasis          - can be a list or a single number
-    - mv                - klip movement (pixels)
-    - stamp             - size of box around companion for FM
-    - numthreads        (default=4)
-    - spectra_template  - Can provide a template, default is None
-    - manual_psfs       - If dataset does not have attribute "psfs" will look for
-                        manual input of psf model.
-    - aligned_center    - pass to klip_dataset
-    """
-
-    maxnumbasis = maxnumbasis
-    movement = mv
-    stamp_size=stamp
-    N_frames = len(dataset.input)
-    N_cubes = len(dataset.exthdrs)
-    nl = N_frames // N_cubes
-
-    print("====================================")
-    print("planet separation, pa: {0}".format(pars))
-    print("numbasis: {0}".format(numbasis))
-    print("movement: {0}".format(mv))
-    print("====================================")
-    print("Generating forward model...")
-
-    planet_sep, planet_pa = pars
-
-    # If 'dataset' does not already have psf model, check if manual_psfs not None.
-    if hasattr(dataset, "psfs"):
-        print("Using dataset PSF model.")
-        # What is this normalization? Not sure it matters (see line 82).
-        radial_psfs = dataset.psfs / \
-            (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0]//nl, nl]),\
-             axis=0)[:, None, None])
-    elif manual_psfs is not None:
-        radial_psfs = manual_psfs
-    else:
-        raise AttributeError("dataset has no psfs attribute. \n"+\
-              "Either run dataset.generate_psfs before gen_fm or"+\
-              "provide psf models in keyword manual_psfs. \n"+\
-              "examples/FM_spectral_extraction_tutorial.py for example.")
-
-    # The forward model class
-    fm_class = ExtractSpec(dataset.input.shape,
-                           numbasis,
-                           planet_sep,
-                           planet_pa,
-                           radial_psfs,
-                           np.unique(dataset.wvs),
-                           stamp_size = stamp_size)
-
-    # Now run KLIP!
-    fm.klip_dataset(dataset, fm_class,
-                    fileprefix="fmspect",
-                    annuli=[[planet_sep-stamp,planet_sep+stamp]],
-                    subsections=[[(planet_pa-stamp)/180.*np.pi,\
-                                  (planet_pa+stamp)/180.*np.pi]],
-                    movement=movement,
-                    numbasis = numbasis, 
-                    maxnumbasis=maxnumbasis,
-                    numthreads=numthreads,
-                    spectrum=spectra_template,
-                    save_klipped=False, highpass=True,
-                    aligned_center=aligned_center)
-
-    return dataset.fmout
-
-def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
+def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
+                        scaling_factor=1.0):
     """
     A. Greenbaum Nov 2016
     
@@ -458,21 +395,20 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
                [numbasis, n_frames, n_frames+1, npix]
         dataset: from GPI.GPIData(filelist) -- typically set highpass=True also
         method: "JB" or "LP" to try the 2 different inversion methods (JB's or Laurent's)
-        units: "DN" means raw data number units (not converted to contrast)
-               "CONTRAST" is normalized to contrast units. You can only use this if
-                          spot fluxes are saved in dataset.spot_flux
-               default is 'DN' require user to do their own calibration for contrast.
+        units: "natural" means the answer is scaled to the input PSF (default)
+               fmout will be in these units.
+               "scaled" means the output is scaled to "scaling_factor" argument
+        scaling_factor: multiplies output spectrum and forward model, user set for 
+                        desired calibration factor. units="scaled" must be set in 
+                        args for this to work!
     Returns:
         A tuple containing the spectrum and the forward model
         (spectrum, forwardmodel)
-        The spectrum:
-            default units=DN unless kwarg unit="CONTRAST"
-            spectrum shape:(len(numbasis), nwav)
-        The forward model:
+        spectrum shape:(len(numbasis), nwav)
         
     """
     N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
-    N_cubes = len(dataset.exthdrs) # 
+    N_cubes = np.size(np.unique(dataset.filenums)) # 
     nl = N_frames // N_cubes
     stamp_size_squared = fmout.shape[-1]
     stamp_size = np.sqrt(stamp_size_squared)
@@ -558,31 +494,8 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "DN"):
         else:
             print("method not understood. Choose either JB, LP or leastsq.")
 
-    # We can do a contrast conversion here if kwarg units = "CONTRAST"
-    # But the default is in raw data units, and it's probably best to stick to that.
-    if units == 'CONTRAST':
-        # From JB's code, normalize by sum / peak ratio:
-        # First set up the PSF model and sums
-        sat_spot_sum = np.sum(dataset.psfs, axis=(1,2))
-        PSF_cube = dataset.psfs / sat_spot_sum[:,None,None]
-        sat_spot_spec = np.nanmax(PSF_cube, axis=(1,2))
-        # Now devide the sum by the peak for each wavelength slice
-        aper_over_peak_ratio = np.zeros(nl)
-        for l_id in range(PSF_cube.shape[0]):
-            aper_over_peak_ratio[l_id] = \
-                np.nansum(PSF_cube[l_id,:,:]) / sat_spot_spec[l_id]
-
-        # Alex's normalization terms:
-        # Avg spot ratio
-        band = dataset.prihdrs[0]['APODIZER'].split('_')[1]
-        # CANNOT USE dataset.band !!! (always returns K1 for some reason)
-        spot_flux_spectrum = \
-            np.median(dataset.spot_flux.reshape(len(dataset.spot_flux)//nl, nl), axis=0)
-        spot_to_star_ratio = dataset.spot_ratio[band]
-        normfactor = aper_over_peak_ratio*spot_flux_spectrum / spot_to_star_ratio
-        spec_unit = "CONTRAST"
-
-        return estim_spec / normfactor, fm_coadd_mat
+    if units=="scaled":
+        return scaling_factor*estim_spec, fm_coadd_mat / scaling_factor
     else:
-        spec_unit = "DN"
         return estim_spec, fm_coadd_mat
+

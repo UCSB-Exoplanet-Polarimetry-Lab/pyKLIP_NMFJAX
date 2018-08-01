@@ -37,7 +37,7 @@ def get_occ(image, centroid = None):
     inner_mask[np.where(r > IWA+1.)] = 1
 
     outer_mask = copy(mask)
-    outer_mask[np.where(r > OWA-1.)] = 1
+    outer_mask[np.where(r < IWA+1.)] = 1
 
     return IWA,OWA,inner_mask,outer_mask
 

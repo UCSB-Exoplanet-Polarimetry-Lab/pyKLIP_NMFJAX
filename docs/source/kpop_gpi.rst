@@ -3,91 +3,61 @@
 
 Klip POst Processing (KPOP)
 =====================================================
+
+
+.. note::
+    The object architecture of KPOP has been removed. It won't be available in future commits.
+    The original idea was to abstract as many things as possible to make the user's life easier but it became counter
+    productive when we started reducing data from different instruments as the formats and headers vary too much.
+    However most features are still available as stand alone functions but may require more setup.
+
+
 Klip POst Processing (KPOP) is a module with tools to calculate:
 
     * matched filter maps,
     * SNR maps,
-    * detection,
-    * ROC curves,
-    * contrast curves.
-
-We will go over these application in this tutorial.
-KPOP modules can be used as standalone functions but it its normalized class architecture allows an easy processing of surveys by simplifying some user tasks.
-
-.. note::
-    The ipython notebook ``pyklip.examples.kpop_tutorial.ipynb`` go through most of the applications with a GPI example
-    based on the beta Pictoris test files in tests/data.
+    * detections
 
 .. note::
     KPOP is the framework developped in the context of `Ruffio et al. (2016) <https://arxiv.org/pdf/1705.05477.pdf>`_.
 
 PyKLIP can be installed following :ref:`install-label`.
-It has only been tested with python 2.7 even though it should work for python 3.
-
-KPOP modules
+KPOP functions
 -----------------
-In this section we show a tutorial for the KPOP modules used as standalone functions. For this example, we use the GPI
-data living in the test directory of pyklip.
 
-FMMF
+Please find an example ipython notebook (pyklip/examples/kpop_tutorial.ipynb) using beta Pictoris test data available in the test directory of pyklip.
+
+Preliminary
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-In signal processing, a matched filter is the linear filter maximizing the Signal to Noise Ratio (SNR) of a known signal in the presence of additive noise.
-
-Matched filters are used in Direct imaging to detect point sources using the expected shape of the planet Point Spread Function (PSF) as a template.
-
-The distortion makes the definition of the template somewhat challenging,the planet PSF doesn't look like the instrumental PSF, but reasonable results can be obtained by using approximations.
-
-Forward Model `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_
+If you want a quick example to test the following pieces of code, run the following.
+It will reduce the Beta Pictoris pyklip test data using KLIP.
 
 .. code-block:: python
 
+    try:
+        import mkl
+        mkl.set_num_threads(1)
+    except:
+        print("Your code might run slowly.")
+        print("/!\ Please Read http://pyklip.readthedocs.io/en/latest/install.html#note-on-parallelized-performance")
+
+    import os
+    import glob
     import numpy as np
+    import pyklip.instruments.GPI as GPI
     import pyklip.parallelized as parallelized
+
     pykliproot = os.path.dirname(os.path.realpath(parallelized.__file__))
     inputDir = os.path.join(pykliproot,"..","tests","data")
-    outputDir = os.path.join(inputDir,"fmmf_test")
-    if not os.path.exists(outputDir):
-        os.makedirs(outputDir)
+    outputDir = inputDir
 
+    # Read the datacubes using the GPIData object
+    filelist = glob.glob(os.path.join(inputDir,"*spdc_distorcorr.fits"))
+    dataset = GPI.GPIData(filelist,highpass=True,meas_satspot_flux=False,numthreads=None)
 
-    ####################
-    ## Define the instrument object
-    from pyklip.instruments import GPI
-    import glob
-    dataset = GPI.GPIData(glob.glob(os.path.join(inputDir,"S*distorcorr.fits")), highpass=True)
-
-    ####################
-    ## Generate PSF cube for GPI from the satellite spots
-    dataset.generate_psf_cube(20,same_wv_only=True)
-
-    ####################
-    ## Define the fmlib object
-    # flat spectrum here, make sure to define your own and correct it for transmission
-    spectrum_vec = np.ones((dataset.input.shape[0],))
-    # Number KL modes used for KLIP
-    numbasis = [5]
-    # Number of images in the reference library
-    maxnumbasis = 10
-    # Definition of the planet PSF
-    PSF_cube_arr = dataset.psfs
-    PSF_cube_wvs = np.unique(dataset.wvs)
-
-    # Build the FM class to do matched filter
-    import pyklip.fmlib.matchedFilter as mf
-    fm_class = mf.MatchedFilter(dataset.input.shape,numbasis,
-                                     PSF_cube_arr, PSF_cube_wvs,
-                                     [spectrum_vec])
-    # run KLIP-FM
-    movement = 2.0
-    from pyklip.kpp.metrics.FMMF import FMMF
-    FMMFObj = FMMF(predefined_sectors = "0.6 as",
-                   numbasis=numbasis,
-                   maxnumbasis = maxnumbasis,
-                   mvt=movement)
-    FMMF_map,FMCC_map,contrast_map,final_cube_modes = FMMFObj.calculate(dataset=dataset,spectrum=spectrum_vec,fm_class=fm_class)
-
-    # Still possible but optional to save the data with FMMFObj
-    FMMFObj.save(outputDir=outputDir,folderName="",prefix="bet_Pic_test")
+    parallelized.klip_dataset(dataset, outputdir=outputDir, fileprefix="bet_Pic_test",
+                              annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
+                              calibrate_flux=True, mode="ADI+SDI")
 
 Cross-correlation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -96,24 +66,39 @@ Cross-correlation
     ########################
     ## cross correlation of speccube
 
+    from pyklip.kpp.metrics.crossCorr import calculate_cc
     import astropy.io.fits as pyfits
-    hdulist = pyfits.open(os.path.join(outputDir,"bet_Pic_test-speccube-KL5.fits"))
+
+    # Definition of the cross correlation object
+    filename = os.path.join(outputDir,"bet_Pic_test-KLmodes-all.fits")
+    hdulist = pyfits.open(filename)
     cube = hdulist[1].data
+    prihdr = hdulist[0].header
+    exthdr = hdulist[1].header
     hdulist.close()
 
-    PSF = np.ones((4,4))
-    spectrum = np.ones(cube.shape[0])
+    # Definition of the planet spectrum (not corrected )
+    import pyklip.instruments.GPI as GPI
+    import pyklip.spectra_management as spec
+    from glob import glob
+    pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
+    reduc_spectrum = "t600g100nc" # sharp methane feature
+    spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",reduc_spectrum+".flx"))[0])
+    # Interpolate the spectrum of the planet based on the given filename
+    wv,planet_sp = spec.get_planet_spectrum(spectrum_filename,GPI.get_gpi_wavelength_sampling("J"))
 
-    from pyklip.kpp.metrics.crossCorr import CrossCorr
-    cc_obj = CrossCorr(collapse=True)
-    cc_image = cc_obj.calculate(image=cube, PSF=PSF,spectrum = spectrum)
+    %matplotlib inline
+    import matplotlib.pyplot as plt
+    plt.figure(1)
+    plt.plot(wv,planet_sp)
 
-    hdulist = pyfits.HDUList()
-    hdulist.append(pyfits.ImageHDU(data=cc_image))
-    hdulist.writeto(os.path.join(outputDir,"bet_Pic_test-speccube-KL5-crossCorr.fits"), overwrite=True)
-    hdulist.close()
-    # also possible to use the save() method
-    # cc_obj.save(dataset=dataset,outputDir=outputDir,folderName="",prefix="bet_Pic_test-speccube-KL5")
+    # Definition of the PSF
+    from pyklip.kpp.utils.mathfunc import *
+    x_grid,y_grid= np.meshgrid(np.arange(-10,10),np.arange(-10,10))
+    PSF = gauss2d(x_grid,y_grid, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0)
+
+
+    image_cc = calculate_cc(cube, PSF,spectrum = planet_sp, nans2zero=True)
 
 Matched filter
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -122,28 +107,43 @@ Matched filter
     ########################
     # matched filter of speccube
 
+    from pyklip.kpp.metrics.matchedfilter import run_matchedfilter
+    from pyklip.kpp.metrics.crossCorr import calculate_cc
+    from pyklip.kpp.stat.statPerPix_utils import get_image_stat_map_perPixMasking
     import astropy.io.fits as pyfits
-    hdulist = pyfits.open(os.path.join(outputDir,"bet_Pic_test-speccube-KL5.fits"))
+
+    # Definition of the cross correlation object
+    filename = os.path.join(outputDir,"bet_Pic_test-KL20-speccube.fits")
+    hdulist = pyfits.open(filename)
     cube = hdulist[1].data
+    prihdr = hdulist[0].header
+    exthdr = hdulist[1].header
+    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
+    nl,ny,nx = cube.shape
     hdulist.close()
 
-    radius = 4
-    size = 20
-    x, y = np.meshgrid(np.arange(0,size,1)-size//2,np.arange(0,size,1)-size//2)
-    r = x**2+y**2
-    PSF = np.tile(np.array(r <= radius*radius,dtype=np.int),(cube.shape[0],1,1))
-    spectrum = np.ones(cube.shape[0])
+    # Definition of the planet spectrum (not corrected )
+    import pyklip.instruments.GPI as GPI
+    import pyklip.spectra_management as spec
+    from glob import glob
+    pykliproot = os.path.dirname(os.path.realpath(spec.__file__))
+    reduc_spectrum = "t1300g100f2" # L-type
+    spectrum_filename = os.path.abspath(glob(os.path.join(pykliproot,"spectra","*",reduc_spectrum+".flx"))[0])
+    # Interpolate the spectrum of the planet based on the given filename
+    wv,planet_sp = spec.get_planet_spectrum(spectrum_filename,GPI.get_gpi_wavelength_sampling("J"))
 
-    from pyklip.kpp.metrics.matchedfilter import Matchedfilter
-    mf_obj = Matchedfilter(sky_aper_radius=2)
-    mf_map,cc_map,flux_map = mf_obj.calculate(image=cube, PSF=PSF,spectrum = spectrum)
+    %matplotlib inline
+    import matplotlib.pyplot as plt
+    plt.figure(1)
+    plt.plot(wv,planet_sp)
 
-    hdulist = pyfits.HDUList()
-    hdulist.append(pyfits.ImageHDU(data=mf_map))
-    hdulist.writeto(os.path.join(outputDir,"bet_Pic_test-speccube-KL5-MF.fits"), overwrite=True)
-    hdulist.close()
-    # also possible to use the save() method
-    # mf_obj.save(dataset=dataset,outputDir=outputDir,folderName="",prefix="bet_Pic_test-speccube-KL5")
+    # Definition of the PSF
+    from pyklip.kpp.utils.mathfunc import *
+    x_grid,y_grid= np.meshgrid(np.arange(-10,10),np.arange(-10,10))
+    PSF = gauss2d(x_grid,y_grid, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0)
+    PSF = np.tile(PSF,(nl,1,1))*planet_sp[:,None,None]
+
+    mf_map,cc_map,flux_map = run_matchedfilter(cube, PSF,N_threads=None,maskedge=True)
 
 SNR
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -152,24 +152,38 @@ SNR
     ########################
     # SNRs
 
+    from pyklip.kpp.stat.statPerPix_utils import get_image_stat_map_perPixMasking
+    from pyklip.kpp.stat.stat_utils import get_image_stat_map
+    from pyklip.kpp.metrics.crossCorr import calculate_cc
     import astropy.io.fits as pyfits
-    hdulist = pyfits.open(os.path.join(outputDir,"bet_Pic_test-FMMF-KL5.fits"))
-    image = hdulist[1].data
-    center = [138.4694028209982,140.3317480866463]
+
+    # Definition of the cross correlation object
+    filename = os.path.join(outputDir,"bet_Pic_test-KLmodes-all.fits")
+    hdulist = pyfits.open(filename)
+    cube = hdulist[1].data
+    prihdr = hdulist[0].header
+    exthdr = hdulist[1].header
+    center = [exthdr['PSFCENTX'], exthdr['PSFCENTY']]
     hdulist.close()
 
-    from pyklip.kpp.stat.stat import Stat
+    # Definition of the PSF
+    from pyklip.kpp.utils.mathfunc import *
+    x_grid,y_grid= np.meshgrid(np.arange(-10,10),np.arange(-10,10))
+    PSF = gauss2d(x_grid,y_grid, amplitude = 1.0, xo = 0.0, yo = 0.0, sigma_x = 1.0, sigma_y = 1.0)
+    # Run cross correlation first
+    image_cc = calculate_cc(cube[2,:,:], PSF,spectrum = None, nans2zero=True)
 
-    # Definition of the SNR object
-    snr_obj = Stat(type="pixel based SNR")
-    snr_image = snr_obj.calculate(image=image,center=center)
+    SNR_map1 = get_image_stat_map(image_cc,
+                               centroid = center,
+                               r_step=2,
+                               Dr = 2,
+                               type = "SNR")
 
-    hdulist = pyfits.HDUList()
-    hdulist.append(pyfits.ImageHDU(data=snr_image))
-    hdulist.writeto(os.path.join(outputDir,"bet_Pic_test-FMMF-KL5-SNR.fits"), overwrite=True)
-    hdulist.close()
-    # also possible to use the save() method
-    # snr_obj.save(dataset=dataset,outputDir=outputDir,folderName="",prefix="bet_Pic_test-speccube-KL5")
+    SNR_map2 = get_image_stat_map_perPixMasking(image_cc,
+                                               centroid = center,
+                                               mask_radius=5,
+                                               Dr = 2,
+                                               type = "SNR")
 
 Point-source detection
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -177,72 +191,26 @@ Point-source detection
 
     ########################
     # Detection
-    from pyklip.kpp.detection.detection import Detection
-
-    import astropy.io.fits as pyfits
-    hdulist = pyfits.open(os.path.join(outputDir,"bet_Pic_test-FMMF-KL5-SNR.fits"))
-    image = hdulist[0].data
-    center = [138.4694028209982,140.3317480866463]
-    hdulist.close()
-
-    detec_obj = Detection(threshold = 3,pix2as = GPI.GPIData.lenslet_scale)
-    # get tables of candidates with columns: "index","value","PA","Sep (pix)","Sep (as)","x","y","row","col"
-    candidate_table = detec_obj.calculate(image=image,center=center)
-
-    # Possible to use the save() method to save as csv file
-    detec_obj.save(outputDir=outputDir,folderName="",prefix="bet_Pic_test-FMMF-KL5-SNR")
-
-
-KPOP framework
------------------
-
-Requirements
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Some advanced KPOP features put more constraints on the instrument classes than the regular KLIP reduction, which might
-not be always implemented for all instruments. For now, both GPI and SPHERE classes have been tested, but remember that
-it is always possible to use the KPOP functions by manually defining the inputs.
-These constraints are:
-
-    - The instrument class should be able to read processed data saved using its savedata() method.
-        - This can involve saving the dn2contrast array in the fits file headers.
-    - The calibrate_output() should be properly implemented.
-    - A object_name attribute should be defined with the name of the star following Simbad syntax.
-
-Architecture
---------------------------
-Each KPOP module is a class ihnerited from :py:class:`pyklip.kpp.utils.kppSuperClass`.
-All KPOP inherit from the same object, which normalizes the function calls.
-
-The parameter of the task are defined when instantiating the object.
-The :meth:`pyklip.kpp.utils.kppSuperClass.initialize` method will then read the files and update the object's attributes.
-Then, :meth:`pyklip.kpp.utils.kppSuperClass.calculate()` will process the file(s) and return the final product.
-To finish, :meth:`pyklip.kpp.utils.kppSuperClass.save()` will save the final product following the class convention.
-After initialize has been ran, it possible to check if the file has already been reduced by calling :meth:`pyklip.kpp.utils.kppSuperClass.check_existence()`.
-The method :meth:`pyklip.kpp.utils.kppSuperClass.init_new_spectrum()` allows to change the reduction spectrum if needed.
-
-In order to simplify the reduction of survey data, the filenames are defined with wild characters.
-During the initialization, the object will read the file matching the filename pattern.
-When several files match the filename pattern, it is possible to simply call initialize() in sequence and the object will automatically read the matching files one by one.
-
-The function :meth:`pyklip.kpp.kpop_wrapper.kpop_wrapper()` will take a list of objects (ie tasks) and a list of spectra as an input and run all the
-task as many time as necessary to reduce all the matching files with all the spectra.
-
-Using KPOP framework
---------------------------
-We refer the user to the ipython notebook in the pyklip/examples called kpop_tutorial.py.
-
-ROC Curves
---------------------------
-ROC curves can be built following the GPI script ``pyklip.examples.roc_script.py`` and adapting to it any instrument or data reduction.
-This might include changing the PSF cube calculation, or the platescale and other details.
-This script calculate the ROC curve for a single dataset but using different matched filters.
-By running this script on several datasets and by combining the final product one can build a ROC curve for an entire survey.
-One should consider modify the script for a different instrument.
-
-
-Contrast Curves and Completeness
---------------------------
-Contrast curves can be built following the GPI script ``pyklip.examples.contrast_script.py`` and adapting to it any instrument or data reduction.
-
+    import csv
+    from pyklip.kpp.detection.detection import point_source_detection
+    # list of the local maxima with their info
+    #         Description by column: ["index","value","PA","Sep (pix)","Sep (as)","x","y","row","col"]
+    #         1/ index of the candidate
+    #         2/ Value of the maximum
+    #         3/ Position angle in degree from North in [0,360]
+    #         4/ Separation in pixel
+    #         5/ Separation in arcsec
+    #         6/ x position in pixel
+    #         7/ y position in pixel
+    #         8/ row index
+    #         9/ column index
+    detec_threshold = 3
+    pix2as = 0.014166
+    candidates_table = point_source_detection(SNR_map, center,detec_threshold,pix2as=pix2as,
+                                             mask_radius = 15,maskout_edge=10,IWA=None, OWA=None)
+    savedetections = os.path.join(outputDir,"detections.csv")
+    with open(savedetections, 'w+') as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=';')
+        csvwriter.writerows([["index","value","PA","Sep (pix)","Sep (as)","x","y","row","col"]])
+        csvwriter.writerows(candidates_table)
 

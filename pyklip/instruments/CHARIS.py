@@ -213,7 +213,8 @@ class CHARISData(Data):
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
-            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM'])
+            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM']) # nm
+            thiswvs /= 1e3 # now in microns
 
 
             #remove undesirable slices of the datacube if necessary
@@ -291,9 +292,14 @@ class CHARISData(Data):
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
-                 extra_exthdr_keywords = None, extra_prihdr_keywords = None,pyklip_output = True):
+                 extra_exthdr_keywords = None, extra_prihdr_keywords = None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
+
+        Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
+            you need to define the following attributes:
+                dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
+                dataset.output_centers = dataset.centers
 
         Args:
             filepath: path to file to output
@@ -311,8 +317,6 @@ class CHARISData(Data):
             user_exthdr: User defined extension headers to be used instead
             extra_exthdr_keywords: Fits keywords to be added to the extension header before saving the file
             extra_prihdr_keywords: Fits keywords to be added to the primary header before saving the file
-            pyklip_output: (default True) If True, indicates that the attributes self.output_wcs and self.output_centers
-                            have been defined.
 
         """
         hdulist = fits.HDUList()
@@ -408,10 +412,7 @@ class CHARISData(Data):
         if user_exthdr is None:
             #use the dataset astr hdr if none was passed in
             if astr_hdr is None:
-                if not pyklip_output:
-                    astr_hdr = self.wcs[0].deepcopy()
-                else:
-                    astr_hdr = self.output_wcs[0]
+                astr_hdr = self.output_wcs[0]
             if astr_hdr is not None:
                 #update astro header
                 #I don't have a better way doing this so we'll just inject all the values by hand
@@ -438,10 +439,7 @@ class CHARISData(Data):
 
             #use the dataset center if none was passed in
             if center is None:
-                if not pyklip_output:
-                    center = self.centers[0]
-                else:
-                    center = self.output_centers[0]
+                center = self.output_centers[0]
             if center is not None:
                 hdulist[1].header.update({'PSFCENTX':center[0],'PSFCENTY':center[1]})
                 hdulist[1].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})

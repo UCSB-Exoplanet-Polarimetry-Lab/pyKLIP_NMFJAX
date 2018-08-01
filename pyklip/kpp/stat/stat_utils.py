@@ -2,47 +2,44 @@ __author__ = 'JB'
 
 
 import warnings
-from copy import copy
-
-import numpy as np
 from scipy.optimize import leastsq
 from scipy.interpolate import interp1d
 from astropy.modeling import models, fitting
 from pyklip.kpp.utils.mathfunc import *
-from pyklip.kpp.utils.multiproc import *
 from pyklip.kpp.utils.GPIimage import *
 
 
 def get_image_stat_map(image,
                         image_without_planet=None,
                         IOWA = None,
-                        N = 3000,
+                        N = None,
                         centroid = None,
-                        r_step = 5,
-                        mute = True,
-                        Dr = None,
+                        r_step = 2,
+                        Dr = 2,
                         type = "SNR",
                         image_wide = None):
     """
-    Calculate the SNR, the standard deviation or the probability (tail distribution) of a given image using annuli.
+    Calculate the SNR, the standard deviation or the probability (tail distribution) of a given image using concentric
+    annuli.
 
     Args:
-        image: The image or cubes for which one wants the statistic.
-        image_without_planet: Same as image but where real signal has been masked out. The code will actually use
-                                    map to calculate the standard deviation or the PDF.
+        image: The image for which one wants the statistic.
+        image_without_planet: Same as image but where any real signal has been masked out. The code will use
+                            "image_without_planet" to calculate the standard deviation or the PDF.
+                            This can be a negatively derotated image in the context of ADI.
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
-        N: Defines the width of the ring by the number of pixels it has to include.
-                The width of the annuli will therefore vary with sepration. Default is N=3000.
+        N: Defines the width of the ring by fixing the number of pixels of the annulus.
+                The width of the annuli will therefore vary with sepration.
         centroid: (x_cen,y_cen) Define the center of the image.
                 Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
-        r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
-        mute: Won't print any logs.
-        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        r_step: (default=2pix) Distance between two consecutive annuli mean separation (in pixel).
+        Dr: (default=2pix) Width of the annulus (in pixel).
         type: Indicate the type of statistic to be calculated.
                     If "SNR" (default) simple stddev calculation and returns SNR.
                     If "stddev" returns the pure standard deviation map.
+                    If "mean" returns a map from the radial mean.
                     If "proba" triggers proba calculation with pdf fitting.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
                     Use the entire image directly.
@@ -127,16 +124,20 @@ def get_image_stat_map(image,
 
         return -np.log10(stat_map)
     else:
-        stddev_list, annulus_radii_list = get_image_stddev(image_without_planet,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr,
+        if type =="SNR":
+            tmp_type = "stddev"
+        else:
+            tmp_type = type
+        stat_list, annulus_radii_list = get_image_stat(image_without_planet,tmp_type,(IWA,OWA),N,centroid,r_step=r_step,Dr=Dr,
                                                            image_wide=image_wide)
 
         radii = np.array(annulus_radii_list)[:,0]
         #print(radii,stddev_list)
 
         if not image_wide:
-            stddev_func = interp1d(radii,stddev_list,kind = "linear",bounds_error = False, fill_value=np.nan)
+            stat_func = interp1d(radii,stat_list,kind = "linear",bounds_error = False, fill_value=np.nan)
         else:
-            stddev_func = lambda x: stddev_list[0]
+            stat_func = lambda x: stat_list[0]
 
         #plt.figure()
         #plt.plot(np.linspace(0,140,200),stddev_func(np.linspace(0,140,200)))
@@ -152,7 +153,7 @@ def get_image_stat_map(image,
         r_grid = abs(x_grid +y_grid*1j)
 
         nanpix = np.where(np.isnan(image))
-        stat_map = stddev_func(r_grid.ravel())
+        stat_map = stat_func(r_grid.ravel())
         stat_map.shape = r_grid.shape
         stat_map[nanpix] = np.nan
 
@@ -181,7 +182,7 @@ def get_image_PDF(image,IOWA=None,N = 2000,centroid = None, r_step = None,Dr=Non
     Calculate the PDF of a given image using annuli.
 
     Args:
-        image: The image or cubes for which one wants the statistic.
+        image: The image for which one wants the statistic.
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
@@ -189,8 +190,8 @@ def get_image_PDF(image,IOWA=None,N = 2000,centroid = None, r_step = None,Dr=Non
                 The width of the annuli will therefore vary with sepration. Default is N=3000.
         centroid: (x_cen,y_cen) Define the center of the image.
                 Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
-        r_step: Distance between two consecutive annuli mean separation. Not available if "pixel based" is defined,
-        Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
+        r_step: Distance between two consecutive annuli mean separation (in pixel).
+        Dr: Width of the annulus (in pixel).
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
                     Use the entire image directly. Not available if "pixel based: is defined,
 
@@ -262,8 +263,8 @@ def get_image_PDF(image,IOWA=None,N = 2000,centroid = None, r_step = None,Dr=Non
             annuli_radii.append((r0,np.max([ny,nx])))
         else:
             annuli_radii = []
-            for r in np.arange(IWA+Dr,OWA-Dr,Dr):
-                annuli_radii.append((r-Dr,r+Dr))
+            for r in np.arange(IWA,OWA+Dr,r_step):
+                annuli_radii.append((r-Dr/2.,r+Dr/2.))
     else:
         annuli_radii = [(IWA,OWA)]
 
@@ -331,13 +332,49 @@ def get_image_stddev(image,
                      centroid = None,
                      r_step = 2,
                      Dr=2,
-                     image_wide = None,
-                     resolution = None):
+                     image_wide = None):
     """
     Calculate the standard deviation of a given image using annuli.
 
     Args:
+        image: The image for which one wants the statistic.
+        IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
+                    statistic is calculated.
+                    If None, kpp.utils.GPIimage.get_IOWA() is used.
+        N: Defines the width of the ring by the number of pixels it has to include.
+                The width of the annuli will therefore vary with sepration. Default is N=3000.
+        centroid: (x_cen,y_cen) Define the center of the image.
+                Default is x_cen = (nx-1)//2 ; y_cen = (ny-1)//2
+        r_step: (default=2pix) Distance between two consecutive annuli mean separation (in pixel).
+        Dr: (default=2pix) Width of the annulus (in pixel).
+        image_wide: Don't divide the image in annuli or sectors when computing the statistic.
+                    Use the entire image directly. Not available if "pixel based: is defined,
+
+    Return:
+        stddev_list: standard deviation values at the center of each
+        annulus_radii_list: List of ((r_min+r_max)/2.,r_min,r_max) with r_min,r_max the boundaries of an annulus.
+    """
+    return get_image_stat(image,"stddev",
+                     IOWA = IOWA,
+                     N = N,
+                     centroid = centroid,
+                     r_step = r_step,
+                     Dr=Dr,
+                     image_wide = image_wide)
+
+def get_image_stat(image,type,
+                     IOWA = None,
+                     N = None,
+                     centroid = None,
+                     r_step = 2,
+                     Dr=2,
+                     image_wide = None):
+    """
+    Calculate the standard deviation or the mean of a given image using annuli.
+
+    Args:
         image: The image or cubes for which one wants the statistic.
+        type: "stddev" or "mean"
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
@@ -349,9 +386,6 @@ def get_image_stddev(image,
         Dr: If not None defines the width of the ring as Dr. N is then ignored if Dth is defined.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
                     Use the entire image directly. Not available if "pixel based: is defined,
-        resolution: Diameter of the resolution elements (in pix) used to do do the small sample statistic.
-                For e.g., FWHM of the PSF.
-                /!\ I am not sure the implementation is correct. We should probably do better.
 
     Return:
         stddev_list: standard deviation values at the center of each
@@ -399,15 +433,14 @@ def get_image_stddev(image,
             annuli_radii.append((r0,np.max([ny,nx])))
         else:
             annuli_radii = []
-            # for r in np.arange(IWA+Dr,nx/2-Dr,Dr):
-            for r in np.arange(IWA+Dr,OWA,Dr):
-                annuli_radii.append((r-Dr,r+Dr))
+            for r in np.arange(IWA,OWA+Dr,r_step):
+                annuli_radii.append((r-Dr/2.,r+Dr/2.))
     else:
         annuli_radii = [(IWA,OWA)]
     #N_annuli = len(annuli_radii)
 
 
-    stddev_list = []
+    stat_list = []
     annulus_radii_list = []
     for it, rminmax in enumerate(annuli_radii):
         r_min,r_max = rminmax
@@ -415,15 +448,15 @@ def get_image_stddev(image,
         where_ring = np.where((r_min< r_grid) * (r_grid < r_max) * image_mask)
 
         data = image[where_ring]
-        sigma = np.nanstd(data)
+        if type == "stddev":
+            stat = np.nanstd(data)
+        elif type == "mean":
+            stat = np.nanmean(data)
 
-        if resolution is not None and np.size(data) != 0:
-            N_res_elt = np.size(data)/(np.pi*(resolution/2.)**2)
-            sigma = sigma*np.sqrt(1+1./N_res_elt)
-        stddev_list.append(sigma)
+        stat_list.append(stat)
         annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
 
-    return stddev_list, annulus_radii_list
+    return stat_list, annulus_radii_list
 
 
 def get_cdf_model(data,interupt_plot = False,pure_gauss=False):

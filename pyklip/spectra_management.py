@@ -70,61 +70,51 @@ def get_specType(object_name,SpT_file_csv = None):
     if object_name == "IK_Peg":
         return "A8"
 
-    if SpT_file_csv is None:
-        import urllib
-
-        object_name = object_name.replace('_','+')
-
-        # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
-        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
-                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
-                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
-        text = url.read()
-        for line in text.splitlines():
-            # if line.startswith('Spectral type:'):
-            if line.find('Spectral type:') != -1:
-                # print(line)
-                spec_type =line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
-
-        try:
-            return spec_type
-        except:
-            print("Couldn't find {0} in Simbad.".format(object_name))
-            return None
-
-    with open(SpT_file_csv, 'rb') as csvfile_TID:
-        TID_reader = csv.reader(csvfile_TID, delimiter=';')
-        TID_csv_as_list = list(TID_reader)
-        TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
-        target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
-        specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
-
+    if SpT_file_csv is not None:
+        with open(SpT_file_csv, 'r') as csvfile_TID:
+            TID_reader = csv.reader(csvfile_TID, delimiter=';')
+            TID_csv_as_list = list(TID_reader)
+            TID_csv_as_nparr = np.array(TID_csv_as_list)[1:len(TID_csv_as_list),:]
+            target_names = np.ndarray.tolist(TID_csv_as_nparr[:,0])
+            specTypes = np.ndarray.tolist(TID_csv_as_nparr[:,1])
 
     try:
+        object_name = object_name.replace(' ','_')
+        object_name = object_name.replace('+','_')
         return specTypes[target_names.index(object_name)]
     except:
-        import urllib
-
-        print("Couldn't find {0} in spectral type list. Try to retrieve it from Simbad.".format(object_name))
-
-        target_names.append(object_name)
         object_name = object_name.replace('_','+')
+        object_name = object_name.replace(' ','+')
 
-        url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
-                              obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
-                              obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
+        try: #python 2
+            import urllib
+            # url = urllib.urlopen("http://cdsweb.u-strasbg.fr/cgi-bin/nph-sesame/-oI?"+object_name)
+            url = urllib.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&\
+                                  obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&\
+                                  obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
+        except: # python 3
+            import urllib.request
+            # url = urllib.request.urlopen("http://www.python.org")
+            url = urllib.request.urlopen("http://simbad.u-strasbg.fr/simbad/sim-id?output.format=ASCII&output.max=1&"
+                                        +"obj.cooN=off&obj.pmsel=off&obj.plxsel=off&obj.rvsel=off&obj.spsel=on&obj.mtsel=off&"
+                                        +"obj.sizesel=off&obj.fluxsel=off&obj.messel=off&obj.notesel=off&obj.bibsel=off&Ident="+object_name)
         text = url.read()
         for line in text.splitlines():
-            if line.startswith('Spectral type:'):
-                spec_type =line.replace("Spectral type: ","").split(" ")[0]
-        specTypes.append(spec_type)
+            str_line = line.decode("utf8")
+            # if line.find('Spectral type:') != -1:
+            if 'Spectral type:' in str_line:
+                # print(line)
+                spec_type =str_line.split("Spectral type: ")[-1].replace("Spectral type: ","").split(" ")[0]
 
-
-        attrib_name=["name","specType"]
-        with open(SpT_file_csv, 'w+') as csvfile:
-            csvwriter = csv.writer(csvfile, delimiter=';')
-            table_to_csv = [attrib_name]+zip(target_names,specTypes)
-            csvwriter.writerows(table_to_csv)
+        if SpT_file_csv is not None:
+            print("Couldn't find {0} in spectral type list. Retrieved it from Simbad.".format(object_name))
+            target_names.append(object_name.replace('+','_'))
+            specTypes.append(spec_type)
+            attrib_name=["name","specType"]
+            with open(SpT_file_csv, 'w+') as csvfile:
+                csvwriter = csv.writer(csvfile, delimiter=';')
+                table_to_csv = [attrib_name]+[(name, stype) for name, stype in zip(target_names,specTypes)]
+                csvwriter.writerows(table_to_csv)
 
         return spec_type
 
@@ -357,70 +347,6 @@ def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
 
 
 
-
-def place_model_PSF(PSF_template,x_cen,y_cen,output_shape, x_grid = None, y_grid = None):
-
-    ny_template, nx_template = PSF_template.shape
-    if x_grid is None and y_grid is None:
-        x_grid, y_grid = np.meshgrid(np.arange(0,output_shape[1],1),np.arange(0,output_shape[0],1))
-
-    x_grid = x_grid.astype(np.float)
-    y_grid = y_grid.astype(np.float)
-
-    x_grid -= x_cen - nx_template//2
-    y_grid -= y_cen - ny_template//2
-
-    return ndimage.map_coordinates(PSF_template, [y_grid,x_grid], mode='constant', cval=0.0)
-
-def LSQ_place_model_PSF(PSF_template,x_cen,y_cen,planet_image, x_grid = None, y_grid = None):
-    model = place_model_PSF(PSF_template,x_cen,y_cen,planet_image.shape, x_grid = x_grid, y_grid = y_grid)
-    return np.nansum((planet_image-model)**2,axis = (0,1))#/y_model
-
-
-def extract_planet_centroid(cube, position, PSF_cube):
-
-
-    nl,ny,nx = cube.shape
-    row_id,col_id = position
-    nl_PSF,ny_PSF,nx_PSF = PSF_cube.shape
-
-    row_m = np.floor(ny_PSF/2.0)
-    row_p = np.ceil(ny_PSF/2.0)
-    col_m = np.floor(nx_PSF/2.0)
-    col_p = np.ceil(nx_PSF/2.0)
-    #print(np.max([0,(row_id-row_m)]),np.min([ny_PSF-1,(row_id+row_p)]),np.max([0,(col_id-col_m)]),np.min([nx_PSF-1,(col_id+col_p)]))
-    cube_stamp = cube[:,np.max([0,(row_id-row_m)]):np.min([ny-1,(row_id+row_p)]), np.max([0,(col_id-col_m)]):np.min([nx-1,(col_id+col_p)])]
-    flatCube_stamp = np.nansum(cube_stamp,axis=0)
-    #plt.figure(5)
-    #print(flatCube_stamp.shape,flatCube_stamp)
-    #plt.imshow(flatCube_stamp,interpolation="nearest")
-    #plt.show()
-    flatCube_stamp /= np.nanmax(flatCube_stamp)
-    flatPSF = np.nansum(PSF_cube,axis=0)
-    flatPSF /= np.nanmax(flatPSF)
-
-    nanargmax_flat_stamp= np.nanargmax(flatCube_stamp)
-    max_row_id = np.floor(nanargmax_flat_stamp/nx_PSF)
-    max_col_id = nanargmax_flat_stamp-nx_PSF*max_row_id
-
-    param0 = (float(max_col_id),float(max_row_id)+1)
-
-    LSQ_func = lambda para: LSQ_place_model_PSF(flatPSF,para[0],para[1],flatCube_stamp)
-    param_fit = minimize(LSQ_func,param0, method="Nelder-Mead").x
-
-    # if 0:
-        # plt.figure(1)
-        # plt.subplot(2,2,1)
-        # plt.imshow(flatCube_stamp,interpolation="nearest")
-        # plt.subplot(2,2,2)
-        # plt.imshow(flatPSF,interpolation="nearest")
-        # plt.subplot(2,2,3)
-        # plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param0[0],param0[1],(ny_PSF,nx_PSF)),interpolation="nearest")
-        # plt.subplot(2,2,4)
-        # plt.imshow(flatCube_stamp-place_model_PSF(flatPSF,param_fit[0],param_fit[1],(ny_PSF,nx_PSF)),interpolation="nearest")
-        # plt.show()
-
-    return (param_fit[1]+row_id-row_m),(param_fit[0]+col_id-col_m)
 
 
 def LSQ_scale_model_PSF(PSF_template,planet_image,a):
