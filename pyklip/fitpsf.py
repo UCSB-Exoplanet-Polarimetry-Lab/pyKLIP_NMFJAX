@@ -24,7 +24,7 @@ class FMAstrometry(object):
         guess_sep: the guessed separation (pixels)
         guess_pa: the guessed position angle (degrees)
         fitboxsize: fitting box side length (pixels)
-        method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'maxl'. 
+        method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
 
     Attributes:
         guess_sep (float): (initialization) guess separation for planet [pixels]
@@ -49,7 +49,7 @@ class FMAstrometry(object):
     
 
     """
-    def __init__(self, guess_sep, guess_pa, fitboxsize, method='maxl'):
+    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
         """
         Initilaizes the FMAstrometry class
         """
@@ -81,7 +81,7 @@ class FMAstrometry(object):
         self.data_stamp_Dec_offset_center = None # Dec offset of center pixel (stampsize // 2)
 
         # guess flux (a hyperparameter)
-        self.guess_flux = None
+        self._guess_flux = None
 
         # covariance paramters. Use the covariance initilizer function to initilize them
         self.covar = None
@@ -106,6 +106,21 @@ class FMAstrometry(object):
         self.sep = None
         self.PA = None
 
+    # automatically guess flux if it hasn't been defined
+    @property
+    def guess_flux(self):
+        # if it was already set return it
+        if self._guess_flux is not None:
+            return self._guess_flux
+        # if the data and fm stamps haven't been created yet, we can't do much 
+        elif self.data_stamp is None or self.fm_stamp is None:
+            return None
+        # guess it based on the max value in both stamps
+        self._guess_flux = np.max(self.data_stamp) / np.max(self.fm_stamp)
+        return self._guess_flux
+    @guess_flux.setter
+    def guess_flux(self, newval):
+        self._guess_flux = newval
 
     def generate_fm_stamp(self, fm_image, fm_center=None, fm_wcs=None, extract=True, padding=5):
         """
@@ -307,16 +322,7 @@ class FMAstrometry(object):
         else:
             self.bounds.append([self.guess_Dec_offset - dDec, self.guess_Dec_offset + dDec])
 
-        # flux bounds
-        # need to guess flux if None
-        if self.guess_flux is None:
-            if self.fm_stamp is not None and self.data_stamp is not None:
-                # use the two to scale it and put it in log scale
-                self.guess_flux = np.max(self.data_stamp) / np.max(self.fm_stamp)
-            else:
-                # we haven't read in the data_stamp and FM yet. Assume they're on the same scale
-                # should be in log scale
-                self.guess_flux = 1
+
         if np.size(df) == 2:
             self.bounds.append(df)
         else:
@@ -359,7 +365,8 @@ class FMAstrometry(object):
         if self.isbayesian:
             return self._mcmc_fit_astrometry(nwalkers=nwalkers, nburn=nburn, nsteps=nsteps, save_chain=save_chain, 
                                         chain_output=chain_output, numthreads=numthreads)
-                    
+        else:
+            return self._lsqr_fit_astrometry()   
 
     def _mcmc_fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
@@ -458,7 +465,7 @@ class FMAstrometry(object):
         cost_function_args += (self.include_readnoise, True)
 
 
-        global cost_function
+        #global cost_function
         nm_result = optimize.minimize(cost_function, init_guess, args=cost_function_args, method="Nelder-Mead")
         result = optimize.minimize(cost_function, nm_result.x, args=cost_function_args, method="BFGS")
 
@@ -863,7 +870,10 @@ def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
     lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
 
     if not np.isfinite(lp):
-        return lp
+        if not negate:
+            return -np.inf
+        else:
+            return np.inf
     return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
 
 

@@ -1,6 +1,7 @@
 import glob
 import os
 import time
+import pytest
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -95,7 +96,7 @@ def test_fmastrometry():
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
 
-    # create FM Astrometry object
+    # create FM Astrometry object, default is to use MCMC
     fma = fitpsf.FMAstrometry(guesssep, guesspa, 9)
 
     # generate FM stamp
@@ -107,7 +108,7 @@ def test_fmastrometry():
     # set kernel, with read noise
     fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
 
-    # set bounds
+    # set bounds for prior
     fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_RA_offset, fma.guess_Dec_offset)
@@ -134,6 +135,64 @@ def test_fmastrometry():
     fma.best_fit_and_residuals()
     plt.savefig("tests/bka2.png")
 
+    fm_hdu.close()
+    data_hdu.close()
+
+@pytest.hookimpl(trylast=True)
+def test_maxlikehood():
+    """
+    Tests' the frequentist maximum likelihood approach. Uses BKA output of MCMC approach 
+    so this should run after
+    """
+    # read in outputs
+    prefix = "betpic-131210-j-fmpsf"
+    output_prefix = os.path.join(testdir, prefix)
+    fm_hdu = fits.open(output_prefix + "-fmpsf-KLmodes-all.fits")
+    data_hdu = fits.open(output_prefix + "-klipped-KLmodes-all.fits")
+
+
+    # get FM frame
+    fm_frame = np.nanmean(fm_hdu[1].data, axis=0)
+    fm_centx = fm_hdu[1].header['PSFCENTX']
+    fm_centy = fm_hdu[1].header['PSFCENTY']
+
+    # get data_stamp frame
+    data_frame = np.nanmean(data_hdu[1].data, axis=0)
+    data_centx = data_hdu[1].header["PSFCENTX"]
+    data_centy = data_hdu[1].header["PSFCENTY"]
+
+    # get initial guesses
+    guesssep = fm_hdu[0].header['FM_SEP']
+    guesspa = fm_hdu[0].header['FM_PA']
+
+    # create FM Astrometry object
+    fma = fitpsf.FMAstrometry(guesssep, guesspa, 9, method='maxl')
+
+    # generate FM stamp
+    fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
+
+    # generate data_stamp stamp
+    fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
+
+    # set kernel, with read noise
+    fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
+
+    # set bounds
+    #fma.set_bounds(1.5, 1.5, 1, [1.], 1)
+
+    print(fma.guess_RA_offset, fma.guess_Dec_offset)
+
+    # run MCMC fit
+    fma.fit_astrometry()
+
+    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
+
+    assert(np.abs(fma.RA_offset.bestfit - -227.2) < 5.)
+    assert(np.abs(fma.Dec_offset.bestfit - -361.1) < 5.)
+
+    fm_hdu.close()
+    data_hdu.close()
 
 if __name__ == "__main__":
-    test_fmastrometry()
+    #test_fmastrometry()
+    test_maxlikehood()
