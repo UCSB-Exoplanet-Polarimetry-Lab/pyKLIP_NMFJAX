@@ -16,7 +16,7 @@ import emcee
 
 
 
-class FMAstrometry(object):
+class FitPSF(object):
     """
     Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
@@ -51,7 +51,7 @@ class FMAstrometry(object):
     """
     def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
         """
-        Initilaizes the FMAstrometry class
+        Initilaizes the FitPSF class
         """
         # store initailization
         self.guess_sep = guess_sep
@@ -92,6 +92,8 @@ class FMAstrometry(object):
         # MCMC fit params
         self.bounds = None
         self.sampler = None
+        # Max-Likelihood fit
+        self.hess_inv = None
 
         # best fit
         self.raw_RA_offset = None
@@ -256,7 +258,7 @@ class FMAstrometry(object):
     def set_kernel(self, covar, covar_param_guesses, covar_param_labels, include_readnoise=False,
                    read_noise_fraction=0.01):
         """
-        Set the Gaussian process kernel used in our astrometric fit
+        Set the Gaussian process kernel used in our fit
 
         Args:
             covar: Covariance kernel for GP regression. If string, can be "matern32" or "sqexp"
@@ -346,10 +348,10 @@ class FMAstrometry(object):
                 self.bounds.append([self.covar_param_guesses[-1]/10**read_noise_bounds, 1])
 
 
-    def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
+    def fit_psf(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
         """
-        Fits the astrometry of the planet in either a frequentist or Bayesian way depending on initialization. 
+        Fits the PSF of the planet in either a frequentist or Bayesian way depending on initialization. 
 
         Args:
             nwalkers: number of walkers (mcmc-only)
@@ -363,12 +365,12 @@ class FMAstrometry(object):
 
         """
         if self.isbayesian:
-            return self._mcmc_fit_astrometry(nwalkers=nwalkers, nburn=nburn, nsteps=nsteps, save_chain=save_chain, 
+            return self._mcmc_fit_psf(nwalkers=nwalkers, nburn=nburn, nsteps=nsteps, save_chain=save_chain, 
                                         chain_output=chain_output, numthreads=numthreads)
         else:
-            return self._lsqr_fit_astrometry()   
+            return self._lsqr_fit_psf()   
 
-    def _mcmc_fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
+    def _mcmc_fit_psf(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
         """
         Run a Bayesian fit of the astrometry using MCMC
@@ -438,7 +440,7 @@ class FMAstrometry(object):
             #pickle.dump(sampler.acor, pickle_file)
             pickle_file.close()
 
-    def _lsqr_fit_astrometry(self):
+    def _lsqr_fit_psf(self):
         """
         Do a frequentist maximum likelihood fit to the data. Approximate errors using the Hessian of the likelihood function.
         """
@@ -491,6 +493,8 @@ class FMAstrometry(object):
         self.raw_flux =  ParamRange(flux_best, flux_err_two_sided)
         self.covar_params = [ParamRange(param_best, 0) for param_best in covar_params_best]
 
+        self.hess_inv = result.hess_inv
+        
 
 
     def make_corner_plot(self, fig=None):
@@ -900,6 +904,16 @@ class ParamRange(object):
             self.error_2sided = np.array(err_range)
             self.error = np.mean(np.abs(err_range))
 
+class FMAstrometry(FitPSF):
+    """
+    FMAstrometry is now obsolete as all its functionality is in FitPSF
+    """
+    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
+        super(FMAstrometry, self).__init__(guess_sep, guess_pa, fitboxsize, method)
+
+    def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
+                       numthreads=None):
+        self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
 
 import scipy.ndimage as ndimage
 from copy import copy

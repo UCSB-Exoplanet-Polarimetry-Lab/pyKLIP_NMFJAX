@@ -97,7 +97,7 @@ def test_fmastrometry():
     guesspa = fm_hdu[0].header['FM_PA']
 
     # create FM Astrometry object, default is to use MCMC
-    fma = fitpsf.FMAstrometry(guesssep, guesspa, 9)
+    fma = fitpsf.FitPSF(guesssep, guesspa, 9)
 
     # generate FM stamp
     fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
@@ -122,7 +122,7 @@ def test_fmastrometry():
     assert lnpos > -np.inf
 
     # run MCMC fit
-    fma.fit_astrometry(nburn=150, nsteps=25, nwalkers=50, numthreads=1)
+    fma.fit_psf(nburn=150, nsteps=25, nwalkers=50, numthreads=1)
 
     print("{0} seconds to run".format(time.time()-t1))
 
@@ -190,6 +190,9 @@ def test_maxlikehood():
     assert(np.abs(fma.RA_offset.bestfit - -227.2) < 5.)
     assert(np.abs(fma.Dec_offset.bestfit - -361.1) < 5.)
 
+    fma.best_fit_and_residuals()
+    plt.savefig("tests/bka2.png")
+    
     fm_hdu.close()
     data_hdu.close()
 
