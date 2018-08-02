@@ -11,7 +11,7 @@ KLIP reductions, but may not work for the more sophisticated forward modelling l
 .. toctree::
    :maxdepth: 1
 
-   ../klip_gpi
+   gpi
    p1640
    sphere
    generic_data
