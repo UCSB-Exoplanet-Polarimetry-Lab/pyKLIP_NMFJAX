@@ -1,3 +1,4 @@
+import sys
 import multiprocessing as mp
 import numpy as np
 import os
@@ -172,10 +173,8 @@ class DiskFM(NoFM):
         '''
 
 
-
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
-        
         # Parallelilze this
         for key in self.dict_keys:
             rad = int(key[1])
@@ -196,14 +195,20 @@ class DiskFM(NoFM):
             evals = self.evals_dict[key]
             evecs = self.evecs_dict[key]
             ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
-            
+
+            # Modified by Johan
+            wvs = self.wvs
+            unique_wvs = np.unique(wvs)
+            wl_here = wvs[img_num]
+            wv_index = (np.where(unique_wvs == wl_here))[0][0]
+            aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
+
             parallel = False 
         
             if not parallel:
                 self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                                    input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
-                                   ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=self.aligned_imgs_np,
-
+                                   ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
                                    pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], radstart=radstart,
                                    radend=radend, phistart=phistart, phiend=phiend, padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
                                    parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
@@ -214,8 +219,27 @@ class DiskFM(NoFM):
 
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
-        fmout_np = np.nanmean(fmout_np, axis = 1)
-        return fmout_np
+        # fmout_np = np.nanmean(fmout_np, axis = 1)
+
+        # Modified by Johan (using save_fmout)
+        #Check if we have a disk model at multiple wavelengths
+        model_disk_shape = np.shape(self.model_disk)        
+        #If true then it's a non collapsed spec mode disk and save indivudal specmode cubes for each KL mode
+        if np.size(model_disk_shape) > 2: 
+
+            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+            n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
+
+            ##Collapse across all files, keeping the wavelengths intact. 
+            fmout_return = np.zeros([np.size(self.numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
+            for i in np.arange(n_wv_per_file):
+                fmout_return[:,i,:,:] = np.nansum(fmout_np[:,i::n_wv_per_file,:,:], axis =1)/nfiles
+            
+        else:
+            #If false then this is a collapsed spec mode or pol mode: collapsed across all files (and wavelenths)
+            fmout_return = np.nanmean(fmout_np, axis = 1) 
+
+        return fmout_return
             
 
 
@@ -226,11 +250,18 @@ class DiskFM(NoFM):
 
         # Load in file
         f = open(basis_file_pattern, 'rb')
-        self.klmodes_dict = pickle.load(f)
-        self.evecs_dict = pickle.load(f)
-        self.evals_dict = pickle.load(f)
-        self.ref_psfs_indicies_dict = pickle.load(f)
-        self.section_ind_dict = pickle.load(f)
+        if sys.version_info.major == 3:
+            self.klmodes_dict = pickle.load(f, encoding='latin1')
+            self.evecs_dict = pickle.load(f, encoding='latin1')
+            self.evals_dict = pickle.load(f, encoding='latin1')
+            self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
+            self.section_ind_dict = pickle.load(f, encoding='latin1')
+        else:
+            self.klmodes_dict = pickle.load(f)
+            self.evecs_dict = pickle.load(f)
+            self.evals_dict = pickle.load(f)
+            self.ref_psfs_indicies_dict = pickle.load(f)
+            self.section_ind_dict = pickle.load(f)
 
         # Set extents for each section
         self.dict_keys = sorted(self.klmodes_dict.keys())
@@ -248,6 +279,8 @@ class DiskFM(NoFM):
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.data_type, np.size(self.images))
         original_imgs_shape = self.images.shape
+
+
         original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
         original_imgs_np[:] = self.images
 
@@ -295,9 +328,8 @@ class DiskFM(NoFM):
         for aligned_output in aligned_outputs:
             aligned_output.wait()
 
-
-        self.aligned_imgs_np = fm._arraytonumpy(aligned, shape = (original_imgs_shape[0], original_imgs_shape[1] * original_imgs_shape[2]))
-
+        ### MODIFIED BY JOHAN
+        self.aligned_imgs_np = fm._arraytonumpy(aligned, shape =  (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3])) 
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
 
@@ -334,8 +366,8 @@ class DiskFM(NoFM):
 
         #Check if we have a disk model at multiple wavelengths
         model_disk_shape = np.shape(self.model_disk)        
-        #If true then it's a spec mode diskand save indivudal specmode cubes for each KL mode
-        if np.size(model_disk_shape) > 2: 
+        #If true then it's a spec mode disk and save indivudal specmode cubes for each KL mode
+        if np.size(model_disk_shape) > 2:
 
             nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
@@ -370,11 +402,11 @@ class DiskFM(NoFM):
         """
         if self.save_basis == True:
             f = open(self.basis_filename, 'wb')
-            pickle.dump(dict(klmodes_dict), f)
-            pickle.dump(dict(evecs_dict), f)
-            pickle.dump(dict(evals_dict), f)
-            pickle.dump(dict(ref_psfs_indicies_dict), f)
-            pickle.dump(dict(section_ind_dict), f)
+            pickle.dump(dict(klmodes_dict), f, protocol=2)
+            pickle.dump(dict(evecs_dict), f, protocol=2)
+            pickle.dump(dict(evals_dict), f, protocol=2)
+            pickle.dump(dict(ref_psfs_indicies_dict), f, protocol=2)
+            pickle.dump(dict(section_ind_dict), f, protocol=2)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
@@ -481,6 +513,7 @@ class DiskFM(NoFM):
         # aligned and scaled images for processing. Shape of (wv, N, y, x)
         aligned = aligned_imgs
         aligned_shape = aligned_imgs_shape
+
         # output images after KLIP processing
         outputs = output_imgs
         outputs_shape = output_imgs_shape
@@ -523,7 +556,6 @@ class DiskFM(NoFM):
             IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
                     It defines the separation interva in which klip will be run.
             img_center: center of image in input image coordinate
-d
             flipx: if true, flip the x coordinate to switch coordinate handiness
             new_center: if not none, center of output_img. If none, center stays the same
         """
