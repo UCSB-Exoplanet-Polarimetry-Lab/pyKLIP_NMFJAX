@@ -4,16 +4,17 @@ import subprocess
 import glob
 import astropy.io.fits as fits
 import astropy.wcs as wcs
-
-#from astropy import wcs
 from astropy.modeling import models, fitting
 import numpy as np
 import scipy.ndimage as ndimage
+from pyklip.parallelized import high_pass_filter_imgs
 import scipy.stats
+import multiprocessing as mp
 
-#different imports depending on if python2.7 or python3
 import sys
 from copy import copy
+
+#different imports depending on if python2.7 or python3
 if sys.version_info < (3,0):
     #python 2.7 behavior
     import ConfigParser
@@ -24,7 +25,25 @@ else:
     from pyklip.instruments.Instrument import Data
     from pyklip.instruments.utils.nair import nMathar
 
+
+#from pyklip.instruments.P1640_support import P1640spots
+#from pyklip.instruments.P1640_support import P1640utils
+#from pyklip.instruments.P1640_support import P1640_cube_checker
+
 from scipy.interpolate import interp1d
+
+'''
+#IMPORTANT NOTE:
+
+Things that /must/ be in the headers of your sliced images:
+- ROTOFF
+- WLENGTH (wavelength band, in microns)
+- GHSTPEAK or STARPEAK
+- RA
+- DEC
+
+
+'''
 
 class MagAOData(object):
     
@@ -64,9 +83,8 @@ class MagAOData(object):
     flux_zeropt = {}
     lenslet_scale = 1.0 #arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0 #degrees CCW from +x axis to zenith
-    ghstpeak_ratio = {} #ratio of ghost to peak psf from https://visao.as.arizona.edu/wp-content/uploads/2016/09/nd_cal_2016.09_21.pdf
-
     observatory_latitude = 0.0
+    ghstpeak_ratio = {}
 
     #read in MagAO configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
@@ -84,9 +102,10 @@ class MagAOData(object):
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
 
-        ghstpeak_ratio['z\''] = float(config.get("instrument",'ghst_psf_z\''))
-        ghstpeak_ratio['i\''] = float(config.get("instrument",'ghst_psf_i\''))
-
+        ghstpeak_ratio['line\''] = float(config.get("instrument", "ghost_ratio_HA"))
+        ghstpeak_ratio['cont\''] = float(config.get("instrument", "ghost_ratio_CONT"))
+        ghstpeak_ratio['z\''] = float(config.get("instrument", "ghost_ratio_z\'"))
+        ghstpeak_ratio['i\''] = float(config.get("instrument", "ghost_ratio_i\'"))
     except ConfigParser.Error as e:
         print("Error reading MagAO configuration file: {0}".format(e.message))
         raise e
@@ -94,7 +113,7 @@ class MagAOData(object):
     #########################
    ###    Constructors     ###
     #########################
-    def __init__(self, filepaths=None):
+    def __init__(self, filepaths=None, highpass=False):
         """
         Initialization code for MagAOData
         """
@@ -114,8 +133,9 @@ class MagAOData(object):
             self.star_flux = None
             self.contrast_scaling = None
             self.prihdrs = None
+            self._flipx = None
         else:
-            self.readdata(filepaths)
+            self.readdata(filepaths, highpass=highpass)
     
     ##############################
    ### Instance Required Fields ###
@@ -156,6 +176,10 @@ class MagAOData(object):
         self._wcs = newval
 
     @property
+    def filenums(self):
+        return self._filenums
+
+    @property
     def IWA(self):
         return self._IWA
     @IWA.setter
@@ -168,14 +192,6 @@ class MagAOData(object):
     @OWA.setter
     def OWA(self, newval):
         self._OWA = newval
-
-    @property
-    def flipx(self):
-        return self._flipx
-
-    @flipx.setter
-    def flipx(self, newval):
-        self._flipx = newval
     
     @property
     def output(self):
@@ -184,13 +200,22 @@ class MagAOData(object):
     def output(self, newval):
         self._output = newval
 
+    @property
+    def flipx(self):
+        return self._flipx
+    @flipx.setter
+    def flipx(self, newval):
+        self._flipx = newval
+
     ###################
    ###    Methods    ###
     ###################
         
-    def readdata(self, filepaths):
+    def readdata(self, filepaths, highpass=False):
         """
         Method to open and read a list of MagAO data
+        highpass: if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
+                      can also be a number specifying FWHM of box in pixel units
         """
         if isinstance(filepaths, str):
             filepaths = [filepaths]
@@ -205,39 +230,40 @@ class MagAOData(object):
         star_fluxes = []
         prihdrs = []
 
+        # Create a threadpool for high pass filter
+        pool = mp.Pool()
+
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, astr_hdrs, prihdr, star_flux = _magao_process_file(self, filepath)
+            cube, center, pa, wv, astr_hdrs, prihdr, star_flux = _magao_process_file(self, filepath, highpass=highpass)
             data.append(cube)
             centers.append(center)
             star_fluxes.append(star_flux)
             rot_angles.append(pa)
             wvs.append(wv)
             wcs_hdrs.append(astr_hdrs)
-            #filenums.append(np.ones(pa.shape[0]) * index)
             filenums.append([index])
             prihdrs.append(prihdr)
-            #filenames.append([filepath for i in range(pa.shape[0])])
             filenames.append([filepath])
-                        
-        #print('filenums:', filenums)
-        #print('filepaths:', filepaths)
+
+        # Close threadpool
+        pool.close()
+        pool.join()
+            
         #FILENUMS IS 1D LIST
         data = np.array(data)
         dims = data.shape #should be 3D (#images by 451 by 451 for us, but depending on chosen size)
-        print("dims is ",dims)
         filenums = np.array(filenums).reshape([dims[0]])
         filenames = np.array(filenames).reshape([dims[0]])
         rot_angles = np.array(rot_angles).reshape([dims[0]])
         wvs = np.array(wvs).reshape([dims[0]])
-        #print("wvs is ",wvs)
         wcs_hdrs = np.array(wcs_hdrs)
-        #print('wcs is ', wcs_hdrs)
         dsize = dims[0]
         centers = np.zeros((dsize,2))
         for y in range(dsize):
             for x in range(2):
                 centers[y][x] = (dims[1]-1)/2
         star_fluxes = np.array(star_fluxes)
+ #       wcs_temp = [None]*dsize
 
         self._input = data
         self._centers = centers
@@ -246,23 +272,25 @@ class MagAOData(object):
         self._PAs = rot_angles
         self._wvs = wvs
         self._wcs = wcs_hdrs
-        self._flipx = False #set to false, this is used in parallelized.py
         #IWA gets reset by GUI. This is the default value.
-        self.IWA = 10
+        self.IWA = 0
         # half the size of the array
-        self.OWA = data.shape[1]/2
+        self.OWA = data.shape[0]/2
         #CHECK IWA AND OWA
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes
         self.prihdrs = prihdrs
+        self._flipx = False
 
     ##not currently used but will when we apply flux conversion
     def calibrate_output(self, img, spectral=False, units="contrast"):
         """
        Calibrates the flux of an output image. Can either be a broadband image or a spectral cube depending
         on if the spectral flag is set.
+
         Assumes the broadband flux calibration is just multiplication by a single scalar number whereas spectral
         datacubes may have a separate calibration value for each wavelength
+
         Args:
             img: unclaibrated image.
                  If spectral is not set, this can either be a 2-D or 3-D broadband image
@@ -270,6 +298,7 @@ class MagAOData(object):
                  If specetral is True, this is a 3-D spectral cube with shape [wv,y,x]
             spectral: if True, this is a spectral datacube. Otherwise, it is a broadband image.
             units: currently only support "contrast" w.r.t central star
+
         Return:
             img: calibrated image of the same shape (this is the same object as the input!!!)
         """
@@ -285,7 +314,7 @@ class MagAOData(object):
         return img
         
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, center=None, astr_hdr=None,
-                 fakePlparams = None,):
+                 fakePlparams = None, more_keywords=None):
         """
         Save data in a GPI-like fashion. Aka, data and header are in the first extension header
         
@@ -308,7 +337,7 @@ class MagAOData(object):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        #print("filenames = " , self._filenames)
+        #print("filenames = " + self._filenames)
         filenames = np.unique(self._filenames)
         nfiles = np.size(filenames)
         hdulist[0].header["DRPNFILE"] = nfiles
@@ -358,6 +387,8 @@ class MagAOData(object):
                 #write them individually
                 for i, klmode in enumerate(zaxis):
                     hdulist[0].header['KLMODE{0}'.format(i)] = klmode
+                    
+        #removed astr_hdr stuff            
 
         #use the dataset center if none was passed in
         if center is None:
@@ -367,130 +398,44 @@ class MagAOData(object):
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-
-
-
-
         hdulist.writeto(filepath, clobber=True)
         hdulist.close()
 
         
-def _magao_process_file(self, filepath, filetype=None):
-    """
-    Method to open and parse a MagAO file
-    Args:
-        filepath: the file to open
-    Returns: (using z as size of 3rd dimension, z=37 for spec, z=1 for pol (collapsed to total intensity))
-        cube: 3D data cube from the file. Shape is (z,281,281)
-        center: array of shape (z,2) giving each datacube slice a [xcenter,ycenter] in that order
-        parang: array of z of the parallactic angle of the target (same value just repeated z times)
-        wvs: array of z of the wavelength of each datacube slice. (For pol mode, wvs = [None])
-        astr_hdrs: array of z of the WCS header for each datacube slice
-        filt_band: the band (Y, J, H, K1, K2) used in the IFS Filter (string)
-        fpm_band: which coronagraph was used (string)
-        ppm_band: which apodizer was used (string)
-        spot_fluxes: array of z containing average satellite spot fluxes for each image
-        inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
-        header: primary header of the FITS file
+def _magao_process_file(self, filepath, highpass=False, pool = None):
 
-
-    """
-    #print('trying process magao')
     try:
         hdulist = fits.open(filepath)
         header = hdulist[0].header
-        #prihdr = hdulist[0].header
-        #exthdr = hdulist[0].header
-
+        angle = float(header['ROTOFF'])
+        angle = 90+angle
+        angles = [angle]
+        angles = np.array(angles)
         cube = hdulist[0].data
-
-        if filetype is None and 'INSTRUME' in header:
-            try:
-                if header["INSTRUME"] =='VisAO':
-                    #Get VisAO filter
-                    filt_band = header["VFW2POSN"]
-                    wvs = 1.0
-                    #fpm_band = None
-            except KeyError:
-                #check for Clio header
-                #get Clio header keywords:
-                try:
-                    filt_band = header["FILT3"]
-                    fpm_band =  header["FILT2"]
-                    #note: need to add wvs of clio here
-                except KeyError:
-                    raise KeyError("No recognized MagAO keywords found")
-                
-        if 'WLENGTH' in header:
-            wvs = header['WLENGTH']
-            #check if provided separately from instrument knowledge
-
-        angle=float(header['ROTOFF'])
+        prihdr = hdulist[0].header
         
+        wvs = header['WLENGTH'] 
 
-        #vert_angle = -(90 +angle)
-##        angles = [angle]
-##        angles = np.array(angles)
-##        parang = angles
-        parang = angle - 360  #note this is not exact formula, from analyzing Ewan's data this is the relation btw them (to within a degree)
-        vert_angle = 360 - parang 
-        #note: i think these angles are weird (questions about rotoff vs parang keyword and when to use which), need to review
-        #print('angle from process data: ', parang)
-        
-        cube = hdulist[0].data
-        
-        #wvs = header['WLENGTH']
-        # note: the 'WLENGTH' keyword is not in MagAO headers, going to define based on instrument above
-        #print('wvs: ', wvs)
         datasize = cube.shape[1] #ours will be 2D
         center = [[(datasize-1)/2, (datasize-1)/2]]
         
         dims = cube.shape
         x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-        nx = center[0][0] - (x - center[0][0])
-        #print("nx is " + str(nx))
-        minval = np.min([np.nanmin(cube), 0.0])
-        #flipped_cube = ndimage.map_coordinates(np.copy(cube), [y, nx], cval=minval * 5.0)
-                 
-        #star_flux = calc_starflux(flipped_cube, center) #WRITE THIS FUNCTION #old
 
+        parang = angles
 
-        if 'GHSTPEAK' in header:
-            #calculate star flux as ghost peak/scaling factor, depends on filter
-            #check filter for scaling factor:
-            if header["INSTRUME"] =='VisAO':
-                ghst_psf = self.ghstpeak_ratio['z\'']
-                #ghst_psf = 1.22*10**(-3) #defined in magao.ini, initialized at top of this file
+        #WCS STUFF --------------
 
-            else:
-                ghst_psf = self.ghstpeak_ratio['i\'']
-                #ghst_psf = 1.998*10**(-3) #defined in magao.ini
-                
-            star_flux = [[header['GHSTPEAK']/ghst_psf]]#[[10E6]]
-
-        if 'STARPEAK' in header:
-            star_flux = [[header['STARPEAK']]]
-
-        #old:    
-        #print("flipped_cube shape is " + str(flipped_cube.shape))
-        #cube = flipped_cube.reshape([1, flipped_cube.shape[0], flipped_cube.shape[1]])
-        
-        cube.reshape([1, cube.shape[0], cube.shape[1]])
-
-        #grab the astro header
-        
         w = wcs.WCS(header=header, naxis=[1,2])
         
         #define empty cd matrix to put values in later
         w.wcs.cd= np.array([[0,0],[0,0]])
     
-
-
         #add WCS info to headers:
         header['CDELT1'] = 2.2222e-6 #coordinate increment, calculated from plate scale
         header['CDELT2'] = 2.2222e-6 #coordinate increment, calculated from plate scale 
-        header['CRPIX1'] = 512.0 #x-coordinate of ref pixel
-        header['CRPIX2'] = 512.0 #y-coordinate of ref pixel
+        header['CRPIX1'] = (datasize-1)/2.0#x-coordinate of ref pixel (center)
+        header['CRPIX2'] = (datasize-1)/2.0#y-coordinate of ref pixel
         header['CRVAL1'] = header['RA'] #Right ascension at ref point , calculated from simbad location of eps eri
         header['CRVAL2'] = header['DEC'] #declination at ref point , calculated from simbad location of eps eri
         header['CTYPE1']  = 'RA---TAN'           #/ First axis is Right Ascension                  
@@ -498,43 +443,72 @@ def _magao_process_file(self, filepath, filetype=None):
         header['CUNIT1']  = 'deg     '         #  / Units of data                                  
         header['CUNIT2']  = 'deg     '          # / Units of data                                  
         header['RADESYS'] = 'FK5     '           #/ R.A DEC coordinate system reference
-        #print('header update check:', header['CDELT1'])
         #move data to wcs data format:
         w.wcs.crpix = [header['CRPIX1'], header['CRPIX2']]
         w.wcs.cdelt = np.array([header['CDELT1'], header['CDELT2']])
         w.wcs.crval = [header['CRVAL1'], header['CRVAL2']]
         w.wcs.ctype = [header['CTYPE1'], header['CTYPE2']]
-        #w.wcs.set_pv([(2, 1, 45.0)])
 
-        if 'PARANG' in header:
-            #turns out WCS data can be wrong. Let's recalculate it using avparang
-            #note: i think these angles are weired, need to review
-            parang = header['PARANG']
-            #changed the minus sign in front of vert_angle to fix direction of derotation 
-            vert_angle = (360-parang)
-            
+        #turns out WCS data can be wrong. recalculating using rotoff
+        rotoff = float(header['ROTOFF'])
+        #changed the minus sign in front of vert_angle to fix direction of derotation 
+        vert_angle = (360-rotoff) 
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
-        #print('pixel scale: ', pixel_scale)
         cdmatrix = pc * pixel_scale /3600.
         w.wcs.cd[0,0] = cdmatrix[0,0]
         w.wcs.cd[0,1] = cdmatrix[0,1]
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
-        #print('cd: ',w.wcs.cd)
-        #print('wcs: w', w)
-        #astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
-        #print(header)
-        astr_hdr = w
-        #astr_hdrs = np.repeat(None, 1)
-        #spot_fluxes = [[1]] #!
+        astr_hdrs = w
 
-    except Exception as e: print('exception: ' +str(e))
-            
-        
+        #-----------------------
+
+        if wvs == 0.6564:
+            ghst_psf = self.ghstpeak_ratio['line\'']
+        if wvs == 0.6428:
+            ghst_psf = self.ghstpeak_ratio['cont\'']
+        if wvs ==  0.90969793:
+            ghst_psf = self.ghstpeak_ratio['z\'']
+        if wvs == 0.76691462:
+            ghst_psf = self.ghstpeak_ratio['i\'']
+        if 'GHSTPEAK' in header:
+            star_flux = [[header['GHSTPEAK']/ghst_psf]]
+        if 'STARPEAK' in header:
+            star_flux = [[header['STARPEAK']]]
     finally:
         hdulist.close()
 
-    return cube, center, parang, wvs, astr_hdr, header, star_flux
+    # reshape cube to work with highpass filter
+    cube = cube.reshape([1, cube.shape[0], cube.shape[1]]) #makes a 2D y by x image into a 1 by y by x cube
 
+    # high pass and remeasure the satellite spot fluxes if necessary
+    highpassed = False
+    if isinstance(highpass, bool):
+        if highpass:
+            cube = high_pass_filter_imgs(cube, pool=pool)
+            highpassed = True
+    else:
+        # should be a number
+        if isinstance(highpass, (float, int)):
+            highpass = float(highpass)
+            fourier_sigma_size = (cube.shape[1] / (highpass)) / (2 * np.sqrt(2 * np.log(2)))
+            cube = high_pass_filter_imgs(cube, filtersize=fourier_sigma_size, pool=pool)
+            highpassed = True
+
+    #reshape cube because wants to be 2D elsewhere
+    cube = cube[0,:,:]
+
+    return cube, center, parang, wvs, astr_hdrs, prihdr, star_flux
+
+#comes from NIRC2 or maybe P1640, but not GPI
+#def calc_starflux(cube, center):
+ #   dims = cube.shape
+ #   y, x = np.meshgrid(np.arange(dims[0]), np.arange(dims[1]))
+ #   g_init = models.Gaussian2D(cube.max(), x_mean=center[0][0], y_mean=center[0][1], x_stddev=5, y_stddev=5, fixed={'x_mean':True,'y_mean':True,'theta':True})
+ #   fit_g = fitting.LevMarLSQFitter()
+ #   g = fit_g(g_init, y, x, cube)
+ #   return [[g.amplitude]]
+    
+    
