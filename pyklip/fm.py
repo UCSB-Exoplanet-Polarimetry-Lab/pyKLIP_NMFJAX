@@ -1702,17 +1702,26 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
     # spectral template
     if spectrum is not None:
-        if spectrum.lower() == "methane":
-            pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = sinterp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+        if isinstance(spectrum,np.ndarray):
+            spectrum_name = "custom"
+            if np.size(spectrum) == np.size(dataset.wvs):
+                spectra_template = spectrum
+            else:
+                raise ValueError("{0} is not a valid spectral template. Length of spectrum must be {1}."
+                                 .format(spectrum,np.size(dataset.wvs)))
+        if isinstance(spectrum,str):
+            spectrum_name = spectrum
+            if spectrum.lower() == "methane":
+                pykliproot = os.path.dirname(os.path.realpath(__file__))
+                spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+                spectrum_wvs = spectrum_dat[:,1]
+                spectrum_fluxes = spectrum_dat[:,3]
+                spectrum_interpolation = sinterp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
 
-            spectra_template = spectrum_interpolation(dataset.wvs)
-        else:
-            raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
-                             .format(spectrum))
+                spectra_template = spectrum_interpolation(dataset.wvs)
+            else:
+                raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
+                                 .format(spectrum))
     else:
         spectra_template = None
 
@@ -1727,7 +1736,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
                  "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
-                                              calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
+                                              calibrate_flux=calibrate_flux, spectrum=spectrum_name, highpass=highpass,
                                               sector_N_pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
                                               fmclass=fm_class)
     dataset.klipparams = klipparams
