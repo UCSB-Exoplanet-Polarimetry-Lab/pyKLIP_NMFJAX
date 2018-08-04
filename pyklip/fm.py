@@ -1724,6 +1724,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                  .format(spectrum))
     else:
         spectra_template = None
+        spectrum_name = None
 
     # default to instrument specific OWA?
     if OWA is None:
