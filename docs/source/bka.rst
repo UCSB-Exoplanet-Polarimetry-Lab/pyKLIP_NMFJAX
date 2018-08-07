@@ -320,6 +320,12 @@ We also store the Hessian inverse in ``fit.hess_inv``.
 Note that the algorithm we use is unable to estimate the uncertainity on the Gaussian parameter 
 hyperparameters, so those entries with all be 0. 
 
+.. note::
+    If you get a warning here about the optimizer not converging, this means that the BFGS algorithm in 
+    ``scipy.optimize.minimize`` was unable to converge on estimating the Hessian inverse, and thus 
+    the reported uncertainties are likely unreliable. We are working on a solution to this. We recommend
+    using fake planet injection instead to estimate your uncertainities if this happens. 
+
 Output of FitPSF
 ^^^^^^^^^^^^^^^^
 Here are some fields to access the fit. Each field is a 
