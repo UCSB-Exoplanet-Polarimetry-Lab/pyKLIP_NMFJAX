@@ -21,9 +21,9 @@ class FitPSF(object):
     Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
     Args:
-        guess_sep: the guessed separation (pixels)
-        guess_pa: the guessed position angle (degrees)
-        fitboxsize: fitting box side length (pixels)
+        guess_sep (float): the guessed separation (pixels)
+        guess_pa (float): the guessed position angle (degrees)
+        fitboxsize (int): fitting box side length (pixels)
         method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
 
     Attributes:
@@ -450,16 +450,18 @@ class FitPSF(object):
         init_guess = np.array([self.guess_RA_offset, self.guess_Dec_offset, math.log(self.guess_flux)])
         # append hyperparams for covariance matrix, which also need to be converted to log space
         init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
-        # number of dimensions of MCMC fit
-        ndim = np.size(init_guess)
+
+        init_guess = np.array([self.guess_RA_offset, self.guess_Dec_offset, (self.guess_flux)])
+        # append hyperparams for covariance matrix, which also need to be converted to log space
+        init_guess = np.append(init_guess, (self.covar_param_guesses))
 
         if self.bounds is None:
-            cost_function = lnlike
-            cost_function_args = (self, self.covar)
+            cost_function = lnprob
+            cost_function_args = (self, None, self.covar)
         else:
             # prior bounds also need to be put in log space
             sampler_bounds = np.copy(self.bounds)
-            sampler_bounds[2:] = np.log(sampler_bounds[2:])
+            #sampler_bounds[2:] = np.log(sampler_bounds[2:])
 
             cost_function = lnprob
             cost_function_args = (self, sampler_bounds, self.covar)
@@ -469,13 +471,23 @@ class FitPSF(object):
 
         #global cost_function
         nm_result = optimize.minimize(cost_function, init_guess, args=cost_function_args, method="Nelder-Mead")
-        result = optimize.minimize(cost_function, nm_result.x, args=cost_function_args, method="BFGS")
 
+        # BFGS will only fit for position and flux, and their uncertainties.
+        new_init_guess = nm_result.x[:3]
+        cost_function_args += tuple(nm_result.x[3:])
+        #if cost_function_args[1] is not None:
+        #    cost_function_args[1] = cost_function_args[1][:3] # modify limits to not include hyperparameters 
+
+        result = optimize.minimize(cost_function, new_init_guess, args=cost_function_args, method="BFGS")
+
+        if not result.success:
+            warnings.warn("Optimizer did not converge! Estimated uncertainties are likely unreliable. Msg: {0}".format(result.message))
+            
         # best fit values, and use the Hessian to approximate the uncertainties in the parameters
         ra_best = result.x[0]
         dec_best = result.x[1]
         flux_best = (result.x[2])
-        covar_params_best = [result.x[i] for i in range(3, np.size(result.x))]
+        covar_params_best = [nm_result.x[i] for i in range(3, np.size(nm_result.x))]
         ra_err = np.sqrt(np.abs(result.hess_inv[0,0]))
         dec_err = np.sqrt(np.abs(result.hess_inv[1,1]))
         flux_err = np.sqrt(np.abs(result.hess_inv[2,2]))
@@ -811,8 +823,8 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
         hyperparms_trial = hyperparms_trial[:-1]
 
     # get trial parameters out of log space
-    f_trial = math.exp(f_trial)
-    hyperparms_trial = np.exp(hyperparms_trial)
+    #f_trial = math.exp(f_trial)
+    #hyperparms_trial = np.exp(hyperparms_trial)
 
     dx = -(dRA_trial - fma.data_stamp_RA_offset_center)
     dy = dDec_trial - fma.data_stamp_Dec_offset_center
@@ -836,13 +848,15 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     try:
         (L_cov, lower_cov) = linalg.cho_factor(cov)
         cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
+        # compute log(det(Cov))
+        logdet = 2*np.sum(np.log(np.diag(L_cov)))
     except: 
         cov_inv = np.linalg.inv(cov)
         cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
-    residuals = diff_ravel.dot(cov_inv_dot_diff)
+        # compute log(det(Cov))
+        _, logdet = np.linalg.slogdet(cov)
 
-    # compute log(det(Cov))
-    logdet = 2*np.sum(np.log(np.diag(L_cov)))
+    residuals = diff_ravel.dot(cov_inv_dot_diff)
     constant = logdet
 
     loglikelihood = -0.5 * (residuals + constant)
@@ -853,7 +867,7 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     return loglikelihood
 
 
-def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
+def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False, cov_params=None):
     """
     Function to compute the relative posterior probabiltiy. Product of likelihood and prior
     Args:
@@ -867,17 +881,27 @@ def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
                   e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
         readnoise (bool): If True, the last fitparam fits for diagonal noise
         negate (bool): if True, negatives the probability (used for minimization algos)
+        cov_params (list): if not None, GP hyperparams aren't being fit. Are being passed here as set instead
 
     Returns:
 
     """
-    lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
+    if bounds is not None:
+        lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
+    else:
+        lp = 0
 
     if not np.isfinite(lp):
         if not negate:
             return -np.inf
         else:
             return np.inf
+
+    if cov_params is not None:
+        # need to stil cov_params into the fitparams, even though we are not fitting for them
+        # easier to not modify that function
+        fitparams = np.append(fitparams, cov_params)
+    
     return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
 
 
