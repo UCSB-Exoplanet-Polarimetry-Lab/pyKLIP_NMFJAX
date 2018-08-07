@@ -1,43 +1,43 @@
-pyklip.fmlib package
-====================
+pyklip\.fmlib package
+=====================
 
 Submodules
 ----------
 
-pyklip.fmlib.diskfm module
---------------------------
+pyklip\.fmlib\.diskfm module
+----------------------------
 
 .. automodule:: pyklip.fmlib.diskfm
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fmlib.extractSpec module
--------------------------------
+pyklip\.fmlib\.extractSpec module
+---------------------------------
 
 .. automodule:: pyklip.fmlib.extractSpec
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fmlib.fmpsf module
--------------------------
+pyklip\.fmlib\.fmpsf module
+---------------------------
 
 .. automodule:: pyklip.fmlib.fmpsf
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fmlib.matchedFilter module
----------------------------------
+pyklip\.fmlib\.matchedFilter module
+-----------------------------------
 
 .. automodule:: pyklip.fmlib.matchedFilter
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fmlib.nofm module
-------------------------
+pyklip\.fmlib\.nofm module
+--------------------------
 
 .. automodule:: pyklip.fmlib.nofm
     :members:
