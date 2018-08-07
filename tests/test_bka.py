@@ -82,13 +82,13 @@ def test_fmastrometry():
     data_hdu = fits.open(output_prefix + "-klipped-KLmodes-all.fits")
 
 
-    # get FM frame
-    fm_frame = np.nanmean(fm_hdu[1].data, axis=0)
+    # get FM frame, KL 7
+    fm_frame = fm_hdu[1].data[1]
     fm_centx = fm_hdu[1].header['PSFCENTX']
     fm_centy = fm_hdu[1].header['PSFCENTY']
 
-    # get data_stamp frame
-    data_frame = np.nanmean(data_hdu[1].data, axis=0)
+    # get data_stamp frame, KL 7
+    data_frame = data_hdu[1].data[1]
     data_centx = data_hdu[1].header["PSFCENTX"]
     data_centy = data_hdu[1].header["PSFCENTY"]
 
@@ -152,12 +152,12 @@ def test_maxlikehood():
 
 
     # get FM frame
-    fm_frame = np.nanmean(fm_hdu[1].data, axis=0)
+    fm_frame = fm_hdu[1].data[1]
     fm_centx = fm_hdu[1].header['PSFCENTX']
     fm_centy = fm_hdu[1].header['PSFCENTY']
 
     # get data_stamp frame
-    data_frame = np.nanmean(data_hdu[1].data, axis=0)
+    data_frame = data_hdu[1].data[1]
     data_centx = data_hdu[1].header["PSFCENTX"]
     data_centy = data_hdu[1].header["PSFCENTY"]
 
@@ -175,10 +175,10 @@ def test_maxlikehood():
     fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
 
     # set kernel, with read noise
-    fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
+    fma.set_kernel("matern32", [3.], [r"$l$"], False)
 
     # set bounds
-    #fma.set_bounds(1.5, 1.5, 1, [1.], 1)
+    fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_RA_offset, fma.guess_Dec_offset)
 
