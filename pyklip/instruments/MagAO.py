@@ -275,7 +275,7 @@ class MagAOData(object):
         #IWA gets reset by GUI. This is the default value.
         self.IWA = 0
         # half the size of the array
-        self.OWA = data.shape[0]/2
+        self.OWA = data.shape[1]/2
         #CHECK IWA AND OWA
         self.star_flux = star_fluxes
         self.contrast_scaling = 1./star_fluxes
