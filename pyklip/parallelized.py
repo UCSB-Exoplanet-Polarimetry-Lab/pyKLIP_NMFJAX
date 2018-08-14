@@ -1252,7 +1252,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
         corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         spectrum:       (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
-                        spectrum shape. Currently only supports "methane" between 1 and 10 microns.
+                        spectrum shape.
+                        - an array: of length N with the flux of the template spectrum at each wavelength.
+                        - a string: Currently only supports "methane" between 1 and 10 microns.
+                        Uses minmove to determine the separation from the center of the segment to determine contamination and
+                        the size of the PSF (TODO: make PSF size another quantity)
+                        (e.g. minmove=3, checks how much contamination is within 3 pixels of the hypothetical source)
+                        if smaller than 10%, (hard coded quantity), then use it for reference PSF
         psf_library:    if not None, a rdi.PSFLibrary object with a PSF Library for RDI
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units
@@ -1359,21 +1365,29 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         outputdir = "."
 
     if spectrum is not None:
-        if spectrum.lower() == "methane":
-            pykliproot = os.path.dirname(os.path.realpath(__file__))
-            spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
-            spectrum_wvs = spectrum_dat[:,1]
-            spectrum_fluxes = spectrum_dat[:,3]
-            spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
+        if isinstance(spectrum,np.ndarray):
+            spectrum_name = "custom"
+            if np.size(spectrum) == np.size(dataset.wvs):
+                spectra_template = spectrum
+            else:
+                raise ValueError("{0} is not a valid spectral template. Length of spectrum must be {1}."
+                                 .format(spectrum,np.size(dataset.wvs)))
+        if isinstance(spectrum,str):
+            spectrum_name = spectrum
+            if spectrum.lower() == "methane":
+                pykliproot = os.path.dirname(os.path.realpath(__file__))
+                spectrum_dat = np.loadtxt(os.path.join(pykliproot,"spectra","t800g100nc.flx"))[:160] #skip wavelegnths longer of 10 microns
+                spectrum_wvs = spectrum_dat[:,1]
+                spectrum_fluxes = spectrum_dat[:,3]
+                spectrum_interpolation = interp.interp1d(spectrum_wvs, spectrum_fluxes, kind='cubic')
 
-            spectra_template = spectrum_interpolation(dataset.wvs)
-            #unique_wvs = np.unique(wvs)
-            #spectra_template = spectrum_interpolation(unique_wvs)
-        else:
-            raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
-                             .format(spectrum))
+                spectra_template = spectrum_interpolation(dataset.wvs)
+            else:
+                raise ValueError("{0} is not a valid spectral template. Only currently supporting 'methane'"
+                                 .format(spectrum))
     else:
         spectra_template = None
+        spectrum_name = None
 
     # save klip parameters as a string
     maxbasis_str = maxnumbasis if maxnumbasis is not None else np.max(numbasis) # prefer to use maxnumbasis if possible
@@ -1382,7 +1396,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  "highpass={highpass}, time_collapse={weighted}".format(mode=mode, annuli=annuli, 
                                               subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
-                                              calibrate_flux=calibrate_flux, spectrum=spectrum, highpass=highpass,
+                                              calibrate_flux=calibrate_flux, spectrum=spectrum_name, highpass=highpass,
                                               weighted=time_collapse)
     dataset.klipparams = klipparams
 

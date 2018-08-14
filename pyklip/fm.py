@@ -1655,10 +1655,13 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         calibrate_flux: if true, flux calibrates the regular KLIP subtracted data. DOES NOT CALIBRATE THE FM
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
-        spectrum: if not None, a array of length N with the flux of the template spectrum at each wavelength. Uses
-                    minmove to determine the separation from the center of the segment to determine contamination and
-                    the size of the PSF (TODO: make PSF size another quanitity)
-                    (e.g. minmove=3, checks how much containmination is within 3 pixels of the hypothetical source)
+        spectrum: (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
+                        spectrum shape.
+                    - an array: of length N with the flux of the template spectrum at each wavelength.
+                    - a string: Currently only supports "methane" between 1 and 10 microns.
+                    Uses minmove to determine the separation from the center of the segment to determine contamination and
+                    the size of the PSF (TODO: make PSF size another quantity)
+                    (e.g. minmove=3, checks how much contamination is within 3 pixels of the hypothetical source)
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         highpass:       if True, run a Gaussian high pass filter (default size is sigma=imgsize/10)
                             can also be a number specifying FWHM of box in pixel units
