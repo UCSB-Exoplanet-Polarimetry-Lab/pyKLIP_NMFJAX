@@ -21,10 +21,11 @@ class FitPSF(object):
     Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
     Args:
-        guess_sep (float): the guessed separation (pixels)
-        guess_pa (float): the guessed position angle (degrees)
+        guess_x1 (float): guess location, first coordiante. Either separation or x (pixels). Default is separation
+        guess_x2 (float): guess location, second coordinate. Either position angle (degrees) or y (pixels). Default is PA
         fitboxsize (int): fitting box side length (pixels)
         method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
+        fmt (str): either 'seppa' or 'xy' depending on how you want to input the guess coordiantes
 
     Attributes:
         guess_sep (float): (initialization) guess separation for planet [pixels]
@@ -49,14 +50,11 @@ class FitPSF(object):
     
 
     """
-    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
+    def __init__(self, guess_x1, guess_x2, fitboxsize, method='mcmc', fmt="seppa"):
         """
         Initilaizes the FitPSF class
         """
-        # store initailization
-        self.guess_sep = guess_sep
-        self.guess_pa = guess_pa
-        self.fitboxsize = fitboxsize
+        # check method
         if method.lower() == "maxl":
             self.isbayesian = False
         elif method.lower() == "mcmc":
@@ -64,10 +62,20 @@ class FitPSF(object):
         else:
             raise ValueError("method needs to be either 'maxl' or 'mcmc'. Received {0}.".format(method))
 
-        # derive delta RA and delta Dec
-        # in pixels
-        self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
-        self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
+        # store initailization
+        if fmt.lower() == "seppa":  
+            self.guess_sep = guess_x1
+            self.guess_pa = guess_x2
+            self.fitboxsize = fitboxsize
+
+            # derive delta RA and delta Dec
+            # in pixels
+            self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
+            self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
+        elif fmt.lower() == "xy":
+            # assume image is North up East left. 
+            self.guess_RA_offset = -guess_x1
+            self.guess_Dec_offset = guess_x2
 
         # stuff that isn't generated yet
         # stamps of the data_stamp and the forward model
@@ -184,7 +192,7 @@ class FitPSF(object):
         Generate a stamp of the data_stamp ~centered on planet and also corresponding noise map
         Args:
             data: the final collapsed data_stamp (2-D)
-            data_center: location of star in the data_stamp
+            data_center: location of star in the data_stamp.  
             data_wcs: sky angles WCS object. To rotate the image properly [NOT YET IMPLMETNED]
                       if None, data_stamp is already rotated North up East left
             noise_map: if not None, noise map for each pixel in the data_stamp (2-D).
@@ -1035,3 +1043,21 @@ def simplecentroid(image, PSF, guessx,guessy):
 
     return (param_fit[0]+col_id-col_m),(param_fit[1]+row_id-row_m)
 
+def quick_psf_fit(data, psf, x_guess, y_guess, fitboxsize):
+    """
+    A wrapper for a quick maximum likelihood fit to a PSF to the data. 
+
+    Args:
+        data (np.array): 2-D data frame
+        psf (np.array): 2-D PSF template. This should be smaller than the size of data and
+                        larger than the fitboxsize
+        x_guess (float): approximate x position of the location you are fitting the psf to
+        y_guess (float): approximate y position of the location you are fitting the psf to
+        fitboxsize (int): fitting region is a square. This is the lenght of one side of the square
+
+    Returns:
+        x_fit, y_fit, flux_fit
+        x_fit (float): x position
+        y_fit (float): y position
+        flux_fit (float): multiplicative scale factor for the psf to match the data
+    """
