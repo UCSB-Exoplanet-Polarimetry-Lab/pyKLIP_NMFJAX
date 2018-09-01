@@ -294,7 +294,7 @@ def test_airy_fit():
     # fit it
     fitflux, fitfwhm, fitx, fity = fakes.airyfit2d(data, int(x0), int(y0))
 
-    threshold = 1e-6
+    threshold = 1e-4
     assert x0 == pytest.approx(fitx, threshold)
     assert y0 == pytest.approx(fity, threshold)
     assert flux0 == pytest.approx(fitflux, threshold)
