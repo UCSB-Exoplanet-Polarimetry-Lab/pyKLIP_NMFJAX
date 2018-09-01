@@ -226,7 +226,10 @@ class CHARISData(Data):
 
 
             print("Finding satellite spots for cube {0}".format(index))
-            spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc)
+            try:
+                spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc)
+            except:
+                continue
 
             # simple mean for center for now
             center = np.mean(spot_loc, axis=1)
@@ -240,7 +243,11 @@ class CHARISData(Data):
             wv_indices.append(cube_wv_indices)
             filenums.append(np.ones(cube.shape[0], dtype=int) * index)
             wcs_hdrs.append(astr_hdrs)
-            inttimes.append(np.ones(cube.shape[0], dtype=int) * prihdr['EXPTIME'])
+            try:
+                exptime = prihdr['EXPTIME']
+            except KeyError:
+                exptime = 20
+            inttimes.append(np.ones(cube.shape[0], dtype=int) * exptime)
             prihdrs.append(prihdr)
             exthdrs.append(exthdr)
             filenames.append([filepath for i in range(cube.shape[0])])
@@ -287,7 +294,10 @@ class CHARISData(Data):
         self.spot_locs = spot_locs
 
         # Required for automatically querying Simbad for the spectral type of the star.
-        self.object_name = self.prihdrs[0]["OBJECT"]
+        try:
+            self.object_name = self.prihdrs[0]["OBJECT"]
+        except KeyError:
+            self.object_name = "None"
 
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
@@ -529,7 +539,8 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     start_spot_fwhms = []
     for guess_spot_loc in guess_spot_locs:
         xguess, yguess = guess_spot_loc
-        fitargs = fakes.airyfit2d(start_frame, xguess, yguess, searchrad=7)
+        #fitargs = fakes.airyfit2d(start_frame, xguess, yguess, searchrad=7)
+        fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, searchrad=4)
         fitflux, fitfwhm, fitx, fity = fitargs
         start_spot_locs.append([fitx, fity])
         start_spot_fluxes.append(fitflux)
@@ -562,7 +573,8 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
         thiswv_spot_fwhms = []
         for guess_spot_loc in thiswv_guess_spot_locs:
             xguess, yguess = guess_spot_loc
-            fitargs = fakes.airyfit2d(frame, xguess, yguess, searchrad=7)
+            #fitargs = fakes.airyfit2d(frame, xguess, yguess, searchrad=7)
+            fitargs = fakes.gaussfit2d(frame, xguess, yguess, searchrad=4)
             fitflux, fitfwhm, fitx, fity = fitargs
             thiswv_spot_locs.append([fitx, fity])
             thiswv_spot_fluxes.append(fitflux)
