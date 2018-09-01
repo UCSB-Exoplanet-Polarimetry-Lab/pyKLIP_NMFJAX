@@ -715,7 +715,7 @@ def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
     guess = np.array((searchrad, searchrad, guesspeak, guessfwhm))
 
     #p, success = optimize.leastsq(errorfunction, guess)
-    res = optimize.minimize(errorfunction, guess, bounds=((0, 2*searchrad+1), (0, 2*searchrad+1), (0, None), (0, searchrad)))
+    res = optimize.minimize(errorfunction, guess, method="Nelder-Mead")
     p = res.x
 
     xfit = p[0]
