@@ -1478,6 +1478,11 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             corr_psfs = np.corrcoef(ref_psfs_smoothed)
+            # smoothing could have caused some ref images to have all 0s
+            # which would give them correlation matrix entries of NaN
+            # 0 them out for now.
+            corr_psfs[np.where(np.isnan(corr_psfs))] = 0
+            
     else:
         # if we don't smooth, we can use the covariance matrix to calculate the correlation matrix. It'll be slightly faster
         #also calculate correlation matrix since we'll use that to select reference PSFs
