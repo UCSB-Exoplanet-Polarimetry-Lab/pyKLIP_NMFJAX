@@ -60,7 +60,7 @@ class CHARISData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
-    lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
+    lenslet_scale = 0.0162 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
