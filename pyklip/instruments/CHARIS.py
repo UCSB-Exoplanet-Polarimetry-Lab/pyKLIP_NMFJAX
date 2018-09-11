@@ -284,7 +284,7 @@ class CHARISData(Data):
 
         # if there is more than 1 integration time, normalize all data to the first integration time
         if np.size(np.unique(inttimes)) > 1:
-            inttime0 = inttime[0]
+            inttime0 = inttimes[0]
             # normalize integration times
             data = data * inttime0/inttimes[:, None, None]
             spot_fluxes *= inttime0/inttimes
