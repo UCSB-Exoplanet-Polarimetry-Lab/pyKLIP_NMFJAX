@@ -26,7 +26,7 @@ pipelines:
           
           # setup coveralls
           - pip install coveralls
-          - conda install -c astropy photutils
+          - conda install -y -c astropy photutils
 
 
           #Coverage and Coverall hooking
