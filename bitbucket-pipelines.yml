@@ -28,7 +28,7 @@ pipelines:
           - pip install coveralls
           # conda photutils is not happy with python 3.7. install manually for now
           #- conda install -y -c astropy photutils
-          - apt-get install gcc
+          - apt-get install -y gcc
           - pip install --no-deps photutils
           
 
