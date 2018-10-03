@@ -355,7 +355,7 @@ class DiskFM(NoFM):
         del pa_imgs_np
 
 
-    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False, spectrum=None):
+    def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False, spectrum=None, pixel_weights=1):
         '''
         Uses self.dataset parameters to save fmout, the output of
         fm_paralellized or klip_dataset

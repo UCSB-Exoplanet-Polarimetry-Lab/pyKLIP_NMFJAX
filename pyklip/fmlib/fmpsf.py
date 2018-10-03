@@ -342,7 +342,7 @@ class FMPlanetPSF(NoFM):
         return fmout
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
-                   spectrum=None):
+                   spectrum=None, pixel_weights=1):
         """
         Saves the FM planet PSFs to disk. Saves both a KL mode cube and spectral cubes
 
@@ -355,14 +355,24 @@ class FMPlanetPSF(NoFM):
             klipparams: string with KLIP-FM parameters
             calibrate_flux: if True, flux calibrate the data in the same way as the klipped data
             spectrum: if not None, spectrum to weight the data by. Length same as dataset.wvs
+            pixel_weights: weights for each pixel for weighted mean. Leave this as a single number for simple mean
         """
+        weighted = np.shape(pixel_weights) != ()
+        numwvs = dataset.numwvs
+        fmout_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
+                                            fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
+
         # collapse in time and wavelength to examine KL modes
         if spectrum is None:
-            KLmode_cube = np.nanmean(fmout, axis=1)
+            KLmode_cube = np.nanmean(pixel_weights * fmout_spec, axis=(1,2))
+            if weighted:
+                # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
+                KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))
         else:
             #do the mean combine by weighting by the spectrum
-            KLmode_cube = np.nanmean(fmout * spectrum[None,:,None,None], axis=1)\
-                          / np.mean(spectrum)
+            spectra_template = spectrum.reshape(fmout_spec.shape[1:3]) #make same shape as dataset.output
+            KLmode_cube = np.nanmean(pixel_weights * fmout_spec * spectra_template[None,:,:,None,None], axis=(1,2))\
+                            / np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis = (1, 2))
 
         # save FM location into header
         more_keywords = {'fm_sep': self.sep, 'fm_pa': self.pa}
@@ -375,13 +385,13 @@ class FMPlanetPSF(NoFM):
                          zaxis=numbasis, more_keywords=more_keywords)
 
         # if there is more than one wavelength, save spectral cubes
-        if np.size(np.unique(dataset.wvs)) > 1:
-            numwvs = np.size(np.unique(dataset.wvs))
-            klipped_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
-                                            fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
-
-            # for each KL mode, collapse in time to examine spectra
-            KLmode_spectral_cubes = np.nanmean(klipped_spec, axis=1)
+        if dataset.numwvs > 1:
+            
+            KLmode_spectral_cubes = np.nanmean(pixel_weights * fmout_spec, axis=1)
+            if weighted:
+                # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that. 
+                KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
+            
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 # calibrate spectral cube if needed
                 if calibrate_flux:

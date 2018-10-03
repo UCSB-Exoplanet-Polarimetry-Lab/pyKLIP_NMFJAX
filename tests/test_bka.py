@@ -70,7 +70,8 @@ def test_fmastrometry():
     # run KLIP-FM
     prefix = "betpic-131210-j-fmpsf"
     fm.klip_dataset(dataset, fm_class, outputdir=testdir, fileprefix=prefix, numbasis=numbasis,
-                    annuli=[[guesssep-15, guesssep+15]], subsections=1, padding=0, movement=2)
+                    annuli=[[guesssep-15, guesssep+15]], subsections=1, padding=0, movement=2, 
+                    time_collapse="weighted-mean")
 
     # before we do anything else, check that dataset.centers remains unchanged
     assert(dataset.centers[0][0] == oldcenters[0][0])

@@ -149,7 +149,7 @@ class NoFM(object):
         return False
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, klipparams=None, calibrate_flux=False,
-                   spectrum=None):
+                   spectrum=None, pixel_weights=1):
         """
         Saves the fmout data to disk following the instrument's savedata function
 
@@ -162,5 +162,6 @@ class NoFM(object):
             klipparams: string with KLIP-FM parameters
             calibrate_flux: if True, flux calibrate the data (if applicable)
             spectrum: if not None, the spectrum to weight the data by. Length same as dataset.wvs
+            pixel_weights: weights for each pixel for weighted mean. Leave this as a single number for simple mean
         """
         return

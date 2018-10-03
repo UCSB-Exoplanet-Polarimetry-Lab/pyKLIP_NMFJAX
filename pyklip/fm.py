@@ -14,7 +14,7 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as sinterp
 
 import pyklip.klip as klip
-from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs
+from pyklip.parallelized import _arraytonumpy, high_pass_filter_imgs, generate_noise_maps
 
 
 #Logic to test mkl exists
@@ -989,7 +989,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                       movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, corr_smooth=1,
                       aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, padding=0, save_klipped=True, flipx=True,
-                      N_pix_sector = None,mute_progression = False, annuli_spacing="constant"):
+                      N_pix_sector = None,mute_progression = False, annuli_spacing="constant", compute_noise_cube=False):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -1046,7 +1046,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                         idea.
         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
                         log (logarithmical expansion with r), and linear (linearly expansion with r)
-
+        compute_noise_cube:  if True, compute the noise in each pixel assuming azimuthally uniform noise
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -1346,8 +1346,24 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
         #restore bad pixels
         # sub_imgs[:, allnans[0], allnans[1], allnans[2]] = np.nan
+
+        # if we are doing a weighted mean, calculate weigths here
+        if compute_noise_cube:
+            print("Computing weights for weighted collapse")
+            # figure out ~how wide to make it
+            annuli_widths = [annuli_bound[1] - annuli_bound[0] for annuli_bound in rad_bounds]
+            dr_spacing = np.min(annuli_widths)
+            # generate all teh noise maps. We need to collapse the sub_imgs into 3-D to easily do this
+            sub_imgs_shape = sub_imgs.shape
+            sub_imgs_flatten = sub_imgs.reshape([sub_imgs_shape[0]*sub_imgs_shape[1], sub_imgs_shape[2], sub_imgs_shape[3]])
+            noise_imgs = generate_noise_maps(sub_imgs_flatten, aligned_center, dr_spacing, IWA=rad_bounds[0][0], OWA=rad_bounds[-1][1], numthreads=numthreads)
+            # reform the 4-D cubes
+            noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
+        else:
+            noise_imgs = np.array([1.])
     else:
         sub_imgs = None
+        noise_imgs = None
 
     # put any finishing touches on the FM Output
     fmout_np = _arraytonumpy(fmout_data, fmout_shape,dtype=fm_class.data_type)
@@ -1357,7 +1373,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     perturbmag_np = _arraytonumpy(perturbmag, perturbmag_shape,dtype=fm_class.data_type)
 
     # Output for the sole PSFs
-    return sub_imgs, fmout_np, perturbmag_np, aligned_center
+    return sub_imgs, fmout_np, perturbmag_np, aligned_center, noise_imgs
 
 
 
@@ -1621,7 +1637,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
                  OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=0,
                  numbasis=None, maxnumbasis=None, numthreads=None, corr_smooth=1, calibrate_flux=False, aligned_center=None,
-                 spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False):
+                 spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False,
+                 time_collapse="mean"):
     """
     Run KLIP-FM on a dataset object
 
@@ -1676,6 +1693,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         mute_progression: Mute the printing of the progression percentage. Indeed sometimes the overwriting feature
                         doesn't work and one ends up with thousands of printed lines. Therefore muting it can be a good
                         idea.
+        time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean"
 
     """
 
@@ -1692,6 +1710,13 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
             numbasis = np.array(numbasis)
         else:
             numbasis = np.array([numbasis])
+
+    # check how we will collapse the data
+    valid_time_collapse = ["mean", "weighted-mean"]
+    if not time_collapse.lower() in valid_time_collapse:
+        raise ValueError("Cannot collpase data using {0}. Valid options are {1}".format(time_collapse, valid_time_collapse))
+    time_collapse = time_collapse.lower()
+    weighted = "weighted" in time_collapse # boolean whether to use weights
 
     # high pass filter?
     if isinstance(highpass, bool):
@@ -1743,11 +1768,11 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     klipparams = "fmlib={fmclass}, mode={mode},annuli={annuli},subsect={subsections},sector_N_pix={sector_N_pix}," \
                  "fluxoverlap={fluxoverlap}, psf_fwhm={psf_fwhm}, minmove={movement}, " \
                  "numbasis={numbasis}/{maxbasis},minrot={minrot},calibflux={calibrate_flux},spectrum={spectrum}," \
-                 "highpass={highpass}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
+                 "highpass={highpass}, time_collapse={weighted}".format(mode=mode, annuli=annuli, subsections=subsections, movement=movement,
                                               numbasis="{numbasis}", maxbasis=maxbasis_str, minrot=minrot,
                                               calibrate_flux=calibrate_flux, spectrum=spectrum_name, highpass=highpass,
                                               sector_N_pix=N_pix_sector, fluxoverlap=flux_overlap, psf_fwhm=PSF_FWHM,
-                                              fmclass=fm_class)
+                                              fmclass=fm_class, weighted=time_collapse)
     dataset.klipparams = klipparams
 
     dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
@@ -1764,14 +1789,22 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      aligned_center=aligned_center, numthreads=numthreads,
                                      minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
                                      flipx=dataset.flipx, annuli_spacing=annuli_spacing,
-                                     N_pix_sector=N_pix_sector, mute_progression=mute_progression)
+                                     N_pix_sector=N_pix_sector, mute_progression=mute_progression, compute_noise_cube=weighted)
 
-    klipped, fmout, perturbmag, klipped_center = klip_outputs # images are already rotated North up East left
+    klipped, fmout, perturbmag, klipped_center, stddev_frames = klip_outputs # images are already rotated North up East left
 
     dataset.fmout = fmout
     dataset.perturbmag = perturbmag
     # save output centers here
     dataset.output_centers = np.array([klipped_center for _ in range(klipped.shape[1])])
+    
+    numwvs = dataset.numwvs
+
+    # pixel weights for weighted mean
+    pixel_weights = 1./stddev_frames**2           
+    if weighted:
+        pixel_weights = pixel_weights.reshape([klipped.shape[0], klipped.shape[1]//numwvs, numwvs,
+                                        klipped.shape[2], klipped.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
     # run WCS rotation on output WCS, which we'll copy from the input ones
     for angle, astr_hdr in zip(dataset.PAs, dataset.output_wcs):
@@ -1781,12 +1814,16 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
     # write fmout
     fm_class.save_fmout(dataset, fmout, outputdir, fileprefix, numbasis, klipparams=klipparams,
-                        calibrate_flux=calibrate_flux, spectrum=spectra_template)
+                        calibrate_flux=calibrate_flux, spectrum=spectra_template, pixel_weights=pixel_weights)
 
     # if we want to save the klipped image
     if save_klipped:
         # store it in the dataset object
         dataset.output = klipped
+
+        # 5-D cube 
+        klipped = klipped.reshape([klipped.shape[0], klipped.shape[1]//numwvs, numwvs,
+                                        klipped.shape[2], klipped.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
         # write to disk. Filepath
         outputdirpath = os.path.realpath(outputdir)
@@ -1795,11 +1832,15 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
         # collapse in time and wavelength to examine KL modes
         if spectrum is None:
-            KLmode_cube = np.nanmean(dataset.output, axis=1)
+            KLmode_cube = np.nanmean(pixel_weights * klipped, axis=(1,2))
+            if weighted:
+                # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
+                KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))
         else:
             #do the mean combine by weighting by the spectrum
-            KLmode_cube = np.nanmean(dataset.output * spectra_template[None,:,None,None], axis=1)\
-                          / np.mean(spectra_template)
+            spectra_template = spectra_template.reshape(klipped.shape[1:3]) #make same shape as dataset.output
+            KLmode_cube = np.nanmean(pixel_weights * klipped * spectra_template[None,:,:,None,None], axis=(1,2))\
+                            / np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis = (1, 2))
 
         # broadband flux calibration for KL mode cube
         if calibrate_flux:
@@ -1809,13 +1850,13 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                          zaxis=numbasis)
 
         # if there is more than one wavelength, save spectral cubes
-        if np.size(np.unique(dataset.wvs)) > 1:
-            numwvs = np.size(np.unique(dataset.wvs))
-            klipped_spec = klipped.reshape([klipped.shape[0], klipped.shape[1]//numwvs, numwvs,
-                                            klipped.shape[2], klipped.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
-
+        if dataset.numwvs > 1:
             # for each KL mode, collapse in time to examine spectra
-            KLmode_spectral_cubes = np.nanmean(klipped_spec, axis=1)
+            KLmode_spectral_cubes = np.nanmean(pixel_weights * klipped, axis=1)
+            if weighted:
+                # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that. 
+                KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
+
             for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
                 # calibrate spectral cube if needed
                 if calibrate_flux:
