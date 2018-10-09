@@ -172,6 +172,7 @@ def test_maxlikehood():
     fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
 
     # generate data_stamp stamp
+    data_frame[140-23 , 140+15] = np.nan 
     fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
 
     # set kernel, with read noise

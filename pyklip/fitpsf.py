@@ -39,11 +39,9 @@ class FitPSF(object):
         raw_PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [degrees]
         RA_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the RA offset of the planet that includes all astrometric errors [pixels or mas]
         Dec_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the Dec offset of the planet that includes all astrometric errors [pixels or mas]
-        sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the separation of the planet that includes all astrometric errors [pixels or mas]
-        PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the PA of the planet that includes all astrometric errors [degrees]
         fm_stamp (np.array): (fitting) The 2-D stamp of the forward model (centered at the nearest pixel to the guessed location)
-        data_stamp (np.array): (fitting) The 2-D stamp of the data (centered at the nearest pixel to the guessed location)
-        noise_map (np.array): (fitting) The 2-D stamp of the noise for each pixel the data computed assuming azimuthally similar noise
+        data_stamp (np.array): (fitting) The stamp of the data (centered at the nearest pixel to the guessed location) (2-D unless there were NaNs in which 1-D)
+        noise_map (np.array): (fitting) The stamp of the noise for each pixel the data computed assuming azimuthally similar noise (same dim as data_stamp)
         padding (int): amount of pixels on one side to pad the data/forward model stamp
         sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. Only for Bayesian fit. See emcee docs for more details. 
     
@@ -253,6 +251,19 @@ class FitPSF(object):
             noise_stamp = noise_map[ymin:ymax, xmin:xmax]
 
         self.noise_map = noise_stamp
+
+        # if there are NaNs, unravel the data to 1-D and remove NaNs
+        nanpix = np.where(np.isnan(self.data_stamp))
+        if np.size(nanpix) > 0:
+            goodpix = np.where(~np.isnan(self.data_stamp))
+            # self.data_stamp = self.data_stamp[goodpix]
+            # self.data_stamp_RA_offset = self.data_stamp_RA_offset[goodpix]
+            # self.data_stamp_Dec_offset = self.data_stamp_Dec_offset[goodpix]
+            # self.noise_map = self.noise_map[goodpix]
+            self._usegoodpix = goodpix
+        else:
+            self._usegoodpix = None
+
 
 
     def set_kernel(self, covar, covar_param_guesses, covar_param_labels, include_readnoise=False,
@@ -548,8 +559,8 @@ class FitPSF(object):
         residual_map = self.data_stamp - fm_bestfit
 
         # normalize all images to same scale
-        colornorm = matplotlib.colors.Normalize(vmin=np.percentile(self.data_stamp, 0.03),
-                                                vmax=np.percentile(self.data_stamp, 99.7))
+        colornorm = matplotlib.colors.Normalize(vmin=np.nanpercentile(self.data_stamp, 0.03),
+                                                vmax=np.nanpercentile(self.data_stamp, 99.7))
 
         # plot the data_stamp
         ax1 = fig.add_subplot(131)
@@ -581,6 +592,206 @@ class FitPSF(object):
 
         return fig
 
+
+def lnprior(fitparams, bounds, readnoise=False, negate=False):
+    """
+    Bayesian prior
+
+    Args:
+        fitparams: array of params (size N)
+
+        bounds: array of (N,2) with corresponding lower and upper bound of params
+                bounds[i,0] <= fitparams[i] < bounds[i,1]
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
+
+    Returns:
+        prior: 0 if inside bound ranges, -inf if outside
+
+    """
+    prior = 0.0
+
+    for param, bound in zip(fitparams, bounds):
+        if (param >= bound[1]) | (param < bound[0]):
+            prior *= -np.inf
+            break
+
+    if negate:
+        prior *= -1
+
+    return prior
+
+
+def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
+    """
+    Likelihood function
+    Args:
+        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
+                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
+                    f: flux scale factor to normalizae the flux of the data_stamp to the model
+        fma (FMAstrometry): a FMAstrometry object that has been fully set up to run
+        cov_func (function): function that given an input [x,y] coordinate array returns the covariance matrix
+                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
+
+    Returns:
+        likeli: log of likelihood function (minus a constant factor)
+    """
+    dRA_trial = fitparams[0]
+    dDec_trial = fitparams[1]
+    f_trial = fitparams[2]
+    hyperparms_trial = fitparams[3:]
+
+    if readnoise:
+        # last hyperparameter is a diagonal noise term. Separate it out
+        readnoise_amp = np.exp(hyperparms_trial[-1])
+        hyperparms_trial = hyperparms_trial[:-1]
+
+    # get trial parameters out of log space
+    f_trial = math.exp(f_trial)
+    hyperparms_trial = np.exp(hyperparms_trial)
+
+    dx = -(dRA_trial - fma.data_stamp_RA_offset_center)
+    dy = dDec_trial - fma.data_stamp_Dec_offset_center
+
+    fm_shifted = sinterp.shift(fma.fm_stamp, [dy, dx])
+
+    if fma.padding > 0:
+        fm_shifted = fm_shifted[fma.padding:-fma.padding, fma.padding:-fma.padding]
+
+    if fma._usegoodpix is not None:
+        fm_shifted = fm_shifted[fma._usegoodpix]
+        data_stamp = fma.data_stamp[fma._usegoodpix]
+        x_offsets = fma.data_stamp_RA_offset[fma._usegoodpix]
+        y_offsets = fma.data_stamp_Dec_offset[fma._usegoodpix]
+        noise_map = fma.noise_map[fma._usegoodpix]
+    else:
+        data_stamp = fma.data_stamp
+        x_offsets = fma.data_stamp_RA_offset
+        y_offsets = fma.data_stamp_Dec_offset
+        noise_map = fma.noise_map
+
+    diff_ravel = data_stamp.ravel() - f_trial * fm_shifted.ravel()
+
+    cov = cov_func(x_offsets.ravel(), y_offsets.ravel(), noise_map.ravel(), hyperparms_trial)
+
+    if readnoise:
+        # add a diagonal term
+        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(noise_map.ravel()**2 )
+
+    # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
+    # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
+    try:
+        (L_cov, lower_cov) = linalg.cho_factor(cov)
+        cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
+    except: 
+        cov_inv = np.linalg.inv(cov)
+        cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
+    residuals = diff_ravel.dot(cov_inv_dot_diff)
+
+    # compute log(det(Cov))
+    logdet = 2*np.sum(np.log(np.diag(L_cov)))
+    constant = logdet
+
+    loglikelihood = -0.5 * (residuals + constant)
+
+    if negate:
+        loglikelihood *= -1
+    
+    return loglikelihood
+
+
+def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
+    """
+    Function to compute the relative posterior probabiltiy. Product of likelihood and prior
+    Args:
+        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
+                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
+                    f: flux scale factor to normalizae the flux of the data_stamp to the model
+        fma: a FMAstrometry object that has been fully set up to run
+        bounds: array of (N,2) with corresponding lower and upper bound of params
+                bounds[i,0] <= fitparams[i] < bounds[i,1]
+        cov_func: function that given an input [x,y] coordinate array returns the covariance matrix
+                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
+        readnoise (bool): If True, the last fitparam fits for diagonal noise
+        negate (bool): if True, negatives the probability (used for minimization algos)
+
+    Returns:
+
+    """
+    lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
+
+    if not np.isfinite(lp):
+        if not negate:
+            return -np.inf
+        else:
+            return np.inf
+    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
+
+
+class ParamRange(object):
+    """
+    Stores the best fit value and uncertainities for a parameter in a neat fasion
+
+    Args:
+        bestfit (float): the bestfit value
+        err_range: either a float or a 2-element tuple (+val1, -val2) and gives the 1-sigma range
+
+    Attributes:
+        bestfit (float): the bestfit value
+        error (float): the average 1-sigma error
+        error_2sided (np.array): [+error1, -error2] 2-element array with asymmetric errors
+    """
+    def __init__(self, bestfit, err_range):
+        self.bestfit = bestfit
+
+        if isinstance(err_range, (int, float)):
+            self.error = err_range
+            self.error_2sided = np.array([err_range, -err_range])
+        elif len(err_range) == 2:
+            self.error_2sided = np.array(err_range)
+            self.error = np.mean(np.abs(err_range))
+
+class FMAstrometry(FitPSF):
+    """
+    Specifically for fitting astrometry of a directly imaged companion relative to its star. Extension of :py:class:`pyklip.fitpsf.FitPSF`.
+
+    Args:
+        guess_sep: the guessed separation (pixels)
+        guess_pa: the guessed position angle (degrees)
+        fitboxsize: fitting box side length (pixels)
+        method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
+
+    Attributes:
+        guess_sep (float): (initialization) guess separation for planet [pixels]
+        guess_pa (float): (initialization) guess PA for planet [degrees]
+        guess_RA_offset (float): (initialization) guess RA offset [pixels]
+        guess_Dec_offset (float): (initialization) guess Dec offset [pixels]
+        raw_RA_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_Dec_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_flux (:py:class:`pyklip.fitpsf.ParamRange`): (result) factor to scale the FM to match the flux of the data
+        covar_params (list of :py:class:`pyklip.fitpsf.ParamRange`): (result) hyperparameters for the Gaussian process
+        raw_sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [pixels]
+        raw_PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [degrees]
+        RA_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the RA offset of the planet that includes all astrometric errors [pixels or mas]
+        Dec_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the Dec offset of the planet that includes all astrometric errors [pixels or mas]
+        sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the separation of the planet that includes all astrometric errors [pixels or mas]
+        PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the PA of the planet that includes all astrometric errors [degrees]
+        fm_stamp (np.array): (fitting) The 2-D stamp of the forward model (centered at the nearest pixel to the guessed location)
+        data_stamp (np.array): (fitting) The 2-D stamp of the data (centered at the nearest pixel to the guessed location)
+        noise_map (np.array): (fitting) The 2-D stamp of the noise for each pixel the data computed assuming azimuthally similar noise
+        padding (int): amount of pixels on one side to pad the data/forward model stamp
+        sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. Only for Bayesian fit. See emcee docs for more details. 
+    """
+    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
+        super(FMAstrometry, self).__init__(guess_sep, guess_pa, fitboxsize, method)
+
+    def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
+                       numthreads=None):
+        self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
+
+    
     def propogate_errs(self, star_center_err=None, platescale=None, platescale_err=None, pa_offset=None, pa_uncertainty=None):
         """
         Propogate astrometric error. Stores results in its own fields
@@ -751,169 +962,6 @@ class FitPSF(object):
 
             print("RA offset = {0} +/- {1} ({2}) mas".format(self.RA_offset.bestfit, self.RA_offset.error, self.RA_offset.error_2sided))
             print("Dec offset = {0} +/- {1} ({2}) mas".format(self.Dec_offset.bestfit, self.Dec_offset.error, self.Dec_offset.error_2sided))
-
-
-
-
-def lnprior(fitparams, bounds, readnoise=False, negate=False):
-    """
-    Bayesian prior
-
-    Args:
-        fitparams: array of params (size N)
-
-        bounds: array of (N,2) with corresponding lower and upper bound of params
-                bounds[i,0] <= fitparams[i] < bounds[i,1]
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-
-    Returns:
-        prior: 0 if inside bound ranges, -inf if outside
-
-    """
-    prior = 0.0
-
-    for param, bound in zip(fitparams, bounds):
-        if (param >= bound[1]) | (param < bound[0]):
-            prior *= -np.inf
-            break
-
-    if negate:
-        prior *= -1
-
-    return prior
-
-
-def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
-    """
-    Likelihood function
-    Args:
-        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
-                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
-                    f: flux scale factor to normalizae the flux of the data_stamp to the model
-        fma (FMAstrometry): a FMAstrometry object that has been fully set up to run
-        cov_func (function): function that given an input [x,y] coordinate array returns the covariance matrix
-                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-
-    Returns:
-        likeli: log of likelihood function (minus a constant factor)
-    """
-    dRA_trial = fitparams[0]
-    dDec_trial = fitparams[1]
-    f_trial = fitparams[2]
-    hyperparms_trial = fitparams[3:]
-
-    if readnoise:
-        # last hyperparameter is a diagonal noise term. Separate it out
-        readnoise_amp = np.exp(hyperparms_trial[-1])
-        hyperparms_trial = hyperparms_trial[:-1]
-
-    # get trial parameters out of log space
-    f_trial = math.exp(f_trial)
-    hyperparms_trial = np.exp(hyperparms_trial)
-
-    dx = -(dRA_trial - fma.data_stamp_RA_offset_center)
-    dy = dDec_trial - fma.data_stamp_Dec_offset_center
-
-    fm_shifted = sinterp.shift(fma.fm_stamp, [dy, dx])
-
-    if fma.padding > 0:
-        fm_shifted = fm_shifted[fma.padding:-fma.padding, fma.padding:-fma.padding]
-
-    diff_ravel = fma.data_stamp.ravel() - f_trial * fm_shifted.ravel()
-
-    cov = cov_func(fma.data_stamp_RA_offset.ravel(), fma.data_stamp_Dec_offset.ravel(), fma.noise_map.ravel(),
-                   hyperparms_trial)
-
-    if readnoise:
-        # add a diagonal term
-        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(fma.noise_map.ravel()**2 )
-
-    # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
-    # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
-    try:
-        (L_cov, lower_cov) = linalg.cho_factor(cov)
-        cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
-    except: 
-        cov_inv = np.linalg.inv(cov)
-        cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
-    residuals = diff_ravel.dot(cov_inv_dot_diff)
-
-    # compute log(det(Cov))
-    logdet = 2*np.sum(np.log(np.diag(L_cov)))
-    constant = logdet
-
-    loglikelihood = -0.5 * (residuals + constant)
-
-    if negate:
-        loglikelihood *= -1
-    
-    return loglikelihood
-
-
-def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False):
-    """
-    Function to compute the relative posterior probabiltiy. Product of likelihood and prior
-    Args:
-        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
-                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
-                    f: flux scale factor to normalizae the flux of the data_stamp to the model
-        fma: a FMAstrometry object that has been fully set up to run
-        bounds: array of (N,2) with corresponding lower and upper bound of params
-                bounds[i,0] <= fitparams[i] < bounds[i,1]
-        cov_func: function that given an input [x,y] coordinate array returns the covariance matrix
-                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-
-    Returns:
-
-    """
-    lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
-
-    if not np.isfinite(lp):
-        if not negate:
-            return -np.inf
-        else:
-            return np.inf
-    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
-
-
-class ParamRange(object):
-    """
-    Stores the best fit value and uncertainities for a parameter in a neat fasion
-
-    Args:
-        bestfit (float): the bestfit value
-        err_range: either a float or a 2-element tuple (+val1, -val2) and gives the 1-sigma range
-
-    Attributes:
-        bestfit (float): the bestfit value
-        error (float): the average 1-sigma error
-        error_2sided (np.array): [+error1, -error2] 2-element array with asymmetric errors
-    """
-    def __init__(self, bestfit, err_range):
-        self.bestfit = bestfit
-
-        if isinstance(err_range, (int, float)):
-            self.error = err_range
-            self.error_2sided = np.array([err_range, -err_range])
-        elif len(err_range) == 2:
-            self.error_2sided = np.array(err_range)
-            self.error = np.mean(np.abs(err_range))
-
-class FMAstrometry(FitPSF):
-    """
-    FMAstrometry is now obsolete as all its functionality is in FitPSF
-    """
-    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
-        super(FMAstrometry, self).__init__(guess_sep, guess_pa, fitboxsize, method)
-
-    def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
-                       numthreads=None):
-        self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
 
 import scipy.ndimage as ndimage
 from copy import copy
