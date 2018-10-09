@@ -597,8 +597,8 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     start_spot_fwhms = []
     for spot_num, guess_spot_loc in enumerate(guess_spot_locs):
         xguess, yguess = guess_spot_loc
-        #fitargs = fakes.airyfit2d(start_frame, xguess, yguess, searchrad=7)
-        fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, searchrad=4)
+        fitargs = fakes.airyfit2d(start_frame, xguess, yguess, searchrad=7)
+        #fitargs = fakes.gaussfit2d(start_frame, xguess, yguess, searchrad=4)
         fitflux, fitfwhm, fitx, fity = fitargs
         start_spot_locs.append([fitx, fity])
         start_spot_fluxes.append(fitflux)
@@ -632,8 +632,8 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
         thiswv_spot_fwhms = []
         for spot_num, guess_spot_loc in enumerate(thiswv_guess_spot_locs):
             xguess, yguess = guess_spot_loc
-            #fitargs = fakes.airyfit2d(frame, xguess, yguess, searchrad=7)
-            fitargs = fakes.gaussfit2d(frame, xguess, yguess, searchrad=4)
+            fitargs = fakes.airyfit2d(frame, xguess, yguess, searchrad=7)
+            #fitargs = fakes.gaussfit2d(frame, xguess, yguess, searchrad=4)
             fitflux, fitfwhm, fitx, fity = fitargs
             thiswv_spot_locs.append([fitx, fity])
             thiswv_spot_fluxes.append(fitflux)
