@@ -21,8 +21,6 @@ class FitPSF(object):
     Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
     Args:
-        guess_sep: the guessed separation (pixels)
-        guess_pa: the guessed position angle (degrees)
         fitboxsize: fitting box side length (pixels)
         method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
 
@@ -47,13 +45,11 @@ class FitPSF(object):
     
 
     """
-    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
+    def __init__(self, fitboxsize, method='mcmc'):
         """
         Initilaizes the FitPSF class
         """
         # store initailization
-        self.guess_sep = guess_sep
-        self.guess_pa = guess_pa
         self.fitboxsize = fitboxsize
         if method.lower() == "maxl":
             self.isbayesian = False
@@ -62,10 +58,7 @@ class FitPSF(object):
         else:
             raise ValueError("method needs to be either 'maxl' or 'mcmc'. Received {0}.".format(method))
 
-        # derive delta RA and delta Dec
-        # in pixels
-        self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
-        self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
+
 
         # stuff that isn't generated yet
         # stamps of the data_stamp and the forward model
@@ -73,10 +66,10 @@ class FitPSF(object):
         self.padding = 0 # padding for FM. You kinda need this to shift the FM around
         self.data_stamp = None # Data
         self.noise_map = None # same shape as self.data_stamp
-        self.data_stamp_RA_offset = None # RA offset of data_stamp (in pixels)
-        self.data_stamp_Dec_offset = None # Dec offset (in pixels)
-        self.data_stamp_RA_offset_center = None # RA offset of center pixel (stampsize // 2)
-        self.data_stamp_Dec_offset_center = None # Dec offset of center pixel (stampsize // 2)
+        self.data_stamp_x = None # RA offset of data_stamp (in pixels)
+        self.data_stamp_y = None # Dec offset (in pixels)
+        self.data_stamp_x_center = None # RA offset of center pixel (stampsize // 2)
+        self.data_stamp_y_center = None # Dec offset of center pixel (stampsize // 2)
 
         # guess flux (a hyperparameter)
         self._guess_flux = None
@@ -94,17 +87,10 @@ class FitPSF(object):
         self.hess_inv = None
 
         # best fit
-        self.raw_RA_offset = None
-        self.raw_Dec_offset = None
-        self.raw_flux = None
+        self.fit_x = None
+        self.fit_y = None
+        self.fit_flux = None
         self.covar_params = None
-        # best fit infered parameters
-        self.raw_sep = None
-        self.raw_PA = None
-        self.RA_offset = None
-        self.Dec_offset = None
-        self.sep = None
-        self.PA = None
 
     # automatically guess flux if it hasn't been defined
     @property
@@ -116,13 +102,13 @@ class FitPSF(object):
         elif self.data_stamp is None or self.fm_stamp is None:
             return None
         # guess it based on the max value in both stamps
-        self._guess_flux = np.max(self.data_stamp) / np.max(self.fm_stamp)
+        self._guess_flux = np.nanmax(self.data_stamp) / np.nanmax(self.fm_stamp)
         return self._guess_flux
     @guess_flux.setter
     def guess_flux(self, newval):
         self._guess_flux = newval
 
-    def generate_fm_stamp(self, fm_image, fm_center=None, fm_wcs=None, extract=True, padding=5):
+    def generate_fm_stamp(self, fm_image, fm_pos=None, fm_wcs=None, extract=True, padding=5):
         """
         Generates a stamp of the forward model and stores it in self.fm_stamp
         Args:
@@ -151,10 +137,8 @@ class FitPSF(object):
 
             # image is now rotated North up east left
             # find the location of the FM
-            thistheta = np.radians(self.guess_pa + 90)
-            psf_xpos = self.guess_sep * np.cos(thistheta) + fm_center[0]
-            psf_ypos = self.guess_sep * np.sin(thistheta) + fm_center[1]
-
+            psf_xpos = fm_pos[0]
+            psf_ypos = fm_pos[1]
         else:
             # PSf is already cenetered
             psf_xpos = fm_image.shape[1]//2
@@ -177,7 +161,7 @@ class FitPSF(object):
 
 
 
-    def generate_data_stamp(self, data, data_center, data_wcs=None, noise_map=None, dr=4, exclusion_radius=10):
+    def generate_data_stamp(self, data, guess_loc, noise_map, radial_noise_center=None, dr=4, exclusion_radius=10):
         """
         Generate a stamp of the data_stamp ~centered on planet and also corresponding noise map
         Args:
@@ -193,17 +177,16 @@ class FitPSF(object):
         Returns:
 
         """
-        # rotate image North up east left if necessary
-        if data_wcs is not None:
-            # rotate
-            raise NotImplementedError("Rotating based on WCS is not currently implemented yet")
-
-        xguess = -self.guess_RA_offset + data_center[0]
-        yguess = self.guess_Dec_offset + data_center[1]
+        if noise_map is None and radial_noise_center is None:
+            raise ValueError("radial_noise_center needs to be specified if noise map is not passed in")
+        
+        # store initailization
+        self.guess_x = guess_loc[0]
+        self.guess_y = guess_loc[1]
 
         # round to nearest pixel
-        xguess_round = int(np.round(xguess))
-        yguess_round = int(np.round(yguess))
+        xguess_round = int(np.round(self.guess_x))
+        yguess_round = int(np.round(self.guess_y))
 
         # get index bounds for grabbing pixels from data_stamp
         ymin = yguess_round - self.fitboxsize//2
@@ -219,36 +202,38 @@ class FitPSF(object):
         self.data_stamp = data_stamp
 
         # store coordinates of stamp also
-        dy_img, dx_img = np.indices(data.shape, dtype=float)
-        dy_img -= data_center[1]
-        dx_img -= data_center[0]
+        y_img, x_img = np.indices(data.shape, dtype=float)
 
-        dx_data_stamp = dx_img[ymin:ymax, xmin:xmax]
-        dy_data_stamp = dy_img[ymin:ymax, xmin:xmax]
-        self.data_stamp_RA_offset = -dx_data_stamp
-        self.data_stamp_Dec_offset = dy_data_stamp
-        self.data_stamp_RA_offset_center = self.data_stamp_RA_offset[0, self.fitboxsize // 2]
-        self.data_stamp_Dec_offset_center = self.data_stamp_Dec_offset[self.fitboxsize // 2, 0]
+        x_data_stamp = x_img[ymin:ymax, xmin:xmax]
+        y_data_stamp = y_img[ymin:ymax, xmin:xmax]
+        self.data_stamp_x = x_data_stamp
+        self.data_stamp_y = y_data_stamp
+        self.data_stamp_x_center = self.data_stamp_x[0, self.fitboxsize // 2]
+        self.data_stamp_y_center = self.data_stamp_y[self.fitboxsize // 2, 0]
 
-        # generate noise map if necessary
-        if noise_map is None:
+        if noise_map is not None:
+            # check size of noise map:
+            if noise_map.shape[0] == self.fitboxsize and noise_map.shape[1] == self.fitboxsize:
+                noise_stamp = noise_map
+            else:
+                # assume it is the whole image in size
+                noise_stamp = noise_map[ymin:ymax, xmin:xmax]
+        else:
+            # need to generate the noise map assuming noise is azimuthally symmetric about a center
             # blank map
             noise_stamp = np.zeros(data_stamp.shape)
 
             # define exclusion around planet.
-            distance_from_planet = np.sqrt((dx_img - (xguess - data_center[0]))**2 +
-                                           (dy_img - (yguess - data_center[1]))**2)
+            distance_from_planet = np.sqrt((x_img - self.guess_x)**2 + (y_img - self.guess_y)**2)
             # define radial coordinate
-            rimg = np.sqrt(dx_img**2 + dy_img**2)
+            r_img = np.sqrt((x_img - radial_noise_center[0])**2 + (y_img - radial_noise_center[1])**2)
+            r_stamp = np.sqrt((x_data_stamp - radial_noise_center[0])**2 + (y_data_stamp - radial_noise_center[1])**2)
 
             # calculate noise for each pixel in the data_stamp stamp
             for y_index, x_index in np.ndindex(data_stamp.shape):
-                r_pix = np.sqrt(dy_data_stamp[y_index, x_index]**2 + dx_data_stamp[y_index, x_index]**2)
-                pixels_for_noise = np.where((np.abs(rimg - r_pix) <= dr/2.) & (distance_from_planet > exclusion_radius))
+                r_pix = r_stamp[y_index, x_index]
+                pixels_for_noise = np.where((np.abs(r_img - r_pix) <= dr/2.) & (distance_from_planet > exclusion_radius))
                 noise_stamp[y_index, x_index] = np.nanstd(data[pixels_for_noise])
-
-        else:
-            noise_stamp = noise_map[ymin:ymax, xmin:xmax]
 
         self.noise_map = noise_stamp
 
@@ -263,7 +248,6 @@ class FitPSF(object):
             self._usegoodpix = goodpix
         else:
             self._usegoodpix = None
-
 
 
     def set_kernel(self, covar, covar_param_guesses, covar_param_labels, include_readnoise=False,
@@ -302,15 +286,15 @@ class FitPSF(object):
             self.covar_param_labels.append(r"K_{\delta}")
 
 
-    def set_bounds(self, dRA, dDec, df, covar_param_bounds, read_noise_bounds=None):
+    def set_bounds(self, dx, dy, df, covar_param_bounds, read_noise_bounds=None):
         """
         Set bounds on Bayesian priors. All paramters can be a 2 element tuple/list/array that specifies
         the lower and upper bounds x_min < x < x_max. Or a single value whose interpretation is specified below
         If you are passing in both lower and upper bounds, both should be in linear scale!
         Args:
-            dRA: Distance from initial guess position in pixels. For a single value, this specifies the largest distance
-                form the initial guess (i.e. RA_guess - dRA < x < RA_guess + dRA)
-            dDec: Same as dRA except with Dec
+            dx: Distance from initial guess position in pixels. For a single value, this specifies the largest distance
+                form the initial guess (i.e. x_guess - dx < x < x_guess + dx)
+            dy: Same as dx except with y
             df: Flux range. If single value, specifies how many orders of 10 the flux factor can span in one direction
                 (i.e. log_10(guess_flux) - df < log_10(guess_flux) < log_10(guess_flux) + df
             covar_param_bounds: Params for covariance matrix. Like df, single value specifies how many orders of
@@ -324,16 +308,16 @@ class FitPSF(object):
         self.bounds = []
 
         # x/RA bounds
-        if np.size(dRA) == 2:
-            self.bounds.append(dRA)
+        if np.size(dx) == 2:
+            self.bounds.append(dx)
         else:
-            self.bounds.append([self.guess_RA_offset - dRA, self.guess_RA_offset + dRA])
+            self.bounds.append([self.guess_x - dx, self.guess_x + dx])
 
         # y/Dec bounds
-        if np.size(dDec) == 2:
-            self.bounds.append(dDec)
+        if np.size(dy) == 2:
+            self.bounds.append(dy)
         else:
-            self.bounds.append([self.guess_Dec_offset - dDec, self.guess_Dec_offset + dDec])
+            self.bounds.append([self.guess_y - dy, self.guess_y + dy])
 
 
         if np.size(df) == 2:
@@ -401,7 +385,7 @@ class FitPSF(object):
         # create array of initial guesses
         # array of guess RA, Dec, and flux
         # for everything that's not RA/Dec offset, should be converted to log space for MCMC sampling
-        init_guess = np.array([self.guess_RA_offset, self.guess_Dec_offset, math.log(self.guess_flux)])
+        init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
         # append hyperparams for covariance matrix, which also need to be converted to log space
         init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
         # number of dimensions of MCMC fit
@@ -418,7 +402,7 @@ class FitPSF(object):
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprob, args=(self, sampler_bounds, self.covar),
                                         kwargs={'readnoise' : self.include_readnoise}, threads=numthreads)
 
-        # burn in
+        # burn inf
         print("Running burn in")
         pos, _, _ = sampler.run_mcmc(pos, nburn)
         # reset sampler
@@ -438,9 +422,9 @@ class FitPSF(object):
         # save best fit values
         # percentiles has shape [ndims, 3]
         percentiles = np.swapaxes(np.percentile(sampler.flatchain, [16, 50, 84], axis=0), 0, 1)
-        self.raw_RA_offset = ParamRange(percentiles[0][1], np.array([percentiles[0][2], percentiles[0][0]]) - percentiles[0][1])
-        self.raw_Dec_offset = ParamRange(percentiles[1][1], np.array([percentiles[1][2], percentiles[1][0]]) - percentiles[1][1])
-        self.raw_flux =  ParamRange(percentiles[2][1], np.array([percentiles[2][2], percentiles[2][0]]) -  percentiles[2][1])
+        self.fit_x = ParamRange(percentiles[0][1], np.array([percentiles[0][2], percentiles[0][0]]) - percentiles[0][1])
+        self.fit_y = ParamRange(percentiles[1][1], np.array([percentiles[1][2], percentiles[1][0]]) - percentiles[1][1])
+        self.fit_flux =  ParamRange(percentiles[2][1], np.array([percentiles[2][2], percentiles[2][0]]) -  percentiles[2][1])
         self.covar_params = [ParamRange(thispercentile[1], np.array([thispercentile[2], thispercentile[0]]) - thispercentile[1] ) for thispercentile in percentiles[3:]]
 
         if save_chain:
@@ -458,7 +442,7 @@ class FitPSF(object):
         # create array of initial guesses
         # array of guess RA, Dec, and flux
         # for everything that's not RA/Dec offset, should be converted to log space for MCMC sampling
-        init_guess = np.array([self.guess_RA_offset, self.guess_Dec_offset, math.log(self.guess_flux)])
+        init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
         # append hyperparams for covariance matrix, which also need to be converted to log space
         init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
         # number of dimensions of MCMC fit
@@ -499,9 +483,9 @@ class FitPSF(object):
 
         # save best fit values
         # percentiles has shape [ndims, 3]
-        self.raw_RA_offset = ParamRange(ra_best, ra_err)
-        self.raw_Dec_offset = ParamRange(dec_best, dec_err)
-        self.raw_flux =  ParamRange(flux_best, flux_err_two_sided)
+        self.fit_x = ParamRange(ra_best, ra_err)
+        self.fit_y = ParamRange(dec_best, dec_err)
+        self.fit_flux =  ParamRange(flux_best, flux_err_two_sided)
         self.covar_params = [ParamRange(param_best, 0) for param_best in covar_params_best]
 
         self.hess_inv = result.hess_inv
@@ -548,10 +532,10 @@ class FitPSF(object):
             fig = plt.figure(figsize=(12, 4))
 
         # create best fit FM
-        dx = -(self.raw_RA_offset.bestfit - self.data_stamp_RA_offset_center)
-        dy = self.raw_Dec_offset.bestfit - self.data_stamp_Dec_offset_center
+        dx = self.fit_x.bestfit - self.data_stamp_x_center
+        dy = self.fit_y.bestfit - self.data_stamp_y_center
 
-        fm_bestfit = self.raw_flux.bestfit * sinterp.shift(self.fm_stamp, [dy, dx])
+        fm_bestfit = self.fit_flux.bestfit * sinterp.shift(self.fm_stamp, [dy, dx])
         if self.padding > 0:
             fm_bestfit = fm_bestfit[self.padding:-self.padding, self.padding:-self.padding]
 
@@ -638,8 +622,8 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     Returns:
         likeli: log of likelihood function (minus a constant factor)
     """
-    dRA_trial = fitparams[0]
-    dDec_trial = fitparams[1]
+    x_trial = fitparams[0]
+    y_trial = fitparams[1]
     f_trial = fitparams[2]
     hyperparms_trial = fitparams[3:]
 
@@ -652,8 +636,8 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     f_trial = math.exp(f_trial)
     hyperparms_trial = np.exp(hyperparms_trial)
 
-    dx = -(dRA_trial - fma.data_stamp_RA_offset_center)
-    dy = dDec_trial - fma.data_stamp_Dec_offset_center
+    dx = x_trial - fma.data_stamp_x_center
+    dy = y_trial - fma.data_stamp_y_center
 
     fm_shifted = sinterp.shift(fma.fm_stamp, [dy, dx])
 
@@ -663,13 +647,13 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     if fma._usegoodpix is not None:
         fm_shifted = fm_shifted[fma._usegoodpix]
         data_stamp = fma.data_stamp[fma._usegoodpix]
-        x_offsets = fma.data_stamp_RA_offset[fma._usegoodpix]
-        y_offsets = fma.data_stamp_Dec_offset[fma._usegoodpix]
+        x_offsets = fma.data_stamp_x[fma._usegoodpix]
+        y_offsets = fma.data_stamp_y[fma._usegoodpix]
         noise_map = fma.noise_map[fma._usegoodpix]
     else:
         data_stamp = fma.data_stamp
-        x_offsets = fma.data_stamp_RA_offset
-        y_offsets = fma.data_stamp_Dec_offset
+        x_offsets = fma.data_stamp_x
+        y_offsets = fma.data_stamp_y
         noise_map = fma.noise_map
 
     diff_ravel = data_stamp.ravel() - f_trial * fm_shifted.ravel()
@@ -685,13 +669,13 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     try:
         (L_cov, lower_cov) = linalg.cho_factor(cov)
         cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
+        logdet = 2*np.sum(np.log(np.diag(L_cov)))
     except: 
         cov_inv = np.linalg.inv(cov)
         cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
+        logdet = np.linalg.slogdet(cov)[1]
+    
     residuals = diff_ravel.dot(cov_inv_dot_diff)
-
-    # compute log(det(Cov))
-    logdet = 2*np.sum(np.log(np.diag(L_cov)))
     constant = logdet
 
     loglikelihood = -0.5 * (residuals + constant)
@@ -785,12 +769,61 @@ class FMAstrometry(FitPSF):
         sampler (emcee.EnsembleSampler): an instance of the emcee EnsambleSampler. Only for Bayesian fit. See emcee docs for more details. 
     """
     def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
-        super(FMAstrometry, self).__init__(guess_sep, guess_pa, fitboxsize, method)
+
+        # derive delta RA and delta Dec
+        # in pixels
+        self.guess_sep = guess_sep
+        self.guess_pa = guess_pa
+
+        self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
+        self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
+
+        # best fit
+        self.raw_RA_offset = None
+        self.raw_Dec_offset = None
+        self.raw_flux = None
+        # best fit infered parameters
+        self.raw_sep = None
+        self.raw_PA = None
+        self.RA_offset = None
+        self.Dec_offset = None
+        self.sep = None
+        self.PA = None
+
+        super(FMAstrometry, self).__init__(fitboxsize, method)
+
+    def generate_fm_stamp(self, fm_image, fm_center, fm_wcs=None, extract=True, padding=5):
+        fm_x = -self.guess_RA_offset + fm_center[0]
+        fm_y = self.guess_Dec_offset + fm_center[1]
+        self.fm_center = fm_center
+
+        super(FMAstrometry, self).generate_fm_stamp(fm_image, fm_pos=[fm_x, fm_y], fm_wcs=fm_wcs, extract=extract, padding=padding)
+
+    def generate_data_stamp(self, data, data_center, data_wcs=None, noise_map=None, dr=4, exclusion_radius=10):
+        # rotate image North up east left if necessary
+        if data_wcs is not None:
+            # rotate
+            raise NotImplementedError("Rotating based on WCS is not currently implemented yet")
+        xguess = -self.guess_RA_offset + data_center[0]
+        yguess = self.guess_Dec_offset + data_center[1]
+        self.data_center = data_center
+
+        super(FMAstrometry, self).generate_data_stamp(data, [xguess, yguess], None, radial_noise_center=data_center, 
+                                                      dr=dr, exclusion_radius=exclusion_radius)
+
 
     def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
         self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
-
+        
+        # convert chains to relative separation
+        self.sampler.chain[:,:,0] -= self.data_center[0]
+        self.sampler.chain[:,:,0] *= -1
+        self.sampler.chain[:,:,1] -= self.data_center[1]
+        # save RA/dec offsets 
+        self.raw_RA_offset = ParamRange(-(self.fit_x.bestfit - self.data_center[0]), self.fit_x.error_2sided[::-1])
+        self.raw_Dec_offset = ParamRange(self.fit_y.bestfit - self.data_center[1], self.fit_y.error_2sided[::-1])
+        self.raw_flux = self.fit_flux
     
     def propogate_errs(self, star_center_err=None, platescale=None, platescale_err=None, pa_offset=None, pa_uncertainty=None):
         """

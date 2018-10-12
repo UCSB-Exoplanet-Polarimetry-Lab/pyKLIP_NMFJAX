@@ -97,7 +97,7 @@ def test_fmastrometry():
     guesspa = fm_hdu[0].header['FM_PA']
 
     # create FM Astrometry object, default is to use MCMC
-    fma = fitpsf.FitPSF(guesssep, guesspa, 9)
+    fma = fitpsf.FMAstrometry(guesssep, guesspa, 9)
 
     # generate FM stamp
     fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
@@ -117,12 +117,12 @@ def test_fmastrometry():
     mod_bounds = np.copy(fma.bounds)
     mod_bounds[2:] = np.log(mod_bounds[2:])
     print(mod_bounds)
-    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
+    lnpos = fitpsf.lnprob((16 + data_centx, -25.7 + data_centy, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
     print(lnpos, np.nanmean(data_frame), np.nanmean(fm_frame), np.nanmean(fma.data_stamp), np.nanmean(fma.fm_stamp))
     assert lnpos > -np.inf
 
     # run MCMC fit
-    fma.fit_psf(nburn=150, nsteps=25, nwalkers=50, numthreads=1)
+    fma.fit_astrometry(nburn=150, nsteps=25, nwalkers=50, numthreads=1)
 
     print("{0} seconds to run".format(time.time()-t1))
 
@@ -164,16 +164,19 @@ def test_maxlikehood():
     # get initial guesses
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
+    guessdx = -guesssep * np.sin(np.radians(guesspa))
+    guessdy = guesssep * np.cos(np.radians(guesspa)) 
 
     # create FM Astrometry object
-    fma = fitpsf.FMAstrometry(guesssep, guesspa, 9, method='maxl')
+    fma = fitpsf.FitPSF(9, method='maxl')
 
     # generate FM stamp
-    fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
+    fma.generate_fm_stamp(fm_frame, [fm_centx + guessdx, fm_centy + guessdy], padding=5)
 
     # generate data_stamp stamp
     data_frame[140-23 , 140+15] = np.nan 
-    fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=6)
+    fma.generate_data_stamp(data_frame, [data_centx + guessdx, data_centy + guessdy], None, dr=6, 
+                            radial_noise_center=[data_centx, data_centy])
 
     # set kernel, with read noise
     fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
@@ -181,22 +184,20 @@ def test_maxlikehood():
     # set bounds
     #fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
-    print(fma.guess_RA_offset, fma.guess_Dec_offset)
+    print(fma.guess_x, fma.guess_y)
 
     # run MCMC fit
-    fma.fit_astrometry()
+    fma.fit_psf()
 
-    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
-
-    assert(np.abs(fma.RA_offset.bestfit - -227.2) < 5.)
-    assert(np.abs(fma.Dec_offset.bestfit - -361.1) < 5.)
+    assert(np.abs(fma.fit_x.bestfit - data_centx - 227.2/14.166) < 0.33)
+    assert(np.abs(fma.fit_y.bestfit - data_centy - -361.1/14.166) < 0.33)
 
     fma.best_fit_and_residuals()
-    plt.savefig("tests/bka2.png")
+    plt.savefig("tests/fitpsf.png")
     
     fm_hdu.close()
     data_hdu.close()
 
 if __name__ == "__main__":
-    #test_fmastrometry()
+    test_fmastrometry()
     test_maxlikehood()
