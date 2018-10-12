@@ -220,7 +220,7 @@ in the value).
     corr_len_range = 1. # between 0.3 and 30
     fit.set_bounds(x_range, y_range, flux_range, [corr_len_range])
 
-Finally, we are set up to fit to the data. The ``fit_psf()`` function is used for both MCMC and maximum
+Finally, we are set up to fit to the data. The ``fit_astrometry()`` function is used for both MCMC and maximum
 likelihood. 
 In this example, we will fit for four parameters. 
 The RA offset and Dec offset are what we are interested in for the purposes of astrometry. The flux scaling
@@ -303,8 +303,8 @@ To continue, skip to `Output of FMAstrometry`_.
 
 Maximum Likelihood
 ^^^^^^^^^^^^^^^^^^
-For maximum likelihood, we can start with the same ``FMAstrometry`` setup up until ``fit_psf()``.
-The execution of ``fit_psf()`` will be completely different. 
+For maximum likelihood, we can start with the same ``FMAstrometry`` setup up until ``fit_astrometry()``.
+The execution of ``fit_astrometry()`` will be completely different. 
 The algorithm with use a Nelder-Mead optimization to find the global maximum, as it is a fairly 
 robust method. Then, it will use ``BFGS`` algorithm
 from ``scipy.optimize.minimze`` that can approximate the Hessian inverse during the optimization. The Hessian
@@ -314,7 +314,7 @@ terms of the Hessian inverse as the variance in each parameter.
 .. code-block:: python
 
     # if you're running a max-likelihood fit
-    fit.fit_psf()
+    fit.fit_astrometry()
 
 We also store the Hessian inverse in ``fit.hess_inv``. 
 Note that the algorithm we use is unable to estimate the uncertainity on the Gaussian parameter 
