@@ -162,7 +162,7 @@ KL mode cubes, and select the KL mode cutoff we want to use. For the example, we
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
 
-We will generate a :py:class:`pyklip.fitpsf.FitPSF` object that we handle all of the fitting processes.
+We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that we handle all of the fitting processes.
 The first thing we will do is create this object, and feed it in the data and forward model. It will use them to
 generate stamps of the data and forward model which can be accessed using ``fit.data_stmap`` and ``fit.fm_stamp``
 respectively. When reading in the data, it will also generate a noise map for the data stamp by computing the standard
@@ -174,9 +174,9 @@ or ``method="maxl"``.
 
     import pyklip.fitpsf as fitpsf
     # create FM Astrometry object that does MCMC fitting
-    fit = fitpsf.FitPSF(guesssep, guesspa, 13, method="mcmc")
+    fit = fitpsf.FMAstrometry(guesssep, guesspa, 13, method="mcmc")
     # alternatively, could use maximum likelihood fitting
-    # fit = fitpsf.FitPSF(guesssep, guesspa, 13, method="maxl")
+    # fit = fitpsf.FMAstrometry(guesssep, guesspa, 13, method="maxl")
 
     # generate FM stamp
     # padding should be greater than 0 so we don't run into interpolation problems
@@ -240,7 +240,7 @@ parallelizes the likelihood calculation, and trying to parallelize on top of tha
 .. code-block:: python
 
     # run MCMC fit
-    fit.fit_psf(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
+    fit.fit_astrometry(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
 
 ``fit.sampler`` stores the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information. 
 
@@ -299,11 +299,11 @@ In the example figure from three cubes of GPI data on beta Pic, the residual spe
 very whitened, so there is some asymmetry in the posterior, which represents the local strucutre of
 the speckle noise. These posteriors should become more Gaussian as we add more data and whiten the speckle noise.
 
-To continue, skip to `Output of FitPSF`_. 
+To continue, skip to `Output of FMAstrometry`_. 
 
 Maximum Likelihood
 ^^^^^^^^^^^^^^^^^^
-For maximum likelihood, we can start with the same ``FitPSF`` setup up until ``fit_psf()``.
+For maximum likelihood, we can start with the same ``FMAstrometry`` setup up until ``fit_psf()``.
 The execution of ``fit_psf()`` will be completely different. 
 The algorithm with use a Nelder-Mead optimization to find the global maximum, as it is a fairly 
 robust method. Then, it will use ``BFGS`` algorithm
@@ -320,8 +320,8 @@ We also store the Hessian inverse in ``fit.hess_inv``.
 Note that the algorithm we use is unable to estimate the uncertainity on the Gaussian parameter 
 hyperparameters, so those entries with all be 0. 
 
-Output of FitPSF
-^^^^^^^^^^^^^^^^
+Output of FMAstrometry
+^^^^^^^^^^^^^^^^^^^^^^
 Here are some fields to access the fit. Each field is a 
 :py:class:`pyklip.fitpsf.ParamRange` object, which has fields ``bestfit``, ``error``, and ``error_2sided``. Here, ``error`` is the average 1-sigma error, and ``error_2sided`` lists the positive and negative errors separately. Notice the names all begin with "raw", which is because these are the values from just fitting the data, and do not include instrument calibration. 
 
@@ -346,7 +346,7 @@ was missed in the fit. The residual ampltidue should also be consistent with noi
 best fit values for the astrometry of this epoch. 
 
 The best fit values from the MCMC give us the raw RA and Dec offsets for the planet. We will still need to fold in uncertainties
-in the star location and calibration uncertainties. To do this, we use :py:meth:`pyklip.fitpsf.FitPSF.propogate_errs` to 
+in the star location and calibration uncertainties. To do this, we use :py:meth:`pyklip.fitpsf.FMAstrometry.propogate_errs` to 
 include these terms and obtain our final astrometric values. All of the infered parameters are fields 
 that can be accessed (see :py:class:`pyklip.fitpsf.FMAstrometry`) and each field is a :py:class:`pyklip.fitpsf.ParamRange` object. Here is a brief overview of the fields:
 
