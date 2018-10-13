@@ -1189,7 +1189,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                     #Remove secondary sat spot
                     spotx2 = (spotx - center_thisslice[0])*2+center_thisslice[0]
                     spoty2 = (spoty - center_thisslice[1])*2+center_thisslice[1]
-                    newspotx2,newspoty2 = quick_psf_fit(slice,local_PSF, spotx2,spoty2, , nx_psf-4)
+                    newspotx2,newspoty2 = quick_psf_fit(slice,local_PSF, spotx2,spoty2, nx_psf-4)
                     if newspotx2 is None or newspoty2 is None:
                         continue
                     if np.sqrt((newspotx2-spotx2)**2+(newspoty2-spoty2)**2) > 2 :
