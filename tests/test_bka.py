@@ -182,7 +182,7 @@ def test_maxlikehood():
     fma.set_kernel("matern32", [3.], [r"$l$"], False)
 
     # set bounds
-    fma.set_bounds(1.5, 1.5, 1, [1.], 1)
+    #fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_x, fma.guess_y)
 

@@ -1168,10 +1168,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                 slice = cube_nospots[slice_id,:,:]
                 for loc_id, (spotx,spoty) in enumerate(zip(spots_xloc_thisslice,spots_yloc_thisslice)):
                     searchrad=10
-                    from pyklip.fitpsf import simplecentroid
+                    from pyklip.fitpsf import quick_psf_fit
                     ny_psf,nx_psf = 21,21
                     local_PSF = psfs_func_list[slice_id](np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2).transpose()
-                    newspotx,newspoty = simplecentroid(slice,local_PSF, spotx,spoty)
+                    newspotx,newspoty,_ = quick_psf_fit(slice,local_PSF, spotx,spoty, nx_psf-4)
                     if newspotx is None or newspoty is None:
                         continue
                     if np.sqrt((newspotx-spotx)**2+(newspoty-spoty)**2) > 2:
@@ -1189,7 +1189,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,butterfly_rdi=Fa
                     #Remove secondary sat spot
                     spotx2 = (spotx - center_thisslice[0])*2+center_thisslice[0]
                     spoty2 = (spoty - center_thisslice[1])*2+center_thisslice[1]
-                    newspotx2,newspoty2 = simplecentroid(slice,local_PSF, spotx2,spoty2)
+                    newspotx2,newspoty2 = quick_psf_fit(slice,local_PSF, spotx2,spoty2, , nx_psf-4)
                     if newspotx2 is None or newspoty2 is None:
                         continue
                     if np.sqrt((newspotx2-spotx2)**2+(newspoty2-spoty2)**2) > 2 :
