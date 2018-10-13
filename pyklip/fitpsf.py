@@ -446,7 +446,13 @@ class FitPSF(object):
 
         if self.bounds is None:
             cost_function = lnprob
-            cost_function_args = (self, None, self.covar)
+            # construct some bounds, just very loose
+            bounds = [[self.guess_x - self.fitboxsize/2, self.guess_x + self.fitboxsize/2], [self.guess_y - self.fitboxsize/2, self.guess_y + self.fitboxsize/2],
+                      [0, np.inf]]
+            for _ in self.covar_param_guesses:
+                bounds += [[0, np.inf]]
+            cost_function_args = (self, bounds, self.covar)
+            self.bounds = bounds
         else:
             # prior bounds also need to be put in log space
             sampler_bounds = np.copy(self.bounds)
@@ -463,7 +469,7 @@ class FitPSF(object):
 
         # BFGS will only fit for position and flux, and their uncertainties.
         new_init_guess = nm_result.x[:3]
-        cost_function_args += tuple(nm_result.x[3:])
+        new_init_guess = np.append(new_init_guess, nm_result.x[3:])
         #if cost_function_args[1] is not None:
         #    cost_function_args[1] = cost_function_args[1][:3] # modify limits to not include hyperparameters 
 
