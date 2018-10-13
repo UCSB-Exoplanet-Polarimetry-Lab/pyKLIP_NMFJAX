@@ -1,5 +1,5 @@
-pyklip.kpp package
-==================
+pyklip\.kpp package
+===================
 
 Subpackages
 -----------
@@ -10,18 +10,6 @@ Subpackages
     pyklip.kpp.metrics
     pyklip.kpp.stat
     pyklip.kpp.utils
-
-Submodules
-----------
-
-pyklip.kpp.kppPerDir module
----------------------------
-
-.. automodule:: pyklip.kpp.kppPerDir
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
 
 Module contents
 ---------------
