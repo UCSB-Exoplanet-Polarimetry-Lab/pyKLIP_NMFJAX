@@ -1,11 +1,11 @@
-pyklip.instruments.utils package
-================================
+pyklip\.instruments\.utils package
+==================================
 
 Submodules
 ----------
 
-pyklip.instruments.utils.nair module
-------------------------------------
+pyklip\.instruments\.utils\.nair module
+---------------------------------------
 
 .. automodule:: pyklip.instruments.utils.nair
     :members:

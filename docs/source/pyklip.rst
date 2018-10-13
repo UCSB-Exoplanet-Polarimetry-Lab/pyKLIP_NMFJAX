@@ -13,64 +13,72 @@ Subpackages
 Submodules
 ----------
 
-pyklip.covars module
---------------------
+pyklip\.covars module
+---------------------
 
 .. automodule:: pyklip.covars
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fakes module
--------------------
+pyklip\.fakes module
+--------------------
 
 .. automodule:: pyklip.fakes
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fitpsf module
---------------------
+pyklip\.fitpsf module
+---------------------
 
 .. automodule:: pyklip.fitpsf
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.fm module
-----------------
+pyklip\.fm module
+-----------------
 
 .. automodule:: pyklip.fm
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.klip module
-------------------
+pyklip\.klip module
+-------------------
 
 .. automodule:: pyklip.klip
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.parallelized module
---------------------------
+pyklip\.nmf\_imaging module
+---------------------------
+
+.. automodule:: pyklip.nmf_imaging
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+pyklip\.parallelized module
+---------------------------
 
 .. automodule:: pyklip.parallelized
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.rdi module
------------------
+pyklip\.rdi module
+------------------
 
 .. automodule:: pyklip.rdi
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip.spectra_management module
---------------------------------
+pyklip\.spectra\_management module
+----------------------------------
 
 .. automodule:: pyklip.spectra_management
     :members:

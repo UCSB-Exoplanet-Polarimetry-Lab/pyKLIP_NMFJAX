@@ -1,36 +1,38 @@
 .. _bka-label:
 
-Bayesian KLIP-FM Astrometry (BKA)
-==================================
+Foward-Model Astrometry and Photometry
+======================================
 
-This tutorial will provide the necessary steps to run the Bayesian KLIP-FM Astorometry technique (BKA)
-that is described in `Wang et al. (2016) <https://arxiv.org/abs/1607.05272>`_ to obtain one milliarcsecond
-astrometry on β Pictoris b.
-
-Why BKA?
----------
-
-Astrometry of directly imaged exoplanets is challenging since PSF subtraction algorithms (like pyKLIP)
+pyKLIP offers PSF fitting as the most optimal method for extraction of planet astrometry and photometry. 
+Astrometry/photometry of directly imaged exoplanets is challenging since PSF subtraction algorithms (like pyKLIP)
 distort the PSF of the planet. `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_ provide a technique to
-forward model the PSF of a planet through KLIP. Taking this forward model, you could fit it to the data
-with MCMC, but you would underestimate your errors because the noise in direct imaging data is correlated
+forward model the PSF of a planet through KLIP. 
+Taking this forward model, you could fit it to the data, but you would underestimate your errors because the noise in direct imaging data is correlated
 (i.e. each pixel is not independent). To account for the correlated nature of the noise, we use Gaussian
 process regression to model and account for the correlated nature of the noise. This allows us to obtain
-accurate astrometry and accurate uncertainties on the astrometry.
+accurate measurements and accurate uncertainties on the planet parameters.
 
-BKA Requirements
------------------
-To run BKA, you need the additional packages installed, which should be available readily:
+The code was originally designed for the Bayesian KLIP-FM Astorometry technique (BKA)
+that is described in `Wang et al. (2016) <https://arxiv.org/abs/1607.05272>`_ to obtain one milliarcsecond
+astrometry on β Pictoris b.
+Since then, it has be extended to also do maximum likelihood fitting in a frequentist framework that can also
+obtain uncertainties. A frequentist framework is appropriate when astrometric calibration uncertainties are 
+also derived in a frequentist procedure. 
 
-* `emcee <http://dan.iel.fm/emcee/current/>`_
-* `corner <https://github.com/dfm/corner.py>`_
-
-You also need the following pieces of data to forward model the data.
+Requirements
+------------
+You need the following pieces of data to forward model the data. (If you have a model and some data to fit to, you can
+skip the section on using KLIP-FM to generate a forawrd model PSF.)
 
 * Data to run PSF subtraction on
 * A model or data of the instrumental PSF
 * A good guess of the position of the planet (a center of light centroid routine should get the astrometry to a pixel)
 * For IFS data, an estimate of the spectrum of the planet (it does not need to be very accurate, and 20% errors are fine)
+
+If you want to run BKA, you need the additional packages installed, which should be available readily:
+
+* `emcee <http://dan.iel.fm/emcee/current/>`_
+* `corner <https://github.com/dfm/corner.py>`_
 
 Generating instrumental PSFs for GPI
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -123,10 +125,15 @@ This will now run KLIP-FM, producing both a PSF subtracted image of the data and
 at the gussed location of the planet. The PSF subtracted image as the "-klipped-" string in its filename, while the
 forward-modelled planet PSF has the "-fmpsf-" string in its filename.
 
-Fitting the Astrometry using MCMC and Gaussian Processes
---------------------------------------------------------
-Now that we have the forward-modeled PSF and the data, we can fit them in a Bayesian framework
-using Gaussian processes to model the correlated noise and MCMC to sample the posterior distribution.
+Fitting the Planet PSF
+----------------------
+Now that we have the forward-modeled PSF and the data, we can fit the model PSF to the data and obtain 
+the astrometry/photometry of the point source. To do it the Bayesian way with MCMC or the frequentist
+way with maximum likelihood is very similar in the code, and will produce similar results as both frameworks
+use the forward-modeled PSF and Gaussian process regression. The difference
+is interpretation, and determining which framework makes sense for your analysis (e.g., if the instrument
+calibration was done in a Bayesian sense, then doing the fit in a Bayesian way is appropriate to properly
+combine calibration uncertainties with measurement uncertainties).
 
 First, let's read in the data from our previous forward modelling. We will take the collapsed
 KL mode cubes, and select the KL mode cutoff we want to use. For the example, we will use
@@ -157,24 +164,28 @@ KL mode cubes, and select the KL mode cutoff we want to use. For the example, we
 
 We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that we handle all of the fitting processes.
 The first thing we will do is create this object, and feed it in the data and forward model. It will use them to
-generate stamps of the data and forward model which can be accessed using ``fma.data_stmap`` and ``fma.fm_stamp``
+generate stamps of the data and forward model which can be accessed using ``fit.data_stmap`` and ``fit.fm_stamp``
 respectively. When reading in the data, it will also generate a noise map for the data stamp by computing the standard
-deviation around an annulus, with the planet masked out
+deviation around an annulus, with the planet masked out. Here, we will also specify whether we will use a maximum likliehood
+or MCMC technique to derive the best-fit and uncertainties using the argument ``method="mcmc"`` (default) 
+or ``method="maxl"``.
 
 .. code-block:: python
 
     import pyklip.fitpsf as fitpsf
-    # create FM Astrometry object
-    fma = fitpsf.FMAstrometry(guesssep, guesspa, 13)
+    # create FM Astrometry object that does MCMC fitting
+    fit = fitpsf.FMAstrometry(guesssep, guesspa, 13, method="mcmc")
+    # alternatively, could use maximum likelihood fitting
+    # fit = fitpsf.FMAstrometry(guesssep, guesspa, 13, method="maxl")
 
     # generate FM stamp
     # padding should be greater than 0 so we don't run into interpolation problems
-    fma.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
+    fit.generate_fm_stamp(fm_frame, [fm_centx, fm_centy], padding=5)
 
     # generate data_stamp stamp
     # not that dr=4 means we are using a 4 pixel wide annulus to sample the noise for each pixel
     # exclusion_radius excludes all pixels less than that distance from the estimated location of the planet
-    fma.generate_data_stamp(data_frame, [data_centx, data_centy], dr=4, exclusion_radius=10)
+    fit.generate_data_stamp(data_frame, [data_centx, data_centy], dr=4, exclusion_radius=10)
 
 Next we need to choose the Gaussian process kernel. We currently only support the Matern (ν=3/2)
 and square exponential kernel, so we will pick the Matern kernel here. Note that there is the option
@@ -187,9 +198,12 @@ you should enable the read noies term.
     # set kernel, no read noise
     corr_len_guess = 3.
     corr_len_label = r"$l$"
-    fma.set_kernel("matern32", [corr_len_guess], [corr_len_label])
+    fit.set_kernel("matern32", [corr_len_guess], [corr_len_label])
 
-Now we need to set bounds on our priors for our MCMC. We are going to be simple and use uninformative priors.
+Priors are required for a Bayesian analysis, so if you are prefering the MCMC method, you will need to define
+them. We will use uniform priors, so all we will specify are the bounds to the uniform prior. This same code
+can also be used to specify parameter bounds for the maximum likelihood approach, but setting bounds is not 
+required for that technique. 
 The priors in the x/y posible will be flat in linear space, and the priors on the flux scaling and kernel parameters
 will be flat in log space, since they are scale paramters. In the following function below, we will set the boundaries
 of the priors. The first two values are for x/y and they basically say how far away (in pixels) from the
@@ -204,10 +218,21 @@ in the value).
     y_range = 1.5 # pixels
     flux_range = 1. # flux can vary by an order of magnitude
     corr_len_range = 1. # between 0.3 and 30
-    fma.set_bounds(x_range, y_range, flux_range, [corr_len_range])
+    fit.set_bounds(x_range, y_range, flux_range, [corr_len_range])
 
-Finally, we are set to run the MCMC sampler (using the emcee package). Here we have provided a wrapper to already
-set up the likelihood and prior. All we want to do is specify the number of walkers, number of steps each walker takes,
+Finally, we are set up to fit to the data. The ``fit_astrometry()`` function is used for both MCMC and maximum
+likelihood. 
+In this example, we will fit for four parameters. 
+The RA offset and Dec offset are what we are interested in for the purposes of astrometry. The flux scaling
+paramter (α) is a multiplicative correction to ``guessflux`` for measuring the photometry.  
+The correlation length (l) is a Gaussian process hyperparameter. If we had included read noise,
+it would have been a fifth parameter. 
+As the analysis diverges, we will discuss `Maximum Likelihood`_ and `Bayesian MCMC Analysis`_ separately. 
+
+Bayesian MCMC Analysis
+^^^^^^^^^^^^^^^^^^^^^^
+
+To run the MCMC sampler (using the emcee package), we want to specify the number of walkers, number of steps each walker takes,
 and the number of production steps the walkers take. We also can specify the number of threads to use.
 If you have not turned BLAS and MKL off, you probably only want one or a few threads, as MKL/BLAS automatically
 parallelizes the likelihood calculation, and trying to parallelize on top of that just creates extra overhead.
@@ -215,24 +240,14 @@ parallelizes the likelihood calculation, and trying to parallelize on top of tha
 .. code-block:: python
 
     # run MCMC fit
-    fma.fit_astrometry(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
+    fit.fit_astrometry(nwalkers=100, nburn=200, nsteps=800, numthreads=1)
 
+``fit.sampler`` stores the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information. 
 
-When the MCMC finishes running, we have our answer for the location of the planet in the data.
-Here are some fields to access this information:
-
-* ``fma.RA_offset``: RA offset of the planet from the star as determined by the median of the marginalized posterior
-* ``fma.Dec_offset``: Dec offset of the plnaet from the star as determined by the median of the marginalized posterior
-* ``fma.RA_offset_1sigma``: 16th and 84th percentile values for the RA offset of the planet
-* ``fma.Dec_offset_1sigma``: 16th and 84th percentile values for the Dec offset of the planet
-* ``fma.flux``, ``fma.flux_1sigma``: same thing except for the flux of the planet
-* ``fma.covar_param_bestfits``, ``fma.covar_param_1sigma``: same thing for the hyperparameters on the Gaussian process kernel. These are both kept in a list with length equal to the number of hyperparameters.
-* ``fma.sampler``: this is the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information
-
-The RA offset and Dec offset are what we are interested in for the purposes of astrometry. The flux scaling
-paramter (α) and the correlation length (l) are hyperparameters we marginalize over. First,
+For MCMC,
 we want to check to make sure all of our chains have converged by plotting them. As long as they have
 settled down (no large scale movements), then the chains have probably converged.
+The maximum likelihood technique skips this step. 
 
 .. code-block:: python
 
@@ -240,7 +255,7 @@ settled down (no large scale movements), then the chains have probably converged
     fig = plt.figure(figsize=(10,8))
 
     # grab the chains from the sampler
-    chain = fma.sampler.chain
+    chain = fit.sampler.chain
 
     # plot RA offset
     ax1 = fig.add_subplot(411)
@@ -270,7 +285,7 @@ Here is an example using three cubes of public GPI data on beta Pic.
 
 .. image:: imgs/betpic_j_bka_chains.png
 
-We can also plot the corner plot to look at our posterior distribution and correlation between parameters.
+For MCMC, we can also plot the corner plot to look at our posterior distribution and correlation between parameters.
 
 .. code-block:: python
 
@@ -283,7 +298,46 @@ Hopefully the corner plot does not contain too much structure (the posteriors sh
 In the example figure from three cubes of GPI data on beta Pic, the residual speckle noise has not been
 very whitened, so there is some asymmetry in the posterior, which represents the local strucutre of
 the speckle noise. These posteriors should become more Gaussian as we add more data and whiten the speckle noise.
-And finally, we can plot the visual comparison of our data, best fitting model, and residuals to the fit.
+
+To continue, skip to `Output of FMAstrometry`_. 
+
+Maximum Likelihood
+^^^^^^^^^^^^^^^^^^
+For maximum likelihood, we can start with the same ``FMAstrometry`` setup up until ``fit_astrometry()``.
+The execution of ``fit_astrometry()`` will be completely different. 
+The algorithm with use a Nelder-Mead optimization to find the global maximum, as it is a fairly 
+robust method. Then, it will use ``BFGS`` algorithm
+from ``scipy.optimize.minimze`` that can approximate the Hessian inverse during the optimization. The Hessian
+inverse can be used as an approximation of the covariance matrix for the fitted parameters. We take the diagonal
+terms of the Hessian inverse as the variance in each parameter.
+
+.. code-block:: python
+
+    # if you're running a max-likelihood fit
+    fit.fit_astrometry()
+
+We also store the Hessian inverse in ``fit.hess_inv``. 
+Note that the algorithm we use is unable to estimate the uncertainity on the Gaussian parameter 
+hyperparameters, so those entries with all be 0. 
+
+
+.. note::
+    If you get a warning here about the optimizer not converging, this means that the BFGS algorithm in 
+    ``scipy.optimize.minimize`` was unable to converge on estimating the Hessian inverse, and thus 
+    the reported uncertainties are likely unreliable. We are working on a solution to this. We recommend
+    using fake planet injection instead to estimate your uncertainities if this happens. 
+
+Output of FMAstrometry
+^^^^^^^^^^^^^^^^^^^^^^
+Here are some fields to access the fit. Each field is a 
+:py:class:`pyklip.fitpsf.ParamRange` object, which has fields ``bestfit``, ``error``, and ``error_2sided``. Here, ``error`` is the average 1-sigma error, and ``error_2sided`` lists the positive and negative errors separately. Notice the names all begin with "raw", which is because these are the values from just fitting the data, and do not include instrument calibration. 
+
+* ``fit.raw_RA_offset``: RA offset of the planet from the star (in pixels)
+* ``fit.raw_Dec_offset``: Dec offset of the planet from the star (in pixels)
+* ``fit.raw_flux``: Multiplicative factor to scale the model flux to match the data
+* ``fit.covar_params``: hyperparameters on the Gaussian process. This is a list with length equal to the number of hyperparameters.
+
+Generally, it is good to look at the fit visually, and examine the residual plot for structure that might be indicative of a bad fit or systematics in either the data or the model. 
 
 .. code-block:: python
 
@@ -300,9 +354,16 @@ best fit values for the astrometry of this epoch.
 
 The best fit values from the MCMC give us the raw RA and Dec offsets for the planet. We will still need to fold in uncertainties
 in the star location and calibration uncertainties. To do this, we use :py:meth:`pyklip.fitpsf.FMAstrometry.propogate_errs` to 
-include these terms and obtain our final astrometric values. All of the infered parameters and the raw fit parameters are fields 
-that can be accessed (see :py:class:`pyklip.fitpsf.FMAstrometry`) and each field is a :py:class:`pyklip.fitpsf.ParamRange` object
-that stores the best fit value and 1-sigma range (both average error, and 2-sided uncertainites are included). 
+include these terms and obtain our final astrometric values. All of the infered parameters are fields 
+that can be accessed (see :py:class:`pyklip.fitpsf.FMAstrometry`) and each field is a :py:class:`pyklip.fitpsf.ParamRange` object. Here is a brief overview of the fields:
+
+* ``fit.RA_offset``: RA offset of the planet from the star (angular units)
+* ``fit.Dec_offset``: Dec offset of the planet from the star (angular units)
+* ``fit.sep``: Radial separation of the planet from the star (angular units)
+* ``fit.PA``: Position angle of the planet (i.e., Angle from North towards East; in degrees). 
+
+There is currently no infrastrucutre to propogate photometric 
+calibration uncertainities in, so it will need to be done by hand. 
 
 .. code-block:: python
 

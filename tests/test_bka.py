@@ -1,6 +1,7 @@
 import glob
 import os
 import time
+import pytest
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -82,13 +83,13 @@ def test_fmastrometry():
     data_hdu = fits.open(output_prefix + "-klipped-KLmodes-all.fits")
 
 
-    # get FM frame
-    fm_frame = np.nanmean(fm_hdu[1].data, axis=0)
+    # get FM frame, KL 7
+    fm_frame = fm_hdu[1].data[1]
     fm_centx = fm_hdu[1].header['PSFCENTX']
     fm_centy = fm_hdu[1].header['PSFCENTY']
 
-    # get data_stamp frame
-    data_frame = np.nanmean(data_hdu[1].data, axis=0)
+    # get data_stamp frame, KL 7
+    data_frame = data_hdu[1].data[1]
     data_centx = data_hdu[1].header["PSFCENTX"]
     data_centy = data_hdu[1].header["PSFCENTY"]
 
@@ -96,7 +97,7 @@ def test_fmastrometry():
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
 
-    # create FM Astrometry object
+    # create FM Astrometry object, default is to use MCMC
     fma = fitpsf.FMAstrometry(guesssep, guesspa, 9)
 
     # generate FM stamp
@@ -108,7 +109,7 @@ def test_fmastrometry():
     # set kernel, with read noise
     fma.set_kernel("matern32", [3.], [r"$l$"], True, 0.05)
 
-    # set bounds
+    # set bounds for prior
     fma.set_bounds(1.5, 1.5, 1, [1.], 1)
 
     print(fma.guess_RA_offset, fma.guess_Dec_offset)
@@ -117,7 +118,7 @@ def test_fmastrometry():
     mod_bounds = np.copy(fma.bounds)
     mod_bounds[2:] = np.log(mod_bounds[2:])
     print(mod_bounds)
-    lnpos = fitpsf.lnprob((-16, -25.7, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
+    lnpos = fitpsf.lnprob((16 + data_centx, -25.7 + data_centy, np.log(0.8), np.log(3.3), np.log(0.05)), fma, mod_bounds, fma.covar, readnoise=True)
     print(lnpos, np.nanmean(data_frame), np.nanmean(fm_frame), np.nanmean(fma.data_stamp), np.nanmean(fma.fm_stamp))
     assert lnpos > -np.inf
 
@@ -135,6 +136,69 @@ def test_fmastrometry():
     fma.best_fit_and_residuals()
     plt.savefig("tests/bka2.png")
 
+    fm_hdu.close()
+    data_hdu.close()
+
+@pytest.hookimpl(trylast=True)
+def test_maxlikehood():
+    """
+    Tests' the frequentist maximum likelihood approach. Uses BKA output of MCMC approach 
+    so this should run after
+    """
+    # read in outputs
+    prefix = "betpic-131210-j-fmpsf"
+    output_prefix = os.path.join(testdir, prefix)
+    fm_hdu = fits.open(output_prefix + "-fmpsf-KLmodes-all.fits")
+    data_hdu = fits.open(output_prefix + "-klipped-KLmodes-all.fits")
+
+
+    # get FM frame
+    fm_frame = fm_hdu[1].data[1]
+    fm_centx = fm_hdu[1].header['PSFCENTX']
+    fm_centy = fm_hdu[1].header['PSFCENTY']
+
+    # get data_stamp frame
+    data_frame = data_hdu[1].data[1]
+    data_centx = data_hdu[1].header["PSFCENTX"]
+    data_centy = data_hdu[1].header["PSFCENTY"]
+
+    # get initial guesses
+    guesssep = fm_hdu[0].header['FM_SEP']
+    guesspa = fm_hdu[0].header['FM_PA']
+    guessdx = -guesssep * np.sin(np.radians(guesspa))
+    guessdy = guesssep * np.cos(np.radians(guesspa)) 
+
+    # create FM Astrometry object
+    fma = fitpsf.FitPSF(9, method='maxl')
+
+    # generate FM stamp
+    fma.generate_fm_stamp(fm_frame, [fm_centx + guessdx, fm_centy + guessdy], padding=5)
+
+    # generate data_stamp stamp
+    data_frame[140-23 , 140+15] = np.nan 
+    fma.generate_data_stamp(data_frame, [data_centx + guessdx, data_centy + guessdy], None, dr=6, 
+                            radial_noise_center=[data_centx, data_centy])
+
+    # set kernel, with read noise
+    fma.set_kernel("matern32", [3.], [r"$l$"], False)
+
+    # set bounds
+    #fma.set_bounds(1.5, 1.5, 1, [1.], 1)
+
+    print(fma.guess_x, fma.guess_y)
+
+    # run MCMC fit
+    fma.fit_psf()
+
+    assert(np.abs(fma.fit_x.bestfit - data_centx - 227.2/14.166) < 0.33)
+    assert(np.abs(fma.fit_y.bestfit - data_centy - -361.1/14.166) < 0.33)
+
+    fma.best_fit_and_residuals()
+    plt.savefig("tests/fitpsf.png")
+    
+    fm_hdu.close()
+    data_hdu.close()
 
 if __name__ == "__main__":
     test_fmastrometry()
+    test_maxlikehood()
