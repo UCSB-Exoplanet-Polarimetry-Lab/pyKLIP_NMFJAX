@@ -21,29 +21,18 @@ class FitPSF(object):
     Base class to perform astrometry on direct imaging data_stamp using GP regression. Can utilize a Bayesian framework with MCMC or a frequentist framework with least squares. 
 
     Args:
-<<<<<<< HEAD
         fitboxsize: fitting box side length (pixels)
-=======
-        guess_x1 (float): guess location, first coordiante. Either separation or x (pixels). Default is separation
-        guess_x2 (float): guess location, second coordinate. Either position angle (degrees) or y (pixels). Default is PA
-        fitboxsize (int): fitting box side length (pixels)
->>>>>>> b8d5f82a894e8500b1d9cc3fc94b9a89934eb3ca
         method (str): either 'mcmc' or 'maxl' depending on framework you want. Defaults to 'mcmc'. 
         fmt (str): either 'seppa' or 'xy' depending on how you want to input the guess coordiantes
 
     Attributes:
-        guess_sep (float): (initialization) guess separation for planet [pixels]
-        guess_pa (float): (initialization) guess PA for planet [degrees]
-        guess_RA_offset (float): (initialization) guess RA offset [pixels]
-        guess_Dec_offset (float): (initialization) guess Dec offset [pixels]
-        raw_RA_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
-        raw_Dec_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
-        raw_flux (:py:class:`pyklip.fitpsf.ParamRange`): (result) factor to scale the FM to match the flux of the data
-        covar_params (list of :py:class:`pyklip.fitpsf.ParamRange`): (result) hyperparameters for the Gaussian process
-        raw_sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [pixels]
-        raw_PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [degrees]
-        RA_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the RA offset of the planet that includes all astrometric errors [pixels or mas]
-        Dec_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the Dec offset of the planet that includes all astrometric errors [pixels or mas]
+        guess_x (float): (initialization) guess x position [pixels]
+        guess_y (float): (initialization) guess y positon [pixels]
+        guess_flux (float): guess scale factor between model and data
+        fit_x (:py:class:`pyklip.fitpsf.ParamRange`): (result) the result from the MCMC fit for the planet's location [pixels]
+        fit_y (:py:class:`pyklip.fitpsf.ParamRange`): (result) the result from the MCMC fit for the planet's location [pixels]
+        fit_flux (:py:class:`pyklip.fitpsf.ParamRange`): (result) factor to scale the FM to match the flux of the data
+        covar_params (list of :py:class:`pyklip.fitpsf.ParamRange`): (result) hyperparameters for the Gaussian processa
         fm_stamp (np.array): (fitting) The 2-D stamp of the forward model (centered at the nearest pixel to the guessed location)
         data_stamp (np.array): (fitting) The stamp of the data (centered at the nearest pixel to the guessed location) (2-D unless there were NaNs in which 1-D)
         noise_map (np.array): (fitting) The stamp of the noise for each pixel the data computed assuming azimuthally similar noise (same dim as data_stamp)
@@ -52,20 +41,12 @@ class FitPSF(object):
     
 
     """
-<<<<<<< HEAD
     def __init__(self, fitboxsize, method='mcmc'):
         """
         Initilaizes the FitPSF class
         """
         # store initailization
         self.fitboxsize = fitboxsize
-=======
-    def __init__(self, guess_x1, guess_x2, fitboxsize, method='mcmc', fmt="seppa"):
-        """
-        Initilaizes the FitPSF class
-        """
-        # check method
->>>>>>> b8d5f82a894e8500b1d9cc3fc94b9a89934eb3ca
         if method.lower() == "maxl":
             self.isbayesian = False
         elif method.lower() == "mcmc":
@@ -73,24 +54,6 @@ class FitPSF(object):
         else:
             raise ValueError("method needs to be either 'maxl' or 'mcmc'. Received {0}.".format(method))
 
-<<<<<<< HEAD
-
-=======
-        # store initailization
-        if fmt.lower() == "seppa":  
-            self.guess_sep = guess_x1
-            self.guess_pa = guess_x2
-            self.fitboxsize = fitboxsize
-
-            # derive delta RA and delta Dec
-            # in pixels
-            self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
-            self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
-        elif fmt.lower() == "xy":
-            # assume image is North up East left. 
-            self.guess_RA_offset = -guess_x1
-            self.guess_Dec_offset = guess_x2
->>>>>>> b8d5f82a894e8500b1d9cc3fc94b9a89934eb3ca
 
         # stuff that isn't generated yet
         # stamps of the data_stamp and the forward model
@@ -144,8 +107,8 @@ class FitPSF(object):
         """
         Generates a stamp of the forward model and stores it in self.fm_stamp
         Args:
-            fm_image: full imgae containing the fm_stamp
-            fm_center: [x,y] center of image (assuing fm_stamp is located at sep/PA) corresponding to guess_sep and guess_pa
+            fm_image: full image containing the fm_stamp
+            fm_pos: [x,y] location of the forwrd model in the fm_image
             fm_wcs: if not None, specifies the sky angles in the image. If None, assume image is North up East left
             extract: if True, need to extract the forward model from the image. Otherwise, assume the fm_stamp is already
                     centered in the frame (fm_image.shape // 2)
@@ -198,13 +161,12 @@ class FitPSF(object):
         Generate a stamp of the data_stamp ~centered on planet and also corresponding noise map
         Args:
             data: the final collapsed data_stamp (2-D)
-            data_center: location of star in the data_stamp.  
-            data_wcs: sky angles WCS object. To rotate the image properly [NOT YET IMPLMETNED]
-                      if None, data_stamp is already rotated North up East left
-            noise_map: if not None, noise map for each pixel in the data_stamp (2-D).
-                        if None, one will be generated assuming azimuthal noise using an annulus widthh of dr
+            guess_loc: guess location of where to fit the model in the data 
+            noise_map: if not None, noise map for each pixel (either same shape as input data, or shape of data stamp)
+                       if None, one will be generated assuming azimuthal noise using an annulus widthh of dr. radial_noise_center MUST be defined.
+            radial_noise_center: if we assume the noise is azimuthally symmetric and changes radially, this is the [x,y] center for it
             dr: width of annulus in pixels from which the noise map will be generated
-            exclusion_radius: radius around the guess planet location which doens't get factored into noise estimate
+            exclusion_radius: radius around the guess planet location which doens't get factored into the radial noise estimate
 
         Returns:
 
@@ -378,7 +340,7 @@ class FitPSF(object):
     def fit_psf(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
         """
-        Fits the PSF of the planet in either a frequentist or Bayesian way depending on initialization. 
+        Fits the PSF to the data in either a frequentist or Bayesian way depending on initialization. 
 
         Args:
             nwalkers: number of walkers (mcmc-only)
@@ -837,6 +799,20 @@ class FMAstrometry(FitPSF):
         super(FMAstrometry, self).__init__(fitboxsize, method)
 
     def generate_fm_stamp(self, fm_image, fm_center, fm_wcs=None, extract=True, padding=5):
+        """
+        Generates a stamp of the forward model and stores it in self.fm_stamp
+        Args:
+            fm_image: full imgae containing the fm_stamp
+            fm_center: [x,y] center of image (assuing fm_stamp is located at sep/PA) corresponding to guess_sep and guess_pa
+            fm_wcs: if not None, specifies the sky angles in the image. If None, assume image is North up East left
+            extract: if True, need to extract the forward model from the image. Otherwise, assume the fm_stamp is already
+                    centered in the frame (fm_image.shape // 2)
+            padding: number of pixels on each side in addition to the fitboxsize to extract to pad the fm_stamp
+                        (should be >= 1)
+
+        Returns:
+
+        """
         fm_x = -self.guess_RA_offset + fm_center[0]
         fm_y = self.guess_Dec_offset + fm_center[1]
         self.fm_center = fm_center
@@ -844,6 +820,22 @@ class FMAstrometry(FitPSF):
         super(FMAstrometry, self).generate_fm_stamp(fm_image, fm_pos=[fm_x, fm_y], fm_wcs=fm_wcs, extract=extract, padding=padding)
 
     def generate_data_stamp(self, data, data_center, data_wcs=None, noise_map=None, dr=4, exclusion_radius=10):
+        """
+        Generate a stamp of the data_stamp ~centered on planet and also corresponding noise map
+
+        Args:
+            data: the final collapsed data_stamp (2-D)
+            data_center: location of star in the data_stamp.  
+            data_wcs: sky angles WCS object. To rotate the image properly [NOT YET IMPLMETNED]
+                      if None, data_stamp is already rotated North up East left
+            noise_map: if not None, noise map for each pixel in the data_stamp (2-D).
+                        if None, one will be generated assuming azimuthal noise using an annulus widthh of dr
+            dr: width of annulus in pixels from which the noise map will be generated
+            exclusion_radius: radius around the guess planet location which doens't get factored into noise estimate
+
+        Returns:
+
+        """
         # rotate image North up east left if necessary
         if data_wcs is not None:
             # rotate
@@ -858,6 +850,20 @@ class FMAstrometry(FitPSF):
 
     def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
                        numthreads=None):
+        """
+        Fits the PSF of the planet in either a frequentist or Bayesian way depending on initialization. 
+
+        Args:
+            nwalkers: number of walkers (mcmc-only)
+            nburn: numbe of samples of burn-in for each walker (mcmc-only)
+            nsteps: number of samples each walker takes (mcmc-only)
+            save_chain: if True, save the output in a pickled file (mcmc-only)
+            chain_output: filename to output the chain to (mcmc-only)
+            numthreads: number of threads to use (mcmc-only)
+
+        Returns:
+
+        """
         self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
         
         # convert chains to relative separation
@@ -1040,184 +1046,6 @@ class FMAstrometry(FitPSF):
             print("RA offset = {0} +/- {1} ({2}) mas".format(self.RA_offset.bestfit, self.RA_offset.error, self.RA_offset.error_2sided))
             print("Dec offset = {0} +/- {1} ({2}) mas".format(self.Dec_offset.bestfit, self.Dec_offset.error, self.Dec_offset.error_2sided))
 
-<<<<<<< HEAD
-=======
-
-
-
-def lnprior(fitparams, bounds, readnoise=False, negate=False):
-    """
-    Bayesian prior
-
-    Args:
-        fitparams: array of params (size N)
-
-        bounds: array of (N,2) with corresponding lower and upper bound of params
-                bounds[i,0] <= fitparams[i] < bounds[i,1]
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-
-    Returns:
-        prior: 0 if inside bound ranges, -inf if outside
-
-    """
-    prior = 0.0
-
-    for param, bound in zip(fitparams, bounds):
-        if (param >= bound[1]) | (param < bound[0]):
-            prior *= -np.inf
-            break
-
-    if negate:
-        prior *= -1
-
-    return prior
-
-
-def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
-    """
-    Likelihood function
-    Args:
-        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
-                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
-                    f: flux scale factor to normalizae the flux of the data_stamp to the model
-        fma (FMAstrometry): a FMAstrometry object that has been fully set up to run
-        cov_func (function): function that given an input [x,y] coordinate array returns the covariance matrix
-                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-
-    Returns:
-        likeli: log of likelihood function (minus a constant factor)
-    """
-    dRA_trial = fitparams[0]
-    dDec_trial = fitparams[1]
-    f_trial = fitparams[2]
-    hyperparms_trial = fitparams[3:]
-
-    if readnoise:
-        # last hyperparameter is a diagonal noise term. Separate it out
-        readnoise_amp = np.exp(hyperparms_trial[-1])
-        hyperparms_trial = hyperparms_trial[:-1]
-
-    # get trial parameters out of log space
-    #f_trial = math.exp(f_trial)
-    #hyperparms_trial = np.exp(hyperparms_trial)
-
-    dx = -(dRA_trial - fma.data_stamp_RA_offset_center)
-    dy = dDec_trial - fma.data_stamp_Dec_offset_center
-
-    fm_shifted = sinterp.shift(fma.fm_stamp, [dy, dx])
-
-    if fma.padding > 0:
-        fm_shifted = fm_shifted[fma.padding:-fma.padding, fma.padding:-fma.padding]
-
-    diff_ravel = fma.data_stamp.ravel() - f_trial * fm_shifted.ravel()
-
-    cov = cov_func(fma.data_stamp_RA_offset.ravel(), fma.data_stamp_Dec_offset.ravel(), fma.noise_map.ravel(),
-                   hyperparms_trial)
-
-    if readnoise:
-        # add a diagonal term
-        cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(fma.noise_map.ravel()**2 )
-
-    # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
-    # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
-    try:
-        (L_cov, lower_cov) = linalg.cho_factor(cov)
-        cov_inv_dot_diff = linalg.cho_solve((L_cov, lower_cov), diff_ravel) # solve Cov x = diff for x
-        # compute log(det(Cov))
-        logdet = 2*np.sum(np.log(np.diag(L_cov)))
-    except: 
-        cov_inv = np.linalg.inv(cov)
-        cov_inv_dot_diff = np.dot(cov_inv, diff_ravel)
-        # compute log(det(Cov))
-        _, logdet = np.linalg.slogdet(cov)
-
-    residuals = diff_ravel.dot(cov_inv_dot_diff)
-    constant = logdet
-
-    loglikelihood = -0.5 * (residuals + constant)
-
-    if negate:
-        loglikelihood *= -1
-    
-    return loglikelihood
-
-
-def lnprob(fitparams, fma, bounds, cov_func, readnoise=False, negate=False, cov_params=None):
-    """
-    Function to compute the relative posterior probabiltiy. Product of likelihood and prior
-    Args:
-        fitparams: array of params (size N). First three are [dRA,dDec,f]. Additional parameters are GP hyperparams
-                    dRA,dDec: RA,Dec offsets from star. Also coordianaes in self.data_{RA,Dec}_offset
-                    f: flux scale factor to normalizae the flux of the data_stamp to the model
-        fma: a FMAstrometry object that has been fully set up to run
-        bounds: array of (N,2) with corresponding lower and upper bound of params
-                bounds[i,0] <= fitparams[i] < bounds[i,1]
-        cov_func: function that given an input [x,y] coordinate array returns the covariance matrix
-                  e.g. cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-        readnoise (bool): If True, the last fitparam fits for diagonal noise
-        negate (bool): if True, negatives the probability (used for minimization algos)
-        cov_params (list): if not None, GP hyperparams aren't being fit. Are being passed here as set instead
-
-    Returns:
-
-    """
-    if bounds is not None:
-        lp = lnprior(fitparams, bounds, readnoise=readnoise, negate=negate)
-    else:
-        lp = 0
-
-    if not np.isfinite(lp):
-        if not negate:
-            return -np.inf
-        else:
-            return np.inf
-
-    if cov_params is not None:
-        # need to stil cov_params into the fitparams, even though we are not fitting for them
-        # easier to not modify that function
-        fitparams = np.append(fitparams, cov_params)
-    
-    return lp + lnlike(fitparams, fma, cov_func, readnoise=readnoise, negate=negate)
-
-
-class ParamRange(object):
-    """
-    Stores the best fit value and uncertainities for a parameter in a neat fasion
-
-    Args:
-        bestfit (float): the bestfit value
-        err_range: either a float or a 2-element tuple (+val1, -val2) and gives the 1-sigma range
-
-    Attributes:
-        bestfit (float): the bestfit value
-        error (float): the average 1-sigma error
-        error_2sided (np.array): [+error1, -error2] 2-element array with asymmetric errors
-    """
-    def __init__(self, bestfit, err_range):
-        self.bestfit = bestfit
-
-        if isinstance(err_range, (int, float)):
-            self.error = err_range
-            self.error_2sided = np.array([err_range, -err_range])
-        elif len(err_range) == 2:
-            self.error_2sided = np.array(err_range)
-            self.error = np.mean(np.abs(err_range))
-
-class FMAstrometry(FitPSF):
-    """
-    FMAstrometry is now obsolete as all its functionality is in FitPSF
-    """
-    def __init__(self, guess_sep, guess_pa, fitboxsize, method='mcmc'):
-        super(FMAstrometry, self).__init__(guess_sep, guess_pa, fitboxsize, method)
-
-    def fit_astrometry(self, nwalkers=100, nburn=200, nsteps=800, save_chain=True, chain_output="bka-chain.pkl",
-                       numthreads=None):
-        self.fit_psf(nwalkers, nburn, nsteps, save_chain, chain_output, numthreads)
-
->>>>>>> b8d5f82a894e8500b1d9cc3fc94b9a89934eb3ca
 import scipy.ndimage as ndimage
 from copy import copy
 from scipy.optimize import minimize
