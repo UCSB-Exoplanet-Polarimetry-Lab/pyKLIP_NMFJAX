@@ -237,7 +237,7 @@ class CHARISData(Data):
             else:
                 print("Finding satellite spots for cube {0}".format(index))
                 try:
-                    spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc, hdr=exthdr)
+                    spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc, hdr=exthdr, highpass=False)
                 except ValueError:
                     print("Unable to locate sat spots for cube{0}. Skipping...".format(index))
                     continue
@@ -540,6 +540,7 @@ class CHARISData(Data):
             self.psfs.append(spotpsf)
 
         self.psfs = np.array(self.psfs)
+        self.uncollapsed_psfs = self.psfs
 
         # collapse in time dimension
         numwvs = np.size(np.unique(self.wvs))

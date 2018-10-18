@@ -250,7 +250,7 @@ class FitPSF(object):
         Set the Gaussian process kernel used in our fit
 
         Args:
-            covar: Covariance kernel for GP regression. If string, can be "matern32" or "sqexp"
+            covar: Covariance kernel for GP regression. If string, can be "matern32" or "sqexp" or "diag"
                     Can also be a function: cov = cov_function(x_indices, y_indices, sigmas, cov_params)
             covar_param_guesses: a list of guesses on the hyperparmeteres (size of N_hyperparams)
             covar_param_labels: a list of strings labelling each covariance parameter
@@ -265,6 +265,8 @@ class FitPSF(object):
                 self.covar = covars.matern32
             elif covar.lower() == "sqexp":
                 self.covar = covars.sq_exp
+            elif covar.lower() == "diag":
+                self.covar = covars.delta
             else:
                 raise ValueError("Covariance matricies currently supported are 'matern32' and 'sqexp'")
         else:
@@ -312,7 +314,6 @@ class FitPSF(object):
             self.bounds.append(dy)
         else:
             self.bounds.append([self.guess_y - dy, self.guess_y + dy])
-
 
         if np.size(df) == 2:
             self.bounds.append(df)
@@ -675,7 +676,7 @@ def lnlike(fitparams, fma, cov_func, readnoise=False, negate=False):
     if readnoise:
         # add a diagonal term
         cov = (1 - readnoise_amp) * cov + readnoise_amp * np.diagflat(noise_map.ravel()**2 )
-
+    
     # solve Cov * x = diff for x = Cov^-1 diff. Numerically more stable than inverse
     # to make it faster, we comptue the Cholesky factor and use it to also compute the determinent
     try:

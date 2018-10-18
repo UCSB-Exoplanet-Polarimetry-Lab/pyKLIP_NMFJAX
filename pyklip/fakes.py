@@ -707,15 +707,26 @@ def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
     # construct an Airy function to fit to the data
     airy_psf = modeling.functional_models.AiryDisk2D()
     fity, fitx = np.indices(fitbox.shape)
-    errorfunction = lambda p: np.sum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) - fitbox)**2)
+
+    def airy_cost_function(p):
+        x,y = p[0], p[1]
+        if x < 0 or x > (2*searchrad+1):
+            return np.inf
+        if y < 0 or y > (2*searchrad+1):
+            return np.inf
+        fwhm = p[3]
+        if fwhm > 2*searchrad+1:
+            return np.inf
+
+        return np.nansum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) + p[4] - fitbox)**2)
 
     #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
     #(2searchrad+1,2searchrad+1)
 
-    guess = np.array((searchrad, searchrad, guesspeak, guessfwhm))
+    guess = np.array((searchrad, searchrad, guesspeak, guessfwhm, 0))
 
     #p, success = optimize.leastsq(errorfunction, guess)
-    res = optimize.minimize(errorfunction, guess, method="Nelder-Mead")
+    res = optimize.minimize(airy_cost_function, guess, method="Nelder-Mead")
     p = res.x
 
     xfit = p[0]
