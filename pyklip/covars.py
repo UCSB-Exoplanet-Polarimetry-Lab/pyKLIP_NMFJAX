@@ -80,3 +80,15 @@ def sq_exp(x, y, sigmas, corr_len):
     """
     return _sq_exp(x, y, sigmas, corr_len)
 
+def delta(x, y, sigmas, *args):
+    """
+    Generates a diagonal covariance matrix
+
+    C_ij = \sigma_i \sigma_j delta_{ij}
+
+    Args:
+        x (np.array): 1-D array of x coordinates
+        y (np.array): 1-D array of y coordinates
+        sigmas (np.array): 1-D array of errors on each pixel
+    """
+    return np.diag(sigmas**2)
