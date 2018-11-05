@@ -292,7 +292,7 @@ def test_airy_fit():
     data = airy_psf.evaluate(x, y, flux0, x0, y0, fwhm0/2.)
 
     # fit it
-    fitflux, fitfwhm, fitx, fity = fakes.airyfit2d(data, int(x0), int(y0))
+    fitflux, fitfwhm, fitx, fity = fakes.airyfit2d(data, int(x0), int(y0), searchrad=10)
 
     threshold = 1e-4
     assert x0 == pytest.approx(fitx, threshold)
