@@ -711,14 +711,14 @@ def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
     def airy_cost_function(p):
         x,y = p[0], p[1]
         if x < 0 or x > (2*searchrad+1):
-            return np.inf
+            return np.inf 
         if y < 0 or y > (2*searchrad+1):
-            return np.inf
+            return np.inf 
         fwhm = p[3]
         if fwhm > 2*searchrad+1:
             return np.inf
 
-        return np.nansum((airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) + p[4] - fitbox)**2)
+        return np.nansum(np.abs(airy_psf.evaluate(fitx, fity, p[2], p[0], p[1], p[3]/2.) + p[4] - fitbox))
 
     #do a least squares fit. Note that we use searchrad for x and y centers since we're narrowed it to a box of size
     #(2searchrad+1,2searchrad+1)
@@ -727,6 +727,7 @@ def airyfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1):
 
     #p, success = optimize.leastsq(errorfunction, guess)
     res = optimize.minimize(airy_cost_function, guess, method="Nelder-Mead")
+
     p = res.x
 
     xfit = p[0]
