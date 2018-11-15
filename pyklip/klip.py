@@ -55,14 +55,7 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, retu
     max_basis = np.max(numbasis) + 1  # maximum number of eigenvectors/KL basis we actually need to use/calculate
 
     # calculate eigenvalues and eigenvectors of covariance matrix, but only the ones we need (up to max basis)
-    #evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
-    u,s,v = la.svd(covar_psfs, lapack_driver='gesvd')
-    evals = s
-    evecs = np.copy(u, order='F')
-
-    if tot_basis > max_basis:
-        evals = evals[:max_basis]
-        evecs = evecs[:,:max_basis]
+    evals, evecs = la.eigh(covar_psfs, eigvals=(tot_basis-max_basis, tot_basis-1))
 
     # check if there are negative eignevalues as they will cause NaNs later that we have to remove
     # the eigenvalues are ordered smallest to largest
@@ -72,8 +65,8 @@ def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, retu
 
     # scipy.linalg.eigh spits out the eigenvalues/vectors smallest first so we need to reverse
     # we're going to recopy them to hopefully improve caching when doing matrix multiplication
-    #evals = np.copy(evals[::-1])
-    #evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
+    evals = np.copy(evals[::-1])
+    evecs = np.copy(evecs[:,::-1], order='F') #fortran order to improve memory caching in matrix multiplication
 
     # keep an index of the negative eignevalues for future reference if there are any
     if check_nans:
