@@ -357,7 +357,7 @@ class FMPlanetPSF(NoFM):
             spectrum: if not None, spectrum to weight the data by. Length same as dataset.wvs
             pixel_weights: weights for each pixel for weighted mean. Leave this as a single number for simple mean
         """
-        weighted = np.shape(pixel_weights) != ()
+        weighted = len(np.shape(pixel_weights)) > 1
         numwvs = dataset.numwvs
         fmout_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
                                             fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
