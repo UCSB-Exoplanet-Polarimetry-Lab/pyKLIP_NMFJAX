@@ -410,8 +410,7 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
     N_frames = fmout.shape[2] - 1 # The last element in this axis contains klipped image
     N_cubes = np.size(np.unique(dataset.filenums)) # 
     nl = N_frames // N_cubes
-    stamp_size_squared = fmout.shape[-1]
-    stamp_size = np.sqrt(stamp_size_squared)
+    stamp_N_pix = fmout.shape[-1]
 
     # Selection matrix (N_cubes, 1) shape
     spec_identity = np.identity(nl)
@@ -424,15 +423,15 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
     # The first dimension in fmout is numbasis, and there can be multiple of these,
     # Especially if you want to see how the spectrum behaves when you change parameters.
     # We'll also set aside an array to store the forward model matrix
-    fm_coadd_mat = np.zeros((len(fmout), nl*stamp_size_squared, nl))
+    fm_coadd_mat = np.zeros((len(fmout), nl*stamp_N_pix, nl))
     for ii in range(len(fmout)):
         klipped[ii, ...] = fmout[ii,:, -1,:]
         # klipped_coadd will be coadded over N_cubes
-        klipped_coadd = np.zeros((int(nl),int(stamp_size_squared)))
+        klipped_coadd = np.zeros((int(nl),int(stamp_N_pix)))
         for k in range(N_cubes):
             klipped_coadd = klipped_coadd + klipped[ii, k*nl:(k+1)*nl,:]
         print(klipped_coadd.shape)
-        klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
+        #klipped_coadd.shape = [int(nl),int(stamp_size),int(stamp_size)]
         # This is the 'raw' forward model, need to rearrange to solve FM*spec = klipped
         FM_noSpec = fmout[ii, :,:N_frames, :]
 
@@ -449,13 +448,13 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
             #JBR's matrix inversion adds up over all exposures, then inverts
             #
             #Back to a 2D array pixel array in the middle
-            fm_noSpec_coadd.shape = [int(nl),int(stamp_size),int(stamp_size),int(nl)]
+            fm_noSpec_coadd.shape = [int(nl),stamp_N_pix, int(nl)]
             # Flatten over first 3 dims for the FM matrix to solve FM*spect = klipped
-            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
+            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_N_pix),int(nl)))
             # Invert the FM matrix
             pinv_fm_coadd_mat = np.linalg.pinv(fm_noSpec_coadd_mat)
             # solve via FM^-1 . klipped_PSF (flattened) << both are coadded over N_cubes
-            estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat,np.reshape(klipped_coadd,(int(nl*stamp_size_squared),)))
+            estim_spec[ii,:]=np.dot(pinv_fm_coadd_mat, klipped_coadd.ravel())
             fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
         elif method == "LP":
             #
@@ -463,12 +462,12 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
             #
             A = np.zeros((nl, nl))
             b = np.zeros(nl)
-            fm = fm_noSpec_coadd.reshape(int(nl), int(stamp_size*stamp_size),int(nl))
+            fm = fm_noSpec_coadd.reshape(int(nl), stamp_N_pix, int(nl))
             fm_coadd_mat[ii,:, :] = \
-                fm_noSpec_coadd.reshape(int(nl*stamp_size_squared), int(nl))
+                fm_noSpec_coadd.reshape(int(nl*stamp_N_pix), int(nl))
             fm = np.rollaxis(fm, 2,0)
             fm = np.rollaxis(fm, 2,1)
-            data = klipped_coadd.reshape(int(nl), int(stamp_size*stamp_size))
+            data = klipped_coadd
             for q in range(nl):
                 A[q,:] = np.dot(fm[q,:].T,fm[q,:])[q,:]
                 b[q] = np.dot(fm[q,:].T,data[q])[q]
@@ -478,16 +477,14 @@ def invert_spect_fmodel(fmout, dataset, method = "JB", units = "natural",
             # instead of matrix inversions
             
             #Back to a 2D array pixel array in the middle
-            fm_noSpec_coadd.shape = [int(nl),int(stamp_size),int(stamp_size),int(nl)]
+            fm_noSpec_coadd.shape = [int(nl),stamp_N_pix,int(nl)]
             # Flatten over first 3 dims for the FM matrix to solve FM*spect = klipped
-            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_size_squared),int(nl)))
+            fm_noSpec_coadd_mat = np.reshape(fm_noSpec_coadd,(int(nl*stamp_N_pix),int(nl)))
             # Saving the coadded FM
             fm_coadd_mat[ii,:, :] = fm_noSpec_coadd_mat
 
-            # properly flatten
-            flat_klipped_coadd = np.reshape(klipped_coadd, (int(nl*stamp_size_squared),))
             # used leastsq solver
-            results = linalg.lstsq(fm_noSpec_coadd_mat, flat_klipped_coadd)
+            results = linalg.lstsq(fm_noSpec_coadd_mat, klipped_coadd.ravel())
             # grab the spectrum, not using the other parts for now.
             estim_spec[ii,:], res, rank, s = results
 
