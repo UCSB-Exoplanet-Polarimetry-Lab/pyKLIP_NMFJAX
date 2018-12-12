@@ -466,16 +466,12 @@ class Irdis(Data):
             # parameters or for the the location of injected planets.
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
-                try:
-                    self.prihdr['PIXSCAL'] # The SPHERE DC has headers with details of the reduction. We can use that information to differentiate between the two types of reduction
-                except KeyError:
-                    self.prihdr['PIXSCAL'] = False # If the keyword is missing, then we know it is data from Arthur Vigan's reduction
-                if self.prihdr['PIXSCAL'] == 12.27:
+                if 'PIXSCAL' in self.prihdr:
                     irdis_rdp = "sphere-dc" # Set the reduction process
                     self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
-                elif self.prihdr['PIXSCAL'] == False or self.prihdr['PIXSCAL'] == "F":
+                else:
                     irdis_rdp = "vigan" # Set the reduction process
-                self._irdis_rdp = irdis_rdp # Store the reduction process
+                self.irdis_rdp = irdis_rdp # Store the reduction process
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
                 self.nwvs = self.input.shape[1]
@@ -596,13 +592,6 @@ class Irdis(Data):
     @input.setter
     def input(self, newval):
         self._input = newval
-
-    @property
-    def irdis_rdp(self):
-        return self._irdis_rdp
-    @irdis_rdp.setter
-    def irdis_rdp(self, newval):
-        self._irdis_rdp = newval
 
     @property
     def centers(self):
