@@ -25,6 +25,7 @@ class Ifs(Data):
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        ifs_rdp: Reduction algorithm used to obtain the input data.
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
@@ -432,7 +433,6 @@ class Irdis(Data):
         centers: Array of shape (N,2) for N centers in the format [x_cent, y_cent]
         filenums: Array of size N for the numerical index to map data to file that was passed in
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
-        irdis_rdp: Reduction algorithm used to obtain the input data.
         PAs: Array of N for the parallactic angle rotation of the target (used for ADI) [in degrees]
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
