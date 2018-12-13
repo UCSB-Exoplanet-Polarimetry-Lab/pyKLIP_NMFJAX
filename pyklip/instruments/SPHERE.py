@@ -465,6 +465,12 @@ class Irdis(Data):
             # parameters or for the the location of injected planets.
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
+                if 'PIXSCAL' in self.prihdr:
+                    irdis_rdp = "sphere-dc" # Set the reduction process
+                    self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
+                else:
+                    irdis_rdp = "vigan" # Set the reduction process
+                self.irdis_rdp = irdis_rdp # Store the reduction process
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
                 self.nwvs = self.input.shape[1]
@@ -498,10 +504,15 @@ class Irdis(Data):
 
         # read in the psf cube
         with fits.open(psf_cube) as hdulist:
-            self.psfs = hdulist[0].data # Nwvs, Ny, Nx
-            if np.size(self.psfs.shape) == 4:
+            psf_cube = hdulist[0].data # Nwvs, Ny, Nx
+            if np.size(psf_cube.shape) == 4:
+                if irdis_rdp == "vigan":
+                    self.psfs = np.median(psf_cube ,axis=0) # Take the median of the three PSFs
+                elif irdis_rdp == "sphere-dc":
+                    self.psfs = np.median(psf_cube ,axis=1) # Take the median of the three PSFs
+            else:
+                self.psfs = psf_cube
                 # multiple PSF sequences were taken. Collpase them and take the average
-                self.psfs = np.nanmean(self.psfs, axis=0)
             self.psfs_center = [self.psfs.shape[2]//2, self.psfs.shape[1]//2] # (x,y)
 
             # trim the cube
@@ -516,9 +527,13 @@ class Irdis(Data):
 
         # read in PA info among other things
         with fits.open(info_fits) as hdulist:
-            metadata = hdulist[1].data
-            self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
-            self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            if irdis_rdp == "vigan":
+                metadata = hdulist[1].data
+                self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
+                self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            elif irdis_rdp == "sphere-dc":
+                self._PAs = -hdulist[0].data # The SPHERE DC inverts the angles and we must correct for it
+                self._PAs = np.repeat(self.PAs, self.nwvs)
 
         # we don't need to flip x for North Up East left
         self.flipx = False
@@ -676,11 +691,12 @@ class Irdis(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        filenames = np.unique(self.filenames)
-        nfiles = np.size(filenames)
-        hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
-        for i, filename in enumerate(filenames):
-            hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
+        if self.irdis_rdp == "vigan":
+            filenames = np.unique(self.filenames)
+            nfiles = np.size(filenames)
+            hdulist[0].header["DRPNFILE"] = (nfiles, "Num raw files used in pyKLIP")
+            for i, filename in enumerate(filenames):
+                hdulist[0].header["FILE_{0}".format(i)] = filename + '.fits'
 
 
 
