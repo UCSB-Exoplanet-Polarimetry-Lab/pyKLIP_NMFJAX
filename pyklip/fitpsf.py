@@ -1078,7 +1078,7 @@ def quick_psf_fit(data, psf, x_guess, y_guess, fitboxsize):
 
     fit.generate_data_stamp(data, [x_guess, y_guess], np.ones(data.shape))
 
-    fit.set_kernel("matern32", [3.], [r"$l$"], False)
+    fit.set_kernel("diag", [], [], False)
 
     fit.fit_psf()
 
