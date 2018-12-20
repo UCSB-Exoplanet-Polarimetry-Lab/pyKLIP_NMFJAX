@@ -252,7 +252,7 @@ class FitPSF(object):
         Args:
             covar: Covariance kernel for GP regression. If string, can be "matern32" or "sqexp" or "diag"
                     Can also be a function: cov = cov_function(x_indices, y_indices, sigmas, cov_params)
-            covar_param_guesses: a list of guesses on the hyperparmeteres (size of N_hyperparams)
+            covar_param_guesses: a list of guesses on the hyperparmeteres (size of N_hyperparams). This can be an empty list for 'diag'.
             covar_param_labels: a list of strings labelling each covariance parameter
             include_readnoise: if True, part of the noise is a purely diagonal term (i.e. read/photon noise)
             read_noise_fraction: fraction of the total measured noise is read noise (between 0 and 1)
@@ -268,7 +268,7 @@ class FitPSF(object):
             elif covar.lower() == "diag":
                 self.covar = covars.delta
             else:
-                raise ValueError("Covariance matricies currently supported are 'matern32' and 'sqexp'")
+                raise ValueError("Covariance matricies currently supported are 'matern32', 'sqexp', and diag")
         else:
             # this better be a covariance function. We're trusting you
             self.covar = covar
