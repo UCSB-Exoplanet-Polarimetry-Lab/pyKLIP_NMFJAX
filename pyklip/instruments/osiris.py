@@ -349,7 +349,7 @@ class Ifs(Data):
                     self.N_threads = mp.cpu_count()
                     pool = mp.Pool(processes=self.N_threads)
                     #multitask this
-                    outputs_list = pool.map(casdi_residual_star, itertools.izip(xcen_grid.ravel(),
+                    outputs_list = pool.map(casdi_residual_star, zip(xcen_grid.ravel(),
                                                                                 ycen_grid.ravel(),
                                                                                 itertools.repeat(tmp_input),
                                                                                 itertools.repeat(self.wvs[k*self.nwvs:(k+1)*self.nwvs])))

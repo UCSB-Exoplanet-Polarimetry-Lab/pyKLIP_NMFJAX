@@ -40,6 +40,7 @@ def get_image_stat_map(image,
                     If "SNR" (default) simple stddev calculation and returns SNR.
                     If "stddev" returns the pure standard deviation map.
                     If "mean" returns a map from the radial mean.
+                    If "sum" returns a map from the radial sum.
                     If "proba" triggers proba calculation with pdf fitting.
         image_wide: Don't divide the image in annuli or sectors when computing the statistic.
                     Use the entire image directly.
@@ -374,7 +375,7 @@ def get_image_stat(image,type,
 
     Args:
         image: The image or cubes for which one wants the statistic.
-        type: "stddev" or "mean"
+        type: "stddev" or "mean" or "sum"
         IOWA: (IWA,OWA) inner working angle, outer working angle. It defines boundary to the zones in which the
                     statistic is calculated.
                     If None, kpp.utils.GPIimage.get_IOWA() is used.
@@ -452,6 +453,8 @@ def get_image_stat(image,type,
             stat = np.nanstd(data)
         elif type == "mean":
             stat = np.nanmean(data)
+        elif type == "sum":
+            stat = np.nansum(data)
 
         stat_list.append(stat)
         annulus_radii_list.append(((r_min+r_max)/2.,r_min,r_max))
