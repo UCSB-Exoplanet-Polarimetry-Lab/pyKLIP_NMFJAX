@@ -437,9 +437,9 @@ class FitPSF(object):
         # create array of initial guesses
         # array of guess RA, Dec, and flux
         # for everything that's not RA/Dec offset, should be converted to log space for MCMC sampling
-        init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
-        # append hyperparams for covariance matrix, which also need to be converted to log space
-        init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
+        # init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
+        # # append hyperparams for covariance matrix, which also need to be converted to log space
+        # init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
 
         init_guess = np.array([self.guess_x, self.guess_y, (self.guess_flux)])
         # append hyperparams for covariance matrix, which also need to be converted to log space
