@@ -1073,7 +1073,7 @@ def quick_psf_fit(data, psf, x_guess, y_guess, fitboxsize):
     """
     fit = FitPSF(fitboxsize, method='maxl')
 
-    padding = (np.min(psf.shape) - fitboxsize) // 2
+    padding = int((np.min(psf.shape) - fitboxsize) // 2)
     fit.generate_fm_stamp(psf, extract=False, padding=padding)
 
     fit.generate_data_stamp(data, [x_guess, y_guess], np.ones(data.shape))
