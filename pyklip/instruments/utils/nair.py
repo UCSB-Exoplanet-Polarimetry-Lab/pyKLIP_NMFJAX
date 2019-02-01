@@ -18,7 +18,7 @@ def nMathar(wv, P, T, H=10):
     wvnum = 1.e4/wv #cm^-1     # convert to wavenumbers
 
     # if it was passed in as a float, we need to convert it into a array for code reuse
-    if not hasattr(wvnum, "__getitem__"):
+    if not isinstance(wvnum, np.ndarray):
         wvnum = np.array([wvnum])
 
     # polynomial expansion in wavenumber
