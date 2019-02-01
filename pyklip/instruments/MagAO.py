@@ -407,10 +407,6 @@ def _magao_process_file(self, filepath, highpass=False, pool = None):
     try:
         hdulist = fits.open(filepath)
         header = hdulist[0].header
-        angle = float(header['ROTOFF'])
-        angle = 90+angle
-        angles = [angle]
-        angles = np.array(angles)
         cube = hdulist[0].data
         prihdr = hdulist[0].header
         
@@ -422,7 +418,8 @@ def _magao_process_file(self, filepath, highpass=False, pool = None):
         dims = cube.shape
         x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
 
-        parang = angles
+        #not really parang, but north up angle, which is the parallactic angle + the angle of the rotator+90
+        parang = [(float(header['ROTOFF'])+90)]
 
         #WCS STUFF --------------
 
@@ -452,9 +449,9 @@ def _magao_process_file(self, filepath, highpass=False, pool = None):
         #turns out WCS data can be wrong. recalculating using rotoff
         rotoff = float(header['ROTOFF'])
         #changed the minus sign in front of vert_angle to fix direction of derotation 
-        vert_angle = (360-rotoff) 
+        vert_angle = (rotoff+90)#(360-rotoff)
         vert_angle = np.radians(vert_angle)
-        pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
+        pc = np.array([[-np.cos(vert_angle), np.sin(vert_angle)],[np.sin(vert_angle), np.cos(vert_angle)]])
         pixel_scale = self.lenslet_scale #.008 arcsec/pixel (hard coded, defined in MagAO.ini)
         cdmatrix = pc * pixel_scale /3600.
         w.wcs.cd[0,0] = cdmatrix[0,0]

@@ -1162,56 +1162,31 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         if psfs_func_list is not None:
             boxw=20
             cube_nospots = copy(cube)
-            # cube_nospots = cube
 
-            # Loop over the 4 spots in the current slice
-            for slice_id, (spots_xloc_thisslice,spots_yloc_thisslice,center_thisslice) in enumerate(zip(spots_xloc,spots_yloc,center)):
-                slice = cube_nospots[slice_id,:,:]
-                for loc_id, (spotx,spoty) in enumerate(zip(spots_xloc_thisslice,spots_yloc_thisslice)):
-                    searchrad=10
-                    from pyklip.fitpsf import quick_psf_fit
-                    ny_psf,nx_psf = 21,21
-                    local_PSF = psfs_func_list[slice_id](np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2).transpose()
-                    newspotx,newspoty,_ = quick_psf_fit(slice,local_PSF, spotx,spoty, nx_psf-4)
-                    if newspotx is None or newspoty is None:
-                        continue
-                    if np.sqrt((newspotx-spotx)**2+(newspoty-spoty)**2) > 2:
-                        newspotx = spotx
-                        newspoty = spoty
-                    returned_flux,res_stamp = PSFcubefit(slice, newspotx,newspoty, searchrad=searchrad,psfs_func_list=psfs_func_list,
-                                                     wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
-                    x0 = int(np.round(newspotx))
-                    y0 = int(np.round(newspoty))
-                    if res_stamp is not None:
-                        slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
-                    # else:
-                    #     print("Whatttttt1?!")
+            # import matplotlib.pyplot as plt
+            # for slice,slice_id,spots_xloc_thisslice,spots_yloc_thisslice,center_thisslice in zip(cube_nospots,np.arange(cube_nospots.shape[0]),spots_xloc,spots_yloc,center):
+            #     plt.subplot(1,2,1)
+            #     plt.imshow(cube[slice_id,:,:],interpolation="nearest")
+            #     plt.clim([0,200])
+            #     cube_nospots[slice_id,:,:] = subtract_satspots(slice,slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list)
+            #     plt.subplot(1,2,2)
+            #     plt.imshow(cube_nospots[slice_id,:,:],interpolation="nearest")
+            #     plt.clim([0,200])
+            #     plt.show()
 
-                    #Remove secondary sat spot
-                    spotx2 = (spotx - center_thisslice[0])*2+center_thisslice[0]
-                    spoty2 = (spoty - center_thisslice[1])*2+center_thisslice[1]
-                    newspotx2,newspoty2 = quick_psf_fit(slice,local_PSF, spotx2,spoty2, nx_psf-4)
-                    if newspotx2 is None or newspoty2 is None:
-                        continue
-                    if np.sqrt((newspotx2-spotx2)**2+(newspoty2-spoty2)**2) > 2 :
-                        newspotx2 = spotx2
-                        newspoty2 = spoty2
-                    returned_flux,res_stamp = PSFcubefit(slice, newspotx2,newspoty2, searchrad=searchrad,psfs_func_list=psfs_func_list,
-                                                     wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
-                    x0 = int(np.round(newspotx2))
-                    y0 = int(np.round(newspoty2))
-                    if res_stamp is not None:
-                        slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
-                    # else:
-                    #     print("Whatttttt2?!")
 
-                    # if slice_id == 36:
-                    #     import matplotlib.pyplot as plt
-                    #     plt.subplot(1,2,1)
-                    #     plt.imshow(res_stamp,interpolation="nearest")
-                    #     plt.subplot(1,2,2)
-                    #     plt.imshow(cube[slice_id,y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1],interpolation="nearest")
-                    #     plt.show()
+            # subtract sat spots in cube
+            if pool is None:
+                tpool = mp.Pool(processes=numthreads)
+            else:
+                tpool = pool
+            tasks = [tpool.apply_async(subtract_satspots, args=(slice,slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list))
+                     for slice,slice_id,spots_xloc_thisslice,spots_yloc_thisslice,center_thisslice in zip(cube_nospots,np.arange(cube_nospots.shape[0]),spots_xloc,spots_yloc,center)]
+            cube_nospots = np.array([task.get() for task in tasks])
+            if pool is None:
+                tpool.close()
+                tpool.join()
+
         im = np.nansum(cube_nospots,axis=0)
         try:
             if float(prihdr["AOFRAMES"]) <= 750:
@@ -1336,6 +1311,50 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         cube = cube_nospots
 
     return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
+
+
+def subtract_satspots(slice, slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list):
+    for loc_id, (spotx,spoty) in enumerate(zip(spots_xloc_thisslice,spots_yloc_thisslice)):
+        searchrad=10
+        from pyklip.fitpsf import quick_psf_fit
+        ny_psf,nx_psf = 21,21
+        local_PSF = psfs_func_list[slice_id](np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2).transpose()
+        newspotx,newspoty,_ = quick_psf_fit(slice,local_PSF, spotx,spoty, nx_psf-4)
+        if np.isnan(newspotx)or np.isnan(newspoty):
+            continue
+        if np.sqrt((newspotx-spotx)**2+(newspoty-spoty)**2) > 2:
+            newspotx = spotx
+            newspoty = spoty
+        returned_flux,res_stamp = PSFcubefit(slice, newspotx,newspoty, searchrad=searchrad,psfs_func_list=psfs_func_list,
+                                         wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
+        x0 = int(np.round(newspotx))
+        y0 = int(np.round(newspoty))
+        if res_stamp is not None:
+            slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
+
+        #Remove secondary sat spot
+        spotx2 = (spotx - center_thisslice[0])*2+center_thisslice[0]
+        spoty2 = (spoty - center_thisslice[1])*2+center_thisslice[1]
+        newspotx2,newspoty2,_ = quick_psf_fit(slice,local_PSF, spotx2,spoty2, nx_psf-4)
+        if np.isnan(newspotx2)or np.isnan(newspoty2):
+            continue
+        if np.sqrt((newspotx2-spotx2)**2+(newspoty2-spoty2)**2) > 2 :
+            newspotx2 = spotx2
+            newspoty2 = spoty2
+        try:
+            returned_flux,res_stamp = PSFcubefit(slice, newspotx2,newspoty2, searchrad=searchrad,psfs_func_list=psfs_func_list,
+                                             wave_index=slice_id,residuals=True,rmbackground=True,add_background2residual=True)
+        except:
+            pass
+            print(newspotx2 == np.nan)
+            print(newspotx2,newspoty2)
+            # exit()
+        x0 = int(np.round(newspotx2))
+        y0 = int(np.round(newspoty2))
+        if res_stamp is not None:
+            slice[y0-searchrad:y0+searchrad+1, x0-searchrad:x0+searchrad+1] = res_stamp
+
+    return slice
 
 def remove_radial_mean_profile_imgs(imgs,centers,IWA=None,OWA=None,sub_azi_pro=False, numthreads=None, pool=None):
     """

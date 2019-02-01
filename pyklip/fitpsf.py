@@ -437,9 +437,9 @@ class FitPSF(object):
         # create array of initial guesses
         # array of guess RA, Dec, and flux
         # for everything that's not RA/Dec offset, should be converted to log space for MCMC sampling
-        init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
-        # append hyperparams for covariance matrix, which also need to be converted to log space
-        init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
+        # init_guess = np.array([self.guess_x, self.guess_y, math.log(self.guess_flux)])
+        # # append hyperparams for covariance matrix, which also need to be converted to log space
+        # init_guess = np.append(init_guess, np.log(self.covar_param_guesses))
 
         init_guess = np.array([self.guess_x, self.guess_y, (self.guess_flux)])
         # append hyperparams for covariance matrix, which also need to be converted to log space
@@ -1073,7 +1073,7 @@ def quick_psf_fit(data, psf, x_guess, y_guess, fitboxsize):
     """
     fit = FitPSF(fitboxsize, method='maxl')
 
-    padding = (np.min(psf.shape) - fitboxsize) // 2
+    padding = int((np.min(psf.shape) - fitboxsize) // 2)
     fit.generate_fm_stamp(psf, extract=False, padding=padding)
 
     fit.generate_data_stamp(data, [x_guess, y_guess], np.ones(data.shape))
