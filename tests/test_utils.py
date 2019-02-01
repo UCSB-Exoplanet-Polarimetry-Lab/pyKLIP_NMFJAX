@@ -5,6 +5,7 @@ import scipy
 import astropy.modeling as modeling
 import pyklip.fakes as fakes
 import pyklip.klip as klip
+import pyklip.instruments.utils.nair as nair
 
 """
 This suite of tests is designed to test utility functions in pyKLIP
@@ -300,7 +301,14 @@ def test_airy_fit():
     assert flux0 == pytest.approx(fitflux, threshold)
     assert fwhm0 == pytest.approx(fitfwhm, threshold)
 
+def test_nair():
+    """
+    Test index of refraction code
+    """
+    n0 = nair.nMathar(1.5, 61400, 273, 0)
 
+    n0 = nair.nMathar(3.39, 101325, 273.15+20, 56.98)
+    assert np.abs(n0 - 1.00026740+ 1.75e-8) < 3e-8
 
 if __name__ == "__main__":
-    test_airy_fit()
+    test_nair()
