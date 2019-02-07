@@ -352,7 +352,7 @@ class GPIData(Data):
         pool.close()
         pool.join()
 
-        if len(set(spot_orders) > 1):
+        if len(set(spot_orders)) > 1:
             raise AssertionError("Using a combination of first and second order spots to reduce data cubes is not supported")
 
         #convert everything into numpy arrays
