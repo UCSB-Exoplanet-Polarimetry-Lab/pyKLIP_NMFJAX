@@ -1005,9 +1005,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         fpm_band = prihdr['OCCULTER'].split('_')[1]
         ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
 
-        try:
+        if 'SATSORDR' in exthdr:
             spot_order = int(exthdr['SATSORDR'])
-        except:
+        else:
             spot_order = 1 # Default to first order
   
         #grab the astro header
