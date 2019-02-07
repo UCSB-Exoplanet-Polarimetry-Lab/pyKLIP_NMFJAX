@@ -101,6 +101,7 @@ class GPIData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
+    spot_ratio2 = {} #second order ratios for Y and J
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
@@ -123,6 +124,8 @@ class GPIData(Data):
             fpm_diam[band] = float(config.get("instrument", "fpm_diam_{0}".format(band))) / lenslet_scale  # pixels
             flux_zeropt[band] = float(config.get("instrument", "zero_pt_flux_{0}".format(band)))
             spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
+            if (band == 'Y') | (band == 'J'):
+                spot_ratio2[band] = float(config.get("instrument", "APOD_{0}_2".format(band)))
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
     except ConfigParser.Error as e:
         print("Error reading GPI configuration file: {0}".format(e.message))
@@ -287,6 +290,7 @@ class GPIData(Data):
         centers = []
         wcs_hdrs = []
         spot_fluxes = []
+        spot_orders = []
         inttimes = []
         prihdrs = []
         exthdrs = []
@@ -317,7 +321,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr = \
+            cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr, spot_order = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,butterfly_rdi=butterfly_rdi,butterfly_rdi_NKL=butterfly_rdi_NKL,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
                                   psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
@@ -330,6 +334,7 @@ class GPIData(Data):
             data.append(cube)
             centers.append(center)
             spot_fluxes.append(spot_flux)
+            spot_orders.append(spot_order)
             rot_angles.append(pa)
             wvs.append(wv)
             wv_indices.append(cube_wv_indices)
@@ -346,6 +351,9 @@ class GPIData(Data):
         #Close threadpool
         pool.close()
         pool.join()
+
+        if len(set(spot_orders) > 1):
+            raise AssertionError("Using a combination of first and second order spots to reduce data cubes is not supported")
 
         #convert everything into numpy arrays
         #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
@@ -406,7 +414,8 @@ class GPIData(Data):
         self.wv_indices = wv_indices
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
-        self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
+        if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
+        if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio2[ppm_band]
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -947,7 +956,7 @@ class GPIData(Data):
 def _gpi_process_file(filepath, skipslices=None, highpass=False,
                       butterfly_rdi=False,butterfly_rdi_NKL=20,
                       meas_satspot_flux=False, numthreads=-1,
-                      psfs_func_list=None, bad_sat_spots=None, quiet=False, pool = None):
+                      psfs_func_list=None, bad_sat_spots=None, quiet=False, pool=None):
     """
     Method to open and parse a GPI file
 
@@ -980,6 +989,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         inttime: array of z of total integration time (accounting for co-adds by multipling data and sat spot fluxes by number of co-adds)
         prihdr: primary header of the FITS file
         exthdr: 1st extention header of the FITS file
+        spot_order: which satellite spots were measured by the pipeline
     """
     if not quiet:
         print("Reading File: {0}".format(filepath))
@@ -994,6 +1004,11 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         filt_band = prihdr['IFSFILT'].split('_')[1]
         fpm_band = prihdr['OCCULTER'].split('_')[1]
         ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+
+        try:
+            spot_order = int(exthdr['SATSORDR'])
+        except:
+            spot_order = 1 # Default to first order
   
         #grab the astro header
         w = wcs.WCS(header=exthdr, naxis=[1,2])
@@ -1020,10 +1035,14 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
             spot_fluxes = []
             spots_xloc = []
             spots_yloc = []
+
             # Try to retrieve the spot fluxes from DN2CON# in the case where we are reading an already processed cube.
             if 'DN2CON0' in exthdr.keys():
                 for i in range(channels):
-                    spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                    if spot_order == 1: # Use first order spot ratios
+                        spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                    elif spot_order == 2: # Use second order spot ratios
+                        spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio2[ppm_band])
             else:
                 for i in range(channels):
                     #grab sat spot fluxes if they're there
@@ -1310,7 +1329,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
     if isinstance(butterfly_rdi, str):
         cube = cube_nospots
 
-    return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr
+    return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr, spot_order
 
 
 def subtract_satspots(slice, slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list):
