@@ -31,7 +31,7 @@ def nMathar(wv, P, T, H=10):
         #do a 5th order expansion
         powers = np.arange(0,6)
         #calculate expansion coefficients
-        coeffs = get_coeff(powers, P, T, H, 1)
+        coeffs = get_coeff_mathar(powers, P, T, H, 1)
 
         #sum of the power series expansion
         for coeff,power in zip(coeffs, powers):
@@ -44,7 +44,7 @@ def nMathar(wv, P, T, H=10):
         # do a 5th order expansion
         powers = np.arange(0,6)
         # calculate expansion coefficients
-        coeffs = get_coeff(powers, P, T, H, 2)
+        coeffs = get_coeff_mathar(powers, P, T, H, 2)
 
         #sum of the power series expansion
         for coeff, power in zip(coeffs, powers):
@@ -56,7 +56,7 @@ def nMathar(wv, P, T, H=10):
 
     return n
 
-def get_coeff(i, P, T, H, wvrange=1):
+def get_coeff_mathar(i, P, T, H, wvrange=1):
     """
     Calculate the coefficients for the polynomial series expansion of index of refraction (Mathar (2008))
     ***Only valid for between 1.3 and 2.5 microns! and 2.8 through 4.2 microns!
@@ -113,7 +113,7 @@ def get_coeff(i, P, T, H, wvrange=1):
     return coeff
 
 
-def nRoe(wv,P,T,fh20=0.0):
+def nRoe(wv, P, T, H=10):
     """
     Compute n for air from the formula in Henry Roe's PASP paper: http://arxiv.org/pdf/astro-ph/0201273v1.pdf
     which in turn is referenced from Allen's Astrophysical Quantities.
@@ -122,7 +122,7 @@ def nRoe(wv,P,T,fh20=0.0):
         wv: wavelength in microns
         P:  pressure in Pascal
         T:  temperature in Kelvin
-        fh20:fractional partial pressure of water (typically between 0 and 4%)
+        H:  relative humidity in % (0-100)
     Return:
         n:  index of refraction of air
     """
@@ -145,9 +145,40 @@ def nRoe(wv,P,T,fh20=0.0):
     n1 = K1*(a1 + a2/(a3-wv**(-2)) + a4/(a5-wv**(-2))      )
 
     # water vapor correction
-    # fraction parital pressure of water vapor is 0-4%
+    # first compute partial pressure of water
+    p_h20 = H/100. * saturation_pressure(T) # Pa
+    fh20 = p_h20 / (1013.25 * 100)
     K2 = -43.49e-6 * fh20
     a6 = -7.956e-3
     nh2o = K2*(1 + a6*wv**(-2))
 
     return n1 + nh2o + 1
+
+def saturation_pressure(temp):
+    """
+    Computes the saturation vapor pressure of water (from Voronin & Zheltikov 2017, eq 7)
+
+    Args:
+        temp (float): temperature in Kelvin
+    
+    Return:
+        ps: saturation pressure in Pa
+    """
+    Tc = 647.096 # Kelvin, critical point temperature of water
+    pc = 22.064e6 # Pa
+
+    tau = Tc/temp
+    theta = 1 - temp/Tc
+
+    a1 = -7.85951783
+    a2 = 1.84408259
+    a3 = -11.7866497
+    a4 = 22.6807411
+    a5 = -15.9618719
+    a6 = 1.80122502
+
+    arg = a1*theta + a2*theta**1.5 + a3*theta**3 + a4*theta**3.5 + a5*theta**4 + a6*theta**7.5
+
+    ps = pc * np.exp(tau * arg)
+
+    return ps
