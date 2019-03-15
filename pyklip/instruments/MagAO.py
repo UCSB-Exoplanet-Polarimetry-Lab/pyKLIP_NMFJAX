@@ -398,7 +398,7 @@ class MagAOData(object):
             hdulist[0].header.update({'CRPIX1':center[0],'CRPIX2':center[1]})
             hdulist[0].header.add_history("Image recentered to {0}".format(str(center)))
 
-        hdulist.writeto(filepath, clobber=True)
+        hdulist.writeto(filepath, overwrite=True)
         hdulist.close()
 
         
