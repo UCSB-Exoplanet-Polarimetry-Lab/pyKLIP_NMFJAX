@@ -347,7 +347,7 @@ class MagAOData(object):
             fname = splited[-1]
 #            matches = re.search('S20[0-9]{6}[SE][0-9]{4}', fname)
             filename = fname#matches.group(0)
-            hdulist[0].header["FILE_{0}".format(i)] = filename
+            hdulist[0].header["FILE{0}".format(i)] = filename
 
         # write out psf subtraction parameters
         # get pyKLIP revision number
