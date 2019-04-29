@@ -11,6 +11,7 @@ import scipy.optimize as optimize
 import pyklip.covars as covars
 import astropy.stats.circstats as circstats
 
+import pymultinest
 # emcee more MCMC sampling
 import emcee
 
@@ -1084,3 +1085,157 @@ def quick_psf_fit(data, psf, x_guess, y_guess, fitboxsize):
 
     return fit.fit_x.bestfit, fit.fit_y.bestfit, fit.fit_flux.bestfit
 
+class PlanetEvidence(FMAstrometry):
+    """
+    Specifically for nested sampling of the parameter space of a directly imaged companion relative to its star. Extension of :py:class:`pyklip.fitpsf.FitPSF`.
+
+    Args:
+        guess_sep: the guessed separation (pixels)
+        guess_pa: the guessed position angle (degrees)
+        fitboxsize: fitting box side length (pixels)
+        fm_basename: Prefix of the foward model sampling files multinest saves in /chains/
+        null_basename: Prefix of the null hypothesis model sampling files multinest saves in /chains/
+    
+    Attributes:
+        guess_sep (float): (initialization) guess separation for planet [pixels]
+        guess_pa (float): (initialization) guess PA for planet [degrees]
+        guess_RA_offset (float): (initialization) guess RA offset [pixels]
+        guess_Dec_offset (float): (initialization) guess Dec offset [pixels]
+        raw_RA_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_Dec_offset (:py:class:`pyklip.fitpsf.ParamRange`): (result) the raw result from the MCMC fit for the planet's location [pixels]
+        raw_flux (:py:class:`pyklip.fitpsf.ParamRange`): (result) factor to scale the FM to match the flux of the data
+        covar_params (list of :py:class:`pyklip.fitpsf.ParamRange`): (result) hyperparameters for the Gaussian process
+        raw_sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [pixels]
+        raw_PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the inferred raw result from the MCMC fit for the planet's location [degrees]
+        RA_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the RA offset of the planet that includes all astrometric errors [pixels or mas]
+        Dec_offset(:py:class:`pyklip.fitpsf.ParamRange`): (result) the Dec offset of the planet that includes all astrometric errors [pixels or mas]
+        sep(:py:class:`pyklip.fitpsf.ParamRange`): (result) the separation of the planet that includes all astrometric errors [pixels or mas]
+        PA(:py:class:`pyklip.fitpsf.ParamRange`): (result) the PA of the planet that includes all astrometric errors [degrees]
+        fm_stamp (np.array): (fitting) The 2-D stamp of the forward model (centered at the nearest pixel to the guessed location)
+        data_stamp (np.array): (fitting) The 2-D stamp of the data (centered at the nearest pixel to the guessed location)
+        noise_map (np.array): (fitting) The 2-D stamp of the noise for each pixel the data computed assuming azimuthally similar noise
+        padding (int): amount of pixels on one side to pad the data/forward model stamp
+        sampler (pymultinest.run): function that runs the pymultinest sampling for both hypotheses
+    """
+    
+    def __init__(self, guess_sep, guess_pa, fitboxsize, fm_basename = 'Planet', null_basename = 'Null'):
+
+        # derive delta RA and delta Dec
+        # in pixels
+        self.guess_sep = guess_sep
+        self.guess_pa = guess_pa
+
+        self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
+        self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
+
+        # best fit
+        self.raw_RA_offset = None
+        self.raw_Dec_offset = None
+        self.raw_flux = None
+        # best fit infered parameters
+        self.raw_sep = None
+        self.raw_PA = None
+        self.RA_offset = None
+        self.Dec_offset = None
+        self.sep = None
+        self.PA = None
+        
+        #Set where samples get stored
+        self.fm_basename = 'chains/' + str(fm_basename) + '-'
+        self.null_basename = 'chains/' + str(null_basename) + '-'
+
+        super(PlanetEvidence, self).__init__(self.guess_sep, self.guess_pa, fitboxsize)
+        
+    def Multifit(self):
+        """
+        Nested sampling parameter estimation and evidence calculation for the forward model and correlated noise.
+        """
+        #Copy bounds to use for priors
+        sampler_bounds = np.copy(self.bounds)
+        sampler_bounds[2:] = np.log(sampler_bounds[2:])
+        print(sampler_bounds[3])
+        
+        def nested_prior_fm(params, ndim, nparams):
+            params[0] = sampler_bounds[0][0] + params[0]*(sampler_bounds[0][1] - sampler_bounds[0][0])
+            params[1] = sampler_bounds[1][0] + params[1]*(sampler_bounds[1][1] - sampler_bounds[1][0])
+            params[2] = sampler_bounds[2][0] + params[2]*(sampler_bounds[2][1] - sampler_bounds[2][0])
+            params[3] = sampler_bounds[3][0] + params[3]*(sampler_bounds[3][1] - sampler_bounds[3][0])
+        
+        def nested_prior_null(params, ndim, nparams):
+            params[0] = sampler_bounds[0][0] + params[0]*(sampler_bounds[0][1] - sampler_bounds[0][0])
+            params[1] = sampler_bounds[1][0] + params[1]*(sampler_bounds[1][1] - sampler_bounds[1][0])
+            params[2] = sampler_bounds[3][0] + params[2]*(sampler_bounds[3][1] - sampler_bounds[3][0])
+            
+        global lnlike, lnlike_null
+        
+        def nested_lnlike_fm(fitparams, ndim, nparams, readnoise = False):
+            x_trial = fitparams[0]
+            y_trial = fitparams[1]
+            f_trial = fitparams[2]
+            hyperparms_trial = fitparams[3]
+
+            if readnoise:
+                # last hyperparameter is a diagonal noise term. Separate it out
+                readnoise_amp = np.exp(hyperparms_trial)
+                hyperparms_trial = hyperparms_trial
+                
+            newparams = [x_trial, y_trial, f_trial, hyperparms_trial]
+            return lnlike(newparams, self, self.covar)
+        
+        def nested_lnlike_null(fitparams, ndim, nparams, readnoise=False):
+            x_trial = fitparams[0]
+            y_trial = fitparams[1]
+            f_trial = -np.inf
+            hyperparms_trial = fitparams[2]
+            if readnoise:
+                # last hyperparameter is a diagonal noise term. Separate it out
+                readnoise_amp = np.exp(hyperparms_trial)
+                hyperparms_trial = hyperparms_trial
+                
+            newparams = [x_trial, y_trial, f_trial, hyperparms_trial]
+
+            return lnlike(newparams, self, self.covar)
+        
+        #Run MultiNest fir the Forward Model
+        pymultinest.run(nested_lnlike_fm, nested_prior_fm, n_dims=4, outputfiles_basename=self.fm_basename, write_output=True, resume=False, init_MPI=False)
+        
+        #Run MultiNest for the null hypothesis
+        pymultinest.run(nested_lnlike_null, nested_prior_null, n_dims=3, outputfiles_basename=self.null_basename, write_output=True, resume=False, init_MPI=False)
+        
+    
+    def nested_corner_plots(self, posts, n_dim):
+        import corner
+        x_data = np.ndarray.flatten(posts[:,0])
+        y_data = np.ndarray.flatten(posts[:,1])
+        if n_dim == 3:
+            hyperparam_data = np.ndarray.flatten(np.exp(posts[:,2]))
+            data = np.vstack([x_data,y_data,hyperparam_data])
+            all_labels = [r"x", r"y", r"l"]
+        elif n_dim == 4:
+            f_data = np.ndarray.flatten(np.exp(posts[:,2]))
+            hyperparam_data = np.ndarray.flatten(np.exp(posts[:,3]))
+            data = np.vstack([x_data,y_data,f_data,hyperparam_data])
+            all_labels = [r"x",r"y",r"a",r"l"]
+        fig = corner.corner(data.T, labels = all_labels, quantiles=[0.16, 0.5, 0.84])
+        
+        return fig
+    
+    def Fit_Plots(self): 
+        fm_data = pymultinest.Analyzer(4, outputfiles_basename=self.fm_basename)
+        fm_posts = fm_data.get_equal_weighted_posterior()
+        fm_corner = self.nested_corner_plots(fm_posts, n_dim=4)
+        
+        null_data = pymultinest.Analyzer(3, outputfiles_basename=self.null_basename)
+        null_posts = null_data.get_equal_weighted_posterior()
+        null_corner = self.nested_corner_plots(null_posts, n_dim=3)
+        
+        return fm_corner, null_corner
+    
+    def Fit_Stats(self):
+        fm_data = pymultinest.Analyzer(4, outputfiles_basename=self.fm_basename)
+        fm_stats = fm_data.get_stats()
+        
+        null_data = pymultinest.Analyzer(3, outputfiles_basename=self.null_basename)
+        null_stats = null_data.get_stats()
+        
+        return fm_stats, null_stats
