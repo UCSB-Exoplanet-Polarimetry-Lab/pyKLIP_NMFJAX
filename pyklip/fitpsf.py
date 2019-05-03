@@ -1123,11 +1123,12 @@ class PlanetEvidence(FMAstrometry):
         sampler (pymultinest.run): function that runs the pymultinest sampling for both hypotheses
     """
     
-    def __init__(self, guess_sep, guess_pa, fitboxsize, fm_basename = 'Planet', null_basename = 'Null'):
+    def __init__(self, guess_sep, guess_pa, fitboxsize, sampling_outputdir, fm_basename = 'Planet', null_basename = 'Null'):
         
         #Check if pymultinest is not installed and imported
         if nomultinest:
             raise ModuleNotFoundError('Pymultinest is not installed')
+        import os
             
         # derive delta RA and delta Dec
         # in pixels
@@ -1135,9 +1136,12 @@ class PlanetEvidence(FMAstrometry):
         self.guess_pa = guess_pa
         
         #Set where samples get stored
-        self.fm_basename = 'chains/' + str(fm_basename) + '-'
-        self.null_basename = 'chains/' + str(null_basename) + '-'
+        self.fm_basename = str(sampling_outputdir) + str(fm_basename) + '-'
+        self.null_basename = str(sampling_outputdir) + str(null_basename) + '-'
         
+        if not os.path.exists(str(sampling_outputdir)):
+            os.mkdir(str(sampling_outputdir))
+            
         super(PlanetEvidence, self).__init__(self.guess_sep, self.guess_pa, fitboxsize)
         
     def multifit(self):
