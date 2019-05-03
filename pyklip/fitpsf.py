@@ -11,10 +11,15 @@ import scipy.optimize as optimize
 import pyklip.covars as covars
 import astropy.stats.circstats as circstats
 
-import pymultinest
 # emcee more MCMC sampling
 import emcee
 
+#import pymultinest if the user has it installed
+try:
+    import pymultinest
+    nomultinest = False
+except ModuleNotFoundError:
+    nomultinest = True
 
 
 class FitPSF(object):
@@ -1119,41 +1124,29 @@ class PlanetEvidence(FMAstrometry):
     """
     
     def __init__(self, guess_sep, guess_pa, fitboxsize, fm_basename = 'Planet', null_basename = 'Null'):
-
+        
+        #Check if pymultinest is not installed and imported
+        if nomultinest:
+            raise ModuleNotFoundError('Pymultinest is not installed')
+            
         # derive delta RA and delta Dec
         # in pixels
         self.guess_sep = guess_sep
         self.guess_pa = guess_pa
-
-        self.guess_RA_offset = self.guess_sep * np.sin(np.radians(self.guess_pa))
-        self.guess_Dec_offset = self.guess_sep * np.cos(np.radians(self.guess_pa))
-
-        # best fit
-        self.raw_RA_offset = None
-        self.raw_Dec_offset = None
-        self.raw_flux = None
-        # best fit infered parameters
-        self.raw_sep = None
-        self.raw_PA = None
-        self.RA_offset = None
-        self.Dec_offset = None
-        self.sep = None
-        self.PA = None
         
         #Set where samples get stored
         self.fm_basename = 'chains/' + str(fm_basename) + '-'
         self.null_basename = 'chains/' + str(null_basename) + '-'
-
+        
         super(PlanetEvidence, self).__init__(self.guess_sep, self.guess_pa, fitboxsize)
         
-    def Multifit(self):
+    def multifit(self):
         """
         Nested sampling parameter estimation and evidence calculation for the forward model and correlated noise.
         """
         #Copy bounds to use for priors
         sampler_bounds = np.copy(self.bounds)
         sampler_bounds[2:] = np.log(sampler_bounds[2:])
-        print(sampler_bounds[3])
         
         def nested_prior_fm(params, ndim, nparams):
             params[0] = sampler_bounds[0][0] + params[0]*(sampler_bounds[0][1] - sampler_bounds[0][0])
@@ -1215,12 +1208,12 @@ class PlanetEvidence(FMAstrometry):
             f_data = np.ndarray.flatten(np.exp(posts[:,2]))
             hyperparam_data = np.ndarray.flatten(np.exp(posts[:,3]))
             data = np.vstack([x_data,y_data,f_data,hyperparam_data])
-            all_labels = [r"x",r"y",r"a",r"l"]
+            all_labels = [r"x",r"y",r"$\alpha$",r"l"]
         fig = corner.corner(data.T, labels = all_labels, quantiles=[0.16, 0.5, 0.84])
         
         return fig
     
-    def Fit_Plots(self): 
+    def fit_plots(self): 
         fm_data = pymultinest.Analyzer(4, outputfiles_basename=self.fm_basename)
         fm_posts = fm_data.get_equal_weighted_posterior()
         fm_corner = self.nested_corner_plots(fm_posts, n_dim=4)
@@ -1231,7 +1224,7 @@ class PlanetEvidence(FMAstrometry):
         
         return fm_corner, null_corner
     
-    def Fit_Stats(self):
+    def fit_stats(self):
         fm_data = pymultinest.Analyzer(4, outputfiles_basename=self.fm_basename)
         fm_stats = fm_data.get_stats()
         
