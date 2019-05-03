@@ -69,6 +69,7 @@ Contents
    instruments/index
    contrast_curves
    bka
+   planetevidence
    fm_spect
    fmmf
    kpop_gpi
