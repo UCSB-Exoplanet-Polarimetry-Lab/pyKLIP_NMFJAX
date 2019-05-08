@@ -112,12 +112,12 @@ We have stored the statistics from the forward model run in a dictionary in the 
     #Forward model evidence
     fm_evidence = evidence[0]['nested sampling global log-evidence']
     #forward model parameter distributions, containing the median and percentiles for each
-    fm_posteriors = evidence[0][‘marginals’]
+    fm_posteriors = evidence[0]['marginals']
 
     #Null model evidence
-    null_evidence = evidence[1][‘nested sampling global log-evidence']
+    null_evidence = evidence[1]['nested sampling global log-evidence']
     #null parameter distributions, containing the median and percentiles for each
-    null_posteriors = evidence[1][‘marginals’]
+    null_posteriors = evidence[1]['marginals']
 
 .. note::
 
