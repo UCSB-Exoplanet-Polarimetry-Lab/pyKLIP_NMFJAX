@@ -1213,19 +1213,28 @@ class PlanetEvidence(FMAstrometry):
             hyperparam_data = np.ndarray.flatten(np.exp(posts[:,3]))
             data = np.vstack([x_data,y_data,f_data,hyperparam_data])
             all_labels = [r"x",r"y",r"$\alpha$",r"l"]
-        fig = corner.corner(data.T, labels = all_labels, quantiles=[0.16, 0.5, 0.84])
-        
+        fig = corner.corner(data.T, labels = all_labels, quantiles=[0.16, 0.5, 0.84])        
         return fig
     
     def fit_plots(self): 
+        import matplotlib
+        import matplotlib.pylab as plt
+        
         fm_data = pymultinest.Analyzer(4, outputfiles_basename=self.fm_basename)
         fm_posts = fm_data.get_equal_weighted_posterior()
         fm_corner = self.nested_corner_plots(fm_posts, n_dim=4)
         
+        plt.savefig("H1.png",format='png')
+        plt.show()
+
         null_data = pymultinest.Analyzer(3, outputfiles_basename=self.null_basename)
         null_posts = null_data.get_equal_weighted_posterior()
         null_corner = self.nested_corner_plots(null_posts, n_dim=3)
         
+        plt.savefig("H0.png",format="png")
+        plt.show()
+        plt.close()
+
         return fm_corner, null_corner
     
     def fit_stats(self):
