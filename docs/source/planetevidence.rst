@@ -3,6 +3,10 @@ Planet Evidence Module
 
 This tutorial will provide instructions on using the nested sampling implementation to compute the evidence of a detection obtained with the KLIP-FM technique being a true point source or just residual noise along with posterior distributions of the source parameters. This module is useful for providing evidence in a Bayesian framework for a point source detection which by eye may appear uncertain. Planet Evidence runs MultiNest with the forward model (i.e. a planet is present at the guessed planet’s location) and with the null hypothesis (i.e. just noise at the guessed planet’s location).
 
+If you use PlanetEvidence module, please cite the corresponding article:
+
+Golomb, J. Rocha, G. et al, in preparation
+
 Requirements
 ------------
 
