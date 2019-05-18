@@ -126,12 +126,12 @@ def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.
     size_window = size_window - size_cost
     (xs, ys) = samplingRegion(size_window, theta, m = m, M = M, ray = ray)
     #the center of the sampling region is (0,0), don't forget to shift the center!
-    xys_zip = zip(xs, ys)
+    
     for j, x0 in enumerate(x_centers):
         for i, y0 in enumerate(y_centers):
             value = 0
             
-            for x1, y1 in xys_zip:
+            for x1, y1 in zip(xs, ys):
                 #Shifting the center, this now is the coordinate of the RAW IMAGE
                 x = x0 + x1
                 y = y0 + y1
