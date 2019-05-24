@@ -538,6 +538,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
         fpm_band = prihdr['SLITNAME']
         camera = prihdr['CAMNAME']
         pupil = prihdr['PMSNAME']
+        rotmode = prihdr['ROTMODE'].lower()
 
         #for NIRC2, we only have broadband but want to keep the GPI array shape to make processing easier
         if prihdr['CURRINST'].strip() == 'NIRC2':
@@ -548,7 +549,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
                 parang = prihdr['ROTNORTH']*np.ones(1)
             else:
                 try:
-                    parang = get_pa(hdulist, obsdate=obsdate, rotmode='vertical angle', write_hdr=True)*np.ones(1)
+                    parang = get_pa(hdulist, obsdate=obsdate, rotmode=rotmode, write_hdr=True)*np.ones(1)
                 except:
                     parang = np.nan*np.ones(1)
             
@@ -709,15 +710,15 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
     rotposn = prihdr['ROTPOSN'] # [deg]
     instangl = prihdr['INSTANGL'] # [deg]
 
-    if rotmode == 'vertical angle':
+    if rotmode.lower() == 'vertical angle':
         parang = prihdr['PARANG'] # [deg]
         pa_deg = parang + rotposn - instangl + zp_offset # [deg]
-    elif rotmode == 'position angle':
+    elif rotmode.lower() == 'position angle':
         pa_deg = rotposn - instangl + zp_offset # [deg]
     else:
         raise NotImplementedError
     
-    if mean_PA and (rotmode == 'vertical angle'):
+    if mean_PA and (rotmode.lower() == 'vertical angle'):
         # Get info for PA smearing calculation.
         epochobj = prihdr['DATE-OBS']
         name = prihdr['targname']
@@ -777,8 +778,8 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
         # Flip signs to conform to pyKLIP rotation convention.
         prihdr['TOTEXP'] = (totexp, 'Total exposure time [hours]')
         prihdr['PASTART'] = (-1*pa_deg, "Position angle at exposure start [deg]")
-        prihdr['PASMEAR'] = (-1*(vpmean - vpref), "Position angle rotation during exposure [deg]")
-        prihdr['ROTNORTH'] = (-1*pa_deg_mean, "Mean position angle of exposure [deg]")
+        prihdr['PASMEAR'] = (-1*(vpmean - vpref), "Exposure's weighted-mean PA minus PASTART [deg]")
+        prihdr['ROTNORTH'] = (-1*pa_deg_mean, "Mean PA of North during exposure [deg]")
         
         hdulist.flush()
     
