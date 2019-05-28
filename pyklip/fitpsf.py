@@ -523,7 +523,7 @@ class FitPSF(object):
         self.hess_inv = result.hess_inv
         
 
-
+    def make_corner_plot(self, fig=None):
         """
         Generate a corner plot of the posteriors from the MCMC
         Args:
