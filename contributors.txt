@@ -2,7 +2,7 @@ Jonathan Aguilar: wrote the P1640 interface, implemented satellite spot scaling
 
 Jason Wang: wrote the GPI interface, wrote the bulk of the KLIP implementation, designed and wrote the parallelized infrastructure for the codebase
 
-JB Ruffio: wrote the autodetection code, wrote and optimized the KLIP-FM math, implmented many of the KLIP-FM features, wrote the kpp subpackage
+JB Ruffio: wrote the autodetection code, wrote and optimized the KLIP-FM math, implemented many of the KLIP-FM features, wrote the kpp subpackage
 
 Rob de Rosa: tested the code and wrote the nan interpolation checking, implemented 'onesegment' for KLIP
 
@@ -31,3 +31,5 @@ Pauline Arriaga: wrote disk forward modelling code
 Bin Ren: Wrote the NMF code
 
 Alan Rainot: Added support for SPHERE DC data to the SPHERE interface
+
+Graça Rocha and Jacob Golomb: wrote the PlanetEvidence code 
