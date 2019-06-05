@@ -290,7 +290,7 @@ For MCMC, we can also plot the corner plot to look at our posterior distribution
 .. code-block:: python
 
     fig = plt.figure()
-    fig = fma.make_corner_plot(fig=fig)
+    fig = fit.make_corner_plot(fig=fig)
 
 .. image:: imgs/betpic_j_bka_corner.png
 
