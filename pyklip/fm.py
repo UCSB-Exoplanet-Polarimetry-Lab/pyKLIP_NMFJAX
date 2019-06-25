@@ -1556,9 +1556,9 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # Remove reference psfs if they are mostly nans
     ref2rm = np.where(np.nansum(np.isfinite(ref_psfs[file_ind[0], :]),axis=1) < 5)[0]
     file_ind = (np.delete(file_ind[0],ref2rm),)
-    if np.size(file_ind[0]) < 2:
+    if np.size(file_ind[0]) < 1:
         if not mute:
-            print("less than 2 reference PSFs available for minmove={0}, skipping...".format(minmove))
+            print("less than 1 reference PSFs available for minmove={0}, skipping...".format(minmove))
         return False
 
     # pick out a subarray. Have to play around with indicies to get the right shape to index the matrix
