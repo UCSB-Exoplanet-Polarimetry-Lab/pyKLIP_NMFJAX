@@ -129,7 +129,7 @@ class GPIData(Data):
             if (band == 'Y') | (band == 'J'):
                 spot_ratio2[band] = float(config.get("instrument", "APOD_{0}_2".format(band)))
                 spot_ratio_h[band] = float(config.get("instrument", "APOD_H_{0}".format(band)))
-                spot_ratio_h_2[band] = float(config.get("instrument", "APOD_H_{0}_2".format(band)))
+                spot_ratio_h2[band] = float(config.get("instrument", "APOD_H_{0}_2".format(band)))
             elif (band == 'K1'):
                 spot_ratio_h[band] = float(config.get("instrument", "APOD_H_{0}".format(band)))
             elif (band == 'K2'):
