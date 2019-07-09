@@ -977,7 +977,7 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         if thetas is not None:
             if np.ndim(thetas) != 0:
                 raise IndexError("thetas cannot be a list because you only passed in one frame")
-                thetas = [thetas]
+            thetas = [thetas]
         # turn them into lists so we can reuse the same code
         frames = [frames]
         centers = [centers]
@@ -991,7 +991,6 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         if thetas is not None:
             if np.ndim(thetas) != 1:
                 raise IndexError("thetas must be a list because you only passed in multiple frames")
-                thetas = [thetas]
     else:
         raise IndexError("frames is either 2-D or 3-D, not {0)-D".format(frames_ndim))
 
