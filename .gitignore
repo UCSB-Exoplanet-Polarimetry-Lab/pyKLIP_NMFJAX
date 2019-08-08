@@ -2,6 +2,7 @@
 *.out
 *.pyc
 *.zip
+*~
 
 #ignore fits files
 !pyklip/pickles/*.fits
@@ -18,5 +19,5 @@ gitstats/
 .vscode/
 testing_scripts/
 docs/build/
-.cache/
+.*cache/
 examples/.ipynb_checkpoints/

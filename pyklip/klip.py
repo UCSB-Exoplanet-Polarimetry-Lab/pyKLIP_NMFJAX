@@ -5,6 +5,23 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as sinterp
 from scipy.stats import t
 
+def make_polar_coordinates(x, y, center=[0,0]):
+    '''
+    MC edited function
+    make a polar coordinate meshgrid using x,y meshgrid
+
+    :param x: meshgrid of x coordinates
+    :param y: meshgrid of y coordinates
+    :param center: new location of origin
+    :return: polar coordinates centered at the specified origin
+    '''
+
+    r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+    phi = np.arctan2(y - center[1], x - center[0])
+    # make sure phi is in range [-pi, pi)
+    phi = (phi % (2 * np.pi)) - np.pi
+
+    return r, phi
 
 def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, return_basis_and_eig=False):
     """

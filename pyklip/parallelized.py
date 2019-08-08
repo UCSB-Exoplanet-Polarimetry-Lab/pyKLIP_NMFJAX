@@ -236,6 +236,61 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
                     " minmove, ref_center)", globals(), locals(), 'profile-{0}.out'.format(int(radstart+radend)/2))
     return True
 
+def _weighted_empca_section(wv_index, numbasis, radstart, radend, phistart,
+                            phiend, ref_center, niter=20, dtype=None):
+    '''
+    MC edited function
+    run weighted expectation maximization pca on a section of a specific wavelength slice for all images
+
+    Args:
+        wv_index: index of the wavelenght we are processing
+        numbasis: number of basis vectors to use (can be a scalar or list like)
+        radstart: inner radius of the annulus (in pixels)
+        radend: outer radius of the annulus (in pixels)
+        phistart: lower bound in CCW angle from x axis for the start of the section
+        phiend: upper boundin CCW angle from y axis for the end of the section
+        ref_center: 2 element list for the center of the science frames. Science frames should all be aligned. In [x,y] format
+        niter: number of iterations for empca
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
+    Returns:
+        Saves data to shared memory output array
+    '''
+
+    if dtype is None:
+        dtype = ctypes.c_float
+
+    # make coordinates for all aligned images
+    x, y = np.meshgrid(np.arange(original_shape[2]), np.arange(original_shape[1]))
+    x.shape = (x.shape[0] * x.shape[1])
+    y.shape = (y.shape[0] * y.shape[1])
+    r, phi = klip.make_polar_coordinates(x, y, ref_center)
+
+    # grab the working section of aligned images and set nan pixels to 0
+    section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
+    if np.size(section_ind) <= 1:
+        print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
+        return False
+    aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1],
+                                           aligned_shape[2] * aligned_shape[3]),
+                                 dtype=dtype)[wv_index]
+    ref_psfs = aligned_imgs_np[:, section_ind[0]]
+    ref_psfs[np.where(np.isnan(ref_psfs))] = 0
+
+    # set weights for empca
+    rflat = np.reshape(r[section_ind[0]], -1)
+    weights = empca.set_pixel_weights(ref_psfs, rflat, inner_sup=17, outer_sup=66, mode='standard') ### set weights for empca ###
+
+    # run empca reduction
+    output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]),
+                                dtype=dtype)
+    for i, rank in enumerate(numbasis):
+        model = klip.klip_empca(ref_psfs, weights=weights, niter=niter, nvec=rank)
+        # subtract model from original unsmoothed data
+        model_subtracted = aligned_imgs_np[:, section_ind[0]] - model
+        # write to output
+        output_imgs_np[:, section_ind[0], i] = model_subtracted
+
+    return True
 
 def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numbasis, radstart, radend, phistart,
                                      phiend, minmove, ref_center=None, minrot=0):
@@ -251,7 +306,6 @@ def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numb
                     "phistart, phiend, minmove, ref_center, minrot)", globals(), locals(),
                     'profile-{0}.out'.format(int(radstart + radend)/2))
     return True
-
                      
 def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, corr_smooth=1, psflib_good=None,
@@ -587,7 +641,6 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
     return True
 
-
 def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,
                 disable_wcs_rotation = False,pool=None):
     """
@@ -705,7 +758,6 @@ def generate_noise_maps(imgs, aligned_center, dr, IWA=None, OWA=None, numthreads
         tpool.join()
 
     return noise_maps
-
 
 def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
@@ -933,8 +985,6 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         noise_imgs = np.ones(sub_imgs.shape)
 
     return sub_imgs, aligned_center, noise_imgs
-
-
 
 def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4, movement=3,
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
