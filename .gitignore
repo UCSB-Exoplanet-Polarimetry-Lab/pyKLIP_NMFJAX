@@ -3,6 +3,7 @@
 *.pyc
 *.zip
 *~
+*.so
 
 #ignore fits files
 !pyklip/pickles/*.fits
@@ -21,3 +22,5 @@ testing_scripts/
 docs/build/
 .*cache/
 examples/.ipynb_checkpoints/
+build/
+pyklip/empca/build/

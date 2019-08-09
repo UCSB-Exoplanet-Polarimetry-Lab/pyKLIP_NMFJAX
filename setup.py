@@ -1,4 +1,6 @@
 from setuptools import setup, find_packages
+from distutils.extension import Extension
+from Cython.Distutils import build_ext
 
 setup(
     name='pyklip',
@@ -9,6 +11,10 @@ setup(
     author_email='jwang@astro.berkeley.edu',
     license='BSD',
     packages=find_packages(),
+    cmdclass = {'build_ext': build_ext},
+    ext_modules = [Extension('matutils', ['./pyklip/empca/matutils.pyx'],
+                             extra_compile_args=['-fopenmp'],
+                             extra_link_args=['-fopenmp'])],
     zip_safe=False,
     classifiers=[
         # Indicate who your project is intended for

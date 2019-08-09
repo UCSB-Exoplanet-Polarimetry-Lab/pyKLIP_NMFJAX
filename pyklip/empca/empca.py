@@ -1,5 +1,19 @@
 #!/usr/bin/env python
 
+#this is the version MC implemented in pyklip previously, to be compared to the original empca and merged
+
+import numpy as np
+import numpy.fft as fft
+import scipy.linalg as la
+import scipy.ndimage as ndimage
+import scipy.interpolate as sinterp
+import scipy.signal as signal
+from scipy.stats import t
+import sys
+import multiprocessing
+import time
+from . import matutils
+
 """
 Weighted Principal Component Analysis using Expectation Maximization
 
@@ -15,23 +29,41 @@ Given data[nobs, nvar] and weights[nobs, nvar],
 returns the low rank basis set (nvec vectors each of length nvar) and
 the best resulting approximation to the data in a weighted
 least-squares sense.
-    
+
 Original: Stephen Bailey, Spring 2012
 Rewritten by Timothy Brandt, Spring 2016
 """
 
-import numpy as np
-import multiprocessing
-import time
+def set_pixel_weights(imflat, rflat, inner_sup=17, outer_sup=66, mode='standard'):
+    '''
+    MC edited function
 
-import matutils
+    :param imflat: image flattened to 1D
+    :param rflat: radial component of the polar coordinates flattened to 1D
+    :param inner_sup: radius within which to supress weights
+    :param outer_sup: radius beyond which to supress weights
+    :param mode:
+        'standard': assume poission statistics to calculate variance as sqrt(photon count)
+                    use inverse sqrt(variance) as pixel weights and multiply by a radial weighting
+    :return: pixel weights for empca
+    '''
+
+    #default weights are ones
+    weights = np.ones(imflat.shape)
+
+    if mode == 'standard':
+        weights = 1. / (np.sqrt(np.abs(imflat)) + 10)
+        weights *= imflat != 0
+        weights *= 1 / (1 + np.exp((inner_sup - rflat) / 1.))
+        weights *= 1 / (1 + np.exp((rflat - outer_sup) / 1.))
+
+    return weights
 
 def _random_orthonormal(nvec, nvar, seed=1):
-    """
+    '''
     Return array of random orthonormal vectors A[nvec, nvar] 
-
     Doesn't protect against rare duplicate vectors leading to 0s
-    """
+    '''
 
     if seed is not None:
         np.random.seed(seed)
@@ -45,12 +77,59 @@ def _random_orthonormal(nvec, nvar, seed=1):
             A[i] -= np.dot(A[j], A[i])*A[j]
             A[i] /= np.linalg.norm(A[i])
 
+    if np.any(np.isnan(A)):
+        raise ValueError("random orthonormal is nan")
     return A
 
+def nan_smooth(im, ivar, sig=1, spline_filter=False):
+    '''
+    Private function _smooth smooths an image accounting for the
+    inverse variance.
+    Parameters
+    ----------
+    im : ndarray
+        2D image to smooth
+    ivar : ndarray
+        2D inverse variance, shape should match im
+    sig : float (optional)
+        standard deviation of Gaussian smoothing kernel
+        Default 1
+    spline_filter: boolean (optional)
+        Spline filter the result?  Default False.
+    Returns
+    -------
+    imsmooth : ndarray
+        smoothed image of the same size as im
+    '''
 
+    if not isinstance(im, np.ndarray) or not isinstance(ivar, np.ndarray):
+        raise TypeError("image and ivar passed to _smooth must be ndarrays")
+    if im.shape != ivar.shape or len(im.shape) != 2:
+        raise ValueError("image and ivar must be 2D ndarrays of the same shape")
 
-def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent=False):
-    """
+    masked = np.copy(im)
+    nan_locs = np.where(np.isnan(im))
+    masked[nan_locs] = 0
+
+    nx = int(sig * 4 + 1) * 2 + 1
+    x = np.arange(nx) - nx / 2
+    x, y = np.meshgrid(x, x)
+
+    window = np.exp(-(x ** 2 + y ** 2) / (2 * sig ** 2))
+    # think about whether this is properly normalized (accounting for nan values in the image that should not contribute)
+    imsmooth = signal.convolve2d(masked*ivar, window, mode='same')
+    imsmooth /= signal.convolve2d(ivar, window, mode='same') + 1e-35
+    imsmooth *= (masked != 0)
+    imsmooth[nan_locs] = np.nan
+
+    if spline_filter:
+        imsmooth = ndimage.spline_filter(imsmooth)
+
+    return imsmooth
+
+def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent=True):
+    '''
+    replaes the linear algebra in clip_math with weighted low-rank approximation as an alternative model psf construction to test the performance on S/N. Code is adapted from Tim's ADI algorithm
     Perform iterative lower rank matrix approximation of data[obs, var]
     using weights[obs, var].
     
@@ -62,13 +141,10 @@ def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent
       - niter : maximum number of iterations to perform
       - nvec  : number of vectors to solve
       - randseed : rand num generator seed; if None, don't re-initialize
-    
-    Returns [basis, model], where basis is an [nvec, var] sized array
-    and represents the basis set for the low-rank approximation, while
-    model is the low-rank approximation to data (and is of the same
-    shape).
-    """
-    
+    Returns:
+    psfs: the weighted low-rank approximation model for the psf, dot(C.T, P), where P is the basis matrix of shape k*i, this model psf will replace klip_psf in klip_math
+    '''
+
     if weights is None:
         weights = np.ones(data.shape, np.float32)
 
@@ -112,7 +188,7 @@ def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent
     C = np.zeros((nobs, nvec))
 
     if not silent:
-        print ("iter     dchi2      R2          time (s)")
+        print('iter     dchi2      R2          time (s)')
 
     ncpus = multiprocessing.cpu_count()
     if maxcpus is not None:
@@ -130,7 +206,6 @@ def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent
         # Solve for best-fit coefficients with the previous/first
         # low-rank approximation.
         ##############################################################
-
         P3D = np.empty((P.shape[0], P.shape[0], P.shape[1]))
         for i in range(P.shape[0]):
             P3D[i] = P*P[i]
@@ -144,7 +219,10 @@ def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent
         # previous fit.
         ##############################################################
 
-        chisq = matutils.calc_chisq(dataC, P, weightsC, C.T, maxproc=ncpus)
+        if not silent:
+            chisq = matutils.calc_chisq(dataC, P, weightsC, C.T, maxproc=ncpus)
+            print('%3d  %9.3g  %12.6f %11.3f' % (itr, chisq - chisq_last, 1 - chisq / chisq_orig, time.time() - tstart))
+            chisq_last = chisq
 
         if itr == niter:
 
@@ -166,18 +244,13 @@ def empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
             P = matutils.lstsq(A, b, maxproc=ncpus).T
-        
-        if not silent:
-            print ('%3d  %9.3g  %12.6f %11.3f' % (itr, chisq - chisq_last, 1 - chisq/chisq_orig, time.time() - tstart))
-        
-        chisq_last = chisq
 
     ##################################################################
     # Normalize the low-rank approximation.
     ##################################################################
 
+    #TODO: think more carefully about whether normalization is needed
     for k in range(nvec):
         P[k] /= np.linalg.norm(P[k])
-
-    return P, model
-
+    
+    return model
