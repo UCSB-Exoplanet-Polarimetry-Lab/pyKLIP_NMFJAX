@@ -106,11 +106,19 @@ class DiskFM(NoFM):
             # Set up dictionaries for saving basis
             manager = mp.Manager()
             global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
+            global radstart_dict, radend_dict, phistart_dict, phiend_dict, input_img_num_dict
+
             klmodes_dict = manager.dict()
             evecs_dict = manager.dict()
             evals_dict = manager.dict()
             ref_psfs_indicies_dict = manager.dict()
             section_ind_dict = manager.dict()
+            
+            radstart_dict = manager.dict()
+            radend_dict = manager.dict()
+            phistart_dict = manager.dict()
+            phiend_dict = manager.dict()
+            input_img_num_dict = manager.dict()
 
         if load_from_basis is True:
             self.load_basis_files(basis_filename)
@@ -153,21 +161,32 @@ class DiskFM(NoFM):
 
 
         if self.save_basis is True:
-            curr_rad = str(int(np.round((radstart - self.dataset.IWA) / self.dr)))
-            curr_sub = str(int(np.round(phistart / self.dphi)))
+            # curr_rad = str(int(np.round((radstart - self.dataset.IWA) / self.dr)))
+            # curr_sub = str(int(np.round(phistart / self.dphi)))
             curr_im = str(input_img_num)
             if len(curr_im) < 4:
                 curr_im = '000' + curr_im
             # print(section_ind[0][0], curr_rad, curr_sub, curr_im)
 
-            namkey = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
-            # namkey = 'idzo' + str(section_ind[0][0]) + 'i' + curr_im
+            # namkey = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
+            namkey = 'idzo' + str(section_ind[0][0]) + 'i' + curr_im
 
             klmodes_dict[namkey] = klmodes
             evals_dict[namkey] = evals
             evecs_dict[namkey] = evecs
             ref_psfs_indicies_dict[namkey] = ref_psfs_indicies
             section_ind_dict[namkey] = section_ind
+            
+            # radstart = self.dr * int(namkey[1]) + self.IWA
+            # radend = self.dr * (int(namkey[1]) + 1) + self.IWA
+            # phistart = self.dphi * int(namkey[3])
+            # phiend = self.dphi  * (int(namkey[3]) + 1)
+
+            radstart_dict[namkey] = radstart
+            radend_dict[namkey] = radend
+            phistart_dict[namkey] = phistart
+            phiend_dict[namkey] = phiend
+            input_img_num_dict[namkey] = input_img_num
             
     def fm_parallelized(self):
         '''
@@ -178,16 +197,28 @@ class DiskFM(NoFM):
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
-        # Parallelilze this
+        
         for key in self.dict_keys:
-            rad = int(key[1])
-            phi = int(key[3])
-            img_num = int(key[5:])
+            # rad = int(key[1])
+            # phi = int(key[3])
+            # img_num = int(key[5:])
             
-            radstart = self.dr * rad + self.IWA
-            radend = self.dr * (rad + 1) + self.IWA
-            phistart = self.dphi * phi
-            phiend = self.dphi  * (phi + 1)
+            radstart = self.radstart_dict[key]
+            radend = self.radend_dict[key]
+            phistart = self.phistart_dict[key]
+            phiend = self.phiend_dict[key]
+            img_num = self.input_img_num_dict[key]
+
+            # radstart = self.dr * rad + self.IWA
+            # radend = self.dr * (rad + 1) + self.IWA
+            # phistart = self.dphi * phi
+            # phiend = self.dphi  * (phi + 1)
+
+            # print(radstart - radstartb)
+            # print(radend - radendb)
+            # print(np.degrees(phistart), np.degrees(phistartb))
+            # print(np.degrees(phiend), np.degrees(phiendb))
+
             # FIXME This next line makes subsection != 1 have overlapping sections, but breaks
             # subsection = 1. Need to add padding option to fix this
             # phi_bounds[-1][1] = 2. * np.pi - 0.0001  
@@ -206,12 +237,13 @@ class DiskFM(NoFM):
             wl_here = wvs[img_num]
             wv_index = (np.where(unique_wvs == wl_here))[0][0]
             aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
+            original_imgs_shape = self.images.shape
 
             parallel = False 
         
             if not parallel:
                 self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
-                                   input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
+                                   input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], input_img_num=img_num,
                                    ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
                                    pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], radstart=radstart,
                                    radend=radend, phistart=phistart, phiend=phiend, padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
@@ -277,20 +309,26 @@ class DiskFM(NoFM):
             self.evals_dict = Dict_for_saving_in_h5['evals_dict']
             self.ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
             self.section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
+
+            self.radstart_dict = Dict_for_saving_in_h5['radstart_dict']
+            self.radend_dict = Dict_for_saving_in_h5['radend_dict']
+            self.phistart_dict = Dict_for_saving_in_h5['phistart_dict']
+            self.phiend_dict = Dict_for_saving_in_h5['phiend_dict']
+            self.input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
             del Dict_for_saving_in_h5
 
         # Set extents for each section
         self.dict_keys = sorted(self.klmodes_dict.keys())
-        rads = [int(key[1]) for key in self.dict_keys]
-        phis = [int(key[3]) for key in self.dict_keys]
-        self.annuli = np.max(rads) + 1
-        self.subsections = np.max(phis) + 1
+        # rads = [int(key[1]) for key in self.dict_keys]
+        # phis = [int(key[3]) for key in self.dict_keys]
+        # self.annuli = np.max(rads) + 1
+        # self.subsections = np.max(phis) + 1
 
-        # More geometry parameters
-        x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
-        nanpix = np.where(np.isnan(self.dataset.input[0]))
-        self.dr = (self.OWA - self.dataset.IWA) / self.annuli
-        self.dphi = 2 * np.pi / self.subsections
+        # # More geometry parameters
+        # x, y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0), np.arange(self.inputs_shape[1] * 1.0))
+        # nanpix = np.where(np.isnan(self.dataset.input[0]))
+        # self.dr = (self.OWA - self.dataset.IWA) / self.annuli
+        # self.dphi = 2 * np.pi / self.subsections
         
         # Make flattened images for running paralellized
         original_imgs = mp.Array(self.data_type, np.size(self.images))
@@ -393,16 +431,16 @@ class DiskFM(NoFM):
             for i in np.arange(n_wv_per_file):
                 KLmode_spectral_cubes[:,i,:,:] = np.nansum(fmout[:,i::n_wv_per_file,:,:], axis =1)/nfiles
             
-            # for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
             #     # calibrate spectral cube if needed
-            #     dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
-            #                      spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-            #                      filetype="PSF Subtracted Spectral Cube")
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
 
 
-        # dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
-        #                  klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
-        #                  zaxis=numbasis)
+        dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
+                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         zaxis=numbasis)
 
 
     def cleanup_fmout(self, fmout):
@@ -431,7 +469,12 @@ class DiskFM(NoFM):
                                             'evecs_dict':evecs_dict, 
                                             'evals_dict':evals_dict, 
                                             'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 
-                                            'section_ind_dict':section_ind_dict
+                                            'section_ind_dict':section_ind_dict,
+                                            'radstart_dict':radstart_dict,
+                                            'radend_dict':radend_dict,
+                                            'phistart_dict':phistart_dict,
+                                            'phiend_dict':phiend_dict,
+                                            'input_img_num_dict':input_img_num_dict
                                         }
 
                 dd.io.save(self.basis_filename, Dict_for_saving_in_h5)

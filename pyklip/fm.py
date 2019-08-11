@@ -1120,10 +1120,16 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     if N_pix_sector is None:
         if isinstance(subsections, int):
-            # divide annuli into subsections
+
+            #divide annuli into subsections a la parallelized
             dphi = 2 * np.pi / subsections
-            phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
-            phi_bounds[-1][1] = 2 * np.pi - 0.0001
+            phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(subsections)]
+            phi_bounds[-1][1] = np.pi
+
+            # # divide annuli into subsections
+            # dphi = 2 * np.pi / subsections
+            # phi_bounds = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(subsections)]
+            # phi_bounds[-1][1] = 2 * np.pi - 0.0001
         else:
             sign = -1
             if not flipx:
@@ -1137,9 +1143,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         for [r_min,r_max] in rad_bounds:
             curr_sep_N_subsections = np.max([int(np.pi*(r_max**2-r_min**2)/N_pix_sector),1]) # equivalent to using floor but casting as well
             # divide annuli into subsections
+            
             dphi = 2 * np.pi / curr_sep_N_subsections
-            phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_N_subsections)]
-            phi_bounds_list[-1][1] = 2 * np.pi
+            phi_bounds = [[dphi * phi_i - np.pi, dphi * (phi_i + 1) - np.pi] for phi_i in range(curr_sep_N_subsections)]
+            phi_bounds[-1][1] = np.pi
+            
+            # dphi = 2 * np.pi / curr_sep_N_subsections
+            # phi_bounds_list = [[dphi * phi_i, dphi * (phi_i + 1)] for phi_i in range(curr_sep_N_subsections)]
+            # phi_bounds_list[-1][1] = 2 * np.pi
             # for phi_bound in phi_bounds_list:
             #     print(((r_min,r_max),phi_bound) )
             iterator_sectors.extend([((r_min,r_max),phi_bound) for phi_bound in phi_bounds_list ])
