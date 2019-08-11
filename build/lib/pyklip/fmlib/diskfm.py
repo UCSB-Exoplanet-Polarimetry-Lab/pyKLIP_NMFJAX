@@ -4,9 +4,6 @@ import numpy as np
 import os
 import copy
 import pickle
-import h5py
-import deepdish as dd
-
 import glob
 import scipy.ndimage as ndimage
 import ctypes
@@ -162,6 +159,7 @@ class DiskFM(NoFM):
 
             # FIXME save per wavelength
             nam = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
+            
             klmodes_dict[nam] = klmodes
             evals_dict[nam] = evals
             evecs_dict[nam] = evecs
@@ -189,7 +187,7 @@ class DiskFM(NoFM):
             phiend = self.dphi  * (phi + 1)
             # FIXME This next line makes subsection != 1 have overlapping sections, but breaks
             # subsection = 1. Need to add padding option to fix this
-            # phi_bounds[-1][1] = 2. * np.pi - 0.0001  
+#            phi_bounds[-1][1] = 2. * np.pi - 0.0001  
  
             section_ind = self.section_ind_dict[key]
             sector_size = np.size(section_ind)
@@ -197,7 +195,6 @@ class DiskFM(NoFM):
             evals = self.evals_dict[key]
             evecs = self.evecs_dict[key]
             ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
-            
 
             # Modified by Johan
             wvs = self.wvs
@@ -250,33 +247,21 @@ class DiskFM(NoFM):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
         '''
-        _, file_extension = os.path.splitext(basis_file_pattern)
-        
-        # Load in file
-        if file_extension == '.pkl':
-            f = open(basis_file_pattern, 'rb')
-            if sys.version_info.major == 3:
-                self.klmodes_dict = pickle.load(f, encoding='latin1')
-                self.evecs_dict = pickle.load(f, encoding='latin1')
-                self.evals_dict = pickle.load(f, encoding='latin1')
-                self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
-                self.section_ind_dict = pickle.load(f, encoding='latin1')
-            else:
-                self.klmodes_dict = pickle.load(f)
-                self.evecs_dict = pickle.load(f)
-                self.evals_dict = pickle.load(f)
-                self.ref_psfs_indicies_dict = pickle.load(f)
-                self.section_ind_dict = pickle.load(f)
-        
-        if file_extension == '.h5':
-            Dict_for_saving_in_h5 = dd.io.load(self.basis_filename)
 
-            self.klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
-            self.evecs_dict = Dict_for_saving_in_h5['evecs_dict']
-            self.evals_dict = Dict_for_saving_in_h5['evals_dict']
-            self.ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
-            self.section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
-            del Dict_for_saving_in_h5
+        # Load in file
+        f = open(basis_file_pattern, 'rb')
+        if sys.version_info.major == 3:
+            self.klmodes_dict = pickle.load(f, encoding='latin1')
+            self.evecs_dict = pickle.load(f, encoding='latin1')
+            self.evals_dict = pickle.load(f, encoding='latin1')
+            self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
+            self.section_ind_dict = pickle.load(f, encoding='latin1')
+        else:
+            self.klmodes_dict = pickle.load(f)
+            self.evecs_dict = pickle.load(f)
+            self.evals_dict = pickle.load(f)
+            self.ref_psfs_indicies_dict = pickle.load(f)
+            self.section_ind_dict = pickle.load(f)
 
         # Set extents for each section
         self.dict_keys = sorted(self.klmodes_dict.keys())
@@ -392,16 +377,16 @@ class DiskFM(NoFM):
             for i in np.arange(n_wv_per_file):
                 KLmode_spectral_cubes[:,i,:,:] = np.nansum(fmout[:,i::n_wv_per_file,:,:], axis =1)/nfiles
             
-            # for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-            #     # calibrate spectral cube if needed
-            #     dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
-            #                      spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-            #                      filetype="PSF Subtracted Spectral Cube")
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
 
 
-        # dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
-        #                  klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
-        #                  zaxis=numbasis)
+        dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
+                         klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
+                         zaxis=numbasis)
 
 
     def cleanup_fmout(self, fmout):
@@ -416,22 +401,12 @@ class DiskFM(NoFM):
             fmout: same but cleaned up if necessary
         """
         if self.save_basis == True:
-            _, file_extension = os.path.splitext(self.basis_filename)
-            if file_extension == '.pkl':
-                f = open(self.basis_filename, 'wb')
-                pickle.dump(dict(klmodes_dict), f, protocol=2)
-                pickle.dump(dict(evecs_dict), f, protocol=2)
-                pickle.dump(dict(evals_dict), f, protocol=2)
-                pickle.dump(dict(ref_psfs_indicies_dict), f, protocol=2)
-                pickle.dump(dict(section_ind_dict), f, protocol=2)
-            if file_extension == '.h5':
-                #make a single dictionnary and save in h5
-                Dict_for_saving_in_h5 = {'klmodes_dict':klmodes_dict, 'evecs_dict':evecs_dict, 'evals_dict':evals_dict,
-                                                    'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 'section_ind_dict':section_ind_dict}
-
-                dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
-                del Dict_for_saving_in_h5
-
+            f = open(self.basis_filename, 'wb')
+            pickle.dump(dict(klmodes_dict), f, protocol=2)
+            pickle.dump(dict(evecs_dict), f, protocol=2)
+            pickle.dump(dict(evals_dict), f, protocol=2)
+            pickle.dump(dict(ref_psfs_indicies_dict), f, protocol=2)
+            pickle.dump(dict(section_ind_dict), f, protocol=2)
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
@@ -556,7 +531,8 @@ class DiskFM(NoFM):
         perturbmag = perturbmag_imgs
         perturbmag_shape = perturbmag_imgs_shape
 
-
+    #@profile
+    # @jit
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, flipx=True,
                              new_center=None):
         """
