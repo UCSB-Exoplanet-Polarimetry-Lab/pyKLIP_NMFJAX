@@ -30,7 +30,7 @@ class DiskFM(NoFM):
 
         Currently only supports mode = ADI
         '''
-
+        
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
         else:
@@ -100,7 +100,6 @@ class DiskFM(NoFM):
             # Need to know r and phi indicies in fm from eigen
             assert annuli is not None, "need annuli keyword to save basis"
             assert subsections is not None, "need subsections keyword to save basis"
-            x, y = np.meshgrid(np.arange(inputs_shape[2] * 1.0), np.arange(inputs_shape[1] * 1.0))
             self.dr = (OWA - dataset.IWA) / annuli
             self.dphi = 2 * np.pi / subsections
             
@@ -157,16 +156,18 @@ class DiskFM(NoFM):
             curr_rad = str(int(np.round((radstart - self.dataset.IWA) / self.dr)))
             curr_sub = str(int(np.round(phistart / self.dphi)))
             curr_im = str(input_img_num)
-            if len(curr_im) < 2:
-                curr_im = '0' + curr_im
+            if len(curr_im) < 4:
+                curr_im = '000' + curr_im
+            # print(section_ind[0][0], curr_rad, curr_sub, curr_im)
 
-            # FIXME save per wavelength
-            nam = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
-            klmodes_dict[nam] = klmodes
-            evals_dict[nam] = evals
-            evecs_dict[nam] = evecs
-            ref_psfs_indicies_dict[nam] = ref_psfs_indicies
-            section_ind_dict[nam] = section_ind
+            namkey = 'r' + curr_rad + 's' + curr_sub + 'i' + curr_im 
+            # namkey = 'idzo' + str(section_ind[0][0]) + 'i' + curr_im
+
+            klmodes_dict[namkey] = klmodes
+            evals_dict[namkey] = evals
+            evecs_dict[namkey] = evecs
+            ref_psfs_indicies_dict[namkey] = ref_psfs_indicies
+            section_ind_dict[namkey] = section_ind
             
     def fm_parallelized(self):
         '''
@@ -426,8 +427,12 @@ class DiskFM(NoFM):
                 pickle.dump(dict(section_ind_dict), f, protocol=2)
             if file_extension == '.h5':
                 #make a single dictionnary and save in h5
-                Dict_for_saving_in_h5 = {'klmodes_dict':klmodes_dict, 'evecs_dict':evecs_dict, 'evals_dict':evals_dict,
-                                                    'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 'section_ind_dict':section_ind_dict}
+                Dict_for_saving_in_h5 = {   'klmodes_dict':klmodes_dict, 
+                                            'evecs_dict':evecs_dict, 
+                                            'evals_dict':evals_dict, 
+                                            'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 
+                                            'section_ind_dict':section_ind_dict
+                                        }
 
                 dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
                 del Dict_for_saving_in_h5
