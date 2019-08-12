@@ -480,12 +480,17 @@ class Irdis(Data):
             self._filenames = [data_cube]
             self.prihdr = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
-                if 'PIXSCAL' in self.prihdr:
+                if ('PIXSCAL' in self.prihdr) & ('HIERARCH ESO PRO REC1 ID' in self.prihdr):
                     irdis_rdp = "sphere-dc" # Set the reduction process
                     self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
                 else:
-                    irdis_rdp = "vigan-python" # Set the reduction process
-                    self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for vigan python pipeline
+                    with fits.open(info_fits) as hdulist:
+                        if len(hdulist) > 1:
+                            # old IDL pipeline
+                            irdis_rdp = "vigan-idl"     # Set the reduction process
+                        else:
+                            irdis_rdp = "vigan-python" # Set the reduction process
+                            self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for vigan python pipeline
                 self.irdis_rdp = irdis_rdp # Store the reduction process
                 self._filenums = np.repeat(np.arange(self.input.shape[0]), self.input.shape[1])
                 self.nfiles = self.input.shape[0]
@@ -520,7 +525,9 @@ class Irdis(Data):
         with fits.open(psf_cube) as hdulist:
             psf_cube = hdulist[0].data # Nwvs, Ny, Nx
             if np.size(psf_cube.shape) == 4:
-                if irdis_rdp == "vigan-python":
+                if irdis_rdp == "vigan-idl":
+                    self.psfs = np.median(psf_cube, axis=0) 
+                elif irdis_rdp == "vigan-python":
                     self.psfs = np.median(psf_cube, axis=1) # Take the median of the three PSFs
                 elif irdis_rdp == "sphere-dc":
                     self.psfs = np.median(psf_cube, axis=1) # Take the median of the three PSFs
@@ -541,7 +548,11 @@ class Irdis(Data):
 
         # read in PA info among other things
         with fits.open(info_fits) as hdulist:
-            if irdis_rdp == "vigan-python":
+            if irdis_rdp == "vigan-idl":
+                metadata = hdulist[1].data
+                self._PAs = np.repeat(metadata["PA"] + metadata['PUPOFF'], self.nwvs)
+                self._filenames = np.repeat(metadata["FILE"], self.nwvs)
+            elif irdis_rdp == "vigan-python":
                 self._PAs = hdulist[0].data
                 self._PAs = np.repeat(self.PAs, self.nwvs)
                 self._filenames = np.repeat(data_cube, self.nwvs)
