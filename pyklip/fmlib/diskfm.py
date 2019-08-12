@@ -31,6 +31,12 @@ class DiskFM(NoFM):
         Specify number of annuli and subsections used to save basis vectors
 
         Currently only supports mode = ADI
+
+        TODO Need to completely clean the class, we need to remove all parameters except dataset, and maybe 
+        model_disk to avoid conflict when this parameters are redefined when calling fm.klip_dataset later in
+        the code. We cannot have those parameters been defined twice, I already remove a conflict in the OWA 
+        (not the same one used in fm.klip_dataset and in self.update_disk()
+
         '''
         
         if hasattr(numbasis, "__len__"):
@@ -162,6 +168,7 @@ class DiskFM(NoFM):
         perturbmag = mp.Array(self.data_type, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
+
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, 
                             ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, 
@@ -551,6 +558,7 @@ class DiskFM(NoFM):
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
+
     def update_disk(self, model_disk):
         '''
         Takes model disk and rotates it to the PAs of the input images for use as reference PSFS
@@ -605,6 +613,7 @@ class DiskFM(NoFM):
         
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
+        
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, 
                                     angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, 
                                     flipx=True, new_center=None):
