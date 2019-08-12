@@ -464,7 +464,10 @@ class DiskFM(NoFM):
                          zaxis=numbasis)
 
     def cleanup_fmout(self, fmout):
-        # FIXME will need to fix later : this is not the ideal place to save the basis, we need a specific function for that
+        # FIXME will need to fix later : this is not the ideal place to save the basis, 
+        # maybe we can build a specific function for that. I understand why it was put here (it is called by fm.py at the end
+        # fm.klip_parallelized. But it also means that we save the h5 at every iteration (at the end of self.fm_parallelized)
+        
         """
         After running KLIP-FM, we need to reshape fmout so that the numKL dimension is the first one and not the last
 
