@@ -113,11 +113,6 @@ class DiskFM(NoFM):
             self.numthreads = numthreads
 
         if self.save_basis == True:
-            # Need to know r and phi indicies in fm from eigen
-            assert annuli is not None, "need annuli keyword to save basis"
-            assert subsections is not None, "need subsections keyword to save basis"
-            self.dr = (self.OWA - self.IWA) / annuli
-            self.dphi = 2 * np.pi / subsections
             
             # Set up dictionaries for saving basis
             manager = mp.Manager()
@@ -613,7 +608,7 @@ class DiskFM(NoFM):
         
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
-        
+
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, 
                                     angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, 
                                     flipx=True, new_center=None):
