@@ -32,7 +32,7 @@ class DiskFM(NoFM):
 
         Currently only supports mode = ADI
 
-        TODO Need to completely clean the class, we need to remove all parameters except dataset, and maybe 
+        TODO Need to completely clean the class def, we need to remove all parameters except dataset, and maybe 
         model_disk to avoid conflict when this parameters are redefined when calling fm.klip_dataset later in
         the code. We cannot have those parameters been defined twice, I already remove a conflict in the OWA 
         (not the same one used in fm.klip_dataset and in self.update_disk()
@@ -64,12 +64,13 @@ class DiskFM(NoFM):
         self.mode = mode
 
         # Input dataset attributes
-        self.dataset = dataset
+        # self.dataset = dataset
         self.IWA = dataset.IWA
         self.images = dataset.input
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
+        self.filenums = dataset.filenums
 
         # Outputs attributes
         output_imgs_shape = self.images.shape + self.numbasis.shape
@@ -78,8 +79,6 @@ class DiskFM(NoFM):
         self.np_data_type = ctypes.c_float
 
         # Coords where align_and_scale places model center (default is inputs center).
-        # if aligned_center is None:
-        #     aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
         self.aligned_center = dataset.output_centers[0]
         if self.aligned_center is None:
             self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
@@ -247,13 +246,15 @@ class DiskFM(NoFM):
             
     def fm_parallelized(self):
         '''
-        Functions like klip_parallelized, but doesn't find new 
+        Functions like klip_parallelized, but doesn't create new 
         evals and evecs. 
         '''
 
-
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+        perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape,  self.numbasis)
+        perturbmag_np = fm._arraytonumpy(perturbmag, perturbmag_shape,dtype=self.data_type)
+
         
         for key in self.dict_keys:
             
@@ -286,7 +287,7 @@ class DiskFM(NoFM):
                                    radstart=radstart, radend=radend, phistart=phistart, phiend=phiend, 
                                    padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
                                    parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
-                                   fmout=fmout_np,perturbmag = None, klipped=None, covar_files=None)
+                                   fmout=fmout_np,perturbmag = perturbmag_np, klipped=None, covar_files=None)
 
             else:
                 pass
@@ -299,7 +300,7 @@ class DiskFM(NoFM):
         #If true then it's a non collapsed spec mode disk and save indivudal specmode cubes for each KL mode
         if np.size(model_disk_shape) > 2: 
 
-            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+            nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
@@ -456,7 +457,7 @@ class DiskFM(NoFM):
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, 
                         klipparams=None, calibrate_flux=False, spectrum=None, pixel_weights=1):
         '''
-        Uses self.dataset parameters to save fmout, the output of
+        Uses dataset parameters to save fmout, the output of
         fm_paralellized or klip_dataset
         '''
 
@@ -468,7 +469,7 @@ class DiskFM(NoFM):
         #If true then it's a spec mode disk and save indivudal specmode cubes for each KL mode
         if np.size(model_disk_shape) > 2:
 
-            nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+            nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
@@ -572,7 +573,7 @@ class DiskFM(NoFM):
         n_disk_wvs = model_disk_shape[0]
         
         #If we do, then let's make sure that the number of wavelenth channels matches the data. 
-        nfiles = int(np.nanmax(self.dataset.filenums))+1 #Get the number of files  
+        nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
         n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
         
 
