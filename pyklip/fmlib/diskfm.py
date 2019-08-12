@@ -143,6 +143,26 @@ class DiskFM(NoFM):
         fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
 
+    
+    def alloc_perturbmag(self, output_img_shape, numbasis):
+        """
+        Allocates shared memory to store the fractional magnitude of the linear KLIP perturbation
+        Stores a number for each frame = max(oversub + selfsub)/std(PCA(image))
+
+        Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
+            numbasis: array/list of number of KL basis cutoffs requested
+
+        Returns:
+            perturbmag: mp.array to store linaer perturbation magnitude
+            perturbmag_shape: shape of linear perturbation magnitude
+
+        """
+        perturbmag_shape = (output_img_shape[0], np.size(numbasis))
+        perturbmag = mp.Array(self.data_type, int(np.prod(perturbmag_shape)))
+
+        return perturbmag, perturbmag_shape
+
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, 
                             ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, 
                             pas=None, wvs=None, radstart=None, radend=None, phistart=None, phiend=None, 
@@ -221,6 +241,7 @@ class DiskFM(NoFM):
             phistart_dict[namkey] = phistart
             phiend_dict[namkey] = phiend
             input_img_num_dict[namkey] = input_img_num
+       
             
     def fm_parallelized(self):
         '''
@@ -289,7 +310,8 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis = 1) 
 
         return fmout_return
-            
+  
+        
     def load_basis_files(self, basis_file_pattern):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
@@ -372,13 +394,12 @@ class DiskFM(NoFM):
         output_imgs_shape = self.images.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
-
-        perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape, self.numbasis)
-
         
-        # Making MP arrays
-        fmout_data = None
-        fmout_shape = None
+        # Create Custom Shared Memory array fmout to save output of forward modelling
+        fmout_data, fmout_shape = self.alloc_fmout(output_imgs_shape)
+        # Create shared memory to keep track of validity of perturbation
+        perturbmag, perturbmag_shape = self.alloc_perturbmag(output_imgs_shape,  self.numbasis)
+
 
         # align and scale the images for each image. Use map to do this asynchronously]
         tpool = mp.Pool(processes=numthreads, initializer=fm._tpool_init,
@@ -408,7 +429,7 @@ class DiskFM(NoFM):
         self.wvs_imgs_np = wvs_imgs_np
         self.pa_imgs_np = pa_imgs_np
 
-        #Don't need to save the bases again! 
+        # After loading it, we stop saving the KL basis to avoid saving it every time we run self.fm_parallelize.
         self.save_basis = False
 
         # Delete global variables so it can pickle
@@ -428,6 +449,7 @@ class DiskFM(NoFM):
         del centers_imgs
         del wvs_imgs_np
         del pa_imgs_np
+
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, 
                         klipparams=None, calibrate_flux=False, spectrum=None, pixel_weights=1):
@@ -463,19 +485,17 @@ class DiskFM(NoFM):
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                          zaxis=numbasis)
 
-    def cleanup_fmout(self, fmout):
-        # FIXME will need to fix later : this is not the ideal place to save the basis, 
-        # maybe we can build a specific function for that. I understand why it was put here (it is called by fm.py at the end
-        # fm.klip_parallelized. But it also means that we save the h5 at every iteration (at the end of self.fm_parallelized)
-        
+
+    def save_kl_basis(self):
+
         """
-        After running KLIP-FM, we need to reshape fmout so that the numKL dimension is the first one and not the last
+        Save the KL basis and other needed parameters
 
         Args:
-            fmout: numpy array of ouput of FM
+            None
 
         Returns:
-            fmout: same but cleaned up if necessary
+            None
         """
         if self.save_basis == True:
             _, file_extension = os.path.splitext(self.basis_filename)
@@ -509,6 +529,23 @@ class DiskFM(NoFM):
 
                 dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
                 del Dict_for_saving_in_h5
+        else:
+            pass
+ 
+            
+    def cleanup_fmout(self, fmout):
+
+        """
+        After running KLIP-FM, we need to reshape fmout so that the numKL dimension is the first one and not the last
+        We also use this function to save the KL basis because it is called by fm.py at the end fm.klip_parallelized
+        Args:
+            fmout: numpy array of ouput of FM
+
+        Returns:
+            fmout: same but cleaned up if necessary
+        """
+        
+        self.save_kl_basis()
 
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
