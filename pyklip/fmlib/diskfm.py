@@ -15,26 +15,46 @@ from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
 
+# define the global variables for that code
 parallel = True 
+klmodes_dict = evecs_dict = evals_dict = ref_psfs_indicies_dict = section_ind_dict = None
+radstart_dict =  radend_dict =  phistart_dict =  phiend_dict = input_img_num_dict = None
 
 class DiskFM(NoFM):
     def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.h5', 
-                        load_from_basis = False, save_basis = False, annuli = None, subsections = None, 
-                        numthreads = None, mode = 'ADI'):
+                        load_from_basis = False, save_basis = False, aligned_center=None, numthreads = None, 
+                        annuli = None, subsections = None, mode = None):
         '''
-        Takes an input model and runs KLIP-FM. Can be used in MCMCs by saving the basis 
-        vectors. When disk is updated, FM can be run on the new disk without computing new basis
-        vectors. 
-
         For first time, instantiate DiskFM with no save_basis and nominal model disk.
-        Specify number of annuli and subsections used to save basis vectors
 
         Currently only supports mode = ADI
 
-        TODO Need to completely clean the class def, we need to remove all parameters except dataset, and maybe 
-        model_disk to avoid conflict when this parameters are redefined when calling fm.klip_dataset later in
-        the code. We cannot have those parameters been defined twice, I already remove a conflict in the OWA 
-        (not the same one used in fm.klip_dataset and in self.update_disk()
+        Args:
+            inputs_shape:   shape of the inputs numpy array. Typically (N, x, y)
+            numbasis:       1d numpy array consisting of the number of basis vectors to use
+            dataset:        an instance of Instrument.Data. FIXME: we need it to know the parameters to "prepare" 
+                            the first inital model.
+            model_disk      a model of the disk of size (wvs, x, y) or (x, y)
+            basis_filename  filename to save and load the KL basis. Filenames can haves 2 recognizable extensions: .h5 or .pkl.
+                            We strongly recommand .h5 as pickle have problem of compatibility between python 2 and 3
+                            and sometimes between computer (e.g. KL modes not readable on another computer)
+            load_from_basis if True, load the KL basis at basis_filename. It only need to be done once, after which you 
+                            can measure FM with only update_model()
+            save_basis      if True, save the KL basis at basis_filename.if load_from_basis is True, save_basis is 
+                            automatically set to False, it is useless to load and save the matrix at the same time.
+            aligned_center  array of 2 elements [x,y] that all the model will be centered on for image
+                            registration. FIXME: This is the most problematic thing currently, the aligned_center of the
+                            model and of the images can be set independently, which will create false but believable results.
+                            Could be fixed by creating a self.runFM_and_saveBasis function 
+                            that would take the same parameters as a fm.klip_dataset that would
+                            1/update_model with dataset param, 2/fm.klip_dataset and save all file and correction parameters
+            numthreads      number of threads to use. If none, defaults to using all the cores of the cpu
+
+            There are also 2 deprecated parameters that are ignored and replaced by the klip param in fm.klip_dataset:
+            annuli
+            subsections
+            mode
+            I let them here to avoid breaking the current users' code.
 
         '''
         
@@ -528,6 +548,7 @@ class DiskFM(NoFM):
                                  filetype="PSF Subtracted Spectral Cube")
 
 
+
     def save_kl_basis(self):
 
         """
@@ -573,8 +594,8 @@ class DiskFM(NoFM):
             del Dict_for_saving_in_h5
         else:
             raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
-
- 
+                            
+    
             
     def cleanup_fmout(self, fmout):
 
@@ -588,9 +609,15 @@ class DiskFM(NoFM):
             fmout: same but cleaned up if necessary
         """
         
-        #save the KL basis if I need to
+        # save the KL basis. 
         if self.save_basis == True:
             self.save_kl_basis()
+        
+        # FIXME We save the matrix here it here because it is called by fm.py at the end fm.klip_parallelized 
+        # but this is not ideal. Could be fixed by creating a self.runFM_and_saveBasis function 
+        # that would take the same parameters as a fm.klip_dataset that would
+        # 1/update_model with dataset param 2/fm.klip_dataset and save all file and correction parameters.
+
 
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
@@ -772,3 +799,41 @@ class DiskFM(NoFM):
             output_img_numstacked.shape = [self.outputs_shape[1], self.outputs_shape[2]]
             output_img_numstacked[rot_sector_validpix_2d] += 1
             output_img_numstacked.shape = [self.outputs_shape[1] *  self.outputs_shape[2]]
+
+
+
+    # def runFM_and_saveBasis(self, dataset, mode="ADI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
+    #         OWA=None, movement=None, minrot=0, padding=0, numbasis=None, maxnumbasis=None, numthreads=None, 
+    #         calibrate_flux=False, aligned_center=None, annuli_spacing="constant", mute_progression=False):
+    #     """
+    #     run KLIP FM on a dataset object for a given model in fm_class and save the kl modes,
+    #     as well as the fm and klipped images of this KLIP FM
+    #     Parameter of the KLIP FM will be saved also and put in the  to be able to be used when loading the 
+
+    #     This function is use integrally fm.klip_dataset with only the parameter pertinent for disks.
+
+    #     Args:
+    #         dataset:        an instance of Instrument.Data (see instruments/ subfolder)
+    #         mode:           as of now, only ADI, maybe SDI
+    #         outputdir:      directory to save output fm and klipped files
+    #         fileprefix:     filename prefix for saved fm and klipped files
+    #         anuuli:         number of annuli to use for KLIP
+    #         subsections:    number of sections to break each annuli into
+    #         movement:       minimum amount of movement (in pixels) of an astrophysical source
+    #                         to consider using that image for a refernece PSF
+    #         numbasis:       number of KL basis vectors to use (can be a scalar or list like). Length of b
+    #         numthreads:     number of threads to use. If none, defaults to using all the cores of the cpu
+    #         minrot:         minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
+    #         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
+    #         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
+    #                         registration
+    #         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
+    #                         log (logarithmical expansion with r), and linear (linearly expansion with r)
+    #         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
+
+
+    #     Returns
+    #         Saved fm, files in the output directory
+    #         Saved the 
+    #         Returns: nothing, but saves to dataset.output and pyklip parameters in the 
+    #     """
