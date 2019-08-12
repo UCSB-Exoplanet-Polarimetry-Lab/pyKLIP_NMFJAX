@@ -14,7 +14,6 @@ import ctypes
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
-import itertools
 
 parallel = True 
 
@@ -79,8 +78,9 @@ class DiskFM(NoFM):
         self.np_data_type = ctypes.c_float
 
         # Coords where align_and_scale places model center (default is inputs center).
-        self.aligned_center = dataset.output_centers[0]
-        if self.aligned_center is None:
+        if dataset.output_centers is not None:
+            self.aligned_center = dataset.output_centers[0]
+        else:
             self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
 
         # Make disk reference PSFS
@@ -171,7 +171,7 @@ class DiskFM(NoFM):
                             fmout=None, perturbmag=None, klipped=None, covar_files=None,flipx=True, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
-        perform the forward modelling
+        perform the forward modelling. If we wish to save the KL modes, it save in dictionnaries.
 
         Args:
             klmodes: unpertrubed KL modes
@@ -202,33 +202,43 @@ class DiskFM(NoFM):
             kwargs: any other variables that we don't use but are part of the input
         """
         sci = aligned_imgs[input_img_num, section_ind[0]]
-
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
         refs[np.where(np.isnan(refs))] = 0
 
+        # use the disk model stored
         model_sci = self.model_disks[input_img_num, section_ind[0]]
-
         model_ref = self.model_disks[ref_psfs_indicies, :]
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
+        # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)
         delta_KL= fm.perturb_specIncluded(evals, evecs, klmodes, refs, model_ref, return_perturb_covar = False)
+        
+        # calculate postklip_psf using delta_KL
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, 
                                                                     numbasis, sci, model_sci, inputflux = None)
+        
+        # write forward modelled PSF to fmout (as output)
+        # need to derotate the image in this step
 
+        # FIXME THere is maybe a possibility to avoid redefining _save_rotated_section in diskfm.py
+        # And use fm._save_rotated_section here.
+        # Right now, it fails because of a global variable in fm (outputs_shape)
         for thisnumbasisindex in range(np.size(numbasis)):
             self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                              fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
-                             radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx) # FIXME
-
+                             radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx) 
+        
+        # if we wish to save the KL modes, we save the KL mode for this image and zone in a dictionnaries
         if self.save_basis is True:
 
             curr_im = str(input_img_num)
-            if len(curr_im) < 4:
-                curr_im = '000' + curr_im
+            if len(curr_im) < 3:
+                curr_im = '00' + curr_im
 
-            #To have a single identifier for each section, we take the first pixel and the image #
+            # To have a single identifier for each section/image for the dictionnaries key
+            # we take the first pixel of the zone and the image number
             namkey = 'idsec' + str(section_ind[0][0]) + 'i' + curr_im
 
             klmodes_dict[namkey] = klmodes
@@ -246,8 +256,15 @@ class DiskFM(NoFM):
             
     def fm_parallelized(self):
         '''
-        Functions like klip_parallelized, but doesn't create new 
-        evals and evecs. 
+        Functions like klip_parallelized, but doesn't create new KL modes. It use previously measured
+        KL modes and zone and return the forward modelling. Do not save fits.
+
+        Args:
+        None
+
+        Return:
+        fmout_np: output of forward modelling.
+
         '''
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
@@ -255,21 +272,23 @@ class DiskFM(NoFM):
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape,  self.numbasis)
         perturbmag_np = fm._arraytonumpy(perturbmag, perturbmag_shape,dtype=self.data_type)
 
-        
+
         for key in self.dict_keys:
-            
+            # load KL from the dictionnaries
+            original_KL = self.klmodes_dict[key]
+            evals = self.evals_dict[key]
+            evecs = self.evecs_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
+            section_ind = self.section_ind_dict[key]
+
+            # load zone information from the KL
             radstart = self.radstart_dict[key]
             radend = self.radend_dict[key]
             phistart = self.phistart_dict[key]
             phiend = self.phiend_dict[key]
             img_num = self.input_img_num_dict[key]
  
-            section_ind = self.section_ind_dict[key]
             sector_size = np.size(section_ind)
-            original_KL = self.klmodes_dict[key]
-            evals = self.evals_dict[key]
-            evecs = self.evecs_dict[key]
-            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
             
             wvs = self.wvs
             unique_wvs = np.unique(wvs)
@@ -291,14 +310,16 @@ class DiskFM(NoFM):
 
             else:
                 pass
-
+        
+        
+        # put any finishing touches on the FM Output
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
         #Check if we have a disk model at multiple wavelengths
         model_disk_shape = np.shape(self.model_disk)        
         #If true then it's a non collapsed spec mode disk and save indivudal specmode cubes for each KL mode
-        if np.size(model_disk_shape) > 2: 
+        if np.size(model_disk_shape) > 2: ## #FIXME
 
             nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
@@ -457,36 +478,54 @@ class DiskFM(NoFM):
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, 
                         klipparams=None, calibrate_flux=False, spectrum=None, pixel_weights=1):
         '''
-        Uses dataset parameters to save fmout, the output of
-        fm_paralellized or klip_dataset
-        '''
+        Uses dataset parameters to save the forward model, the output of fm_paralellized or klip_dataset
 
-        #Collapsed across all files (and wavelenths) and divide by number of images to keep units as ADU/coadd
-        KLmode_cube = np.nanmean(fmout, axis = 1) #/ self.inputs_shape[0] 
-
-        #Check if we have a disk model at multiple wavelengths
-        model_disk_shape = np.shape(self.model_disk)        
-        #If true then it's a spec mode disk and save indivudal specmode cubes for each KL mode
-        if np.size(model_disk_shape) > 2:
-
-            nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
-            n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
-
-            ##Collapse across all files, keeping the wavelengths intact. 
-            KLmode_spectral_cubes = np.zeros([np.size(numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
-            for i in np.arange(n_wv_per_file):
-                KLmode_spectral_cubes[:,i,:,:] = np.nansum(fmout[:,i::n_wv_per_file,:,:], axis =1)/nfiles
+        Arg:
+            dataset:        an instance of Instrument.Data . Will use its dataset.savedata() function to save data
+            fmout:          output of forward modelling.
+            outputdir:      directory to save output files
+            fileprefix:     filename prefix for saved files
+            numbasis:       number of KL basis vectors to use (can be a scalar or list like)
+            klipparams:     string with KLIP-FM parameters
+            calibrate_flux: if True, flux calibrate the data in the same way as the klipped data
+            spectrum:       if not None, spectrum to weight the data by. Not used in diskFM
+            pixel_weights:  weights for each pixel for weighted mean. Leave this as a single number for simple mean
             
-            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-            #     # calibrate spectral cube if needed
-                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
-                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-                                 filetype="PSF Subtracted Spectral Cube")
+        '''
+        
+        weighted = len(np.shape(pixel_weights)) > 1
+        numwvs = dataset.numwvs
+        fmout_spec = fmout.reshape([fmout.shape[0], fmout.shape[1]//numwvs, numwvs,
+                                            fmout.shape[2], fmout.shape[3]]) # (b, N_cube, wvs, y, x) 5-D cube
 
+        # collapse in time and wavelength to examine KL modes
+        KLmode_cube = np.nanmean(pixel_weights * fmout_spec, axis=(1,2))
+        if weighted:
+            # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
+            KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))
 
+        # broadband flux calibration for KL mode cube
+        if calibrate_flux:
+            KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
         dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KLmodes-all.fits", KLmode_cube,
                          klipparams=klipparams.format(numbasis=str(numbasis)), filetype="KL Mode Cube",
                          zaxis=numbasis)
+
+        # if there is more than one wavelength, save also spectral cubes
+        if dataset.numwvs > 1:
+            
+            KLmode_spectral_cubes = np.nanmean(pixel_weights * fmout_spec, axis=1)
+            if weighted:
+                # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that. 
+                KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
+            
+            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+                # calibrate spectral cube if needed
+                if calibrate_flux:
+                    spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
+                dataset.savedata(outputdir + '/' + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                                 spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+                                 filetype="PSF Subtracted Spectral Cube")
 
 
     def save_kl_basis(self):
@@ -500,40 +539,41 @@ class DiskFM(NoFM):
         Returns:
             None
         """
-        if self.save_basis == True:
-            _, file_extension = os.path.splitext(self.basis_filename)
-            if file_extension == '.pkl':
-                f = open(self.basis_filename, 'wb')
-                pickle.dump(dict(klmodes_dict), f, protocol=2)
-                pickle.dump(dict(evecs_dict), f, protocol=2)
-                pickle.dump(dict(evals_dict), f, protocol=2)
-                pickle.dump(dict(ref_psfs_indicies_dict), f, protocol=2)
-                pickle.dump(dict(section_ind_dict), f, protocol=2)
+        
+        _, file_extension = os.path.splitext(self.basis_filename)
+        if file_extension == '.pkl':
+            f = open(self.basis_filename, 'wb')
+            pickle.dump(dict(klmodes_dict), f, protocol=2)
+            pickle.dump(dict(evecs_dict), f, protocol=2)
+            pickle.dump(dict(evals_dict), f, protocol=2)
+            pickle.dump(dict(ref_psfs_indicies_dict), f, protocol=2)
+            pickle.dump(dict(section_ind_dict), f, protocol=2)
 
-                pickle.dump(dict(radstart_dict), f, protocol=2)
-                pickle.dump(dict(radend_dict), f, protocol=2)
-                pickle.dump(dict(phistart_dict), f, protocol=2)
-                pickle.dump(dict(phiend_dict), f, protocol=2)
-                pickle.dump(dict(input_img_num_dict), f, protocol=2)
-                
-            if file_extension == '.h5':
-                #make a single dictionnary and save in h5
-                Dict_for_saving_in_h5 = {   'klmodes_dict':klmodes_dict, 
-                                            'evecs_dict':evecs_dict, 
-                                            'evals_dict':evals_dict, 
-                                            'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 
-                                            'section_ind_dict':section_ind_dict,
-                                            'radstart_dict':radstart_dict,
-                                            'radend_dict':radend_dict,
-                                            'phistart_dict':phistart_dict,
-                                            'phiend_dict':phiend_dict,
-                                            'input_img_num_dict':input_img_num_dict
-                                        }
+            pickle.dump(dict(radstart_dict), f, protocol=2)
+            pickle.dump(dict(radend_dict), f, protocol=2)
+            pickle.dump(dict(phistart_dict), f, protocol=2)
+            pickle.dump(dict(phiend_dict), f, protocol=2)
+            pickle.dump(dict(input_img_num_dict), f, protocol=2)
+            
+        elif file_extension == '.h5':
+            #make a single dictionnary and save in h5
+            Dict_for_saving_in_h5 = {   'klmodes_dict':klmodes_dict, 
+                                        'evecs_dict':evecs_dict, 
+                                        'evals_dict':evals_dict, 
+                                        'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 
+                                        'section_ind_dict':section_ind_dict,
+                                        'radstart_dict':radstart_dict,
+                                        'radend_dict':radend_dict,
+                                        'phistart_dict':phistart_dict,
+                                        'phiend_dict':phiend_dict,
+                                        'input_img_num_dict':input_img_num_dict
+                                    }
 
-                dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
-                del Dict_for_saving_in_h5
+            dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
+            del Dict_for_saving_in_h5
         else:
-            pass
+            raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
+
  
             
     def cleanup_fmout(self, fmout):
@@ -548,7 +588,9 @@ class DiskFM(NoFM):
             fmout: same but cleaned up if necessary
         """
         
-        self.save_kl_basis()
+        #save the KL basis if I need to
+        if self.save_basis == True:
+            self.save_kl_basis()
 
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
@@ -558,49 +600,50 @@ class DiskFM(NoFM):
     def update_disk(self, model_disk):
         '''
         Takes model disk and rotates it to the PAs of the input images for use as reference PSFS
+        
+        The disk can be either an 3D array of shape (wvs,y,x) for data of the same shape
+        or a 2D Array of shape (y,x), in which case, if the dataset is multiwavelength 
+        the same model is used for all wavelenths.
        
         Args: 
-             model_disk: Disk to be forward modeled.
-             The disk can be either an 3D array of shape (wvs,y,x) for wvs images of shape (y,x)
-             or just a 2D Array of shape (y,x), in which case, if the dataset is multiwavelength 
-             then the same model is used for all wavelenths.  
+             model_disk: Disk to be forward modeled.  
         Returns:
              None
         '''
-        self.model_disk = model_disk
-        self.model_disks = np.zeros(self.inputs_shape)
-        model_disk_shape = np.shape(model_disk)        
-        n_disk_wvs = model_disk_shape[0]
         
-        #If we do, then let's make sure that the number of wavelenth channels matches the data. 
+        self.model_disks = np.zeros(self.inputs_shape)
+
+        # Extract the # of WL per files
         nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
         n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
-        
+
+        model_disk_shape = np.shape(model_disk) 
+
+        if (np.size(model_disk_shape) == 2) & (n_wv_per_file>1):
+            # print("This is a single WL 2D model in a multi-wl data, we repeat this model at each WL ")
+            self.model_disk = np.broadcast_to(model_disk,(n_wv_per_file,)+model_disk.shape)
+            model_disk_shape = np.shape(model_disk)  
+        else:
+            self.model_disk = model_disk
 
         # Check if we have a disk at multiple wavelengths
-        if np.size(model_disk_shape) > 2: #Then it's a spec mode disk
+        if np.size(model_disk_shape) > 2: #Then it's a multiWL model
+            n_model_wvs = model_disk_shape[0]
 
-            if n_disk_wvs != n_wv_per_file: 
-                #The model wvs does notmatch the number of dataset wvs
-                # we just use the first model in the cube and repeat
-
-                print("The number of wavelenths in your data don't match the number of wavelenths in your disk model.")
-                print("Using the first model in the model disk cube for all wavelenths")
-                
-                self.model_disk = np.zeros(n_disk_wvs, np.size(model_disk_shape)[1], np.size(model_disk_shape)[2])
-                for j,wvs in enumerate(range(n_disk_wvs)):
-                    self.model_disk[j] = model_disk[0,:,:]
-                model_disk = self.model_disk
-
-            for k in np.arange(nfiles):
-                for j,wvs in enumerate(range(n_disk_wvs)):
-                    model_copy = copy.deepcopy(model_disk[j,:,:])
-                    model_copy = rotate(model_copy, self.pas[k*n_wv_per_file+j], self.aligned_center, flipx = True)
-                    model_copy[np.where(np.isnan(model_copy))] = 0.
-                    self.model_disks[k*n_wv_per_file+j,:,:] = model_copy 
+            if n_model_wvs != n_wv_per_file: 
+                # Both models and data are multiWL, but not the same number of wavelengths.
+                raise ValueError("Number of wls in disk model ({0}) don't match number of wls in the data ({1})".format(n_model_wvs,n_wv_per_file))
+            
+            else: 
+                for k in np.arange(nfiles):
+                    for j,wvs in enumerate(range(n_model_wvs)):
+                        model_copy = copy.deepcopy(model_disk[j,:,:])
+                        model_copy = rotate(model_copy, self.pas[k*n_wv_per_file+j], self.aligned_center, flipx = True)
+                        model_copy[np.where(np.isnan(model_copy))] = 0.
+                        self.model_disks[k*n_wv_per_file+j,:,:] = model_copy 
         
-        else: # This is a 2D disk model (no wavelength here)
-
+        else: # This is a 2D disk model and a wl = 1 case
+            
             for i, pa in enumerate(self.pas):
                 model_copy = copy.deepcopy(model_disk)
                 model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
