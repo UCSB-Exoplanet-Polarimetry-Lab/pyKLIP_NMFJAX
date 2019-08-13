@@ -32,7 +32,7 @@ class DiskFM(NoFM):
         Args:
             inputs_shape:   shape of the inputs numpy array. Typically (N, x, y)
             numbasis:       1d numpy array consisting of the number of basis vectors to use
-            dataset:        an instance of Instrument.Data. FIXME: we need it to know the parameters to "prepare" 
+            dataset:        an instance of Instrument.Data. We need it to know the parameters to "prepare" 
                             the first inital model.
             model_disk      a model of the disk of size (wvs, x, y) or (x, y)
             basis_filename  filename to save and load the KL basis. Filenames can haves 2 recognizable extensions: .h5 or .pkl.
@@ -79,7 +79,6 @@ class DiskFM(NoFM):
         # Input dataset attributes
         # self.images = dataset.input
         self.pas = dataset.PAs
-        self.centers = dataset.centers
         self.wvs = dataset.wvs
         self.filenums = dataset.filenums
 
@@ -93,7 +92,8 @@ class DiskFM(NoFM):
         # Coords where align_and_scale places model center
         # default aligned_center if none:
         if aligned_center is None:
-            self.aligned_center = [np.mean(self.centers[:,0]), np.mean(self.centers[:,1])]
+            centers = dataset.centers
+            self.aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
             # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
         else:
             self.aligned_center = aligned_center
@@ -283,18 +283,18 @@ class DiskFM(NoFM):
 
         for key in self.dict_keys:
             # load KL from the dictionnaries
-            original_KL = self.klmodes_dict[key]
-            evals = self.evals_dict[key]
-            evecs = self.evecs_dict[key]
-            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
-            section_ind = self.section_ind_dict[key]
+            original_KL = klmodes_dict[key]
+            evals = evals_dict[key]
+            evecs = evecs_dict[key]
+            ref_psfs_indicies = ref_psfs_indicies_dict[key] 
+            section_ind = section_ind_dict[key]
 
             # load zone information from the KL
-            radstart = self.radstart_dict[key]
-            radend = self.radend_dict[key]
-            phistart = self.phistart_dict[key]
-            phiend = self.phiend_dict[key]
-            img_num = self.input_img_num_dict[key]
+            radstart = radstart_dict[key]
+            radend = radend_dict[key]
+            phistart = phistart_dict[key]
+            phiend = phiend_dict[key]
+            img_num = input_img_num_dict[key]
     
             sector_size = np.size(section_ind)
             
@@ -344,17 +344,26 @@ class DiskFM(NoFM):
         return fmout_return
           
         
-    def load_basis_files(self, basis_file_pattern, dataset):
+    def load_basis_files(self, basis_filename, dataset):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
+
+        Args:
+            basis_filename: filename to save and load the KL basis. Filenames can haves 2 recognizable extensions: .h5 or .pkl.
+                            We strongly recommand .h5 as pickle have problem of compatibility between python 2 and 3
+                            and sometimes between computer (e.g. KL modes not readable on another computer)     
+            dataset:        an instance of Instrument.Data, after fm.klip_dataset. Allow me to pass in the structure
+                            some important correction parameters such as IWA, OWA, aligned_center
+
+
         '''
-        _, file_extension = os.path.splitext(basis_file_pattern)
+        _, file_extension = os.path.splitext(basis_filename)
         
         # Load in file
         if file_extension == '.pkl':
-            f = open(basis_file_pattern, 'rb')
+            f = open(basis_filename, 'rb')
             if sys.version_info.major == 3:
-                self.klmodes_dict = pickle.load(f, encoding='latin1')
+                klmodes_dict = pickle.load(f, encoding='latin1')
                 self.evecs_dict = pickle.load(f, encoding='latin1')
                 self.evals_dict = pickle.load(f, encoding='latin1')
                 self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
@@ -367,7 +376,7 @@ class DiskFM(NoFM):
                 self.input_img_num_dict = pickle.load(f, encoding='latin1')
 
             else:
-                self.klmodes_dict = pickle.load(f)
+                klmodes_dict = pickle.load(f)
                 self.evecs_dict = pickle.load(f)
                 self.evals_dict = pickle.load(f)
                 self.ref_psfs_indicies_dict = pickle.load(f)
@@ -382,7 +391,7 @@ class DiskFM(NoFM):
         if file_extension == '.h5':
             Dict_for_saving_in_h5 = dd.io.load(self.basis_filename)
 
-            self.klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
+            klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
             self.evecs_dict = Dict_for_saving_in_h5['evecs_dict']
             self.evals_dict = Dict_for_saving_in_h5['evals_dict']
             self.ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
@@ -396,14 +405,13 @@ class DiskFM(NoFM):
             del Dict_for_saving_in_h5
         
         # read key name for each section and image
-        self.dict_keys = sorted(self.klmodes_dict.keys())
+        self.dict_keys = sorted(klmodes_dict.keys())
 
         # load parameters of the correction that fm.klip_dataset saved in dataset. 
         self.IWA = dataset.IWA        
         self.OWA = dataset.OWA
         self.PAs = dataset.PAs
         self.wvs = dataset.wvs
-        self.centers = dataset.centers
         
         # all output images have the same center, to which we shoudl aligned our models 
         self.aligned_center = dataset.output_centers[0] 
@@ -429,9 +437,9 @@ class DiskFM(NoFM):
         wvs_imgs = mp.Array(self.data_type, np.size(self.wvs))
         wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.data_type)
         wvs_imgs_np[:] = self.wvs
-        centers_imgs = mp.Array(self.data_type, np.size(self.centers))
-        centers_imgs_np = fm._arraytonumpy(centers_imgs, self.centers.shape,dtype=self.data_type)
-        centers_imgs_np[:] = self.centers
+        centers_imgs = mp.Array(self.data_type, np.size(dataset.centers))
+        centers_imgs_np = fm._arraytonumpy(centers_imgs, dataset.centers.shape,dtype=self.data_type)
+        centers_imgs_np[:] = dataset.centers
         
         # we will not save the fits fm_in parallelize, so we don't need those
         output_imgs = None
