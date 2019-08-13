@@ -55,7 +55,7 @@ class DiskFM(NoFM):
                             model and of the images can be set independently, which will create false but believable results.
                             In "Load Basis mode", this parameter is not read, we just use the aligned_center set for the images 
                                 in the previous fm.klip_dataset and save in basis_filename
-                            In "Save Basis mode", we define it and then check that it is the same one used for the images 
+                            In "Save Basis mode" and "Simple mode", we define it and then check that it is the same one used for the images 
                                 in fm.klip_dataset
                             
             numthreads      number of threads to use. If none, defaults to using all the cores of the cpu
@@ -88,12 +88,12 @@ class DiskFM(NoFM):
 
         # Input dataset attributes
         # self.images = dataset.input
-        self.PAs = dataset.PAs
-        self.wvs = dataset.wvs
-        self.filenums = dataset.filenums
+        self.PAs = dataset.PAs  #Get the PAs
+        self.wvs = dataset.wvs  #Get the WLs
+        self.n_files = int(np.nanmax(dataset.filenums)) +1  #Get the number of files
 
         # Outputs attributes
-        output_imgs_shape = dataset.input.shape + self.numbasis.shape
+        output_imgs_shape = self.inputs_shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
         
@@ -122,6 +122,8 @@ class DiskFM(NoFM):
             #FIXME I put the one that was by defaut in previous version for continuity. But this is not
             # the one set by default in fm.klip_dataset so I need to change it.
             # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
+
+        
 
         
         if self.save_basis: #We want to save the basis
@@ -321,18 +323,18 @@ class DiskFM(NoFM):
 
         for key in self.dict_keys:
             # load KL from the dictionnaries
-            original_KL = klmodes_dict[key]
-            evals = evals_dict[key]
-            evecs = evecs_dict[key]
-            ref_psfs_indicies = ref_psfs_indicies_dict[key] 
-            section_ind = section_ind_dict[key]
+            original_KL = self.klmodes_dict[key]
+            evals = self.evals_dict[key]
+            evecs = self.evecs_dict[key]
+            ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
+            section_ind = self.section_ind_dict[key]
 
             # load zone information from the KL
-            radstart = radstart_dict[key]
-            radend = radend_dict[key]
-            phistart = phistart_dict[key]
-            phiend = phiend_dict[key]
-            img_num = input_img_num_dict[key]
+            radstart = self.radstart_dict[key]
+            radend = self.radend_dict[key]
+            phistart = self.phistart_dict[key]
+            phiend = self.phiend_dict[key]
+            img_num = self.input_img_num_dict[key]
     
             sector_size = np.size(section_ind)
             
@@ -366,7 +368,7 @@ class DiskFM(NoFM):
         # We use the same mean so that it correspond to klip image - speccube.fits produced by.fm.klip_dataset
         if np.size(model_disk_shape) > 2: 
 
-            nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
+            nfiles = self.n_files #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]//nfiles) #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
@@ -397,65 +399,65 @@ class DiskFM(NoFM):
         if file_extension == '.pkl':
             f = open(self.basis_filename, 'rb')
             if sys.version_info.major == 3:
-                klmodes_dict = pickle.load(f, encoding='latin1')
-                evecs_dict = pickle.load(f, encoding='latin1')
-                evals_dict = pickle.load(f, encoding='latin1')
-                ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
-                section_ind_dict = pickle.load(f, encoding='latin1')
+                self.klmodes_dict = pickle.load(f, encoding='latin1')
+                self.evecs_dict = pickle.load(f, encoding='latin1')
+                self.evals_dict = pickle.load(f, encoding='latin1')
+                self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
+                self.section_ind_dict = pickle.load(f, encoding='latin1')
 
-                radstart_dict = pickle.load(f, encoding='latin1')
-                radend_dict = pickle.load(f, encoding='latin1')
-                phistart_dict = pickle.load(f, encoding='latin1')
-                phiend_dict = pickle.load(f, encoding='latin1')
-                input_img_num_dict = pickle.load(f, encoding='latin1')
+                self.radstart_dict = pickle.load(f, encoding='latin1')
+                self.radend_dict = pickle.load(f, encoding='latin1')
+                self.phistart_dict = pickle.load(f, encoding='latin1')
+                self.phiend_dict = pickle.load(f, encoding='latin1')
+                self.input_img_num_dict = pickle.load(f, encoding='latin1')
 
-                klparam_dict = pickle.load(f, encoding='latin1')
+                self.klparam_dict = pickle.load(f, encoding='latin1')
 
 
             else:
-                klmodes_dict = pickle.load(f)
-                evecs_dict = pickle.load(f)
-                evals_dict = pickle.load(f)
-                ref_psfs_indicies_dict = pickle.load(f)
-                section_ind_dict = pickle.load(f)
+                self.klmodes_dict = pickle.load(f)
+                self.evecs_dict = pickle.load(f)
+                self.evals_dict = pickle.load(f)
+                self.ref_psfs_indicies_dict = pickle.load(f)
+                self.section_ind_dict = pickle.load(f)
 
-                radstart_dict = pickle.load(f)
-                radend_dict = pickle.load(f)
-                phistart_dict = pickle.load(f)
-                phiend_dict = pickle.load(f)
-                input_img_num_dict = pickle.load(f)
+                self.radstart_dict = pickle.load(f)
+                self.radend_dict = pickle.load(f)
+                self.phistart_dict = pickle.load(f)
+                self.phiend_dict = pickle.load(f)
+                self.input_img_num_dict = pickle.load(f)
 
-                klparam_dict = pickle.load(f)
+                self.klparam_dict = pickle.load(f)
 
         
         if file_extension == '.h5':
             Dict_for_saving_in_h5 = ddh5.load(self.basis_filename)
 
-            klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
-            evecs_dict = Dict_for_saving_in_h5['evecs_dict']
-            evals_dict = Dict_for_saving_in_h5['evals_dict']
-            ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
-            section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
+            self.klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
+            self.evecs_dict = Dict_for_saving_in_h5['evecs_dict']
+            self.evals_dict = Dict_for_saving_in_h5['evals_dict']
+            self.ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
+            self.section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
 
-            radstart_dict = Dict_for_saving_in_h5['radstart_dict']
-            radend_dict = Dict_for_saving_in_h5['radend_dict']
-            phistart_dict = Dict_for_saving_in_h5['phistart_dict']
-            phiend_dict = Dict_for_saving_in_h5['phiend_dict']
-            input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
+            self.radstart_dict = Dict_for_saving_in_h5['radstart_dict']
+            self.radend_dict = Dict_for_saving_in_h5['radend_dict']
+            self.phistart_dict = Dict_for_saving_in_h5['phistart_dict']
+            self.phiend_dict = Dict_for_saving_in_h5['phiend_dict']
+            self.input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
             
-            klparam_dict = Dict_for_saving_in_h5['klparam_dict']
+            self.klparam_dict = Dict_for_saving_in_h5['klparam_dict']
 
             del Dict_for_saving_in_h5
         
         # read key name for each section and image
-        self.dict_keys = sorted(klmodes_dict.keys())
+        self.dict_keys = sorted(self.klmodes_dict.keys())
 
         # load parameters of the correction that fm.klip_dataset produced when we saved the FM basis. 
-        self.IWA = klparam_dict['IWA']         
-        self.OWA = klparam_dict['OWA'] 
+        self.IWA = self.klparam_dict['IWA']         
+        self.OWA = self.klparam_dict['OWA'] 
 
         # all output images have the same center, to which we shoudl aligned our models 
-        self.aligned_center = klparam_dict['aligned_center'] 
+        self.aligned_center = self.klparam_dict['aligned_center'] 
         # dataset.output_centers[0] 
         
         numthreads = self.numthreads
@@ -610,6 +612,8 @@ class DiskFM(NoFM):
             pickle.dump(dict(phistart_dict), f, protocol=2)
             pickle.dump(dict(phiend_dict), f, protocol=2)
             pickle.dump(dict(input_img_num_dict), f, protocol=2)
+
+            pickle.dump(dict(klparam_dict), f, protocol=2)
             
         elif file_extension == '.h5':
             #make a single dictionnary and save in h5
@@ -676,7 +680,7 @@ class DiskFM(NoFM):
         self.model_disks = np.zeros(self.inputs_shape)
 
         # Extract the # of WL per files
-        nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
+        nfiles = self.n_files #Get the number of files  
         n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
 
         model_disk_shape = np.shape(model_disk) 
