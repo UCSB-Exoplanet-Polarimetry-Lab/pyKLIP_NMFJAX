@@ -324,10 +324,12 @@ class DiskFM(NoFM):
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
-        #Check if we have a disk model at multiple wavelengths
+        #Check if we have a disk model at multiple wavelengths to
         model_disk_shape = np.shape(self.model_disk)        
-        #If true then it's a non collapsed spec mode disk and save indivudal specmode cubes for each KL mode
-        if np.size(model_disk_shape) > 2: ## #FIXME
+        
+        # If true then it's a non collapsed spec mode disk and we need to reorganise fmout_return.
+        # We use the same mean so that it correspond to klip image - speccube.fits produced by .fm.klip_dataset
+        if np.size(model_disk_shape) > 2: 
 
             nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
             n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
