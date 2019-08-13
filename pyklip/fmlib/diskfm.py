@@ -72,66 +72,50 @@ class DiskFM(NoFM):
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
         # Attributes of input/output
-        self.inputs_shape = dataset.input.shape
-        # self.inputs_shape = inputs_shape
-        
-        # print(dataset.klipparams["numbasis"])
-        # print(numbasis)
+        self.inputs_shape = inputs_shape
         self.numbasis = numbasis
-
-        self.numims = dataset.input.shape[0]
-        self.mode = mode
+        self.numims = inputs_shape[0]
 
         # Input dataset attributes
-        # self.dataset = dataset
-        self.IWA = dataset.IWA
-        self.images = dataset.input
+        # self.images = dataset.input
         self.pas = dataset.PAs
         self.centers = dataset.centers
         self.wvs = dataset.wvs
         self.filenums = dataset.filenums
 
         # Outputs attributes
-        output_imgs_shape = self.images.shape + self.numbasis.shape
+        output_imgs_shape = dataset.input.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
         self.np_data_type = ctypes.c_float
 
-        # Coords where align_and_scale places model center (default is inputs center).
-        if dataset.output_centers is not None:
-            self.aligned_center = dataset.output_centers[0]
+        # Coords where align_and_scale places model center
+        # default aligned_center if none:
+        if aligned_center is None:
+            self.aligned_center = [np.mean(self.centers[:,0]), np.mean(self.centers[:,1])]
+            # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
         else:
-            self.aligned_center = [int(self.inputs_shape[2]//2), int(self.inputs_shape[1]//2)]
+            self.aligned_center = aligned_center
+
+        self.basis_filename = basis_filename
+
+        self.save_basis = save_basis
+        self.load_from_basis = load_from_basis
+        
+        if self.load_from_basis:
+            # Its useless to save and load at the same time.
+            self.save_basis = False
+            save_basis = False
 
         # Make disk reference PSFS
         self.update_disk(model_disk)
-
-        self.save_basis = save_basis
-        self.annuli = annuli
-        self.subsections = subsections
-
-        self.basis_filename = basis_filename
-        self.load_from_basis = load_from_basis
-
-        x,y = np.meshgrid(np.arange(self.inputs_shape[2] * 1.0),np.arange(self.inputs_shape[1]*1.0))
-        nanpix = np.where(np.isnan(dataset.input[0]))
         
-        self.OWA = dataset.OWA
-        
-        if self.OWA is None:
-            if np.size(nanpix) == 0:
-                self.OWA = np.sqrt(np.max((x - self.centers[0][0]) ** 2 + (y - self.centers[0][1]) ** 2))
-            else:
-                # grab the NaN from the 1st percentile (this way we drop outliers)
-                self.OWA = np.sqrt(np.percentile((x[nanpix] - self.centers[0][0]) ** 2 + (y[nanpix] - self.centers[0][1]) ** 2, 1))
-
-
         if numthreads == None:
             self.numthreads = mp.cpu_count()
         else:
             self.numthreads = numthreads
 
-        if self.save_basis == True:
+        if self.save_basis:
             
             # Set up dictionaries for saving basis
             manager = mp.Manager()
@@ -151,12 +135,12 @@ class DiskFM(NoFM):
             input_img_num_dict = manager.dict()
 
         if load_from_basis is True:
-            self.load_basis_files(basis_filename)
+            self.load_basis_files(basis_filename, dataset)
 
 
     def alloc_fmout(self, output_img_shape):
         ''' 
-       Allocates shared memory for output image 
+        Allocates shared memory for output image 
         '''
         fmout_size = int(np.prod(output_img_shape))
         fmout_shape = output_img_shape
@@ -183,6 +167,8 @@ class DiskFM(NoFM):
 
         return perturbmag, perturbmag_shape
 
+
+  
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, 
                             ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, 
@@ -272,12 +258,13 @@ class DiskFM(NoFM):
             phistart_dict[namkey] = phistart
             phiend_dict[namkey] = phiend
             input_img_num_dict[namkey] = input_img_num
-       
+
+
             
     def fm_parallelized(self):
         '''
         Functions like klip_parallelized, but doesn't create new KL modes. It use previously measured
-        KL modes and zone and return the forward modelling. Do not save fits.
+        KL modes and section positions and return the forward modelling. Do not save fits.
 
         Args:
         None
@@ -307,7 +294,7 @@ class DiskFM(NoFM):
             phistart = self.phistart_dict[key]
             phiend = self.phiend_dict[key]
             img_num = self.input_img_num_dict[key]
- 
+    
             sector_size = np.size(section_ind)
             
             wvs = self.wvs
@@ -315,18 +302,18 @@ class DiskFM(NoFM):
             wl_here = wvs[img_num]
             wv_index = (np.where(unique_wvs == wl_here))[0][0]
             aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
-            original_imgs_shape = self.images.shape
+            original_imgs_shape = self.inputs_shape
         
             if parallel:
                 self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
-                                   input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], 
-                                   input_img_num=img_num, ref_psfs_indicies=ref_psfs_indicies, 
-                                   section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
-                                   pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], 
-                                   radstart=radstart, radend=radend, phistart=phistart, phiend=phiend, 
-                                   padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
-                                   parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
-                                   fmout=fmout_np,perturbmag = perturbmag_np, klipped=None, covar_files=None)
+                                    input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], 
+                                    input_img_num=img_num, ref_psfs_indicies=ref_psfs_indicies, 
+                                    section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
+                                    pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], 
+                                    radstart=radstart, radend=radend, phistart=phistart, phiend=phiend, 
+                                    padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
+                                    parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
+                                    fmout=fmout_np,perturbmag = perturbmag_np, klipped=None, covar_files=None)
 
             else:
                 pass
@@ -354,9 +341,9 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis = 1) 
 
         return fmout_return
-  
+          
         
-    def load_basis_files(self, basis_file_pattern):
+    def load_basis_files(self, basis_file_pattern, dataset):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
         '''
@@ -406,22 +393,29 @@ class DiskFM(NoFM):
             self.phiend_dict = Dict_for_saving_in_h5['phiend_dict']
             self.input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
             del Dict_for_saving_in_h5
-
-        # Set extents for each section
+        
+        # read key name for each section and image
         self.dict_keys = sorted(self.klmodes_dict.keys())
+
+        # load parameters of the correction that fm.klip_dataset saved in dataset. 
+        self.IWA = dataset.IWA        
+        self.OWA = dataset.OWA
+        
+        # all output images have the same center, to which we shoudl aligned our models 
+        self.aligned_center = dataset.output_centers[0] 
         
         # Make flattened images for running paralellized
-        original_imgs = mp.Array(self.data_type, np.size(self.images))
-        original_imgs_shape = self.images.shape
+        original_imgs = mp.Array(self.data_type, np.size(dataset.input))
+        original_imgs_shape = dataset.input.shape
 
         original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
-        original_imgs_np[:] = self.images
+        original_imgs_np[:] = dataset.input
         numthreads = self.numthreads
 
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
-        recentered_imgs = mp.Array(self.data_type, np.size(self.images)*np.size(unique_wvs))
-        recentered_imgs_shape = (np.size(unique_wvs),) + self.images.shape
+        recentered_imgs = mp.Array(self.data_type, np.size(dataset.input)*np.size(unique_wvs))
+        recentered_imgs_shape = (np.size(unique_wvs),) + dataset.input.shape
 
         # remake the PA, wv, and center arrays as shared arrays                  
         pa_imgs = mp.Array(self.data_type, np.size(self.pas))
@@ -435,13 +429,14 @@ class DiskFM(NoFM):
         centers_imgs_np[:] = self.centers
         output_imgs = None
         output_imgs_numstacked = None
-        output_imgs_shape = self.images.shape + self.numbasis.shape
+        output_imgs_shape = dataset.input.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
         
         # Create Custom Shared Memory array fmout to save output of forward modelling
         fmout_data, fmout_shape = self.alloc_fmout(output_imgs_shape)
         # Create shared memory to keep track of validity of perturbation
+        # We probably don't use it for disk, but well it's there
         perturbmag, perturbmag_shape = self.alloc_perturbmag(output_imgs_shape,  self.numbasis)
 
 
@@ -622,6 +617,7 @@ class DiskFM(NoFM):
         dims = fmout.shape
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
+    
 
 
     def update_disk(self, model_disk):
@@ -679,10 +675,10 @@ class DiskFM(NoFM):
         
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
-
+    
     def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, 
-                                    angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, 
-                                    flipx=True, new_center=None):
+                              angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, 
+                              flipx=True, new_center=None):
         """
         Rotate and save sector in output image at desired ranges
         This is almost copy past from fm.py
@@ -799,6 +795,8 @@ class DiskFM(NoFM):
             output_img_numstacked.shape = [self.outputs_shape[1], self.outputs_shape[2]]
             output_img_numstacked[rot_sector_validpix_2d] += 1
             output_img_numstacked.shape = [self.outputs_shape[1] *  self.outputs_shape[2]]
+    
+    
 
 
 
