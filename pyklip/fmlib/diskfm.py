@@ -87,7 +87,8 @@ class DiskFM(NoFM):
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
-        self.np_data_type = ctypes.c_float
+        
+        self.data_type = ctypes.c_float
 
         # Coords where align_and_scale places model center
         # default aligned_center if none:
@@ -275,7 +276,7 @@ class DiskFM(NoFM):
         '''
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
-        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.data_type)
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape,  self.numbasis)
         perturbmag_np = fm._arraytonumpy(perturbmag, perturbmag_shape,dtype=self.data_type)
 
@@ -320,7 +321,7 @@ class DiskFM(NoFM):
         
         
         # put any finishing touches on the FM Output
-        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.np_data_type)
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
         #Check if we have a disk model at multiple wavelengths
@@ -400,18 +401,22 @@ class DiskFM(NoFM):
         # load parameters of the correction that fm.klip_dataset saved in dataset. 
         self.IWA = dataset.IWA        
         self.OWA = dataset.OWA
+        self.PAs = dataset.PAs
+        self.wvs = dataset.wvs
+        self.centers = dataset.centers
         
         # all output images have the same center, to which we shoudl aligned our models 
         self.aligned_center = dataset.output_centers[0] 
         
-        # Make flattened images for running paralellized
-        original_imgs = mp.Array(self.data_type, np.size(dataset.input))
-        original_imgs_shape = dataset.input.shape
-
-        original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.np_data_type)
-        original_imgs_np[:] = dataset.input
         numthreads = self.numthreads
 
+        # implement the thread pool
+        # # make a bunch of shared memory arrays to transfer data between threads
+        # # make the array for the original images and initalize it
+        original_imgs = mp.Array(self.data_type, np.size(dataset.input))
+        original_imgs_shape = dataset.input.shape
+        original_imgs_np = fm._arraytonumpy(original_imgs, original_imgs_shape,dtype=self.data_type)
+        original_imgs_np[:] = dataset.input
         # make array for recentered/rescaled image for each wavelength                               
         unique_wvs = np.unique(self.wvs)
         recentered_imgs = mp.Array(self.data_type, np.size(dataset.input)*np.size(unique_wvs))
@@ -419,16 +424,19 @@ class DiskFM(NoFM):
 
         # remake the PA, wv, and center arrays as shared arrays                  
         pa_imgs = mp.Array(self.data_type, np.size(self.pas))
-        pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.np_data_type)
+        pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.data_type)
         pa_imgs_np[:] = self.pas
         wvs_imgs = mp.Array(self.data_type, np.size(self.wvs))
-        wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.np_data_type)
+        wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.data_type)
         wvs_imgs_np[:] = self.wvs
         centers_imgs = mp.Array(self.data_type, np.size(self.centers))
-        centers_imgs_np = fm._arraytonumpy(centers_imgs, self.centers.shape,dtype=self.np_data_type)
+        centers_imgs_np = fm._arraytonumpy(centers_imgs, self.centers.shape,dtype=self.data_type)
         centers_imgs_np[:] = self.centers
+        
+        # we will not save the fits fm_in parallelize, so we don't need those
         output_imgs = None
         output_imgs_numstacked = None
+
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
@@ -457,7 +465,7 @@ class DiskFM(NoFM):
         aligned_outputs = []
         for threadnum in range(self.numthreads):
             aligned_outputs += [tpool.apply_async(fm._align_and_scale_subset, 
-                                args=(threadnum, self.aligned_center,self.numthreads,self.np_data_type))]         
+                                args=(threadnum, self.aligned_center,self.numthreads,self.data_type))]         
             #save it to shared memory                                           
         for aligned_output in aligned_outputs:
             aligned_output.wait()
