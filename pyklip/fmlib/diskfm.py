@@ -4,8 +4,8 @@ import numpy as np
 import os
 import copy
 import pickle
-import h5py
-import deepdish as dd
+
+import deepdish.io as h5
 
 import glob
 import scipy.ndimage as ndimage
@@ -19,6 +19,7 @@ from pyklip.klip import rotate
 parallel = True 
 klmodes_dict = evecs_dict = evals_dict = ref_psfs_indicies_dict = section_ind_dict = None
 radstart_dict =  radend_dict =  phistart_dict =  phiend_dict = input_img_num_dict = None
+outputs_shape = None
 
 class DiskFM(NoFM):
     def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.h5', 
@@ -84,6 +85,7 @@ class DiskFM(NoFM):
 
         # Outputs attributes
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
+
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
         
@@ -93,7 +95,10 @@ class DiskFM(NoFM):
         # default aligned_center if none:
         if aligned_center is None:
             centers = dataset.centers
-            self.aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
+            self.aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+            #self.aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
+            #FIXME I put the one that was by defaut in previous version for continuity. But this is not
+            # the one set by default in fm.klip_dataset so I need to change it.
             # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
         else:
             self.aligned_center = aligned_center
@@ -140,9 +145,20 @@ class DiskFM(NoFM):
 
 
     def alloc_fmout(self, output_img_shape):
-        ''' 
-        Allocates shared memory for output image 
-        '''
+        """Allocates shared memory for the output of the shared memory
+
+
+        Args:
+            output_img_shape: shape of output image (usually N,y,x,b)
+
+        Returns:
+            fmout: mp.array to store FM data in
+            fmout_shape: shape of FM data array
+
+        """
+        global outputs_shape
+        outputs_shape = self.outputs_shape
+        
         fmout_size = int(np.prod(output_img_shape))
         fmout_shape = output_img_shape
         fmout = mp.Array(self.data_type, fmout_size)
@@ -167,8 +183,6 @@ class DiskFM(NoFM):
         perturbmag = mp.Array(self.data_type, int(np.prod(perturbmag_shape)))
 
         return perturbmag, perturbmag_shape
-
-
   
 
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, 
@@ -226,14 +240,14 @@ class DiskFM(NoFM):
         postklip_psf, oversubtraction, selfsubtraction = fm.calculate_fm(delta_KL, klmodes, 
                                                                     numbasis, sci, model_sci, inputflux = None)
         
-        # write forward modelled PSF to fmout (as output)
+        # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
 
         # FIXME THere is maybe a possibility to avoid redefining _save_rotated_section in diskfm.py
         # And use fm._save_rotated_section here.
         # Right now, it fails because of a global variable in fm (outputs_shape)
         for thisnumbasisindex in range(np.size(numbasis)):
-            self._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
+            fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                              fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
                              radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx) 
         
@@ -259,7 +273,6 @@ class DiskFM(NoFM):
             phistart_dict[namkey] = phistart
             phiend_dict[namkey] = phiend
             input_img_num_dict[namkey] = input_img_num
-
 
             
     def fm_parallelized(self):
@@ -328,7 +341,7 @@ class DiskFM(NoFM):
         model_disk_shape = np.shape(self.model_disk)        
         
         # If true then it's a non collapsed spec mode disk and we need to reorganise fmout_return.
-        # We use the same mean so that it correspond to klip image - speccube.fits produced by .fm.klip_dataset
+        # We use the same mean so that it correspond to klip image - speccube.fits produced by.fm.klip_dataset
         if np.size(model_disk_shape) > 2: 
 
             nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
@@ -391,7 +404,7 @@ class DiskFM(NoFM):
                 self.input_img_num_dict = pickle.load(f)
         
         if file_extension == '.h5':
-            Dict_for_saving_in_h5 = dd.io.load(self.basis_filename)
+            Dict_for_saving_in_h5 = h5.load(self.basis_filename)
 
             klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
             self.evecs_dict = Dict_for_saving_in_h5['evecs_dict']
@@ -452,24 +465,25 @@ class DiskFM(NoFM):
         self.outputs_shape = output_imgs_shape
         
         # Create Custom Shared Memory array fmout to save output of forward modelling
-        fmout_data, fmout_shape = self.alloc_fmout(output_imgs_shape)
+        fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
         # Create shared memory to keep track of validity of perturbation
         # We probably don't use it for disk, but well it's there
-        perturbmag, perturbmag_shape = self.alloc_perturbmag(output_imgs_shape,  self.numbasis)
+        perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape,  self.numbasis)
 
 
         # align and scale the images for each image. Use map to do this asynchronously]
+        
+        # For some reason I need to run this code at least once in non-parallel mode to initialize the 
+        # global variable outputs_shape, because if I don't I cannot use fm._save_rotated_section
+        # This is ok, this is a short stuff and we do it only once.
+        fm._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                           self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                           fmout_data, fmout_shape,perturbmag,perturbmag_shape)
+        
         tpool = mp.Pool(processes=numthreads, initializer=fm._tpool_init,
                         initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                              output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                              fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
-
-        # # SINGLE THREAD DEBUG PURPOSES ONLY
-        if not parallel:
-            fm._tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                    output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                    fmout_data, fmout_shape,perturbmag,perturbmag_shape)
-
+                                self.output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
+                                fmout_data, fmout_shape,perturbmag,perturbmag_shape), maxtasksperchild=50)
     
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
@@ -561,7 +575,6 @@ class DiskFM(NoFM):
                                  filetype="PSF Subtracted Spectral Cube")
 
 
-
     def save_kl_basis(self):
 
         """
@@ -603,12 +616,11 @@ class DiskFM(NoFM):
                                         'input_img_num_dict':input_img_num_dict
                                     }
 
-            dd.io.save(self.basis_filename, Dict_for_saving_in_h5)
+            h5.save(self.basis_filename, Dict_for_saving_in_h5)
             del Dict_for_saving_in_h5
         else:
             raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
                             
-    
             
     def cleanup_fmout(self, fmout):
 
@@ -636,7 +648,6 @@ class DiskFM(NoFM):
         fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
     
-
 
     def update_disk(self, model_disk):
         '''
@@ -694,128 +705,6 @@ class DiskFM(NoFM):
         self.model_disks = np.reshape(self.model_disks, (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2])) 
 
     
-    def _save_rotated_section(self, input_shape, sector, sector_ind, output_img, output_img_numstacked, 
-                              angle, radstart, radend, phistart, phiend, padding,IOWA, img_center, 
-                              flipx=True, new_center=None):
-        """
-        Rotate and save sector in output image at desired ranges
-        This is almost copy past from fm.py
-        Need another version of this for load_image because global variables made in fm.py won't work in here. 
-        FIXME: There is probably another way because fmpsf.py is not redifining this function
-
-
-        Args:
-            input_shape: shape of input_image
-            sector: data in the sector to save to output_img
-            sector_ind: index into input img (corresponding to input_shape) for the original sector
-            output_img: the array to save the data to
-            output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
-                                   skipping bookkeeping
-            angle: angle that the sector needs to rotate (I forget the convention right now)
-
-            The next 6 parameters define the sector geometry in input image coordinates
-            radstart: radius from img_center of start of sector
-            radend: radius from img_center of end of sector
-            phistart: azimuthal start of sector
-            phiend: azimuthal end of sector
-            padding: amount of padding around each sector
-            IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
-                    It defines the separation interva in which klip will be run.
-            img_center: center of image in input image coordinate
-            flipx: if true, flip the x coordinate to switch coordinate handiness
-            new_center: if not none, center of output_img. If none, center stays the same
-        """
-        # convert angle to radians
-        angle_rad = np.radians(angle)
-
-        #wrap phi
-        phistart %= 2 * np.pi
-        phiend %= 2 * np.pi
-
-        #incorporate padding
-        IWA,OWA = IOWA
-        radstart_padded = np.max([radstart-padding,IWA])
-        if OWA is not None:
-            radend_padded = np.min([radend+padding,OWA])
-        else:
-            radend_padded = radend+padding
-        phistart_padded = (phistart - padding/np.mean([radstart, radend])) % (2 * np.pi)
-        phiend_padded = (phiend + padding/np.mean([radstart, radend])) % (2 * np.pi)
-
-        # create the coordinate system of the image to manipulate for the transform
-        dims = input_shape
-        x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32), np.arange(dims[0], dtype=np.float32))
-
-        # if necessary, move coordinates to new center
-        if new_center is not None:
-            dx = new_center[0] - img_center[0]
-            dy = new_center[1] - img_center[1]
-            x -= dx
-            y -= dy
-
-        # flip x if needed to get East left of North
-        if flipx is True:
-            x = img_center[0] - (x - img_center[0])
-
-        # do rotation. CW rotation formula to get a CCW of the image
-        xp = (x-img_center[0])*np.cos(angle_rad) + (y-img_center[1])*np.sin(angle_rad) + img_center[0]
-        yp = -(x-img_center[0])*np.sin(angle_rad) + (y-img_center[1])*np.cos(angle_rad) + img_center[1]
-
-        if new_center is None:
-            new_center = img_center
-
-        rot_sector_pix = fm._get_section_indicies(input_shape, new_center, radstart, radend, phistart, phiend,
-                                            padding, 0, IOWA, flatten=False, flipx=flipx)
-
-
-        # do NaN detection by defining any pixel in the new coordiante system (xp, yp) as a nan
-        # if any one of the neighboring pixels in the original image is a nan
-        # e.g. (xp, yp) = (120.1, 200.1) is nan if either (120, 200), (121, 200), (120, 201), (121, 201)
-        # is a nan
-        dims = input_shape
-        blank_input = np.zeros(dims[1] * dims[0])
-        blank_input[sector_ind] = sector
-        blank_input.shape = [dims[0], dims[1]]
-
-        xp_floor = np.clip(np.floor(xp).astype(int), 0, xp.shape[1]-1)[rot_sector_pix]
-        xp_ceil = np.clip(np.ceil(xp).astype(int), 0, xp.shape[1]-1)[rot_sector_pix]
-        yp_floor = np.clip(np.floor(yp).astype(int), 0, yp.shape[0]-1)[rot_sector_pix]
-        yp_ceil = np.clip(np.ceil(yp).astype(int), 0, yp.shape[0]-1)[rot_sector_pix]
-        rotnans = np.where(np.isnan(blank_input[yp_floor.ravel(), xp_floor.ravel()]) | 
-                        np.isnan(blank_input[yp_floor.ravel(), xp_ceil.ravel()]) |
-                        np.isnan(blank_input[yp_ceil.ravel(), xp_floor.ravel()]) |
-                        np.isnan(blank_input[yp_ceil.ravel(), xp_ceil.ravel()]))
-
-        # resample image based on new coordinates, set nan values as median
-        nanpix = np.where(np.isnan(blank_input))
-        medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
-        input_copy = np.copy(blank_input)
-        input_copy[nanpix] = medval
-        rot_sector = ndimage.map_coordinates(input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
-
-        # mask nans
-        rot_sector[rotnans] = np.nan
-        sector_validpix = np.where(~np.isnan(rot_sector))
-
-        # need to define only where the non nan pixels are, so we can store those in the output image
-        blank_output = np.zeros([dims[0], dims[1]]) * np.nan
-        blank_output[rot_sector_pix] = rot_sector
-        blank_output.shape = (dims[0], dims[1])
-        rot_sector_validpix_2d = np.where(~np.isnan(blank_output))
-
-        # save output sector. We need to reshape the array into 2d arrays to save it
-        output_img.shape = [self.outputs_shape[1], self.outputs_shape[2]]
-        output_img[rot_sector_validpix_2d] = np.nansum([output_img[rot_sector_pix][sector_validpix], rot_sector[sector_validpix]], axis=0)
-        output_img.shape = [self.outputs_shape[1] * self.outputs_shape[2]]
-
-        # Increment the numstack counter if it is not None
-        if output_img_numstacked is not None:
-            output_img_numstacked.shape = [self.outputs_shape[1], self.outputs_shape[2]]
-            output_img_numstacked[rot_sector_validpix_2d] += 1
-            output_img_numstacked.shape = [self.outputs_shape[1] *  self.outputs_shape[2]]
-    
-    
-
 
 
     # def runFM_and_saveBasis(self, dataset, mode="ADI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
