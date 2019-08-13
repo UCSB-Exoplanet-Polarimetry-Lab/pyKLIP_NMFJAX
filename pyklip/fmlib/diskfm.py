@@ -4,7 +4,7 @@ import numpy as np
 import copy
 import pickle
 
-import deepdish.io as h5
+import deepdish.io as ddh5
 
 import glob
 import scipy.ndimage as ndimage
@@ -18,16 +18,24 @@ from pyklip.klip import rotate
 parallel = True 
 
 klmodes_dict = evecs_dict = evals_dict = ref_psfs_indicies_dict = section_ind_dict = None
-radstart_dict =  radend_dict =  phistart_dict =  phiend_dict = input_img_num_dict = None
+radstart_dict = radend_dict =  phistart_dict =  phiend_dict = input_img_num_dict = None
+klparam_dict = None
 
 class DiskFM(NoFM):
+    """
+    Forward modelling class for disks through KLIP. Returns the forward modelled disk
+    """
+
     def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.h5', 
                         load_from_basis = False, save_basis = False, aligned_center=None, numthreads = None, 
                         annuli = None, subsections = None, mode = None):
         '''
-        For first time, instantiate DiskFM with no save_basis and nominal model disk.
-
-        Currently only supports mode = ADI
+        Defining a model disk at which we will apply the Forward modelling. There are 3 ways:
+            - "Save Basis mode" (save_basis = true), we are preparing to save the FM basis
+            - "Load Basis mode" (load_from_basis = true), most of the parameters are derived from the previous 
+                fm.klip_dataset which measured FM basis. If load_from_basis is True, save_basis is 
+                automatically set to False, it is useless to load and save the matrix at the same time.
+            - "Simple FM mode" (save_basis = load_from_basis = False). We juste use it for a unique disk FM.
 
         Args:
             inputs_shape:   shape of the inputs numpy array. Typically (N, x, y)
@@ -45,16 +53,18 @@ class DiskFM(NoFM):
             aligned_center  array of 2 elements [x,y] that all the model will be centered on for image
                             registration. FIXME: This is the most problematic thing currently, the aligned_center of the
                             model and of the images can be set independently, which will create false but believable results.
-                            Could be fixed by creating a self.runFM_and_saveBasis function 
-                            that would take the same parameters as a fm.klip_dataset that would
-                            1/update_model with dataset param, 2/fm.klip_dataset and save all file and correction parameters
+                            In "Load Basis mode", this parameter is not read, we just use the aligned_center set for the images 
+                                in the previous fm.klip_dataset and save in basis_filename
+                            In "Save Basis mode", we define it and then check that it is the same one used for the images 
+                                in fm.klip_dataset
+                            
             numthreads      number of threads to use. If none, defaults to using all the cores of the cpu
 
-            There are also 2 deprecated parameters that are ignored and replaced by the klip param in fm.klip_dataset:
+            There are also 3 deprecated parameters that are ignored and replaced by the klip param in fm.klip_dataset:
             annuli
             subsections
             mode
-            I let them here to avoid breaking the current users' code.
+            I let them here for now to avoid breaking the current users' code.
 
         '''
         
@@ -78,7 +88,7 @@ class DiskFM(NoFM):
 
         # Input dataset attributes
         # self.images = dataset.input
-        self.pas = dataset.PAs
+        self.PAs = dataset.PAs
         self.wvs = dataset.wvs
         self.filenums = dataset.filenums
 
@@ -89,18 +99,6 @@ class DiskFM(NoFM):
         
         self.data_type = ctypes.c_float
 
-        # Coords where align_and_scale places model center
-        # default aligned_center if none:
-        if aligned_center is None:
-            centers = dataset.centers
-            self.aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
-            #self.aligned_center = [np.mean(centers[:,0]), np.mean(centers[:,1])]
-            #FIXME I put the one that was by defaut in previous version for continuity. But this is not
-            # the one set by default in fm.klip_dataset so I need to change it.
-            # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
-        else:
-            self.aligned_center = aligned_center
-
         self.basis_filename = basis_filename
 
         self.save_basis = save_basis
@@ -110,21 +108,31 @@ class DiskFM(NoFM):
             # Its useless to save and load at the same time.
             self.save_basis = False
             save_basis = False
-
-        # Make disk reference PSFS
-        self.update_disk(model_disk)
         
         if numthreads == None:
             self.numthreads = mp.cpu_count()
         else:
             self.numthreads = numthreads
+        
+        # Coords where align_and_scale places model center
+        # default aligned_center if none:
+        if aligned_center is None:
+            aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
+            #aligned_center = [np.mean(dataset.centers[:,0]), np.mean(dataset.centers[:,1])]
+            #FIXME I put the one that was by defaut in previous version for continuity. But this is not
+            # the one set by default in fm.klip_dataset so I need to change it.
+            # This is not ideal, but this is how fm.klip_dataset is set by defaut so we should have the same defaut
 
-        if self.save_basis:
+        
+        if self.save_basis: #We want to save the basis
             
+            self.aligned_center = aligned_center
+
             # Set up dictionaries for saving basis
             manager = mp.Manager()
             global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
             global radstart_dict, radend_dict, phistart_dict, phiend_dict, input_img_num_dict
+            global klparam_dict
 
             klmodes_dict = manager.dict()
             evecs_dict = manager.dict()
@@ -137,10 +145,21 @@ class DiskFM(NoFM):
             phistart_dict = manager.dict()
             phiend_dict = manager.dict()
             input_img_num_dict = manager.dict()
+            
+            klparam_dict = manager.dict()
 
-        if load_from_basis is True:
+        elif load_from_basis is True: #We want to load the FM basis
             self.load_basis_files(dataset)
+            # We load the FM basis files, before preparing the model to be sure the parameters 
+            # (IWA, OWA, aligned_center) is identical to the one used used on the data when measuring the KL
+            
+        else: #We just want a single disk FM, no basis
 
+            self.aligned_center = aligned_center
+
+            
+        # Prepare the first disk for FM
+        self.update_disk(model_disk)
 
     def alloc_fmout(self, output_img_shape):
         """Allocates shared memory for the output of the shared memory
@@ -218,6 +237,10 @@ class DiskFM(NoFM):
             klipped: PSF subtracted image. Shape of ( size(section), b)
             kwargs: any other variables that we don't use but are part of the input
         """
+        
+        if self.aligned_center != ref_center:
+            raise ValueError("The aligned_center for the model {0} and for the data {1} is different. Change and rerun".format(self.aligned_center, ref_center))
+        
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
@@ -245,6 +268,11 @@ class DiskFM(NoFM):
         
         # if we wish to save the KL modes, we save the KL mode for this image and zone in a dictionnaries
         if self.save_basis is True:
+
+            [IWA, OWA] = IOWA
+            klparam_dict['IWA'] = IWA
+            klparam_dict['OWA'] = OWA
+            klparam_dict['aligned_center'] = ref_center
 
             curr_im = str(input_img_num)
             if len(curr_im) < 3:
@@ -365,57 +393,65 @@ class DiskFM(NoFM):
             f = open(self.basis_filename, 'rb')
             if sys.version_info.major == 3:
                 klmodes_dict = pickle.load(f, encoding='latin1')
-                self.evecs_dict = pickle.load(f, encoding='latin1')
-                self.evals_dict = pickle.load(f, encoding='latin1')
-                self.ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
-                self.section_ind_dict = pickle.load(f, encoding='latin1')
+                evecs_dict = pickle.load(f, encoding='latin1')
+                evals_dict = pickle.load(f, encoding='latin1')
+                ref_psfs_indicies_dict = pickle.load(f, encoding='latin1')
+                section_ind_dict = pickle.load(f, encoding='latin1')
 
-                self.radstart_dict = pickle.load(f, encoding='latin1')
-                self.radend_dict = pickle.load(f, encoding='latin1')
-                self.phistart_dict = pickle.load(f, encoding='latin1')
-                self.phiend_dict = pickle.load(f, encoding='latin1')
-                self.input_img_num_dict = pickle.load(f, encoding='latin1')
+                radstart_dict = pickle.load(f, encoding='latin1')
+                radend_dict = pickle.load(f, encoding='latin1')
+                phistart_dict = pickle.load(f, encoding='latin1')
+                phiend_dict = pickle.load(f, encoding='latin1')
+                input_img_num_dict = pickle.load(f, encoding='latin1')
+
+                klparam_dict = pickle.load(f, encoding='latin1')
+
 
             else:
                 klmodes_dict = pickle.load(f)
-                self.evecs_dict = pickle.load(f)
-                self.evals_dict = pickle.load(f)
-                self.ref_psfs_indicies_dict = pickle.load(f)
-                self.section_ind_dict = pickle.load(f)
+                evecs_dict = pickle.load(f)
+                evals_dict = pickle.load(f)
+                ref_psfs_indicies_dict = pickle.load(f)
+                section_ind_dict = pickle.load(f)
 
-                self.radstart_dict = pickle.load(f)
-                self.radend_dict = pickle.load(f)
-                self.phistart_dict = pickle.load(f)
-                self.phiend_dict = pickle.load(f)
-                self.input_img_num_dict = pickle.load(f)
+                radstart_dict = pickle.load(f)
+                radend_dict = pickle.load(f)
+                phistart_dict = pickle.load(f)
+                phiend_dict = pickle.load(f)
+                input_img_num_dict = pickle.load(f)
+
+                klparam_dict = pickle.load(f)
+
         
         if file_extension == '.h5':
-            Dict_for_saving_in_h5 = h5.load(self.basis_filename)
+            Dict_for_saving_in_h5 = ddh5.load(self.basis_filename)
 
             klmodes_dict = Dict_for_saving_in_h5['klmodes_dict']
-            self.evecs_dict = Dict_for_saving_in_h5['evecs_dict']
-            self.evals_dict = Dict_for_saving_in_h5['evals_dict']
-            self.ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
-            self.section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
+            evecs_dict = Dict_for_saving_in_h5['evecs_dict']
+            evals_dict = Dict_for_saving_in_h5['evals_dict']
+            ref_psfs_indicies_dict = Dict_for_saving_in_h5['ref_psfs_indicies_dict']
+            section_ind_dict = Dict_for_saving_in_h5['section_ind_dict']
 
-            self.radstart_dict = Dict_for_saving_in_h5['radstart_dict']
-            self.radend_dict = Dict_for_saving_in_h5['radend_dict']
-            self.phistart_dict = Dict_for_saving_in_h5['phistart_dict']
-            self.phiend_dict = Dict_for_saving_in_h5['phiend_dict']
-            self.input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
+            radstart_dict = Dict_for_saving_in_h5['radstart_dict']
+            radend_dict = Dict_for_saving_in_h5['radend_dict']
+            phistart_dict = Dict_for_saving_in_h5['phistart_dict']
+            phiend_dict = Dict_for_saving_in_h5['phiend_dict']
+            input_img_num_dict = Dict_for_saving_in_h5['input_img_num_dict']
+            
+            klparam_dict = Dict_for_saving_in_h5['klparam_dict']
+
             del Dict_for_saving_in_h5
         
         # read key name for each section and image
         self.dict_keys = sorted(klmodes_dict.keys())
 
-        # load parameters of the correction that fm.klip_dataset saved in dataset. 
-        self.IWA = dataset.IWA        
-        self.OWA = dataset.OWA
-        self.PAs = dataset.PAs
-        self.wvs = dataset.wvs
-        
+        # load parameters of the correction that fm.klip_dataset produced when we saved the FM basis. 
+        self.IWA = klparam_dict['IWA']         
+        self.OWA = klparam_dict['OWA'] 
+
         # all output images have the same center, to which we shoudl aligned our models 
-        self.aligned_center = dataset.output_centers[0] 
+        self.aligned_center = klparam_dict['aligned_center'] 
+        # dataset.output_centers[0] 
         
         numthreads = self.numthreads
 
@@ -432,9 +468,9 @@ class DiskFM(NoFM):
         recentered_imgs_shape = (np.size(unique_wvs),) + dataset.input.shape
 
         # remake the PA, wv, and center arrays as shared arrays                  
-        pa_imgs = mp.Array(self.data_type, np.size(self.pas))
+        pa_imgs = mp.Array(self.data_type, np.size(self.PAs))
         pa_imgs_np = fm._arraytonumpy(pa_imgs,dtype=self.data_type)
-        pa_imgs_np[:] = self.pas
+        pa_imgs_np[:] = self.PAs
         wvs_imgs = mp.Array(self.data_type, np.size(self.wvs))
         wvs_imgs_np = fm._arraytonumpy(wvs_imgs,dtype=self.data_type)
         wvs_imgs_np[:] = self.wvs
@@ -581,10 +617,11 @@ class DiskFM(NoFM):
                                         'radend_dict':radend_dict,
                                         'phistart_dict':phistart_dict,
                                         'phiend_dict':phiend_dict,
-                                        'input_img_num_dict':input_img_num_dict
+                                        'input_img_num_dict':input_img_num_dict,
+                                        'klparam_dict':klparam_dict
                                     }
 
-            h5.save(self.basis_filename, Dict_for_saving_in_h5)
+            ddh5.save(self.basis_filename, Dict_for_saving_in_h5)
             del Dict_for_saving_in_h5
         else:
             raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
@@ -658,13 +695,13 @@ class DiskFM(NoFM):
                 for k in np.arange(nfiles):
                     for j,wvs in enumerate(range(n_model_wvs)):
                         model_copy = copy.deepcopy(model_disk[j,:,:])
-                        model_copy = rotate(model_copy, self.pas[k*n_wv_per_file+j], self.aligned_center, flipx = True)
+                        model_copy = rotate(model_copy, self.PAs[k*n_wv_per_file+j], self.aligned_center, flipx = True)
                         model_copy[np.where(np.isnan(model_copy))] = 0.
                         self.model_disks[k*n_wv_per_file+j,:,:] = model_copy 
         
         else: # This is a 2D disk model and a wl = 1 case
             
-            for i, pa in enumerate(self.pas):
+            for i, pa in enumerate(self.PAs):
                 model_copy = copy.deepcopy(model_disk)
                 model_copy = rotate(model_copy, pa, self.aligned_center, flipx = True)
                 model_copy[np.where(np.isnan(model_copy))] = 0.
