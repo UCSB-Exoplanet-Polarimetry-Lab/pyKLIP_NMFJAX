@@ -1,7 +1,6 @@
-import sys
+import sys, os
 import multiprocessing as mp
 import numpy as np
-import os
 import copy
 import pickle
 
@@ -17,9 +16,9 @@ from pyklip.klip import rotate
 
 # define the global variables for that code
 parallel = True 
+
 klmodes_dict = evecs_dict = evals_dict = ref_psfs_indicies_dict = section_ind_dict = None
 radstart_dict =  radend_dict =  phistart_dict =  phiend_dict = input_img_num_dict = None
-outputs_shape = None
 
 class DiskFM(NoFM):
     def __init__(self, inputs_shape, numbasis, dataset, model_disk, basis_filename = 'klip-basis.h5', 
@@ -34,14 +33,14 @@ class DiskFM(NoFM):
             inputs_shape:   shape of the inputs numpy array. Typically (N, x, y)
             numbasis:       1d numpy array consisting of the number of basis vectors to use
             dataset:        an instance of Instrument.Data. We need it to know the parameters to "prepare" 
-                            the first inital model.
+                            first inital model.
             model_disk      a model of the disk of size (wvs, x, y) or (x, y)
             basis_filename  filename to save and load the KL basis. Filenames can haves 2 recognizable extensions: .h5 or .pkl.
                             We strongly recommand .h5 as pickle have problem of compatibility between python 2 and 3
                             and sometimes between computer (e.g. KL modes not readable on another computer)
             load_from_basis if True, load the KL basis at basis_filename. It only need to be done once, after which you 
                             can measure FM with only update_model()
-            save_basis      if True, save the KL basis at basis_filename.if load_from_basis is True, save_basis is 
+            save_basis      if True, save the KL basis at basis_filename. If load_from_basis is True, save_basis is 
                             automatically set to False, it is useless to load and save the matrix at the same time.
             aligned_center  array of 2 elements [x,y] that all the model will be centered on for image
                             registration. FIXME: This is the most problematic thing currently, the aligned_center of the
@@ -85,7 +84,6 @@ class DiskFM(NoFM):
 
         # Outputs attributes
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
-
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
         
@@ -141,7 +139,7 @@ class DiskFM(NoFM):
             input_img_num_dict = manager.dict()
 
         if load_from_basis is True:
-            self.load_basis_files(basis_filename, dataset)
+            self.load_basis_files(dataset)
 
 
     def alloc_fmout(self, output_img_shape):
@@ -156,9 +154,7 @@ class DiskFM(NoFM):
             fmout_shape: shape of FM data array
 
         """
-        global outputs_shape
-        outputs_shape = self.outputs_shape
-        
+
         fmout_size = int(np.prod(output_img_shape))
         fmout_shape = output_img_shape
         fmout = mp.Array(self.data_type, fmout_size)
@@ -242,10 +238,6 @@ class DiskFM(NoFM):
         
         # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
-
-        # FIXME THere is maybe a possibility to avoid redefining _save_rotated_section in diskfm.py
-        # And use fm._save_rotated_section here.
-        # Right now, it fails because of a global variable in fm (outputs_shape)
         for thisnumbasisindex in range(np.size(numbasis)):
             fm._save_rotated_section(input_img_shape, postklip_psf[thisnumbasisindex], section_ind,
                              fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
@@ -277,14 +269,14 @@ class DiskFM(NoFM):
             
     def fm_parallelized(self):
         '''
-        Functions like klip_parallelized, but doesn't create new KL modes. It use previously measured
+        Functions like klip_parallelized, but doesn't create new KL modes. It uses previously measured
         KL modes and section positions and return the forward modelling. Do not save fits.
 
         Args:
         None
 
         Return:
-        fmout_np: output of forward modelling.
+        fmout_np: output of forward modelling of size [n_KL,N_wl,x,y] if N_wl>1 and [n_KL,x,y] if not
 
         '''
 
@@ -318,19 +310,16 @@ class DiskFM(NoFM):
             aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
             original_imgs_shape = self.inputs_shape
         
-            if parallel:
-                self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
-                                    input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], 
-                                    input_img_num=img_num, ref_psfs_indicies=ref_psfs_indicies, 
-                                    section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
-                                    pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], 
-                                    radstart=radstart, radend=radend, phistart=phistart, phiend=phiend, 
-                                    padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
-                                    parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
-                                    fmout=fmout_np,perturbmag = perturbmag_np, klipped=None, covar_files=None)
+            self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
+                                input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], 
+                                input_img_num=img_num, ref_psfs_indicies=ref_psfs_indicies, 
+                                section_ind=section_ind, aligned_imgs=aligned_imgs_for_this_wl,
+                                pas=self.pa_imgs_np[ref_psfs_indicies], wvs=self.wvs_imgs_np[ref_psfs_indicies], 
+                                radstart=radstart, radend=radend, phistart=phistart, phiend=phiend, 
+                                padding=0.,IOWA = (self.IWA, self.OWA), ref_center=self.aligned_center,
+                                parang=self.pa_imgs_np[img_num], ref_wv=None, numbasis=self.numbasis,
+                                fmout=fmout_np,perturbmag = perturbmag_np, klipped=None, covar_files=None)
 
-            else:
-                pass
         
         
         # put any finishing touches on the FM Output
@@ -345,7 +334,7 @@ class DiskFM(NoFM):
         if np.size(model_disk_shape) > 2: 
 
             nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
-            n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
+            n_wv_per_file = int(self.inputs_shape[0]//nfiles) #Number of wavelenths per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
             fmout_return = np.zeros([np.size(self.numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
@@ -359,24 +348,21 @@ class DiskFM(NoFM):
         return fmout_return
           
         
-    def load_basis_files(self, basis_filename, dataset):
+    def load_basis_files(self, dataset):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
-        Args:
-            basis_filename: filename to save and load the KL basis. Filenames can haves 2 recognizable extensions: .h5 or .pkl.
-                            We strongly recommand .h5 as pickle have problem of compatibility between python 2 and 3
-                            and sometimes between computer (e.g. KL modes not readable on another computer)     
+        Args:   
             dataset:        an instance of Instrument.Data, after fm.klip_dataset. Allow me to pass in the structure
                             some important correction parameters such as IWA, OWA, aligned_center
 
-
+        Return: None
         '''
-        _, file_extension = os.path.splitext(basis_filename)
+        _, file_extension = os.path.splitext(self.basis_filename)
         
         # Load in file
         if file_extension == '.pkl':
-            f = open(basis_filename, 'rb')
+            f = open(self.basis_filename, 'rb')
             if sys.version_info.major == 3:
                 klmodes_dict = pickle.load(f, encoding='latin1')
                 self.evecs_dict = pickle.load(f, encoding='latin1')
@@ -503,24 +489,6 @@ class DiskFM(NoFM):
         # After loading it, we stop saving the KL basis to avoid saving it every time we run self.fm_parallelize.
         self.save_basis = False
 
-        # Delete global variables so it can pickle
-        del pa_imgs
-        del wvs_imgs
-        del original_imgs
-        del original_imgs_shape
-        del original_imgs_np
-        del recentered_imgs
-        del recentered_imgs_shape
-        del centers_imgs_np
-        del fmout_data
-        del fmout_shape
-        del output_imgs
-        del output_imgs_shape
-        del output_imgs_numstacked
-        del centers_imgs
-        del wvs_imgs_np
-        del pa_imgs_np
-
 
     def save_fmout(self, dataset, fmout, outputdir, fileprefix, numbasis, 
                         klipparams=None, calibrate_flux=False, spectrum=None, pixel_weights=1):
@@ -641,7 +609,7 @@ class DiskFM(NoFM):
         # FIXME We save the matrix here it here because it is called by fm.py at the end fm.klip_parallelized 
         # but this is not ideal. Could be fixed by creating a self.runFM_and_saveBasis function 
         # that would take the same parameters as a fm.klip_dataset that would
-        # 1/update_model with dataset param 2/fm.klip_dataset and save all file and correction parameters.
+        # 1/update_model with dataset param 2/fm.klip_dataset and save all files and correction parameters.
 
 
         dims = fmout.shape
