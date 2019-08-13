@@ -35,6 +35,7 @@ class CHARISData(Data):
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         wcs: Array of N wcs astormetry headers for each image.
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+        OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
         wv_indices: Array of N indicies specifying the slice of datacube this frame comes frame (accounts of skipslices)
                 You can use this to index into the header to grab info for the respective slice
@@ -69,8 +70,9 @@ class CHARISData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths, guess_spot_index, guess_spot_locs, skipslices=None, 
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None):
+
+    def __init__(self, filepaths, guess_spot_index, guess_spot_locs, skipslices=None,
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, userIWA=None, userOWA=None):
         """
         Initialization code for CHARISData
 
@@ -83,7 +85,7 @@ class CHARISData(Data):
         self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
                       skipslices=skipslices, PSF_cube=PSF_cube, 
                       recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
-                      update_hdrs=update_hdrs)
+                      update_hdrs=update_hdrs, userIWA=userIWA, userOWA=userOWA)
 
     ################################
     ### Instance Required Fields ###
@@ -145,6 +147,13 @@ class CHARISData(Data):
         self._IWA = newval
 
     @property
+    def OWA(self):
+        return self._OWA
+    @OWA.setter
+    def OWA(self, newval):
+        self._OWA = newval
+
+    @property
     def output(self):
         return self._output
     @output.setter
@@ -156,7 +165,7 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index, guess_spot_loc, skipslices=None, 
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None):
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, userIWA=None, userOWA=None):
         """
         Method to open and read a list of GPI data
 
@@ -169,6 +178,8 @@ class CHARISData(Data):
             recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
             recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
+            userIWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+            userOWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -304,6 +315,11 @@ class CHARISData(Data):
 
         self.spot_fluxes = spot_fluxes
         self.spot_locs = spot_locs
+
+        if userIWA != None:
+            self._IWA = userIWA
+        if userOWA != None:
+            self._OWA = userOWA
 
         # Required for automatically querying Simbad for the spectral type of the star.
         try:

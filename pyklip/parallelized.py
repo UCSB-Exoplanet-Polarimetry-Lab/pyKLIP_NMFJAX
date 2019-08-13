@@ -9,6 +9,7 @@ import cProfile
 import os
 import itertools
 import copy
+import warnings
 import astropy.io.fits as fits
 import scipy.interpolate as interp
 from scipy.stats import norm
@@ -72,28 +73,113 @@ def _select_algo(algo):
     :return: the correct function to call in subsequent reduction process
     '''
 
-    if algo == 'empca':
+    if algo.lower() == 'empca':
         return _weighted_empca_section
     else:
         return _klip_section_multifile
 
 
-def trimmed_mean(cubes, axis=0):
+def _median_collapse(data, pixel_weights=None, axis=1):
     '''
     MC edited function
-    Tim's trimmed mean method to collapse wavelength dimension
+    function to median-collapse the data in time dimension
 
-    :param allims: image cubes shape(N, wv, y, x)
-    :return: 2D images
+    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
+    :param pixel_weights: pixel weights, should be ones
+    :param axis: axis index along which to collapse
+    :return: data with the specified axis collapsed using the median
     '''
 
-    return np.nanmean(np.sort(cubes, axis=axis)[2:-2], axis=axis)
+    if pixel_weights is None:
+        pixel_weights = np.ones(data.shape)
+
+    return np.nanmedian(pixel_weights * data, axis=axis)
 
 
-def _select_time_collapse():
+def _mean_collapse(data, pixel_weights=None, axis=1):
+    '''
+    MC edited function
+    function to mean-collapse the data in time dimension
+
+    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
+    :param pixel_weights: pixel weights, should be ones
+    :param axis: axis index along which to collapse
+    :return: data with the specified axis collapsed using the mean
+    '''
+
+    if pixel_weights is None:
+        pixel_weights = np.ones(data.shape)
+
+    if np.any(np.nanmean(pixel_weights, axis=axis) != 1.):
+        warnings.warn('pixel weights not normalized in _mean_collapse')
+
+    return np.nanmean(pixel_weights * data, axis=axis)
 
 
-def _select_wv_collapse():
+def _weighted_mean_collapse(data, pixel_weights=None, axis=1):
+    '''
+    MC edited function
+    function to mean-collapse the data in specified dimension, weighted by pixel_weights
+
+    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
+    :param pixel_weights: pixel weights
+    :param axis: axis along which to collapse
+    :return: data with the specified axis collapsed using weighted mean
+    '''
+
+    if pixel_weights is None:
+        pixel_weights = np.ones(data.shape)
+
+    collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
+    collapsed_data /= np.nanmean(pixel_weights, axis=axis)
+
+    return  collapsed_data
+
+
+def _trimmed_mean_collapse(data, pixel_weights=None, axis=1):
+    '''
+    MC edited function
+    Tim's trimmed mean method to collapse wavelength dimension with the addition of pixel weights
+
+    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
+    :param axis: axis along which to collapse
+    :return: data with the specified axis collapsed using weighted mean
+    '''
+
+    if pixel_weights is None:
+        pixel_weights = np.ones(data.shape)
+
+    collapsed = np.sort(pixel_weights * data, axis=axis)
+    collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
+    collapsed = np.nanmean(collapsed, axis=axis)
+
+    return collapsed
+
+
+def _select_collapse(collapse_method):
+    '''
+    MC edited function
+    select the supported time or wavelength collapse function based on input string
+
+    :param collapse_method: a string that specifies the collapse function
+    :return: the collapse function to use, currently support 'mean', 'median', 'weighted-mean', 'trimmed-mean'
+    '''
+
+    if collapse_method is None:
+        print('input collapse method is None, default to mean collapse...')
+        return _mean_collapse
+    if collapse_method.lower() == 'median':
+        return _median_collapse
+    elif collapse_method.lower() == 'mean':
+        return _mean_collapse
+    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        return _weighted_mean_collapse
+    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        return  _trimmed_mean_collapse
+    else:
+        # default function if imput does not match any supported pattern
+        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
+        return _mean_collapse
 
 
 def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_cal, outputdirpath, fileprefix):
@@ -115,19 +201,10 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
     if len(dataset.output.shape) != 5:
         raise ValueError('output data has unexpected shape:{}'.format(dataset.output.shape))
 
-    print('collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
+    print('time collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
-
-    time_collapse_fn = _select_time_collapse(time_collapse)
-    spectral_cubes = time_collapse_fn(dataset, pixel_weights, axis=1)
-
-    # if time_collapse.lower() == 'median':
-    #     spectral_cubes = np.nanmedian(spectral_cubes, axis=1)
-    # elif 'weighted' in time_collapse.lower():
-    #     spectral_cubes = np.nanmean(spectral_cubes, axis=1)
-    #     spectral_cubes /= np.nanmean(pixel_weights, axis=1)
-    # else:
-    #     spectral_cubes = np.nanmean(spectral_cubes, axis=1)
+    time_collapse_fn = _select_collapse(time_collapse)
+    spectral_cubes = time_collapse_fn(dataset.output, pixel_weights, axis=1)
 
     if flux_cal:
         spectral_cubes = np.array([dataset.calibrate_output(cube, spectral=True)
@@ -136,7 +213,7 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
     for KLcutoff, spectral_cube in zip(numbasis, spectral_cubes):
         filename = '{}-KL{}-speccube-{}-time-collapse.fits'.format(fileprefix, KLcutoff, time_collapse.lower())
         filepath = os.path.join(outputdirpath, filename)
-        dataset.savedata(filepath, spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
+        dataset.savedata(filepath, spectral_cube, klipparams=dataset.klipparams.format(numbasis=KLcutoff),
                          filetype="PSF Subtracted Spectral Cube")
 
     return
@@ -158,25 +235,36 @@ def _save_wv_collapsed_images(dataset, pixel_weights, time_collapse, numbasis, w
     :return: array of wavelength collapsed images, shape of (b, y, x)
     '''
 
-    if wv_collapse == 'trimmed-mean':
-        wv_collapse = trimmed_mean
-    else:
-        wv_collapse = np.nanmean
+    if len(dataset.output.shape) != 5:
+        raise ValueError('output data has unexpected shape:{}'.format(dataset.output.shape))
+
+    print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
+
+    time_collapse_fn = _select_collapse(time_collapse)
+    wv_collapse_fn = _select_collapse(wv_collapse)
+
+    spectral_cubes = time_collapse_fn(dataset.output, pixel_weights, axis=1) # spectral_cubes shape (b, wv, y, x)
 
     if spectrum is None:
-        KLmode_cube = wv_collapse(spectral_cubes, axis=1)
+        KLmode_cube = wv_collapse_fn(spectral_cubes, axis=1)
     else:
+        # if spectrum weighting is carried out, currently only support mean-collapse weighted by pixel_weights*spectrum
+        print('spectrum weighting turned on...\n'
+              'default to mean collapse weighted by pixel_weights * spectra_template...')
         spectra_template = spectra_template.reshape(dataset.output.shape[1:3])  # make same shape as dataset.output
-        KLmode_cube = np.nanmean(dataset.output * pixel_weights * spectra_template[None, :, :, None, None], axis=(1, 2))
+        KLmode_cube = np.nanmean(dataset.output, pixel_weights * spectra_template[None, :, :, None, None], axis=(1, 2))
         KLmode_cube /= np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis=(1, 2))
 
     if flux_cal:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    filepath = os.path.join(outputdirpath, fileprefix, '-KLmodes-all.fits')
+    filename = '{}-KLmodes-all.fits'.format(fileprefix)
+    filepath = os.path.join(outputdirpath, filename)
     dataset.savedata(filepath, KLmode_cube,
-                     klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
+                     klipparams=dataset.klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                      zaxis=numbasis)
+
+    return
 
 def _arraytonumpy(shared_array, shape=None, dtype=None):
     """
@@ -1476,9 +1564,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array([numbasis])
 
     # check how we will collapse the data
-    valid_time_collapse = ["mean", "weighted-mean"]
-    if not time_collapse.lower() in valid_time_collapse:
-        raise ValueError("Cannot collpase data using {0}. Valid options are {1}".format(time_collapse, valid_time_collapse))
+    # MC edit: time collapse re-factored into function "select_collapse"
+    #          if input is not valid, will default to mean collapse
+    # valid_time_collapse = ["mean", "weighted-mean"]
+    # if not time_collapse.lower() in valid_time_collapse:
+    #     raise ValueError("Cannot collpase data using {0}. Valid options are {1}".format(time_collapse, valid_time_collapse))
     time_collapse = time_collapse.lower()
     weighted = "weighted" in time_collapse # boolean whether to use weights
 
@@ -1738,17 +1828,16 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     charis_reduction = kwargs.get('charis_reduction')
     if charis_reduction:
         # MC edit
-        # refactor the remainder of klip_dataset() into two helper functions to collapse and save output
+        # refactored the remainder of klip_dataset() into two helper functions to collapse and save output
         # currently uses a temporary keyword 'charis_reduction', passed in through **kwargs, to allow/reject use of
         # these refactored code if running on charis data
         # remove this 'charis_reduction' condition only after testing this refactored code and confirm that it
         # correctly replaces the original
 
         wv_collapse = kwargs.get('wv_collapse')
-        KLmode_spectral_cubes = _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, calibrate_flux,
-                                                     outputdirpath, fileprefix)
-        _save_wv_collapsed_images(dataset, pixel_weights, KLmode_spectral_cubes, time_collapse, numbasis, wv_collapse,
-                                  spectrum, spectra_template, calibrate_flux, outputdirpath, fileprefix)
+        _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, calibrate_flux, outputdirpath, fileprefix)
+        _save_wv_collapsed_images(dataset, pixel_weights, time_collapse, numbasis, wv_collapse, spectrum,
+                                  spectra_template, calibrate_flux, outputdirpath, fileprefix)
 
         # Restore old setting
         if mkl_exists:
