@@ -238,9 +238,14 @@ class DiskFM(NoFM):
             kwargs: any other variables that we don't use but are part of the input
         """
         
-        if self.aligned_center != ref_center:
+        #we check that the aligned_center used to center the disk (self.aligned_center) is the same used
+        # to center the image in klip_dataset. If not, we should not continue
+
+        if (self.aligned_center != ref_center) :
+            print("The aligned_center for the model {0} and for the data {1} is different. Change and rerun".format(self.aligned_center, ref_center))
             raise ValueError("The aligned_center for the model {0} and for the data {1} is different. Change and rerun".format(self.aligned_center, ref_center))
-        
+            # FIXME for some reason, I cannot raised that error. Maybe because multiproc or use in different class
+            
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
