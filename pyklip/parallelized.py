@@ -2,6 +2,7 @@ import pyklip.klip as klip
 import pyklip.spectra_management as spec
 import pyklip.fakes as fakes
 import pyklip.kpp.stat.stat_utils as stat_utils
+import pyklip.empca.empca as empca
 import multiprocessing as mp
 import ctypes
 import numpy as np
@@ -38,7 +39,9 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         aligned: aligned and scaled images for processing.
         aligned_imgs_shape: (wv, N, y, x), wv = number of wavelengths per datacube
         output_imgs: output images after KLIP processing
-        output_imgs_shape: (b, N, y, x), b = number of different KL basis cutoffs for KLIP routine
+        output_imgs_shape: (N, y, x, b), b = number of different KL basis cutoffs for KLIP routine
+                           after KLIP finishes fitting, the final output_imgs is assigned to sub_imgs,
+                           in which the b-dimension is swapped to the leading dimension: (b, N, y, x)
         pa_imgs, wvs_imgs: arrays of size N with the PA and wavelength
         centers_img: array of shape (N,2) with [x,y] image center for image frame
         filenums_imgs (np.array): array of size N with the filenumber corresponding to each image. 
@@ -444,12 +447,14 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
 def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numbasis, maxnumbasis_void, radstart, radend,
                             phistart, phiend, movement, ref_center, minrot_void, maxrot_void, spectrum_void, mode_void,
                             corr_smooth_void, psf_library_good_void, psf_library_corr_void, lite_void, dtype=None,
-                            algo_void='empca', niter=15):
+                            algo_void='empca', niter=15, **kwargs):
     '''
     MC edited function
     run weighted expectation maximization pca on a section of a specific wavelength slice for all images
 
     Args:
+        *_void: useless arguments for this function. Due to amount of work needed to refactor original code, this is the
+                rather inelegant way to work around it for now.
         wv_index: index of the wavelenght we are processing
         numbasis: number of basis vectors to use (can be a scalar or list like)
         radstart: inner radius of the annulus (in pixels)
@@ -457,8 +462,11 @@ def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numba
         phistart: lower bound in CCW angle from x axis for the start of the section
         phiend: upper boundin CCW angle from y axis for the end of the section
         ref_center: 2 element list for the center of the science frames. Science frames should all be aligned. In [x,y] format
-        niter: number of iterations for empca
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
+        niter: number of iterations for empca
+        img_shape: size of 2D image slices of the multi-dimensional data, used to create meshgrid
+
+        
     Returns:
         Saves data to shared memory output array
     '''
@@ -491,7 +499,7 @@ def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numba
     output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]),
                                 dtype=dtype)
     for i, rank in enumerate(numbasis):
-        model = klip.klip_empca(ref_psfs, weights=weights, niter=niter, nvec=rank)
+        model = empca.weighted_empca(ref_psfs, weights=weights, niter=niter, nvec=rank)
         # subtract model from original unsmoothed data
         model_subtracted = aligned_imgs_np[:, section_ind[0]] - model
         # write to output

@@ -12,7 +12,7 @@ from scipy.stats import t
 import sys
 import multiprocessing
 import time
-from . import matutils
+import matutils
 
 """
 Weighted Principal Component Analysis using Expectation Maximization
