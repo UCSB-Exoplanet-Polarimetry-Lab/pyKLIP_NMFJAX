@@ -17,6 +17,7 @@ from pyklip.klip import rotate
 import h5py
 import pandas as pd
 
+
 # define the global variables for that code
 parallel = True 
 
@@ -89,11 +90,12 @@ class DiskFM(NoFM):
         self.numbasis = numbasis
         self.numims = inputs_shape[0]
 
+
         # Input dataset attributes
         # self.images = dataset.input
         self.PAs = dataset.PAs
         self.wvs = dataset.wvs
-        self.filenums = dataset.filenums
+        self.nfiles = int(np.nanmax(dataset.filenums))+1 #Get the number of files  
 
         # Outputs attributes
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
@@ -181,16 +183,15 @@ class DiskFM(NoFM):
         self.model_disks = np.zeros(self.inputs_shape)
 
         # Extract the # of WL per files
-        nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
-        n_wv_per_file = int(self.inputs_shape[0]/nfiles) #Number of wavelenths per file. 
+        n_wv_per_file = int(self.inputs_shape[0]//self.nfiles) #Number of wavelenths per file. 
 
         model_disk_shape = np.shape(model_disk) 
 
         if (np.size(model_disk_shape) == 2) & (n_wv_per_file>1):
-            # print("This is a single WL 2D model in a multi-wl data, we repeat this model at each WL ")
+            # This is a single WL 2D model in a multi-wl 3D data, we repeat this model at each WL 
             self.model_disk = np.broadcast_to(model_disk,(n_wv_per_file,)+model_disk.shape)
             model_disk_shape = np.shape(model_disk)  
-        else:
+        else: # This is either a multi WL 3D model in a multi-wl 3D data or a single WL 3D model in a single-wl 2D data, we do nothing
             self.model_disk = model_disk
 
         # Check if we have a disk at multiple wavelengths
@@ -330,28 +331,32 @@ class DiskFM(NoFM):
                              fmout[input_img_num, :, :,thisnumbasisindex], None, parang,
                              radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx) 
         
-        # if we wish to save the KL modes, we save the KL mode for this image and zone in a dictionnaries
+        # if we wish to, we save the KL basis and parameters for this image and zone in a dictionnaries
         if self.save_basis is True:
-
+            # save the parameter used in KLIP-FM
             [IWA, OWA] = IOWA
             klparam_dict['IWA'] = IWA
             klparam_dict['OWA'] = OWA
-            klparam_dict['aligned_center'] = ref_center
+            klparam_dict['aligned_center'] = ref_center  
+            # save the center for aligning the image in KLIP-FM. In practice, this center will be used 
+            # for all the models after we load. 
+
 
             curr_im = str(input_img_num)
             if len(curr_im) < 3:
                 curr_im = '00' + curr_im
 
-            # To have a single identifier for each section/image for the dictionnaries key
-            # we take the first pixel of the zone and the image number
+            # To have a single identifier for each set of section/image for the dictionnaries key
+            # we take the first pixel of the section and the image number
             namkey = 'idsec' + str(section_ind[0][0]) + 'i' + curr_im
-
+            # saving the KL modes dictionnaries
             klmodes_dict[namkey] = klmodes
             evals_dict[namkey] = evals
             evecs_dict[namkey] = evecs
             ref_psfs_indicies_dict[namkey] = ref_psfs_indicies
             section_ind_dict[namkey] = section_ind
 
+            # saving the section delimiters dictionnaries
             radstart_dict[namkey] = radstart
             radend_dict[namkey] = radend
             phistart_dict[namkey] = phistart
@@ -660,14 +665,18 @@ class DiskFM(NoFM):
         perturbmag, perturbmag_shape = self.alloc_perturbmag(self.output_imgs_shape,  self.numbasis)
         perturbmag_np = fm._arraytonumpy(perturbmag, perturbmag_shape,dtype=self.data_type)
 
+        wvs = self.wvs
+        unique_wvs = np.unique(wvs)
+        original_imgs_shape = self.inputs_shape
 
-        for key in self.dict_keys:
+        for key in self.dict_keys: ## loop pver the sections/images
             # load KL from the dictionnaries
             original_KL = self.klmodes_dict[key]
             evals = self.evals_dict[key]
             evecs = self.evecs_dict[key]
             ref_psfs_indicies = self.ref_psfs_indicies_dict[key] 
             section_ind = self.section_ind_dict[key]
+            
 
             # load zone information from the KL
             radstart = self.radstart_dict[key]
@@ -675,15 +684,20 @@ class DiskFM(NoFM):
             phistart = self.phistart_dict[key]
             phiend = self.phiend_dict[key]
             img_num = self.input_img_num_dict[key]
-    
-            sector_size = np.size(section_ind)
+
+            # We can also re-measure the section at every application of fm_parallelized. This is the only "dictionnary array" that is
+            # big and fast to measure at the same time so it can be done if RAM is a pb 
+            # (the dictionnary variable are going to put in global in the MCMC)
+
+            # section_ind =  fm._get_section_indicies(self.inputs_shape[1:], self.aligned_center, radstart, 
+            #                     radend, phistart, phiend, 0. , self.pa_imgs_np[img_num] , (self.IWA, self.OWA), flatten=True, flipx=False)
+
             
-            wvs = self.wvs
-            unique_wvs = np.unique(wvs)
+            
             wl_here = wvs[img_num]
             wv_index = (np.where(unique_wvs == wl_here))[0][0]
             aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
-            original_imgs_shape = self.inputs_shape
+            
         
             self.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                                 input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]], 
@@ -701,61 +715,20 @@ class DiskFM(NoFM):
         fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype = self.data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
-        #Check if we have a disk model at multiple wavelengths to
-        model_disk_shape = np.shape(self.model_disk)        
-        
+        #Check if we have a disk model at multiple wavelengths
         # If true then it's a non collapsed spec mode disk and we need to reorganise fmout_return.
-        # We use the same mean so that it correspond to klip image - speccube.fits produced by.fm.klip_dataset
-        if np.size(model_disk_shape) > 2: 
+        # We use the same mean so that it corresponds to klip image - speccube.fits produced by.fm.klip_dataset
+        if np.size(np.shape(self.model_disk)) > 2: 
 
-            nfiles = int(np.nanmax(self.filenums))+1 #Get the number of files  
-            n_wv_per_file = int(self.inputs_shape[0]//nfiles) #Number of wavelenths per file. 
+            n_wv_per_file = int(self.inputs_shape[0]//self.nfiles) #Number of WL per file. 
 
             ##Collapse across all files, keeping the wavelengths intact. 
             fmout_return = np.zeros([np.size(self.numbasis),n_wv_per_file,self.inputs_shape[1],self.inputs_shape[2]])
             for i in np.arange(n_wv_per_file):
-                fmout_return[:,i,:,:] = np.nansum(fmout_np[:,i::n_wv_per_file,:,:], axis =1)/nfiles
+                fmout_return[:,i,:,:] = np.nansum(fmout_np[:,i::n_wv_per_file,:,:], axis =1)//self.nfiles
             
         else:
             #If false then this is a collapsed spec mode or pol mode: collapsed across all files (and wavelenths)
             fmout_return = np.nanmean(fmout_np, axis = 1) 
 
         return fmout_return
-    
-
-
-    # def runFM_and_saveBasis(self, dataset, mode="ADI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
-    #         OWA=None, movement=None, minrot=0, padding=0, numbasis=None, maxnumbasis=None, numthreads=None, 
-    #         calibrate_flux=False, aligned_center=None, annuli_spacing="constant", mute_progression=False):
-    #     """
-    #     run KLIP FM on a dataset object for a given model in fm_class and save the kl modes,
-    #     as well as the fm and klipped images of this KLIP FM
-    #     Parameter of the KLIP FM will be saved also and put in the  to be able to be used when loading the 
-
-    #     This function is use integrally fm.klip_dataset with only the parameter pertinent for disks.
-
-    #     Args:
-    #         dataset:        an instance of Instrument.Data (see instruments/ subfolder)
-    #         mode:           as of now, only ADI, maybe SDI
-    #         outputdir:      directory to save output fm and klipped files
-    #         fileprefix:     filename prefix for saved fm and klipped files
-    #         anuuli:         number of annuli to use for KLIP
-    #         subsections:    number of sections to break each annuli into
-    #         movement:       minimum amount of movement (in pixels) of an astrophysical source
-    #                         to consider using that image for a refernece PSF
-    #         numbasis:       number of KL basis vectors to use (can be a scalar or list like). Length of b
-    #         numthreads:     number of threads to use. If none, defaults to using all the cores of the cpu
-    #         minrot:         minimum PA rotation (in degrees) to be considered for use as a reference PSF (good for disks)
-    #         calibrate_flux: if True calibrate flux of the dataset, otherwise leave it be
-    #         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
-    #                         registration
-    #         annuli_spacing: how to distribute the annuli radially. Currently three options. Constant (equally spaced), 
-    #                         log (logarithmical expansion with r), and linear (linearly expansion with r)
-    #         maxnumbasis: if not None, maximum number of KL basis/correlated PSFs to use for KLIP. Otherwise, use max(numbasis)
-
-
-    #     Returns
-    #         Saved fm, files in the output directory
-    #         Saved the 
-    #         Returns: nothing, but saves to dataset.output and pyklip parameters in the 
-    #     """
