@@ -491,8 +491,7 @@ class DiskFM(NoFM):
         else:
             raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
 
-                                            
-        
+ 
     def load_basis_files(self, dataset):
         '''
         Loads in previously saved basis files and sets variables for fm_from_eigen
