@@ -453,6 +453,7 @@ class DiskFM(NoFM):
     
         _, file_extension = os.path.splitext(self.basis_filename)
         if file_extension == '.pkl':
+            # transform mp dicts to normal dicts
             f = open(self.basis_filename, 'wb')
             pickle.dump(dict(klmodes_dict), f, protocol=2)
             pickle.dump(dict(evecs_dict), f, protocol=2)
@@ -469,21 +470,23 @@ class DiskFM(NoFM):
             pickle.dump(dict(klparam_dict), f, protocol=2)
             
         elif file_extension == '.h5':
-            #make a single dictionnary and save in h5
-            Dict_for_saving_in_h5 = {   'klmodes_dict':klmodes_dict, 
-                                        'evecs_dict':evecs_dict, 
-                                        'evals_dict':evals_dict, 
-                                        'ref_psfs_indicies_dict':ref_psfs_indicies_dict, 
-                                        'section_ind_dict':section_ind_dict,
-                                        'radstart_dict':radstart_dict,
-                                        'radend_dict':radend_dict,
-                                        'phistart_dict':phistart_dict,
-                                        'phiend_dict':phiend_dict,
-                                        'input_img_num_dict':input_img_num_dict,
-                                        'klparam_dict':klparam_dict
+            #transform mp dicts to normal dicts 
+            # make a single dictionnary and save in h5
+            Dict_for_saving_in_h5 = {   'klmodes_dict':dict(klmodes_dict), 
+                                        'evecs_dict':dict(evecs_dict), 
+                                        'evals_dict':dict(evals_dict), 
+                                        'ref_psfs_indicies_dict':dict(ref_psfs_indicies_dict), 
+                                        'section_ind_dict':dict(section_ind_dict),
+                                        'radstart_dict':dict(radstart_dict),
+                                        'radend_dict':dict(radend_dict),
+                                        'phistart_dict':dict(phistart_dict),
+                                        'phiend_dict':dict(phiend_dict),
+                                        'input_img_num_dict':dict(input_img_num_dict),
+                                        'klparam_dict':dict(klparam_dict)
                                     }
             ddh5.save(self.basis_filename, Dict_for_saving_in_h5)
-            
+            # ddh5.save('/Users/jmazoyer/Dropbox/STSCI/python/python_data/empty_data_for_testing_diskFM/klip_fm_files/Hband_hd48524_klipFM_injecteddisk_h5_KLbasistoto.h5', dict(klmodes_dict))
+            del Dict_for_saving_in_h5
             
             # klmodes_arr = pd.DataFrame(data=klmodes_dict).values
             # print(klmodes_arr.shape)
@@ -492,10 +495,22 @@ class DiskFM(NoFM):
             # hf.create_dataset('klmodes_arr', data=klmodes_arr)
             # hf.close()
             
-            del Dict_for_saving_in_h5
         else:
             raise ValueError(file_extension +" is not a possible extension. Filenames can haves 2 recognizable extension: .h5 or .pkl")
-                                                
+
+        
+        # klmodes_dict = None
+        # del evecs_dict
+        # del evals_dict
+        # del ref_psfs_indicies_dict
+        # del section_ind_dict
+        # del radstart_dict
+        # del radend_dict
+        # del phistart_dict
+        # del phiend_dict
+        # del input_img_num_dict
+        # del klparam_dict
+                                            
         
     def load_basis_files(self, dataset):
         '''
