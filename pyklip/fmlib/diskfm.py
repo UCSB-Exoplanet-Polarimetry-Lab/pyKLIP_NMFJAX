@@ -131,7 +131,7 @@ class DiskFM(NoFM):
             
             self.aligned_center = aligned_center
 
-            # Set up dictionaries for saving basis
+            # Set up multi-processing dictionaries for saving FM basis
             manager = mp.Manager()
             global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
             global radstart_dict, radend_dict, phistart_dict, phiend_dict, input_img_num_dict
