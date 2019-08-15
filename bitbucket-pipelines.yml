@@ -20,6 +20,7 @@ pipelines:
           # install some more dependencies
           - pip install emcee
           - pip install corner
+          - pip install deeddish
           
           # install pyklip
           - python setup.py develop
