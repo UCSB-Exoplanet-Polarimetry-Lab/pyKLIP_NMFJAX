@@ -4,7 +4,6 @@ author: johan mazoyer
 
 import os
 import glob
-import shutil
 import warnings
 
 import numpy as np
@@ -136,9 +135,6 @@ def test_diskfm():
         )
         < 1
     )
-
-    # remove the fits + h5 files after test
-    shutil.rmtree(TESTDIR)
 
 
 def make_phony_disk(dim):
