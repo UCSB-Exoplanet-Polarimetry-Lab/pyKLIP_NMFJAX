@@ -1,6 +1,6 @@
 .. _diskfm_gpi-label:
 
-Disk Foward Modelling Tutorial with GPI (DiskFM)
+Disk Foward Modelling (DiskFM)
 =====================================================
 This tutorial presents how to use forward modelling routines specific to disk modelling
 and disk parameter retrieval.
