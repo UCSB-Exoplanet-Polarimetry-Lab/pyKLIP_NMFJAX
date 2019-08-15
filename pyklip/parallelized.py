@@ -260,9 +260,10 @@ def _save_wv_collapsed_images(dataset, pixel_weights, time_collapse, numbasis, w
 
     if flux_cal:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
-    numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    filename = '{}-KLmodes-all.fits'.format(fileprefix)
+    numbasis_str = '-'.join(str(basis) for basis in numbasis)
+    filename = '{}-KL{}modes-all.fits'.format(fileprefix, numbasis_str)
     filepath = os.path.join(outputdirpath, filename)
+    numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
     dataset.savedata(filepath, KLmode_cube,
                      klipparams=dataset.klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
                      zaxis=numbasis)
