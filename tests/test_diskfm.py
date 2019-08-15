@@ -38,8 +38,6 @@ def test_diskfm():
         None
 
     """
-    save_tmpfiles_dir = TESTDIR + "DiskFM_tmp_files/"
-    os.mkdir(save_tmpfiles_dir)
 
     # grab the files
     filelist = glob.glob(TESTDIR + os.path.join("data", "S20131210*distorcorr.fits"))
@@ -69,7 +67,7 @@ def test_diskfm():
         model_convolved,
         annuli=1,
         subsections=1,
-        basis_filename=save_tmpfiles_dir + fileprefix + "_KLbasis.h5",
+        basis_filename=TESTDIR + fileprefix + "_KLbasis.h5",
         save_basis=True,
         aligned_center=[xcen, ycen],
     )
@@ -82,7 +80,7 @@ def test_diskfm():
         annuli=2,
         subsections=1,
         mode="ADI",
-        outputdir=save_tmpfiles_dir,
+        outputdir=TESTDIR,
         fileprefix=fileprefix,
         aligned_center=[xcen, ycen],
         mute_progression=True,
@@ -92,7 +90,7 @@ def test_diskfm():
     )
 
     fmout_klip_dataset = fits.getdata(
-        save_tmpfiles_dir
+        TESTDIR
         + fileprefix
         + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])
     )
@@ -102,14 +100,14 @@ def test_diskfm():
         numbasis,
         dataset,
         model_convolved,
-        basis_filename=save_tmpfiles_dir + fileprefix + "_KLbasis.h5",
+        basis_filename=TESTDIR + fileprefix + "_KLbasis.h5",
         load_from_basis=True,
     )
 
     diskobj.update_disk(model_convolved)
     modelfm_here = diskobj.fm_parallelized()
     # fits.writeto(
-    #     save_tmpfiles_dir + fileprefix + "_fm_parallelized-fmpsf.fits",
+    #     TESTDIR + fileprefix + "_fm_parallelized-fmpsf.fits",
     #     modelfm_here[0][0],
     #     overwrite=True,
     # )
@@ -117,7 +115,7 @@ def test_diskfm():
     # print(fmout_klip_dataset[0].shape)
     # print(modelfm_here[0][0].shape)
     # fits.writeto(
-    #     save_tmpfiles_dir + fileprefix + "_res.fits",
+    #     TESTDIR + fileprefix + "_res.fits",
     #     fmout_klip_dataset[0] - modelfm_here[0][0],
     #     overwrite=True,
     # )
@@ -140,7 +138,7 @@ def test_diskfm():
     )
 
     # remove the fits + h5 files after test
-    shutil.rmtree(save_tmpfiles_dir)
+    shutil.rmtree(TESTDIR)
 
 
 def make_phony_disk(dim):
