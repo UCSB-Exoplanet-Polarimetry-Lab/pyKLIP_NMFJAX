@@ -888,7 +888,7 @@ class DiskFM(NoFM):
             for i in np.arange(n_wv_per_file):
                 fmout_return[:, i, :, :] = (
                     np.nansum(fmout_np[:, i::n_wv_per_file, :, :], axis=1)
-                    // self.nfiles
+                    / float(self.nfiles)
                 )
 
         else:

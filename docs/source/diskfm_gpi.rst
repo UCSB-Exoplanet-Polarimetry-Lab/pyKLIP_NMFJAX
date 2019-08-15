@@ -29,10 +29,12 @@ exploration with the Chi-square or MCMC wrapper (out of the scope of this this t
 computationally very intensive, taking easily a few days, even parallized on a large
 server.
 
-You also need the following pieces of data to forward model the data.
+You also need the following pieces of data to forward model the data:
 
+* A model of disk (this tutorial do not include disk modelling)
+* The instrument PSF or a model of the PSF
 * A set of to run PSF subtraction on
-* A model of disk, which we will assume is already convolved by the PSF of your instrument
+
 
 
 Set up
@@ -74,14 +76,13 @@ To run the forward modelling, just run:
 
 .. code-block:: python
 
-    fmout = fm.klip_dataset(dataset, diskobj,
-                            outputdir="path/", fileprefix="my_favorite_disk"
-                            numbasis=numbasis, maxnumbasis=100,
-                            mode='ADI', annuli=2, subsections=1, minrot=3
-                            aligned_center=aligned_center)
+    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
+                    mode='ADI', annuli=2, subsections=1, minrot=3)
 
-`fmout` will contain the forward model, and the code will save two fits files in `outputdir`
-containing the klipped data and the associated forward model of your disk.
+
+the code will save two fits files in `outputdir`, containing the klipped data and the
+associated disk forward model.
 
 Most of the parameters implemented for psf forward model KLIP correction with pyklip can be used (see
 `Picking KLIP Parameters for Disks <https://pyklip.readthedocs.io/en/latest/klip_gpi.html#picking-klip-parameters-for-disks>`_,)
@@ -112,11 +113,9 @@ ave the forward model KL basis and parameters:
                     basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
 
 
-    fmout = fm.klip_dataset(dataset, diskobj,
-                            outputdir="path/", fileprefix="my_favorite_disk"
-                            numbasis=numbasis, maxnumbasis=100,
-                            mode='ADI', annuli=2, subsections=1, minrot=3
-                            aligned_center=aligned_center)
+    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
+                    mode='ADI', annuli=2, subsections=1, minrot=3)
 
 
 Then, in any python session you can create a disk object and you can forward model disks
@@ -201,6 +200,9 @@ We recall all the steps in a single block
     filelist = glob.glob("path/to/dataset/*.fits")
     dataset = GPI.GPIData(filelist)
 
+    # in case of multiWL data, you might want to stack them first to speed things up
+    dataset.spectral_collapse(collapse_channels=1, align_frames=True)
+
     numbasis = [3] # different KL numbers we applied to the disk.
     aligned_center=[140, 140] # indicate the position of the star
 
@@ -213,11 +215,10 @@ We recall all the steps in a single block
                     basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
 
     # run klip to find and save FM basis
-    fmout = fm.klip_dataset(dataset, diskobj,
-                            outputdir="path/", fileprefix="my_favorite_disk"
-                            numbasis=numbasis, maxnumbasis=100,
-                            mode='ADI', annuli=2, subsections=1, minrot=3
-                            aligned_center=aligned_center)
+    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk",
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center,
+                    mode='ADI', annuli=2, subsections=1, minrot=3)
+
 
     # ----------------------------------------------------------------------------
     # starting from here you can close the session and reopen later if you want
