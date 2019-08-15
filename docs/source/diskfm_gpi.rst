@@ -157,17 +157,15 @@ model to forward model:
 
 * use OWA to limit only in the zone where the disk is.
 * limit the number of sections (small annuli and subsections number).
-* reduce the number of wavelengths. We recall this very usefull pyklip
-function to rebin quickly the number of wavelength, which should be applied
-immediatly after loading the dataset:
-
+* reduce the number of wavelengths. We recall this very usefull pyklip function to rebin
+  quickly the number of wavelength, which should be applied immediatly after loading
+  the dataset:
 
 .. code-block:: python
 
     dataset.spectral_collapse(collapse_channels=1, align_frames=True)
 
-* Finally, determine the best KLIP parameters in advance and use a single KL number
-in the reduction, e.g.:
+* determine the best KL number parameters in advance and use only one, e.g.:
 
 .. code-block:: python
 
