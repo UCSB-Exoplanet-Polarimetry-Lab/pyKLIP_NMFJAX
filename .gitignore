@@ -10,8 +10,10 @@
 !pyklip/filters/*.fits
 version.py
 tests/*.fits
+tests/*.h5
 examples/*.fits
 *.pkl
+
 
 #ignore auxiliary directories
 pyklip.egg-info/

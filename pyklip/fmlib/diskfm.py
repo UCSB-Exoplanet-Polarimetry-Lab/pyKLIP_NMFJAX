@@ -35,8 +35,52 @@ klparam_dict = manager.dict()
 
 
 class DiskFM(NoFM):
-    """
-    Forward modelling class for disks through KLIP. Returns the forward modelled disk.
+    """Defining a model disk to which we apply the Forward Modelling. There are 3 ways:
+
+            * "Save Basis mode" (save_basis=true), we are preparing to save the FM basis
+            * "Load Basis mode" (load_from_basis = true), most of the parameters are
+              derived from the previous fm.klip_dataset which measured FM basis.
+            * "Simple FM mode" (save_basis = load_from_basis = False). Just
+              for a unique disk FM.
+
+
+        Args:
+            inputs_shape: shape of the inputs numpy array. Typically (N, x, y)
+            numbasis: 1d numpy array consisting of the number of basis vectors to use
+            dataset: an instance of Instrument.Data. We need it to know the
+                     parameters to "prepare" first inital model.
+            model_disk: a model of the disk of size (wvs, x, y) or (x, y)
+            basis_filename: filename to save and load the KL basis. Filenames can haves
+                            2 recognizable extensions: .h5 or .pkl. We strongly
+                            recommand .h5 as pickle have problem of compatibility
+                            between python 2 and 3 and sometimes between computer
+                            (e.g. KL modes not readable on another computer)
+            load_from_basis: if True, load the KL basis at basis_filename. It only need
+                             to be done once, after which you can measure FM with
+                             only update_model()
+            save_basis: if True, save the KL basis at basis_filename. If load_from_basis
+                            is True, save_basis is automatically set to False, it is
+                            useless to load and save the matrix at the same time.
+            numthreads: number of threads to use. If none, defaults to using all
+                        the cores of the cpu.
+            aligned_center: array of 2 elements [x,y] that all the model will be
+                            centered on for image registration.
+                            FIXME: This is the most problematic thing currently, the
+                            aligned_center of the model and of the images can be set
+                            independently, which will create false results.
+                            - In "Load Basis mode", this parameter is not read, we just
+                            use the aligned_center set for the images in the previous
+                            fm.klip_dataset and save in basis_filename
+                            - In "Save Basis mode", or "Simple FM mode" we define it
+                            and then check that it is the same one used for the images
+                            in fm.klip_dataset
+            annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
+            subsections: deprecated parameter, ignored here and defined in fm.klip_dataset
+            mode: deprecated parameter, ignored here and defined in fm.klip_dataset
+
+        Returns:
+            A DiskFM Object
+
     """
 
     def __init__(self,
@@ -52,58 +96,10 @@ class DiskFM(NoFM):
                  annuli=None,
                  subsections=None,
                  mode=None):
+
         """
-        Defining a model disk at which we will apply the Forward modelling. There are 3
-        ways:
-            - "Save Basis mode" (save_basis = true), we are preparing to save the FM
-                basis
-            - "Load Basis mode" (load_from_basis = true), most of the parameters are
-                derived from the previous fm.klip_dataset which measured FM basis. If
-                load_from_basis is True, save_basis is automatically set to False, it is
-                useless to load and save the matrix at the same time.
-            - "Simple FM mode" (save_basis = load_from_basis = False). We juste use it
-                for a unique disk FM.
 
-        Args:
-            inputs_shape:   shape of the inputs numpy array. Typically (N, x, y)
-            numbasis:       1d numpy array consisting of the number of basis vectors to
-                            use
-            dataset:        an instance of Instrument.Data. We need it to know the
-                            parameters to "prepare" first inital model.
-            model_disk      a model of the disk of size (wvs, x, y) or (x, y)
-            basis_filename  filename to save and load the KL basis. Filenames can haves
-                            2 recognizable extensions: .h5 or .pkl. We strongly
-                            recommand .h5 as pickle have problem of compatibility
-                            between python 2 and 3 and sometimes between computer
-                            (e.g. KL modes not readable on another computer)
-            load_from_basis if True, load the KL basis at basis_filename. It only need
-                            to be done once, after which you can measure FM with
-                            only update_model()
-            save_basis      if True, save the KL basis at basis_filename. If
-                            load_from_basis is True, save_basis is automatically set to
-                            False, it is useless to load and save the matrix at the same
-                            time.
-            numthreads      number of threads to use. If none, defaults to using all
-                            the cores of the cpu
-            aligned_center  array of 2 elements [x,y] that all the model will be
-                            centered on for image registration.
-                            FIXME: This is the most problematic thing currently, the
-                            aligned_center of the model and of the images can be set
-                            independently, which will create false results.
-                            - In "Load Basis mode", this parameter is not read, we just
-                            use the aligned_center set for the images in the previous
-                            fm.klip_dataset and save in basis_filename
-                            - In "Save Basis mode", or "Simple FM mode" we define it
-                            and then check that it is the same one used for the images
-                            in fm.klip_dataset
-
-
-            There are also 3 deprecated parameters that are ignored and replaced by the
-            klip param in fm.klip_dataset:
-            annuli
-            subsections
-            mode
-            I let them here for now to avoid breaking the current users' code.
+            Initilaizes the DiskFM class
 
         """
 
@@ -194,6 +190,7 @@ class DiskFM(NoFM):
 
         Args:
             model_disk: Disk to be forward modeled.
+
         Returns:
             None
         """
@@ -266,8 +263,7 @@ class DiskFM(NoFM):
             output_img_shape: shape of output image (usually N,y,x,b)
 
         Returns:
-            fmout: mp.array to store FM data in
-            fmout_shape: shape of FM data array
+            [mp.array to store FM data in, shape of FM data array]
 
         """
 
@@ -325,6 +321,10 @@ class DiskFM(NoFM):
             numbasis: array of KL basis cutoffs
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
             kwargs: any other variables that we don't use but are part of the input
+
+        Returns:
+            None
+
         """
 
         # we check that the aligned_center used to center the disk (self.aligned_center)
@@ -419,11 +419,12 @@ class DiskFM(NoFM):
         After running KLIP-FM, we need to reshape fmout so that the numKL dimension is
         the first one and not the last. We also use this function to save the KL basis
         because it is called by fm.py at the end fm.klip_parallelized
+
         Args:
             fmout: numpy array of ouput of FM
 
         Returns:
-            fmout: same but cleaned up if necessary
+            Same but cleaned up if necessary
         """
 
         # save the KL basis.
@@ -450,21 +451,25 @@ class DiskFM(NoFM):
                    **kwargs):
         """
         Uses dataset parameters to save the forward model, the output of
-        fm_paralellized or klip_dataset.
+        fm_paralellized or klip_dataset. No returm, data are saved
+        in "fileprefix" .fits files
 
-        Arg:
-            dataset:        an instance of Instrument.Data . Will use its
-                            dataset.savedata() function to save data
-            fmout:          output of forward modelling.
-            outputdir:      directory to save output files
-            fileprefix:     filename prefix for saved files
-            numbasis:       number of KL basis vectors to use
-                            (can be a scalar or list like)
-            klipparams:     string with KLIP-FM parameters
+        Args:
+            dataset: an instance of Instrument.Data . Will use its
+                     dataset.savedata() function to save data
+            fmout: output of forward modelling.
+            outputdir: directory to save output files
+            fileprefix: filename prefix for saved files
+            numbasis: number of KL basis vectors to use
+                      (can be a scalar or list like)
+            klipparams: string with KLIP-FM parameters
             calibrate_flux: if True, flux calibrate the data in the same way as
                             the klipped data
-            pixel_weights:  weights for each pixel for weighted mean. Leave this as a
-                            single number for simple mean
+            pixel_weights: weights for each pixel for weighted mean. Leave this as a
+                           single number for simple mean
+
+        Returns:
+            None
 
         """
 
@@ -533,6 +538,7 @@ class DiskFM(NoFM):
 
         Returns:
             None
+
         """
 
         _, file_extension = path.splitext(self.basis_filename)
@@ -583,11 +589,13 @@ class DiskFM(NoFM):
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
         Args:
-            dataset:        an instance of Instrument.Data, after fm.klip_dataset.
-                            Allow me to pass in the structure some correction parameters
-                            set by fm.klip_dataset, such as IWA, OWA, aligned_center
+            dataset: an instance of Instrument.Data, after fm.klip_dataset.
+                     Allow me to pass in the structure some correction parameters
+                     set by fm.klip_dataset, such as IWA, OWA, aligned_center.
+                     KL basis and sections information are passed via global variables
 
-        Return: None
+        Returns:
+            None
         """
         _, file_extension = path.splitext(self.basis_filename)
 
@@ -787,11 +795,12 @@ class DiskFM(NoFM):
         Do not save fits.
 
         Args:
-        None
+            None
 
-        Return:
-        fmout_np:   output of forward modelling of size [n_KL,N_wl,x,y] if N_wl>1
-                    and [n_KL,x,y] if not
+        Returns:
+            fmout_np, a numpy array, output of forward modelling
+                    * if N_wl = 1, size is [n_KL,x,y]
+                    * if N_wl > 1, size is  [n_KL,N_wl,x,y]
 
         """
 
