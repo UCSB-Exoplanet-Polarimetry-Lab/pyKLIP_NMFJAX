@@ -4,4 +4,3 @@ astropy
 matplotlib
 emcee
 corner
-deepdish

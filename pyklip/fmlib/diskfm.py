@@ -5,13 +5,14 @@ from copy import deepcopy
 import ctypes
 
 import pickle
-import deepdish.io as ddh5
 
 import numpy as np
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
+
+# from silx.io.dictdump import dicttoh5, h5todict
 
 
 # define the global variables for that code
@@ -88,7 +89,7 @@ class DiskFM(NoFM):
                  numbasis,
                  dataset,
                  model_disk,
-                 basis_filename="klip-basis.h5",
+                 basis_filename="klip-basis.pkl",
                  load_from_basis=False,
                  save_basis=False,
                  aligned_center=None,
@@ -330,7 +331,6 @@ class DiskFM(NoFM):
         # we check that the aligned_center used to center the disk (self.aligned_center)
         # If the same used to center the image in klip_dataset.
         # If not, we should not continue.
-
         if self.aligned_center != ref_center:
             err_string = """The aligned_center for the model {0} and for
                             the data {1} is different.
@@ -542,6 +542,8 @@ class DiskFM(NoFM):
         """
 
         _, file_extension = path.splitext(self.basis_filename)
+
+
         if file_extension == ".pkl":
             # transform mp dicts to normal dicts
             pickle_file = open(self.basis_filename, "wb")
@@ -559,29 +561,33 @@ class DiskFM(NoFM):
 
             pickle.dump(dict(klparam_dict), pickle_file, protocol=2)
 
-        elif file_extension == ".h5":
-            # transform mp dicts to normal dicts
-            # make a single dictionnary and save in h5
-            dict_for_saving_in_h5 = {
-                "klmodes_dict": dict(klmodes_dict),
-                "evecs_dict": dict(evecs_dict),
-                "evals_dict": dict(evals_dict),
-                "ref_psfs_indicies_dict": dict(ref_psfs_indicies_dict),
-                "section_ind_dict": dict(section_ind_dict),
-                "radstart_dict": dict(radstart_dict),
-                "radend_dict": dict(radend_dict),
-                "phistart_dict": dict(phistart_dict),
-                "phiend_dict": dict(phiend_dict),
-                "input_img_num_dict": dict(input_img_num_dict),
-                "klparam_dict": dict(klparam_dict),
-            }
-            ddh5.save(self.basis_filename, dict_for_saving_in_h5)
-            del dict_for_saving_in_h5
+        # elif (file_extension == ".h5") :
+        #     # transform mp dicts to normal dicts
+        #     # make a single dictionnary and save in h5
+        #     dict_for_saving_in_h5 = {
+        #         "klmodes_dict": dict(klmodes_dict),
+        #         "evecs_dict": dict(evecs_dict),
+        #         "evals_dict": dict(evals_dict),
+        #         "ref_psfs_indicies_dict": dict(ref_psfs_indicies_dict),
+        #         "section_ind_dict": dict(section_ind_dict),
+        #         "radstart_dict": dict(radstart_dict),
+        #         "radend_dict": dict(radend_dict),
+        #         "phistart_dict": dict(phistart_dict),
+        #         "phiend_dict": dict(phiend_dict),
+        #         "input_img_num_dict": dict(input_img_num_dict),
+        #         "klparam_dict": dict(klparam_dict),
+        #     }
+
+        #     path_basish5, name_basish5 = path.split(self.basis_filename)
+        #     dicttoh5(dict_for_saving_in_h5, name_basish5, h5path=path_basish5)
+        #     # ddh5.save(self.basis_filename, dict_for_saving_in_h5)
+        #     del dict_for_saving_in_h5
+
 
         else:
             raise ValueError(
                 file_extension + """ is not a possible extension. Filenames can
-                haves 2 recognizable extension: .h5 or .pkl"""
+                haves 1 recognizable extension: .pkl"""
             )
 
     def load_basis_files(self, dataset):
@@ -638,38 +644,54 @@ class DiskFM(NoFM):
 
                 self.klparam_dict = pickle.load(pickle_file)
 
-        if file_extension == ".h5":
-            dict_for_saving_in_h5 = ddh5.load(self.basis_filename)
+        # if file_extension == ".h5":
+        #     # dict_for_saving_in_h5 = ddh5.load(self.basis_filename)
+        #     path_basish5, name_basish5 = path.split(self.basis_filename)
+        #     dict_for_saving_in_h5 = h5todict(name_basish5, path=path_basish5)
 
-            self.klmodes_dict = dict_for_saving_in_h5["klmodes_dict"]
-            self.evecs_dict = dict_for_saving_in_h5["evecs_dict"]
-            self.evals_dict = dict_for_saving_in_h5["evals_dict"]
-            self.ref_psfs_indicies_dict = dict_for_saving_in_h5[
-                "ref_psfs_indicies_dict"
-            ]
-            self.section_ind_dict = dict_for_saving_in_h5["section_ind_dict"]
+        #     self.klmodes_dict = dict_for_saving_in_h5["klmodes_dict"]
+        #     self.evecs_dict = dict_for_saving_in_h5["evecs_dict"]
+        #     self.evals_dict = dict_for_saving_in_h5["evals_dict"]
+        #     self.ref_psfs_indicies_dict = dict_for_saving_in_h5[
+        #         "ref_psfs_indicies_dict"
+        #     ]
+        #     self.section_ind_dict = dict_for_saving_in_h5["section_ind_dict"]
 
-            self.radstart_dict = dict_for_saving_in_h5["radstart_dict"]
-            self.radend_dict = dict_for_saving_in_h5["radend_dict"]
-            self.phistart_dict = dict_for_saving_in_h5["phistart_dict"]
-            self.phiend_dict = dict_for_saving_in_h5["phiend_dict"]
-            self.input_img_num_dict = dict_for_saving_in_h5["input_img_num_dict"]
+        #     self.radstart_dict = dict_for_saving_in_h5["radstart_dict"]
+        #     self.radend_dict = dict_for_saving_in_h5["radend_dict"]
+        #     self.phistart_dict = dict_for_saving_in_h5["phistart_dict"]
+        #     self.phiend_dict = dict_for_saving_in_h5["phiend_dict"]
+        #     self.input_img_num_dict = dict_for_saving_in_h5["input_img_num_dict"]
 
-            self.klparam_dict = dict_for_saving_in_h5["klparam_dict"]
+        #     self.klparam_dict = dict_for_saving_in_h5["klparam_dict"]
 
-            del dict_for_saving_in_h5
+        #     del dict_for_saving_in_h5
 
         # read key name for each section and image
         self.dict_keys = sorted(self.klmodes_dict.keys())
 
         # load parameters of the correction that fm.klip_dataset produced
         # when we saved the FM basis.
-        self.IWA = self.klparam_dict["IWA"]
-        self.OWA = self.klparam_dict["OWA"]
+        self.IWA = float(self.klparam_dict["IWA"])
+        self.OWA = np.float64(self.klparam_dict["OWA"])
 
         # all output images have the same center, to which we shoudl aligned our models
+        _, file_extension = path.splitext(self.basis_filename)
+        # if file_extension == '.h5':
+        #     self.aligned_center = self.klparam_dict["aligned_center"].tolist()
+        # else:
+
         self.aligned_center = self.klparam_dict["aligned_center"]
-        # dataset.output_centers[0]
+        # print(type(self.aligned_center))
+        # print(type(self.IWA))
+        # print(type(self.OWA))
+
+        # print(self.IWA.shape)
+        # print(self.OWA.shape)
+
+        # print(self.IWA)
+        # print(self.OWA)
+
 
         numthreads = self.numthreads
 

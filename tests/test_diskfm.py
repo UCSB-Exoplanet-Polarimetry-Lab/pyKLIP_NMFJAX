@@ -38,6 +38,9 @@ def test_diskfm():
 
     """
 
+    ext = ".pkl"
+    # ext = ".h5"
+
     # grab the files
     filelist = glob.glob(TESTDIR + os.path.join("data", "S20131210*distorcorr.fits"))
     dataset = GPI.GPIData(filelist, quiet=True)
@@ -66,7 +69,7 @@ def test_diskfm():
         model_convolved,
         annuli=1,
         subsections=1,
-        basis_filename=TESTDIR + fileprefix + "_KLbasis.h5",
+        basis_filename=TESTDIR + fileprefix + "_KLbasis" + ext,
         save_basis=True,
         aligned_center=[xcen, ycen],
     )
@@ -99,7 +102,7 @@ def test_diskfm():
         numbasis,
         dataset,
         model_convolved,
-        basis_filename=TESTDIR + fileprefix + "_KLbasis.h5",
+        basis_filename=TESTDIR + fileprefix + "_KLbasis" + ext,
         load_from_basis=True,
     )
 
