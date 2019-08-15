@@ -2,7 +2,7 @@
 
 Disk Foward Modelling (DiskFM)
 =====================================================
-This tutorial presents how to use forward modelling routines specific to disk modelling
+This tutorial presents how to use the forward modelling routines specific to disk modelling
 and disk parameter retrieval.
 
 Why DiskFM?
@@ -10,17 +10,17 @@ Why DiskFM?
 As noted in `Pueyo (2016) <http://arxiv.org/abs/1604.06097>`_, "*in practice Forward
 Modeling with disks is complicated by the
 fact that [it] cannot be simplified using a simple PSF as the astrophysical model:
-every hypothetical disk morphology must be explored.*" Indeed, because of their complex
-geometries, the forward modelling of disks have to be repeated a lot of time on disks
-with slightly different parameters. All these geometries are compared
-to the klipped reduced image of disk, within an MCMC or a Chi-square wrapper.
+every hypothetical disk morphology must be explored*". Indeed, because of their complex
+geometries, the forward modelling have to be repeated a lot of time on disks
+with slightly different parameters. All these geometries are then compared
+to the klipped reduced image of the data, within an MCMC or a Chi-square wrapper.
 
-However, once measure for a set of reduction parameters the klip basis do not change.
-one can save the KLIP forward model basis vectors in a file once so they do not have to be
+However, once measured for a set of reduction parameters, the Karhunen-Loeve (KL) basis
+do not change. One can save the KL vectors in a file once so they do not have to be
 recomputed every time. For a new disk model, the forward modelling is therfore only a
 array reformating and a matrix multiplication, which can be optimized to be only a few
-seconds. This code provide you with these routines. It currently only supports KLIP ADI
-and KLIP SDI (or ADI + SDI) reduction (but currently not RDI or NMF).
+seconds. These routines are implemented in PyKLIP and showed on this page. DiskFM currently
+only supports KLIP ADI and KLIP SDI (or ADI + SDI) reduction (but currently not RDI or NMF).
 
 DiskFM Requirements
 --------------------------
@@ -58,7 +58,7 @@ First import an instrument data set and convolve your 2D disk model by the instr
 
 Simple disk Forward Modelling
 --------------------------
-This code shows how to initialize the `DiskFM` object and to do a forward modelling:
+This code then shows how to initialize the `DiskFM` object and to do a forward modelling:
 
 .. code-block:: python
 
@@ -80,7 +80,7 @@ To run the forward modelling, just run:
                             mode='ADI', annuli=2, subsections=1, minrot=3
                             aligned_center=aligned_center)
 
-`fmout` will contain the forward model, and the code will save two fits files in outputdir
+`fmout` will contain the forward model, and the code will save two fits files in `outputdir`
 containing the klipped data and the associated forward model of your disk.
 
 Most of the parameters implemented for psf forward model KLIP correction with pyklip can be used (see
@@ -94,16 +94,16 @@ with the following exceptions:
 Mode parameter can be set only to `'ADI'`, `'SDI'` and `'ADI+SDI'`.`aligned_center` is
 the position were the klip reduction will center the reduced image.
 The code will raise an error if it is not set to the position to which you set the star
-of your model (see previous section).
+of your model.
 
 
 DiskFM for MCMC or Chi-Square
 --------------------------
-For an MCMC or Chi-Square you can create the basis vectors and then save them so that
-they do not need to be recomputed every time. If you would like to forward model
-multiple models on a dataset, then you will need to signal it during the initialization
-of the `DiskFM` object, then apply `fm.klip_dataset` to measure and save the forward model
-basis and parameters:
+For an MCMC or Chi-Square you can create the KL basis and then save them to forward
+model multiple models on a dataset without recomputing them every time.
+If you would like save the KL basis then you will need to signal it during
+the initialization of the `DiskFM` object, then apply `fm.klip_dataset` to measure and
+ave the forward model KL basis and parameters:
 
 .. code-block:: python
 
@@ -119,9 +119,9 @@ basis and parameters:
                             aligned_center=aligned_center)
 
 
-Then, in any python session you can create a disk object with the loaded basis vectors,
-and you can forward model disks without needing to create a new `DiskFM` object.
-The forward modelled disk will be output to `fmout`:
+Then, in any python session you can create a disk object and you can forward model disks
+with the loaded KL basis vectors without needing to measure this basis.
+The disk forward model will be output to `fmout`:
 
 .. code-block:: python
 
@@ -153,7 +153,7 @@ Speeding up DiskFM
 --------------------------
 The time is a key element here if you want to produce hundreds of thousands of forward
 modelling models. A smart choice of pyklip parameters can reduce the time for a single
-model to forward model:
+disk forward model:
 
 * use OWA to limit only in the zone where the disk is.
 * limit the number of sections (small annuli and subsections number).
@@ -172,14 +172,14 @@ model to forward model:
     numbasis = [3]
 
 
-Specific issues for multiwavelength disk forward modelling
+Multiwavelength DiskFM
 --------------------------
 If you put a multi-wavelenght dataset (e.g. IFS), the code will produce a multi-wavelenght forward
-modelling. In that case, you can use a simple 2D model for the disk and the code will duplicate this model
+model. In that case, you can use a simple 2D model for the disk and the code will duplicate this model
 and apply the forward modelling separately on each of those at every wavelengths. Or you can use a 3D model
 (n_wl, x, y) and the code will apply the forward modelling separately on each of those at every wavelengths.
 
-Alhtough everything we said in the srevious sections on saving and loading FM basis still
+Alhtough everything we said in the previous sections on saving and loading the KL basis still
 apply multiwavelength disk forward modelling is long (it can take up to a few minutes or hours
 for a single forward modelling depending on the number of wavelengths) and we do not
 recommand to use this in an MCMC wrapper.
@@ -233,8 +233,5 @@ We recall all the steps in a single block
     diskobj.update_disk(new_disk_model_convolved)
     fmout=diskobj.fm_parallelized()
 
-    # do the forward modelling on a third model
-    third_disk_model_convolved=convolve(third_disk_model,instrument_psf, boundary='wrap')
-    diskobj.update_disk(third_disk_model_convolved)
-    fmout=diskobj.fm_parallelized()
+
 
