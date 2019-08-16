@@ -5,14 +5,13 @@ from copy import deepcopy
 import ctypes
 
 import pickle
+import h5py
 
 import numpy as np
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
-
-# from silx.io.dictdump import dicttoh5, h5todict
 
 
 # define the global variables for that code
@@ -84,19 +83,21 @@ class DiskFM(NoFM):
 
     """
 
-    def __init__(self,
-                 inputs_shape,
-                 numbasis,
-                 dataset,
-                 model_disk,
-                 basis_filename="klip-basis.pkl",
-                 load_from_basis=False,
-                 save_basis=False,
-                 aligned_center=None,
-                 numthreads=None,
-                 annuli=None,
-                 subsections=None,
-                 mode=None):
+    def __init__(
+        self,
+        inputs_shape,
+        numbasis,
+        dataset,
+        model_disk,
+        basis_filename="klip-basis.pkl",
+        load_from_basis=False,
+        save_basis=False,
+        aligned_center=None,
+        numthreads=None,
+        annuli=None,
+        subsections=None,
+        mode=None,
+    ):
 
         """
 
@@ -125,8 +126,7 @@ class DiskFM(NoFM):
         # self.images = dataset.input
         self.PAs = dataset.PAs
         self.wvs = dataset.wvs
-        self.nfiles = int(np.nanmax(dataset.filenums)) + \
-            1  # Get the number of files
+        self.nfiles = int(np.nanmax(dataset.filenums)) + 1 # Get the number of files
 
         # Outputs attributes
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
@@ -225,7 +225,9 @@ class DiskFM(NoFM):
                 # Both models and data are multiWL, but not the same number of WLs !
                 raise ValueError(
                     """Number of wls in disk model ({0}) don't match number of wls in
-                    the data ({1})""".format(n_model_wvs, n_wv_per_file)
+                    the data ({1})""".format(
+                        n_model_wvs, n_wv_per_file
+                    )
                 )
 
             for k in np.arange(self.nfiles):
@@ -252,8 +254,7 @@ class DiskFM(NoFM):
 
         self.model_disks = np.reshape(
             self.model_disks,
-            (self.inputs_shape[0], self.inputs_shape[1]
-             * self.inputs_shape[2]),
+            (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2]),
         )
 
     def alloc_fmout(self, output_img_shape):
@@ -273,27 +274,29 @@ class DiskFM(NoFM):
         fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
 
-    def fm_from_eigen(self,
-                      klmodes=None,
-                      evals=None,
-                      evecs=None,
-                      input_img_shape=None,
-                      input_img_num=None,
-                      ref_psfs_indicies=None,
-                      section_ind=None,
-                      aligned_imgs=None,
-                      radstart=None,
-                      radend=None,
-                      phistart=None,
-                      phiend=None,
-                      padding=None,
-                      IOWA=None,
-                      ref_center=None,
-                      parang=None,
-                      numbasis=None,
-                      fmout=None,
-                      flipx=True,
-                      **kwargs):
+    def fm_from_eigen(
+        self,
+        klmodes=None,
+        evals=None,
+        evecs=None,
+        input_img_shape=None,
+        input_img_num=None,
+        ref_psfs_indicies=None,
+        section_ind=None,
+        aligned_imgs=None,
+        radstart=None,
+        radend=None,
+        phistart=None,
+        phiend=None,
+        padding=None,
+        IOWA=None,
+        ref_center=None,
+        parang=None,
+        numbasis=None,
+        fmout=None,
+        flipx=True,
+        **kwargs
+    ):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from
         KLIP. Calls fm.py functions to perform the forward modelling. If we wish to save
@@ -334,7 +337,9 @@ class DiskFM(NoFM):
         if self.aligned_center != ref_center:
             err_string = """The aligned_center for the model {0} and for
                             the data {1} is different.
-                            Change and rerun""".format(self.aligned_center, ref_center)
+                            Change and rerun""".format(
+                self.aligned_center, ref_center
+            )
 
             print(err_string)
             raise ValueError(err_string)
@@ -385,13 +390,17 @@ class DiskFM(NoFM):
 
         # We save the KL basis and params for this image and section in a dictionnaries
         if self.save_basis is True:
-            # save the parameter used in KLIP-FM
+            # save the parameter used in KLIP-FM. We save a float64 to avoid pbs
+            # in the saving and loading
+
             [IWA, OWA] = IOWA
-            klparam_dict["IWA"] = IWA
-            klparam_dict["OWA"] = OWA
-            klparam_dict["aligned_center"] = ref_center
+            klparam_dict["IWA"] = np.float64(IWA)
+            klparam_dict["OWA"] = np.float64(OWA)
+
             # save the center for aligning the image in KLIP-FM. In practice, this
             # center will be used for all the models after we load.
+            klparam_dict["aligned_center_x"] = np.float64(ref_center[0])
+            klparam_dict["aligned_center_y"] = np.float64(ref_center[1])
 
             curr_im = str(input_img_num)
             if len(curr_im) < 3:
@@ -435,20 +444,21 @@ class DiskFM(NoFM):
         # fm.klip_parallelized but this is not ideal.
 
         dims = fmout.shape
-        fmout = np.rollaxis(fmout.reshape(
-            (dims[0], dims[1], dims[2], dims[3])), 3)
+        fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
-    def save_fmout(self,
-                   dataset,
-                   fmout,
-                   outputdir,
-                   fileprefix,
-                   numbasis,
-                   klipparams=None,
-                   calibrate_flux=False,
-                   pixel_weights=1,
-                   **kwargs):
+    def save_fmout(
+        self,
+        dataset,
+        fmout,
+        outputdir,
+        fileprefix,
+        numbasis,
+        klipparams=None,
+        calibrate_flux=False,
+        pixel_weights=1,
+        **kwargs
+    ):
         """
         Uses dataset parameters to save the forward model, the output of
         fm_paralellized or klip_dataset. No returm, data are saved
@@ -506,8 +516,7 @@ class DiskFM(NoFM):
         # if there is more than one wavelength, save also spectral cubes
         if dataset.numwvs > 1:
 
-            KLmode_spectral_cubes = np.nanmean(
-                pixel_weights * fmout_spec, axis=1)
+            KLmode_spectral_cubes = np.nanmean(pixel_weights * fmout_spec, axis=1)
             if weighted:
                 # if the pixel weights aren't just 1 (i.e., weighted case), we need to
                 # normalize for that.
@@ -541,54 +550,62 @@ class DiskFM(NoFM):
 
         """
 
-        _, file_extension = path.splitext(self.basis_filename)
+        # Convert everything to np arrays and types to be safe for the saving.
+        for key in section_ind_dict.keys():
+            section_ind_dict[key] = np.asarray(section_ind_dict[key])
+            radstart_dict[key] = np.float64(radstart_dict[key])
+            radend_dict[key] = np.float64(radend_dict[key])
+            phistart_dict[key] = np.float64(phistart_dict[key])
+            phiend_dict[key] = np.float64(phiend_dict[key])
 
+        _, file_extension = path.splitext(self.basis_filename)
 
         if file_extension == ".pkl":
             # transform mp dicts to normal dicts
-            pickle_file = open(self.basis_filename, "wb")
-            pickle.dump(dict(klmodes_dict), pickle_file, protocol=2)
-            pickle.dump(dict(evecs_dict), pickle_file, protocol=2)
-            pickle.dump(dict(evals_dict), pickle_file, protocol=2)
-            pickle.dump(dict(ref_psfs_indicies_dict), pickle_file, protocol=2)
-            pickle.dump(dict(section_ind_dict), pickle_file, protocol=2)
+            pkl_file = open(self.basis_filename, "wb")
+            pickle.dump(dict(klmodes_dict), pkl_file, protocol=2)
+            pickle.dump(dict(evecs_dict), pkl_file, protocol=2)
+            pickle.dump(dict(evals_dict), pkl_file, protocol=2)
+            pickle.dump(dict(ref_psfs_indicies_dict), pkl_file, protocol=2)
+            pickle.dump(dict(section_ind_dict), pkl_file, protocol=2)
 
-            pickle.dump(dict(radstart_dict), pickle_file, protocol=2)
-            pickle.dump(dict(radend_dict), pickle_file, protocol=2)
-            pickle.dump(dict(phistart_dict), pickle_file, protocol=2)
-            pickle.dump(dict(phiend_dict), pickle_file, protocol=2)
-            pickle.dump(dict(input_img_num_dict), pickle_file, protocol=2)
+            pickle.dump(dict(radstart_dict), pkl_file, protocol=2)
+            pickle.dump(dict(radend_dict), pkl_file, protocol=2)
+            pickle.dump(dict(phistart_dict), pkl_file, protocol=2)
+            pickle.dump(dict(phiend_dict), pkl_file, protocol=2)
+            pickle.dump(dict(input_img_num_dict), pkl_file, protocol=2)
 
-            pickle.dump(dict(klparam_dict), pickle_file, protocol=2)
+            pickle.dump(dict(klparam_dict), pkl_file, protocol=2)
 
-        # elif (file_extension == ".h5") :
-        #     # transform mp dicts to normal dicts
-        #     # make a single dictionnary and save in h5
-        #     dict_for_saving_in_h5 = {
-        #         "klmodes_dict": dict(klmodes_dict),
-        #         "evecs_dict": dict(evecs_dict),
-        #         "evals_dict": dict(evals_dict),
-        #         "ref_psfs_indicies_dict": dict(ref_psfs_indicies_dict),
-        #         "section_ind_dict": dict(section_ind_dict),
-        #         "radstart_dict": dict(radstart_dict),
-        #         "radend_dict": dict(radend_dict),
-        #         "phistart_dict": dict(phistart_dict),
-        #         "phiend_dict": dict(phiend_dict),
-        #         "input_img_num_dict": dict(input_img_num_dict),
-        #         "klparam_dict": dict(klparam_dict),
-        #     }
+        elif file_extension == ".h5":
+            # transform mp dicts to normal dicts
+            # make a single dictionnary and save in h5
 
-        #     path_basish5, name_basish5 = path.split(self.basis_filename)
-        #     dicttoh5(dict_for_saving_in_h5, name_basish5, h5path=path_basish5)
-        #     # ddh5.save(self.basis_filename, dict_for_saving_in_h5)
-        #     del dict_for_saving_in_h5
+            saving_in_h5_dict = {
+                "klmodes_dict": dict(klmodes_dict),
+                "evecs_dict": dict(evecs_dict),
+                "evals_dict": dict(evals_dict),
+                "ref_psfs_indicies_dict": dict(ref_psfs_indicies_dict),
+                "section_ind_dict": dict(section_ind_dict),
+                "radstart_dict": dict(radstart_dict),
+                "radend_dict": dict(radend_dict),
+                "phistart_dict": dict(phistart_dict),
+                "phiend_dict": dict(phiend_dict),
+                "input_img_num_dict": dict(input_img_num_dict),
+                "klparam_dict": dict(klparam_dict),
+            }
 
+            _save_dict_to_hdf5(saving_in_h5_dict, self.basis_filename)
+
+            del saving_in_h5_dict
 
         else:
             raise ValueError(
-                file_extension + """ is not a possible extension. Filenames can
+                file_extension
+                + """ is not a possible extension. Filenames can
                 haves 1 recognizable extension: .pkl"""
             )
+
 
     def load_basis_files(self, dataset):
         """
@@ -607,91 +624,70 @@ class DiskFM(NoFM):
 
         # Load in file
         if file_extension == ".pkl":
-            pickle_file = open(self.basis_filename, "rb")
+            pkl_file = open(self.basis_filename, "rb")
             if version_info.major == 3:
-                self.klmodes_dict = pickle.load(pickle_file, encoding="latin1")
-                self.evecs_dict = pickle.load(pickle_file, encoding="latin1")
-                self.evals_dict = pickle.load(pickle_file, encoding="latin1")
-                self.ref_psfs_indicies_dict = pickle.load(
-                    pickle_file, encoding="latin1"
-                )
-                self.section_ind_dict = pickle.load(
-                    pickle_file, encoding="latin1")
+                self.klmodes_dict = pickle.load(pkl_file, encoding="latin1")
+                self.evecs_dict = pickle.load(pkl_file, encoding="latin1")
+                self.evals_dict = pickle.load(pkl_file, encoding="latin1")
+                self.ref_psfs_indicies_dict = pickle.load(pkl_file, encoding="latin1")
+                self.section_ind_dict = pickle.load(pkl_file, encoding="latin1")
 
-                self.radstart_dict = pickle.load(
-                    pickle_file, encoding="latin1")
-                self.radend_dict = pickle.load(pickle_file, encoding="latin1")
-                self.phistart_dict = pickle.load(
-                    pickle_file, encoding="latin1")
-                self.phiend_dict = pickle.load(pickle_file, encoding="latin1")
-                self.input_img_num_dict = pickle.load(
-                    pickle_file, encoding="latin1")
+                self.radstart_dict = pickle.load(pkl_file, encoding="latin1")
+                self.radend_dict = pickle.load(pkl_file, encoding="latin1")
+                self.phistart_dict = pickle.load(pkl_file, encoding="latin1")
+                self.phiend_dict = pickle.load(pkl_file, encoding="latin1")
+                self.input_img_num_dict = pickle.load(pkl_file, encoding="latin1")
 
-                self.klparam_dict = pickle.load(pickle_file, encoding="latin1")
+                self.klparam_dict = pickle.load(pkl_file, encoding="latin1")
 
             else:
-                self.klmodes_dict = pickle.load(pickle_file)
-                self.evecs_dict = pickle.load(pickle_file)
-                self.evals_dict = pickle.load(pickle_file)
-                self.ref_psfs_indicies_dict = pickle.load(pickle_file)
-                self.section_ind_dict = pickle.load(pickle_file)
+                self.klmodes_dict = pickle.load(pkl_file)
+                self.evecs_dict = pickle.load(pkl_file)
+                self.evals_dict = pickle.load(pkl_file)
+                self.ref_psfs_indicies_dict = pickle.load(pkl_file)
+                self.section_ind_dict = pickle.load(pkl_file)
 
-                self.radstart_dict = pickle.load(pickle_file)
-                self.radend_dict = pickle.load(pickle_file)
-                self.phistart_dict = pickle.load(pickle_file)
-                self.phiend_dict = pickle.load(pickle_file)
-                self.input_img_num_dict = pickle.load(pickle_file)
+                self.radstart_dict = pickle.load(pkl_file)
+                self.radend_dict = pickle.load(pkl_file)
+                self.phistart_dict = pickle.load(pkl_file)
+                self.phiend_dict = pickle.load(pkl_file)
+                self.input_img_num_dict = pickle.load(pkl_file)
 
-                self.klparam_dict = pickle.load(pickle_file)
+                self.klparam_dict = pickle.load(pkl_file)
 
-        # if file_extension == ".h5":
-        #     # dict_for_saving_in_h5 = ddh5.load(self.basis_filename)
-        #     path_basish5, name_basish5 = path.split(self.basis_filename)
-        #     dict_for_saving_in_h5 = h5todict(name_basish5, path=path_basish5)
+        if file_extension == ".h5":
+            # saving_in_h5_dict = ddh5.load(self.basis_filename)
+            # path_basish5, name_basish5 = path.split(self.basis_filename)
+            saving_in_h5_dict = _load_dict_from_hdf5(self.basis_filename)
 
-        #     self.klmodes_dict = dict_for_saving_in_h5["klmodes_dict"]
-        #     self.evecs_dict = dict_for_saving_in_h5["evecs_dict"]
-        #     self.evals_dict = dict_for_saving_in_h5["evals_dict"]
-        #     self.ref_psfs_indicies_dict = dict_for_saving_in_h5[
-        #         "ref_psfs_indicies_dict"
-        #     ]
-        #     self.section_ind_dict = dict_for_saving_in_h5["section_ind_dict"]
+            self.klmodes_dict = saving_in_h5_dict["klmodes_dict"]
+            self.evecs_dict = saving_in_h5_dict["evecs_dict"]
+            self.evals_dict = saving_in_h5_dict["evals_dict"]
+            self.ref_psfs_indicies_dict = saving_in_h5_dict["ref_psfs_indicies_dict"]
+            self.section_ind_dict = saving_in_h5_dict["section_ind_dict"]
 
-        #     self.radstart_dict = dict_for_saving_in_h5["radstart_dict"]
-        #     self.radend_dict = dict_for_saving_in_h5["radend_dict"]
-        #     self.phistart_dict = dict_for_saving_in_h5["phistart_dict"]
-        #     self.phiend_dict = dict_for_saving_in_h5["phiend_dict"]
-        #     self.input_img_num_dict = dict_for_saving_in_h5["input_img_num_dict"]
+            self.radstart_dict = saving_in_h5_dict["radstart_dict"]
+            self.radend_dict = saving_in_h5_dict["radend_dict"]
+            self.phistart_dict = saving_in_h5_dict["phistart_dict"]
+            self.phiend_dict = saving_in_h5_dict["phiend_dict"]
+            self.input_img_num_dict = saving_in_h5_dict["input_img_num_dict"]
 
-        #     self.klparam_dict = dict_for_saving_in_h5["klparam_dict"]
+            self.klparam_dict = saving_in_h5_dict["klparam_dict"]
 
-        #     del dict_for_saving_in_h5
+            del saving_in_h5_dict
 
         # read key name for each section and image
         self.dict_keys = sorted(self.klmodes_dict.keys())
 
         # load parameters of the correction that fm.klip_dataset produced
         # when we saved the FM basis.
-        self.IWA = float(self.klparam_dict["IWA"])
-        self.OWA = np.float64(self.klparam_dict["OWA"])
+        self.IWA = self.klparam_dict["IWA"]
+        self.OWA = self.klparam_dict["OWA"]
 
-        # all output images have the same center, to which we shoudl aligned our models
-        _, file_extension = path.splitext(self.basis_filename)
-        # if file_extension == '.h5':
-        #     self.aligned_center = self.klparam_dict["aligned_center"].tolist()
-        # else:
-
-        self.aligned_center = self.klparam_dict["aligned_center"]
-        # print(type(self.aligned_center))
-        # print(type(self.IWA))
-        # print(type(self.OWA))
-
-        # print(self.IWA.shape)
-        # print(self.OWA.shape)
-
-        # print(self.IWA)
-        # print(self.OWA)
-
+        self.aligned_center = [
+            self.klparam_dict["aligned_center_x"],
+            self.klparam_dict["aligned_center_y"],
+        ]
 
         numthreads = self.numthreads
 
@@ -740,42 +736,48 @@ class DiskFM(NoFM):
         # I need to run this code at least once in non-parallel mode to initialize the
         # global variable outputs_shape in fm.py, because if I don't I cannot use
         # fm._save_rotated_section. This is a short stuff and we do it only once.
-        fm._tpool_init(original_imgs,
-                       original_imgs_shape,
-                       recentered_imgs,
-                       recentered_imgs_shape,
-                       output_imgs,
-                       self.output_imgs_shape,
-                       output_imgs_numstacked,
-                       pa_imgs,
-                       wvs_imgs,
-                       centers_imgs,
-                       None,
-                       None,
-                       fmout_data,
-                       fmout_shape,
-                       None,
-                       None)
+        fm._tpool_init(
+            original_imgs,
+            original_imgs_shape,
+            recentered_imgs,
+            recentered_imgs_shape,
+            output_imgs,
+            self.output_imgs_shape,
+            output_imgs_numstacked,
+            pa_imgs,
+            wvs_imgs,
+            centers_imgs,
+            None,
+            None,
+            fmout_data,
+            fmout_shape,
+            None,
+            None,
+        )
 
-        tpool = mp.Pool(processes=numthreads,
-                        initializer=fm._tpool_init,
-                        initargs=(original_imgs,
-                                  original_imgs_shape,
-                                  recentered_imgs,
-                                  recentered_imgs_shape,
-                                  output_imgs,
-                                  self.output_imgs_shape,
-                                  output_imgs_numstacked,
-                                  pa_imgs,
-                                  wvs_imgs,
-                                  centers_imgs,
-                                  None,
-                                  None,
-                                  fmout_data,
-                                  fmout_shape,
-                                  None,
-                                  None),
-                        maxtasksperchild=50)
+        tpool = mp.Pool(
+            processes=numthreads,
+            initializer=fm._tpool_init,
+            initargs=(
+                original_imgs,
+                original_imgs_shape,
+                recentered_imgs,
+                recentered_imgs_shape,
+                output_imgs,
+                self.output_imgs_shape,
+                output_imgs_numstacked,
+                pa_imgs,
+                wvs_imgs,
+                centers_imgs,
+                None,
+                None,
+                fmout_data,
+                fmout_shape,
+                None,
+                None,
+            ),
+            maxtasksperchild=50,
+        )
 
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
@@ -827,8 +829,7 @@ class DiskFM(NoFM):
         """
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
-        fmout_np = fm._arraytonumpy(
-            fmout_data, fmout_shape, dtype=self.data_type)
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype=self.data_type)
 
         wvs = self.wvs
         unique_wvs = np.unique(wvs)
@@ -872,29 +873,29 @@ class DiskFM(NoFM):
             wv_index = (np.where(unique_wvs == wl_here))[0][0]
             aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
 
-            self.fm_from_eigen(klmodes=original_KL,
-                               evals=evals,
-                               evecs=evecs,
-                               input_img_shape=[original_imgs_shape[1],
-                                                original_imgs_shape[2]],
-                               input_img_num=img_num,
-                               ref_psfs_indicies=ref_psfs_indicies,
-                               section_ind=section_ind,
-                               aligned_imgs=aligned_imgs_for_this_wl,
-                               radstart=radstart,
-                               radend=radend,
-                               phistart=phistart,
-                               phiend=phiend,
-                               padding=0.0,
-                               IOWA=(self.IWA, self.OWA),
-                               ref_center=self.aligned_center,
-                               parang=self.pa_imgs_np[img_num],
-                               numbasis=self.numbasis,
-                               fmout=fmout_np)
+            self.fm_from_eigen(
+                klmodes=original_KL,
+                evals=evals,
+                evecs=evecs,
+                input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]],
+                input_img_num=img_num,
+                ref_psfs_indicies=ref_psfs_indicies,
+                section_ind=section_ind,
+                aligned_imgs=aligned_imgs_for_this_wl,
+                radstart=radstart,
+                radend=radend,
+                phistart=phistart,
+                phiend=phiend,
+                padding=0.0,
+                IOWA=(self.IWA, self.OWA),
+                ref_center=self.aligned_center,
+                parang=self.pa_imgs_np[img_num],
+                numbasis=self.numbasis,
+                fmout=fmout_np,
+            )
 
         # put any finishing touches on the FM Output
-        fmout_np = fm._arraytonumpy(
-            fmout_data, fmout_shape, dtype=self.data_type)
+        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype=self.data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
         # Check if we have a disk model at multiple wavelengths.
@@ -917,10 +918,9 @@ class DiskFM(NoFM):
                 ]
             )
             for i in np.arange(n_wv_per_file):
-                fmout_return[:, i, :, :] = (
-                    np.nansum(fmout_np[:, i::n_wv_per_file, :, :], axis=1)
-                    / float(self.nfiles)
-                )
+                fmout_return[:, i, :, :] = np.nansum(
+                    fmout_np[:, i::n_wv_per_file, :, :], axis=1
+                ) / float(self.nfiles)
 
         else:
             # If false then this is a collapsed-spec mode or pol mode: collapsed
@@ -928,3 +928,83 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis=1)
 
         return fmout_return
+
+
+def _save_dict_to_hdf5(dic, filename):
+    """
+    Saving a nested dictionnary into a h5 file
+
+    Args:
+        dic: the dictionnary to file
+        filename: the filename of the h5 where it will be saved
+
+    Returns:
+        None
+
+    """
+    with h5py.File(filename, "w") as h5file:
+        _recursively_save_dict_contents_to_group(h5file, "/", dic)
+
+
+def _load_dict_from_hdf5(filename):
+    """
+    Load a dictionnary from a h5 file
+
+    Args:
+        filename: the filename of the h5
+
+    Returns:
+        the dictionnary exctracted
+
+    """
+
+    with h5py.File(filename, "r") as h5file:
+        return _recursively_load_dict_contents_from_group(h5file, "/")
+
+
+def _recursively_save_dict_contents_to_group(h5file, path, dic):
+    """
+    Recursively explore the dictionnary for saving it
+
+    Args:
+        h5file: the file in which we save, opened with h5py.File
+        path: the separator to aggregate the keys. Should not be set to a value that
+            is likely to be in the dictionnary keys already
+        dic: the dictionnary to deconstruct
+
+    Returns
+        None
+
+    """
+    for key, item in dic.items():
+        if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
+            h5file[path + key] = item
+        elif isinstance(item, dict):
+            _recursively_save_dict_contents_to_group(h5file, path + key + "/", item)
+        else:
+            raise ValueError(
+                "Cannot save {0} type in h5 (key = {1})".format(type(item), path + key)
+            )
+
+
+def _recursively_load_dict_contents_from_group(h5file, path):
+    """
+    Recursively explore the dictionnary for loading it
+
+    Args:
+        h5file: the file from which we load, opened with h5py.File
+        path: the separator to aggregate the keys. Should be the same one used in
+        _recursively_save_dict_contents_to_group
+    Returns
+        the rebuilt dictionnary
+    """
+
+    ans = {}
+    for key, item in h5file[path].items():
+        if isinstance(item, h5py._hl.dataset.Dataset):
+            ans[key] = item[()]
+        elif isinstance(item, h5py._hl.group.Group):
+            ans[key] = _recursively_load_dict_contents_from_group(
+                h5file, path + key + "/"
+            )
+    return ans

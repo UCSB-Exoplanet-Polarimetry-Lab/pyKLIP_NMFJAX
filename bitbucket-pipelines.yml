@@ -11,20 +11,19 @@ pipelines:
           - pip
         script: # Modify the commands below to build your repository.
           # - git clone https://semaphoreP@bitbucket.org/pyKLIP/pyklip.git pyklip
-          - ls 
+          - ls
           - ls pyklip
           # - cd pyklip # move into repo base dir
           # - ls pyklip
           - ls pyklip/instruments
-          
+
           # install some more dependencies
           - pip install emcee
           - pip install corner
-          - pip install deeddish
-          
+
           # install pyklip
           - python setup.py develop
-          
+
           # setup coveralls
           - pip install coveralls
           # conda photutils is not happy with python 3.7. install manually for now
@@ -32,7 +31,7 @@ pipelines:
           - apt-get update # make sure it can find gcc
           - apt-get install -y gcc
           - pip install --no-deps photutils
-          
+
 
           #Coverage and Coverall hooking
           - coverage run --source ./pyklip -m py.test
