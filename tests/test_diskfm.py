@@ -6,9 +6,6 @@ import os
 import glob
 import warnings
 
-import h5py
-import pickle
-
 import numpy as np
 import astropy.io.fits as fits
 from astropy.convolution import convolve
@@ -16,7 +13,6 @@ from astropy.convolution import convolve
 import pyklip.instruments.GPI as GPI
 from pyklip.fmlib.diskfm import DiskFM
 import pyklip.fm as fm
-
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
@@ -26,8 +22,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 TESTDIR = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 
-def test_diskfm(just_loading= False, ext = '.h5', nwls = 1):
-
+def test_diskfm(just_loading=False, ext=".h5", nwls=1):
     """
     Test DiskFM package. Creata Model disk. Create a disk model class. Measure and save
     the KL basis + measure a FM. Load the KL basis. Re-measuure a FM from loaded KL
@@ -45,7 +40,8 @@ def test_diskfm(just_loading= False, ext = '.h5', nwls = 1):
     """
 
     # grab the files
-    filelist = glob.glob(TESTDIR + os.path.join("data", "S20131210*distorcorr.fits"))
+    filelist = glob.glob(TESTDIR +
+                         os.path.join("data", "S20131210*distorcorr.fits"))
     dataset = GPI.GPIData(filelist, quiet=True)
 
     # set a few parameters
@@ -63,7 +59,9 @@ def test_diskfm(just_loading= False, ext = '.h5', nwls = 1):
     instrument_psf = dataset.psfs[0]
     instrument_psf[np.where(instrument_psf < 0)] = 0
 
-    model_convolved = convolve(phony_disk_model, instrument_psf, boundary="wrap")
+    model_convolved = convolve(phony_disk_model,
+                               instrument_psf,
+                               boundary="wrap")
 
     if not just_loading:
         diskobj = DiskFM(
@@ -97,12 +95,12 @@ def test_diskfm(just_loading= False, ext = '.h5', nwls = 1):
 
     if nwls == 1:
         fmout_klip_dataset = fits.getdata(
-            TESTDIR + fileprefix + "-fmpsf-KLmodes-all.fits".format(numbasis[0])
-        )
+            TESTDIR + fileprefix +
+            "-fmpsf-KLmodes-all.fits".format(numbasis[0]))
     else:
         fmout_klip_dataset = fits.getdata(
-            TESTDIR + fileprefix + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])
-        )
+            TESTDIR + fileprefix +
+            "-fmpsf-KL{0}-speccube.fits".format(numbasis[0]))
 
     diskobj = DiskFM(
         dataset.input.shape,
@@ -130,29 +128,23 @@ def test_diskfm(just_loading= False, ext = '.h5', nwls = 1):
     # )
 
     if nwls == 1:
-        return_klip_dataset = fmout_klip_dataset[0] #first KL
-        return_by_fm_parallelized = modelfm_here[0] #first KL
+        return_klip_dataset = fmout_klip_dataset[0]  # first KL
+        return_by_fm_parallelized = modelfm_here[0]  # first KL
     else:
-        return_klip_dataset = fmout_klip_dataset[0] #first KL
-        return_by_fm_parallelized = modelfm_here[0][0] #first KL, first WL
+        return_klip_dataset = fmout_klip_dataset[0]  # first KL
+        return_by_fm_parallelized = modelfm_here[0][0]  # first KL, first WL
 
     # test that the FM models are not zero everywhere
     assert np.nanmax(np.abs(return_klip_dataset)) > 0.0
     assert np.nanmax(np.abs(return_by_fm_parallelized)) > 0.0
 
     # test that fm.klip_dataset and diskobj.fm_parallelized give very similar result
-    assert (
-        np.nanmax(
-            np.abs(
-                (return_klip_dataset - return_by_fm_parallelized) / return_klip_dataset
-            )
-        )
-        < 1
-    )
+    assert (np.nanmax(
+        np.abs((return_klip_dataset - return_by_fm_parallelized) /
+               return_klip_dataset)) < 1)
 
 
 def make_phony_disk(dim):
-
     """
     Create a very simple disk model
 
@@ -175,7 +167,7 @@ def make_phony_disk(dim):
 
     x2 = x1
     y2 = y1 / np.cos(np.radians(76))
-    rho2dellip = np.sqrt(x2 ** 2 + y2 ** 2)
+    rho2dellip = np.sqrt(x2**2 + y2**2)
 
     phony_disk[np.where((rho2dellip > 80) & (rho2dellip < 85))] = 1
 
@@ -184,8 +176,8 @@ def make_phony_disk(dim):
 
 if __name__ == "__main__":
 
-    test_diskfm(just_loading = False, ext = '.h5', nwls = 1)
-    test_diskfm(just_loading = False, ext = '.pkl', nwls = 1)
+    test_diskfm(just_loading=False, ext=".h5", nwls=1)
+    test_diskfm(just_loading=False, ext=".pkl", nwls=1)
     # we restart with just loading to see if it works
-    test_diskfm(just_loading = True, ext = '.h5', nwls = 1)
-    test_diskfm(just_loading = True, ext = '.h5', nwls = 1)
+    test_diskfm(just_loading=True, ext=".h5", nwls=1)
+    test_diskfm(just_loading=True, ext=".h5", nwls=1)

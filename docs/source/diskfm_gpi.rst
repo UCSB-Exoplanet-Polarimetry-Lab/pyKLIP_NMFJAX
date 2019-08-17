@@ -110,7 +110,7 @@ ave the forward model KL basis and parameters:
 
     diskobj = DiskFM(dataset.input.shape, numbasis, dataset,
                     disk_model_convolved, aligned_center=aligned_center,
-                    basis_filename = 'path/to/dir/klip-basis.pkl', save_basis = True)
+                    basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
 
 
     fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
@@ -126,7 +126,7 @@ The disk forward model will be output to `fmout`:
 
     diskobj = DiskFM(dataset.input.shape, numbasis, dataset,
                     disk_model_convolved, aligned_center=aligned_center,
-                    basis_filename='path/to/dir/klip-basis.pkl', load_from_basis=True)
+                    basis_filename='path/to/dir/klip-basis.h5', load_from_basis=True)
 
     # do the forward modelling on a new model
     new_disk_model_convolved=convolve(new_disk_model,instrument_psf, boundary='wrap')

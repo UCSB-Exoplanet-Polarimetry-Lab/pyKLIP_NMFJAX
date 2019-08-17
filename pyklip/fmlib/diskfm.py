@@ -13,7 +13,6 @@ from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
 from pyklip.klip import rotate
 
-
 # define the global variables for that code
 parallel = True
 
@@ -75,30 +74,27 @@ class DiskFM(NoFM):
                             and then check that it is the same one used for the images
                             in fm.klip_dataset
             annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
-            subsections: deprecated parameter, ignored here and defined in fm.klip_dataset
+            subsections: deprecated parameter, ignored here and defined
+                         in fm.klip_dataset
             mode: deprecated parameter, ignored here and defined in fm.klip_dataset
 
         Returns:
             A DiskFM Object
 
     """
-
-    def __init__(
-        self,
-        inputs_shape,
-        numbasis,
-        dataset,
-        model_disk,
-        basis_filename="klip-basis.pkl",
-        load_from_basis=False,
-        save_basis=False,
-        aligned_center=None,
-        numthreads=None,
-        annuli=None,
-        subsections=None,
-        mode=None,
-    ):
-
+    def __init__(self,
+                 inputs_shape,
+                 numbasis,
+                 dataset,
+                 model_disk,
+                 basis_filename="klip-basis.pkl",
+                 load_from_basis=False,
+                 save_basis=False,
+                 aligned_center=None,
+                 numthreads=None,
+                 annuli=None,
+                 subsections=None,
+                 mode=None):
         """
 
             Initilaizes the DiskFM class
@@ -126,7 +122,8 @@ class DiskFM(NoFM):
         # self.images = dataset.input
         self.PAs = dataset.PAs
         self.wvs = dataset.wvs
-        self.nfiles = int(np.nanmax(dataset.filenums)) + 1 # Get the number of files
+        self.nfiles = int(np.nanmax(
+            dataset.filenums)) + 1  # Get the number of files
 
         # Outputs attributes
         output_imgs_shape = dataset.input.shape + self.numbasis.shape
@@ -199,18 +196,16 @@ class DiskFM(NoFM):
         self.model_disks = np.zeros(self.inputs_shape)
 
         # Extract the # of WL per files
-        n_wv_per_file = int(
-            self.inputs_shape[0] // self.nfiles
-        )  # Number of wavelenths per file.
+        n_wv_per_file = int(self.inputs_shape[0] //
+                            self.nfiles)  # Number of wavelenths per file.
 
         model_disk_shape = np.shape(model_disk)
 
         if (np.size(model_disk_shape) == 2) & (n_wv_per_file > 1):
             # This is a single WL 2D model in a multi-wl 3D data,
             # in that case we repeat this model at each WL
-            self.model_disk = np.broadcast_to(
-                model_disk, (n_wv_per_file,) + model_disk.shape
-            )
+            self.model_disk = np.broadcast_to(model_disk, (n_wv_per_file, ) +
+                                              model_disk.shape)
             model_disk_shape = np.shape(model_disk)
         else:
             # This is either a multi WL 3D model in a multi-wl 3D data
@@ -225,10 +220,7 @@ class DiskFM(NoFM):
                 # Both models and data are multiWL, but not the same number of WLs !
                 raise ValueError(
                     """Number of wls in disk model ({0}) don't match number of wls in
-                    the data ({1})""".format(
-                        n_model_wvs, n_wv_per_file
-                    )
-                )
+                    the data ({1})""".format(n_model_wvs, n_wv_per_file))
 
             for k in np.arange(self.nfiles):
                 for j, _ in enumerate(range(n_model_wvs)):
@@ -246,15 +238,17 @@ class DiskFM(NoFM):
 
             for i, pa_here in enumerate(self.PAs):
                 model_copy = deepcopy(model_disk)
-                model_copy = rotate(
-                    model_copy, pa_here, self.aligned_center, flipx=True
-                )
+                model_copy = rotate(model_copy,
+                                    pa_here,
+                                    self.aligned_center,
+                                    flipx=True)
                 model_copy[np.where(np.isnan(model_copy))] = 0.0
                 self.model_disks[i] = model_copy
 
         self.model_disks = np.reshape(
             self.model_disks,
-            (self.inputs_shape[0], self.inputs_shape[1] * self.inputs_shape[2]),
+            (self.inputs_shape[0],
+             self.inputs_shape[1] * self.inputs_shape[2]),
         )
 
     def alloc_fmout(self, output_img_shape):
@@ -274,29 +268,27 @@ class DiskFM(NoFM):
         fmout = mp.Array(self.data_type, fmout_size)
         return fmout, fmout_shape
 
-    def fm_from_eigen(
-        self,
-        klmodes=None,
-        evals=None,
-        evecs=None,
-        input_img_shape=None,
-        input_img_num=None,
-        ref_psfs_indicies=None,
-        section_ind=None,
-        aligned_imgs=None,
-        radstart=None,
-        radend=None,
-        phistart=None,
-        phiend=None,
-        padding=None,
-        IOWA=None,
-        ref_center=None,
-        parang=None,
-        numbasis=None,
-        fmout=None,
-        flipx=True,
-        **kwargs
-    ):
+    def fm_from_eigen(self,
+                      klmodes=None,
+                      evals=None,
+                      evecs=None,
+                      input_img_shape=None,
+                      input_img_num=None,
+                      ref_psfs_indicies=None,
+                      section_ind=None,
+                      aligned_imgs=None,
+                      radstart=None,
+                      radend=None,
+                      phistart=None,
+                      phiend=None,
+                      padding=None,
+                      IOWA=None,
+                      ref_center=None,
+                      parang=None,
+                      numbasis=None,
+                      fmout=None,
+                      flipx=True,
+                      **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from
         KLIP. Calls fm.py functions to perform the forward modelling. If we wish to save
@@ -337,9 +329,8 @@ class DiskFM(NoFM):
         if self.aligned_center != ref_center:
             err_string = """The aligned_center for the model {0} and for
                             the data {1} is different.
-                            Change and rerun""".format(
-                self.aligned_center, ref_center
-            )
+                            Change and rerun""".format(self.aligned_center,
+                                                       ref_center)
 
             print(err_string)
             raise ValueError(err_string)
@@ -359,14 +350,20 @@ class DiskFM(NoFM):
 
         # using original Kl modes and reference models, compute the perturbed KL modes
         # (spectra is already in models)
-        delta_KL = fm.perturb_specIncluded(
-            evals, evecs, klmodes, refs, model_ref, return_perturb_covar=False
-        )
+        delta_KL = fm.perturb_specIncluded(evals,
+                                           evecs,
+                                           klmodes,
+                                           refs,
+                                           model_ref,
+                                           return_perturb_covar=False)
 
         # calculate postklip_psf using delta_KL
-        postklip_psf, _, _ = fm.calculate_fm(
-            delta_KL, klmodes, numbasis, sci, model_sci, inputflux=None
-        )
+        postklip_psf, _, _ = fm.calculate_fm(delta_KL,
+                                             klmodes,
+                                             numbasis,
+                                             sci,
+                                             model_sci,
+                                             inputflux=None)
 
         # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
@@ -444,21 +441,20 @@ class DiskFM(NoFM):
         # fm.klip_parallelized but this is not ideal.
 
         dims = fmout.shape
-        fmout = np.rollaxis(fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
+        fmout = np.rollaxis(
+            fmout.reshape((dims[0], dims[1], dims[2], dims[3])), 3)
         return fmout
 
-    def save_fmout(
-        self,
-        dataset,
-        fmout,
-        outputdir,
-        fileprefix,
-        numbasis,
-        klipparams=None,
-        calibrate_flux=False,
-        pixel_weights=1,
-        **kwargs
-    ):
+    def save_fmout(self,
+                   dataset,
+                   fmout,
+                   outputdir,
+                   fileprefix,
+                   numbasis,
+                   klipparams=None,
+                   calibrate_flux=False,
+                   pixel_weights=1,
+                   **kwargs):
         """
         Uses dataset parameters to save the forward model, the output of
         fm_paralellized or klip_dataset. No returm, data are saved
@@ -485,15 +481,13 @@ class DiskFM(NoFM):
 
         weighted = len(np.shape(pixel_weights)) > 1
         numwvs = dataset.numwvs
-        fmout_spec = fmout.reshape(
-            [
-                fmout.shape[0],
-                fmout.shape[1] // numwvs,
-                numwvs,
-                fmout.shape[2],
-                fmout.shape[3],
-            ]
-        )  # (b, N_cube, wvs, y, x) 5-D cube
+        fmout_spec = fmout.reshape([
+            fmout.shape[0],
+            fmout.shape[1] // numwvs,
+            numwvs,
+            fmout.shape[2],
+            fmout.shape[3],
+        ])  # (b, N_cube, wvs, y, x) 5-D cube
 
         # collapse in time and wavelength to examine KL modes
         KLmode_cube = np.nanmean(pixel_weights * fmout_spec, axis=(1, 2))
@@ -516,23 +510,22 @@ class DiskFM(NoFM):
         # if there is more than one wavelength, save also spectral cubes
         if dataset.numwvs > 1:
 
-            KLmode_spectral_cubes = np.nanmean(pixel_weights * fmout_spec, axis=1)
+            KLmode_spectral_cubes = np.nanmean(pixel_weights * fmout_spec,
+                                               axis=1)
             if weighted:
                 # if the pixel weights aren't just 1 (i.e., weighted case), we need to
                 # normalize for that.
                 KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
 
-            for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
+            for KLcutoff, spectral_cube in zip(numbasis,
+                                               KLmode_spectral_cubes):
                 # calibrate spectral cube if needed
                 if calibrate_flux:
-                    spectral_cube = dataset.calibrate_output(
-                        spectral_cube, spectral=True
-                    )
+                    spectral_cube = dataset.calibrate_output(spectral_cube,
+                                                             spectral=True)
                 dataset.savedata(
-                    outputdir
-                    + "/"
-                    + fileprefix
-                    + "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                    outputdir + "/" + fileprefix +
+                    "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
                     spectral_cube,
                     klipparams=klipparams.format(numbasis=KLcutoff),
                     filetype="PSF Subtracted Spectral Cube",
@@ -600,12 +593,9 @@ class DiskFM(NoFM):
             del saving_in_h5_dict
 
         else:
-            raise ValueError(
-                file_extension
-                + """ is not a possible extension. Filenames can
-                haves 1 recognizable extension: .pkl"""
-            )
-
+            raise ValueError(file_extension +
+                             """ is not a possible extension. Filenames can
+                haves 2 recognizable extension2: .h5 and .pkl""")
 
     def load_basis_files(self, dataset):
         """
@@ -629,14 +619,17 @@ class DiskFM(NoFM):
                 self.klmodes_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evecs_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evals_dict = pickle.load(pkl_file, encoding="latin1")
-                self.ref_psfs_indicies_dict = pickle.load(pkl_file, encoding="latin1")
-                self.section_ind_dict = pickle.load(pkl_file, encoding="latin1")
+                self.ref_psfs_indicies_dict = pickle.load(pkl_file,
+                                                          encoding="latin1")
+                self.section_ind_dict = pickle.load(pkl_file,
+                                                    encoding="latin1")
 
                 self.radstart_dict = pickle.load(pkl_file, encoding="latin1")
                 self.radend_dict = pickle.load(pkl_file, encoding="latin1")
                 self.phistart_dict = pickle.load(pkl_file, encoding="latin1")
                 self.phiend_dict = pickle.load(pkl_file, encoding="latin1")
-                self.input_img_num_dict = pickle.load(pkl_file, encoding="latin1")
+                self.input_img_num_dict = pickle.load(pkl_file,
+                                                      encoding="latin1")
 
                 self.klparam_dict = pickle.load(pkl_file, encoding="latin1")
 
@@ -663,7 +656,8 @@ class DiskFM(NoFM):
             self.klmodes_dict = saving_in_h5_dict["klmodes_dict"]
             self.evecs_dict = saving_in_h5_dict["evecs_dict"]
             self.evals_dict = saving_in_h5_dict["evals_dict"]
-            self.ref_psfs_indicies_dict = saving_in_h5_dict["ref_psfs_indicies_dict"]
+            self.ref_psfs_indicies_dict = saving_in_h5_dict[
+                "ref_psfs_indicies_dict"]
             self.section_ind_dict = saving_in_h5_dict["section_ind_dict"]
 
             self.radstart_dict = saving_in_h5_dict["radstart_dict"]
@@ -696,16 +690,16 @@ class DiskFM(NoFM):
         # # make the array for the original images and initalize it
         original_imgs = mp.Array(self.data_type, np.size(dataset.input))
         original_imgs_shape = dataset.input.shape
-        original_imgs_np = fm._arraytonumpy(
-            original_imgs, original_imgs_shape, dtype=self.data_type
-        )
+        original_imgs_np = fm._arraytonumpy(original_imgs,
+                                            original_imgs_shape,
+                                            dtype=self.data_type)
         original_imgs_np[:] = dataset.input
         # make array for recentered/rescaled image for each wavelength
         unique_wvs = np.unique(self.wvs)
         recentered_imgs = mp.Array(
-            self.data_type, np.size(dataset.input) * np.size(unique_wvs)
-        )
-        recentered_imgs_shape = (np.size(unique_wvs),) + dataset.input.shape
+            self.data_type,
+            np.size(dataset.input) * np.size(unique_wvs))
+        recentered_imgs_shape = (np.size(unique_wvs), ) + dataset.input.shape
 
         # remake the PA, wv, and center arrays as shared arrays
         pa_imgs = mp.Array(self.data_type, np.size(self.PAs))
@@ -715,9 +709,9 @@ class DiskFM(NoFM):
         wvs_imgs_np = fm._arraytonumpy(wvs_imgs, dtype=self.data_type)
         wvs_imgs_np[:] = self.wvs
         centers_imgs = mp.Array(self.data_type, np.size(dataset.centers))
-        centers_imgs_np = fm._arraytonumpy(
-            centers_imgs, dataset.centers.shape, dtype=self.data_type
-        )
+        centers_imgs_np = fm._arraytonumpy(centers_imgs,
+                                           dataset.centers.shape,
+                                           dtype=self.data_type)
         centers_imgs_np[:] = dataset.centers
 
         # we will not save the fits fm_in parallelize, so we don't need those
@@ -829,7 +823,9 @@ class DiskFM(NoFM):
         """
 
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
-        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype=self.data_type)
+        fmout_np = fm._arraytonumpy(fmout_data,
+                                    fmout_shape,
+                                    dtype=self.data_type)
 
         wvs = self.wvs
         unique_wvs = np.unique(wvs)
@@ -877,7 +873,9 @@ class DiskFM(NoFM):
                 klmodes=original_KL,
                 evals=evals,
                 evecs=evecs,
-                input_img_shape=[original_imgs_shape[1], original_imgs_shape[2]],
+                input_img_shape=[
+                    original_imgs_shape[1], original_imgs_shape[2]
+                ],
                 input_img_num=img_num,
                 ref_psfs_indicies=ref_psfs_indicies,
                 section_ind=section_ind,
@@ -895,7 +893,9 @@ class DiskFM(NoFM):
             )
 
         # put any finishing touches on the FM Output
-        fmout_np = fm._arraytonumpy(fmout_data, fmout_shape, dtype=self.data_type)
+        fmout_np = fm._arraytonumpy(fmout_data,
+                                    fmout_shape,
+                                    dtype=self.data_type)
         fmout_np = self.cleanup_fmout(fmout_np)
 
         # Check if we have a disk model at multiple wavelengths.
@@ -904,23 +904,20 @@ class DiskFM(NoFM):
         # klip image-speccube.fits produced by.fm.klip_dataset
         if np.size(np.shape(self.model_disk)) > 2:
 
-            n_wv_per_file = int(
-                self.inputs_shape[0] // self.nfiles
-            )  # Number of WL per file.
+            n_wv_per_file = int(self.inputs_shape[0] //
+                                self.nfiles)  # Number of WL per file.
 
             # Collapse across all files, keeping the wavelengths intact.
-            fmout_return = np.zeros(
-                [
-                    np.size(self.numbasis),
-                    n_wv_per_file,
-                    self.inputs_shape[1],
-                    self.inputs_shape[2],
-                ]
-            )
+            fmout_return = np.zeros([
+                np.size(self.numbasis),
+                n_wv_per_file,
+                self.inputs_shape[1],
+                self.inputs_shape[2],
+            ])
             for i in np.arange(n_wv_per_file):
                 fmout_return[:, i, :, :] = np.nansum(
-                    fmout_np[:, i::n_wv_per_file, :, :], axis=1
-                ) / float(self.nfiles)
+                    fmout_np[:, i::n_wv_per_file, :, :], axis=1) / float(
+                        self.nfiles)
 
         else:
             # If false then this is a collapsed-spec mode or pol mode: collapsed
@@ -929,6 +926,10 @@ class DiskFM(NoFM):
 
         return fmout_return
 
+
+##############################################################################
+###### 4 routines to save and load h5 in dictionnaries
+##############################################################################
 
 def _save_dict_to_hdf5(dic, filename):
     """
@@ -945,7 +946,6 @@ def _save_dict_to_hdf5(dic, filename):
     with h5py.File(filename, "w") as h5file:
         _recursively_save_dict_contents_to_group(h5file, "/", dic)
 
-
 def _load_dict_from_hdf5(filename):
     """
     Load a dictionnary from a h5 file
@@ -960,7 +960,6 @@ def _load_dict_from_hdf5(filename):
 
     with h5py.File(filename, "r") as h5file:
         return _recursively_load_dict_contents_from_group(h5file, "/")
-
 
 def _recursively_save_dict_contents_to_group(h5file, path, dic):
     """
@@ -980,12 +979,11 @@ def _recursively_save_dict_contents_to_group(h5file, path, dic):
         if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
             h5file[path + key] = item
         elif isinstance(item, dict):
-            _recursively_save_dict_contents_to_group(h5file, path + key + "/", item)
+            _recursively_save_dict_contents_to_group(h5file, path + key + "/",
+                                                     item)
         else:
-            raise ValueError(
-                "Cannot save {0} type in h5 (key = {1})".format(type(item), path + key)
-            )
-
+            raise ValueError("Cannot save {0} type in h5 (key = {1})".format(
+                type(item), path + key))
 
 def _recursively_load_dict_contents_from_group(h5file, path):
     """
@@ -1005,6 +1003,5 @@ def _recursively_load_dict_contents_from_group(h5file, path):
             ans[key] = item[()]
         elif isinstance(item, h5py._hl.group.Group):
             ans[key] = _recursively_load_dict_contents_from_group(
-                h5file, path + key + "/"
-            )
+                h5file, path + key + "/")
     return ans
