@@ -212,7 +212,7 @@ We recall all the steps in a single block
     # initialize the DiskFM class
     diskobj = DiskFM(dataset.input.shape, numbasis, dataset,
                     disk_model_convolved, aligned_center=aligned_center,
-                    basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
+                    basis_filename = 'path/to/dir/klip-basis.pkl', save_basis = True)
 
     # run klip to find and save FM basis
     fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk",
