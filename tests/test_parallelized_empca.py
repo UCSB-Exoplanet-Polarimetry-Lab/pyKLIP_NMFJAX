@@ -106,6 +106,7 @@ def test_select_collapse():
     assert parallelized._select_collapse('meaN') == parallelized._mean_collapse
     assert parallelized._select_collapse('weighted mean') == parallelized._weighted_mean_collapse
     assert parallelized._select_collapse('WeIGhTed_MeAN') == parallelized._weighted_mean_collapse
+    assert parallelized._select_collapse('WeIGhTed-MeAN') == parallelized._weighted_mean_collapse
     assert parallelized._select_collapse('WeIGhTed_MeDIan') == parallelized._mean_collapse
     assert parallelized._select_collapse('trIMmEd_MeAN') == parallelized._trimmed_mean_collapse
 
@@ -144,40 +145,42 @@ def test_save_spectral_cubes(mock_os, mock_mean_collapse, mock_savedata):
     # flux calibration test
     pass
 
-def test_save_wv_collapsed_images():
-    pass
+@mock.patch('pyklip.parallelized._mean_collapse')
+@mock.patch('pyklip.parallelized._median_collapse')
+@mock.patch.object(CHARIS.CHARISData, 'savedata')
+def test_save_wv_collapsed_images(mock_savedata, mock_median_collapse, mock_mean_collapse):
 
-class klip_functions_TestCase(unittest.TestCase):
+    filelist = glob.glob('./tests/data/CHARISData_test_cube*.fits')
+    assert filelist
+    nimg = len(filelist)
+    numbasis = [1]
+    dataset = CHARIS.CHARISData(filelist, None, None, update_hdrs=False)
+    inputshape = (nimg, 22, 201, 201)
+    dataset.input = dataset.input.reshape(inputshape)
+    outputshape = (len(numbasis),) + inputshape
+    pixel_weights = np.ones(outputshape)
 
-    '''
-    test functions added to klip.py since the introduction of empca
-    '''
+    # output shape expected error test
+    dataset.output = np.array(dataset.input)  # shape (N, wv, y, x)
+    with pytest.raises(ValueError):
+        parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis,
+                                               'mean', None, None, False,
+                                               'anydir', 'anyprefix')
 
-    def test_make_polar_coordinates(self):
+    # test spectrum is None case
+    dataset.output = np.array([dataset.input])  # shape (1, N, wv, y, x)
+    mock_median_collapse.return_value = 'any spectral cubes'
+    mock_mean_collapse.return_value = ['KLmode_cube']
+    dataset.klipparams = 'numbasis={numbasis}'
+    parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis, 'mean',
+                              None, None, False, 'anydir', 'anyprefix')
+    mock_mean_collapse.assert_called_with('any spectral cubes', axis=1)
+    mock_savedata.assert_called_with('anydir/anyprefix-KL1modes-all.fits', ['KLmode_cube'], klipparams='numbasis=[1]',
+                                     filetype='KL Mode Cube', zaxis=numbasis)
 
-        x, y = np.meshgrid(np.arange(10), np.arange(10))
-        x.shape = (x.shape[0]*x.shape[1])
-        y.shape = (y.shape[0]*y.shape[1])
+    # test spectrum is not None case
 
-        # test for center at [0,0]
-        center = [0, 0]
-        r, phi = klip.make_polar_coordinates(x, y, center)
-        ind = np.where((x==0) & (y==0))
-        assert r[ind] == 0
-        ind = np.where(y==0)
-        testarray = np.zeros(10)
-        testarray.fill(-np.pi)
-        assert np.array_equal(phi[ind], testarray)
-
-        # test for center at [5,5]
-        center = [5, 5]
-        r, phi = klip.make_polar_coordinates(x, y, center)
-        ind = np.where((x==0) & (y==0))
-        assert r[ind] == np.sqrt(50)
-        ind = np.where((y>5) & (x==5))
-        testarray = np.zeros(4)
-        testarray.fill(-np.pi/2)
-        assert np.array_equal(phi[ind], testarray)
+    # test flux calibration
 
 class parallelized_empca_TestCase(unittest.TestCase):
 
@@ -218,6 +221,45 @@ class weighted_empca_section_TestCase(unittest.TestCase):
                                                     mode_void=None, corr_smooth_void=None, psf_library_good_void=None,
                                                     psf_library_corr_void=None, lite_void=None, dtype=None,
                                                     algo_void='empca', niter=15)
+
+    @mock.patch('pyklip.parallelized._arraytonumpy')
+    @mock.patch('pyklip.empca.empca.set_pixel_weights')
+    @mock.patch('pyklip.empca.empca.weighted_empca')
+    def test_functions_called(self, mock_weighted_empca, mock_set_pixel_weights, mock_arraytonumpy):
+
+        numbasis = [1, 2]
+        b = len(numbasis)
+        wv_index = 0
+        ref_center = [100, 100]
+        mock_aligned = np.ones((22, 189, 201 * 201))
+        mock_arraytonumpy.side_effect = [mock_aligned, np.ones((189, 201 * 201, b))]
+        mock_set_pixel_weights.return_value = 'some weights'
+        mock_weighted_empca.return_value = mock_aligned[wv_index]
+        parallelized.original_shape = (189, 201, 201)
+        parallelized.aligned = np.zeros((22, 189, 201, 201))
+        parallelized.aligned_shape = (22, 189, 201, 201)
+        parallelized.output = np.zeros((189, 201, 201, b))
+        parallelized.output_shape = (189, 201, 201, b)
+        x, y = np.meshgrid(np.arange(parallelized.original_shape[2]), np.arange(parallelized.original_shape[1]))
+        x.shape = (x.shape[0] * x.shape[1])
+        y.shape = (y.shape[0] * y.shape[1])
+        r, phi = klip.make_polar_coordinates(x, y, ref_center)
+        rflat = np.reshape(r[:], -1)
+
+        parallelized._weighted_empca_section(scidata_indices_void=None, wv_value_void=None, wv_index=wv_index,
+                                             numbasis=numbasis, maxnumbasis_void=None, radstart=0, radend=1000,
+                                             phistart=-2*np.pi, phiend=2*np.pi, movement=None, ref_center=ref_center,
+                                             minrot_void=None, maxrot_void=None, spectrum_void=None,
+                                             mode_void=None, corr_smooth_void=None, psf_library_good_void=None,
+                                             psf_library_corr_void=None, lite_void=None, dtype=None,
+                                             algo_void='empca', niter=15)
+
+        np.testing.assert_array_equal(mock_aligned[wv_index], mock_set_pixel_weights.call_args[0][0])
+        np.testing.assert_array_equal(rflat, mock_set_pixel_weights.call_args[0][1])
+        #print(mock_weighted_empca.call_args[1])
+        #assert False
+        #mock_weighted_empca.assert_has_calls(weights='some weights', niter=15, nvec=1)
+        #mock_weighted_empca.assert_has_calls(weights='some weights', niter=15, nvec=2)
 
 class empca_TestCase(unittest.TestCase):
     pass
