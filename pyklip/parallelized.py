@@ -476,10 +476,10 @@ def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numba
         dtype = ctypes.c_float
 
     # make coordinates for all aligned images
-    x, y = np.meshgrid(np.arange(original_shape[2]), np.arange(original_shape[1]))
-    x.shape = (x.shape[0] * x.shape[1])
-    y.shape = (y.shape[0] * y.shape[1])
-    r, phi = klip.make_polar_coordinates(x, y, ref_center)
+    x, y = np.meshgrid(np.arange(original_shape[2]), np.arange(original_shape[1])) # shape (x, y)
+    x.shape = (x.shape[0] * x.shape[1]) # shape (x*y)
+    y.shape = (y.shape[0] * y.shape[1]) # shape (x*y)
+    r, phi = klip.make_polar_coordinates(x, y, ref_center) # shape (x*y)
 
     # grab the working section of aligned images and set nan pixels to 0
     section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
@@ -494,7 +494,7 @@ def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numba
 
     # set weights for empca
     rflat = np.reshape(r[section_ind[0]], -1)
-    weights = empca.set_pixel_weights(ref_psfs, rflat, inner_sup=17, outer_sup=66, mode='standard') ### set weights for empca ###
+    weights = empca.set_pixel_weights(ref_psfs, rflat, mode='standard', inner_sup=17, outer_sup=66)
 
     # run empca reduction
     output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]),

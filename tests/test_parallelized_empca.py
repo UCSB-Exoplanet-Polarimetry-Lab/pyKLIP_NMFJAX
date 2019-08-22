@@ -182,12 +182,6 @@ def test_save_wv_collapsed_images(mock_savedata, mock_median_collapse, mock_mean
 
     # test flux calibration
 
-class parallelized_empca_TestCase(unittest.TestCase):
-
-    '''
-    test empca related features in parallelized
-    '''
-
 class weighted_empca_section_TestCase(unittest.TestCase):
 
     '''
@@ -256,10 +250,15 @@ class weighted_empca_section_TestCase(unittest.TestCase):
 
         np.testing.assert_array_equal(mock_aligned[wv_index], mock_set_pixel_weights.call_args[0][0])
         np.testing.assert_array_equal(rflat, mock_set_pixel_weights.call_args[0][1])
-        #print(mock_weighted_empca.call_args[1])
-        #assert False
-        #mock_weighted_empca.assert_has_calls(weights='some weights', niter=15, nvec=1)
-        #mock_weighted_empca.assert_has_calls(weights='some weights', niter=15, nvec=2)
+        np.testing.assert_array_equal(mock_weighted_empca.call_args[0][0], mock_aligned[wv_index])
+        assert mock_weighted_empca.call_args[1]['weights'] == 'some weights'
+        assert mock_weighted_empca.call_args[1]['niter'] == 15
+        assert mock_weighted_empca.call_args[1]['nvec'] == 2
 
-class empca_TestCase(unittest.TestCase):
+class parallelized_empca_TestCase(unittest.TestCase):
+
+    '''
+    test empca related features in parallelized
+    '''
     pass
+

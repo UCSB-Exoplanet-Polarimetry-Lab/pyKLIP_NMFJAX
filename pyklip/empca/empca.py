@@ -34,12 +34,12 @@ Original: Stephen Bailey, Spring 2012
 Rewritten by Timothy Brandt, Spring 2016
 """
 
-def set_pixel_weights(imflat, rflat, inner_sup=17, outer_sup=66, mode='standard'):
+def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66, normalize_weights=False):
     '''
     MC edited function
 
-    :param imflat: image flattened to 1D
-    :param rflat: radial component of the polar coordinates flattened to 1D
+    :param imflat: array of flattend images, shape (N, number of section indices)
+    :param rflat: radial component of the polar coordinates flattened to 1D, length = number of section indices
     :param inner_sup: radius within which to supress weights
     :param outer_sup: radius beyond which to supress weights
     :param mode:
@@ -51,11 +51,15 @@ def set_pixel_weights(imflat, rflat, inner_sup=17, outer_sup=66, mode='standard'
     #default weights are ones
     weights = np.ones(imflat.shape)
 
-    if mode == 'standard':
+    if mode.lower() == 'standard':
         weights = 1. / (np.sqrt(np.abs(imflat)) + 10)
         weights *= imflat != 0
         weights *= 1 / (1 + np.exp((inner_sup - rflat) / 1.))
         weights *= 1 / (1 + np.exp((rflat - outer_sup) / 1.))
+
+    if normalize_weights:
+        #TODO: implement correct axis for np.nanmean
+        weights /= np.nanmean(weights)
 
     return weights
 

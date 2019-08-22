@@ -59,5 +59,4 @@ class empca_functions_TestCase(unittest.TestCase):
     '''
 
     def test_set_pixel_weights(self):
-
         pass
