@@ -24,6 +24,8 @@ except ImportError:
     mkl_exists = False
 
 # can turn off for debugging purposes
+# this can now also be accomplished by passing parallel=True/False as a **kwargs in klip_dataset()
+global parallel
 parallel = True
 
 
@@ -66,6 +68,26 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     psf_lib = psf_library
     psf_lib_shape = psf_library_shape
 
+def _kwargs_options(**kwargs):
+
+    '''
+    a function to deal with some simple options that can be passed in through kwargs (such as turning parallel
+    programming on and off for debug purposes)
+    currently only deals with two options: parallel, charis_reduction, but additional options can be easily added
+    :param kwargs:
+    :return:
+    '''
+
+    global charis_reduction
+    charis_reduction = False
+
+    if kwargs.get('parallel') is not None:
+        parallel = kwargs.get('parallel')
+        print('parallel programming set to:', parallel)
+
+        charis_reduction = kwargs.get('charis_reduction')
+
+    return
 
 def _select_algo(algo):
     '''
@@ -1572,6 +1594,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             numbasis = np.array([numbasis])
 
+    _kwargs_options(**kwargs)
+
     # check how we will collapse the data
     # MC edit: time collapse re-factored into function "select_collapse"
     #          if input is not valid, will default to mean collapse
@@ -1834,7 +1858,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # create weights for each pixel. If we aren't doing weighted mean, weights are just ones
     pixel_weights = 1./stddev_frames**2
 
-    charis_reduction = kwargs.get('charis_reduction')
     if charis_reduction:
         # MC edit
         # refactored the remainder of klip_dataset() into two helper functions to collapse and save output
@@ -1897,4 +1920,3 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     #Restore old setting
     if mkl_exists:
         mkl.set_num_threads(old_mkl)
-
