@@ -1,3 +1,4 @@
+# pylint: disable=C0103
 from sys import version_info
 from os import path
 import multiprocessing as mp
@@ -15,22 +16,6 @@ from pyklip.klip import rotate
 
 # define the global variables for that code
 parallel = True
-
-# Set up global multi-processing dictionaries for saving FM basis
-manager = mp.Manager()
-klmodes_dict = manager.dict()
-evecs_dict = manager.dict()
-evals_dict = manager.dict()
-ref_psfs_indicies_dict = manager.dict()
-section_ind_dict = manager.dict()
-
-radstart_dict = manager.dict()
-radend_dict = manager.dict()
-phistart_dict = manager.dict()
-phiend_dict = manager.dict()
-input_img_num_dict = manager.dict()
-
-klparam_dict = manager.dict()
 
 
 class DiskFM(NoFM):
@@ -147,6 +132,25 @@ class DiskFM(NoFM):
         else:
             self.numthreads = numthreads
 
+        # Set up global multi-processing dictionaries for saving FM basis
+        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
+        global radstart_dict, radend_dict, phistart_dict, phiend_dict, input_img_num_dict
+        global klparam_dict
+
+        manager = mp.Manager()
+        klmodes_dict = manager.dict()
+        evecs_dict = manager.dict()
+        evals_dict = manager.dict()
+        ref_psfs_indicies_dict = manager.dict()
+        section_ind_dict = manager.dict()
+
+        radstart_dict = manager.dict()
+        radend_dict = manager.dict()
+        phistart_dict = manager.dict()
+        phiend_dict = manager.dict()
+        input_img_num_dict = manager.dict()
+
+        klparam_dict = manager.dict()
         # Coords where align_and_scale places model center
         # default aligned_center if none:
         if aligned_center is None:
@@ -165,6 +169,7 @@ class DiskFM(NoFM):
             # should have the same defaut
 
         if self.load_from_basis is True:  # We want to load the FM basis
+
             self.load_basis_files(dataset)
             # We load the FM basis files, before preparing the model to be sure the
             # parameters (IWA, OWA, aligned_center) are identical to the one used used
@@ -542,7 +547,6 @@ class DiskFM(NoFM):
             None
 
         """
-
         # Convert everything to np arrays and types to be safe for the saving.
         for key in section_ind_dict.keys():
             section_ind_dict[key] = np.asarray(section_ind_dict[key])
@@ -931,6 +935,7 @@ class DiskFM(NoFM):
 ###### 4 routines to save and load h5 in dictionnaries
 ##############################################################################
 
+
 def _save_dict_to_hdf5(dic, filename):
     """
     Saving a nested dictionnary into a h5 file
@@ -946,6 +951,7 @@ def _save_dict_to_hdf5(dic, filename):
     with h5py.File(filename, "w") as h5file:
         _recursively_save_dict_contents_to_group(h5file, "/", dic)
 
+
 def _load_dict_from_hdf5(filename):
     """
     Load a dictionnary from a h5 file
@@ -960,6 +966,7 @@ def _load_dict_from_hdf5(filename):
 
     with h5py.File(filename, "r") as h5file:
         return _recursively_load_dict_contents_from_group(h5file, "/")
+
 
 def _recursively_save_dict_contents_to_group(h5file, path, dic):
     """
@@ -984,6 +991,7 @@ def _recursively_save_dict_contents_to_group(h5file, path, dic):
         else:
             raise ValueError("Cannot save {0} type in h5 (key = {1})".format(
                 type(item), path + key))
+
 
 def _recursively_load_dict_contents_from_group(h5file, path):
     """
