@@ -40,8 +40,8 @@ def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
 
     # grab the files
-    filelist = glob.glob(TESTDIR +
-                         os.path.join("data", "S20131210*distorcorr.fits"))
+    filelist = sorted(glob.glob(TESTDIR +
+                         os.path.join("data", "S20131210*distorcorr.fits")))
     dataset = GPI.GPIData(filelist, quiet=True)
 
     # set a few parameters
