@@ -50,10 +50,9 @@ def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     [xcen, ycen] = [140, 140]
     fileprefix = "DiskFM_test_nwls{0}_ann{1}".format(nwls, annulitest)
 
-    # run it for 2 WL to make it harder
     dataset.spectral_collapse(collapse_channels=nwls, align_frames=True)
 
-    # create a phomny disk model and convovle it by the instrument psf
+    # create a phony disk model and convovle it by the instrument psf
     phony_disk_model = make_phony_disk(281)
     dataset.generate_psfs(boxrad=12)
     instrument_psf = dataset.psfs[0]
@@ -187,13 +186,3 @@ if __name__ == "__main__":
 
     test_diskfm(just_loading=True, ext=".pkl", nwls=1)
     test_diskfm(just_loading=True, ext=".pkl", nwls=2)
-
-    # test_diskfm(just_loading=False, ext=".pkl", nwls=1)
-    # we restart with just loading to see if it works
-
-    # test_diskfm(just_loading=True, ext=".pkl", nwls=1)
-
-    # test_diskfm(just_loading=False, ext=".pkl", nwls=2)
-    # we restart with just loading to see if it works
-
-    # test_diskfm(just_loading=True, ext=".pkl", nwls=2)
