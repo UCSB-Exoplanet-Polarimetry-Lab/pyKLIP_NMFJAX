@@ -135,9 +135,6 @@ def _mean_collapse(data, pixel_weights=None, axis=1):
     if pixel_weights is None:
         pixel_weights = np.ones(data.shape)
 
-    if np.any(np.nanmean(pixel_weights, axis=axis) != 1.):
-        warnings.warn('pixel weights not normalized in _mean_collapse')
-
     return np.nanmean(pixel_weights * data, axis=axis)
 
 
@@ -1040,7 +1037,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         kwargs: in case you pass it stuff that we don't use in the lite version
         dtype: data type of the arrays. Should be either ctypes.c_float (default) or ctypes.c_double
-        algo (str): algorithm to use ('klip', 'nmf')
+        algo (str): algorithm to use ('klip', 'nmf', 'empca')
         compute_noise_cube:  if True, compute the noise in each pixel assuming azimuthally uniform noise
 
     Returns:
@@ -1149,6 +1146,11 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
+    # SINGLE THREAD DEBUG PURPOSES ONLY
+    if not parallel:
+        _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None)
+
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
     #align and scale the images for each image. Use map to do this asynchronously
@@ -1182,21 +1184,36 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
-        outputs += [tpool.apply_async(_klip_section_multifile, args=(scidata_indices, this_wv, wv_index, numbasis,
-                                                                     maxnumbasis,
-                                                                     radstart, radend, phistart, phiend, movement,
-                                                                     aligned_center, minrot, maxrot, spectrum,
-                                                                     mode, corr_smooth, None, None, lite, dtype, algo))
-                    for phistart,phiend in phi_bounds
-                    for radstart, radend in rad_bounds]
+
+        _klip_section_function = _select_algo(algo)
+        if parallel:
+            outputs += [tpool.apply_async(_klip_section_function, 
+                                          args=(scidata_indices, this_wv, wv_index, numbasis,
+                                                maxnumbasis,
+                                                radstart, radend, phistart, phiend, movement,
+                                                aligned_center, minrot, maxrot, spectrum,
+                                                mode, corr_smooth, None, None, lite, dtype, algo), 
+                                          kwds=kwargs)
+                        for phistart,phiend in phi_bounds
+                        for radstart, radend in rad_bounds]
+        else:
+            outputs += [_klip_section_function(scidata_indices, this_wv, wv_index, numbasis,
+                                               maxnumbasis,
+                                               radstart, radend, phistart, phiend, movement,
+                                               aligned_center, minrot, maxrot, spectrum,
+                                               mode, corr_smooth, None, None, lite, dtype, algo, 
+                                               **kwargs)
+                        for phistart,phiend in phi_bounds
+                        for radstart, radend in rad_bounds]
 
         #harness the data!
         #check make sure we are completely unblocked before outputting the data
-        for out in outputs:
-            out.wait()
-            if (jobs_complete + 1) % 10 == 0:
-                print("{0:.4}% done ({1}/{2} completed)".format((jobs_complete+1)*100.0/tot_iter, jobs_complete, tot_iter))
-            jobs_complete += 1
+        if parallel:
+            for out in outputs:
+                out.wait()
+                if (jobs_complete + 1) % 10 == 0:
+                    print("{0:.4}% done ({1}/{2} completed)".format((jobs_complete+1)*100.0/tot_iter, jobs_complete, tot_iter))
+                jobs_complete += 1
 
 
 
@@ -1226,7 +1243,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         # reform the 4-D cubes
         noise_imgs = noise_imgs.reshape(sub_imgs_shape) # reshape into a cube with same shape as sub_imgs
     else:
-        noise_imgs = np.ones(sub_imgs.shape)
+        noise_imgs = np.array([1.])
 
     return sub_imgs, aligned_center, noise_imgs
 
@@ -1246,6 +1263,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         wvs: N length array of the wavelengths
         filenums (np.array): array of length N of the filenumber for each image
         IWA: inner working angle (in pixels)
+        OWA: outer working angle (in pixels)
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
         anuuli: number of annuli to use for KLIP
         subsections: number of sections to break each annuli into
@@ -1273,8 +1291,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str): algorithm to use ('klip', 'nmf')
+        algo (str): algorithm to use ('klip', 'nmf', 'empca')
         compute_noise_cube:  if True, compute the noise in each pixel assuming azimuthally uniform noise
+        kwargs: for additional features not originally implemented
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -1707,13 +1726,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     dataset.klipparams = klipparams
 
     # set all the klip_parallelized.py args here
-    pyklip_args = {'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement, 
+    pyklip_args = dict({'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement,
                     'numbasis':numbasis, 'numthreads':numthreads, 'minrot':minrot, 'aligned_center':aligned_center,
                     'annuli_spacing':annuli_spacing, 'maxnumbasis':maxnumbasis, 'corr_smooth':corr_smooth,
                     'spectrum':spectra_template, 'psf_library':master_library,
                     'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
                     'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
-                    'algo':algo, 'compute_noise_cube':weighted, **kwargs}
+                    'algo':algo, 'compute_noise_cube':weighted}, **kwargs)
 
     #Set MLK parameters
     if mkl_exists:
@@ -1813,7 +1832,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             stddev_frames = 1
 
-
     # TODO: handling of only a single numbasis
     # derotate all the images
     # flatten so it's just a 3D array (collapse KL and Nframes dimensions)
@@ -1876,8 +1894,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             mkl.set_num_threads(old_mkl)
 
         return
-
-
 
 
     # collapse in time and wavelength to examine KL modes
