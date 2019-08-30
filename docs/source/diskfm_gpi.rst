@@ -51,7 +51,7 @@ First import an instrument data set and convolve your 2D disk model by the instr
     import pyklip.fm as fm
 
     # read in the data into a dataset
-    filelist = glob.glob("path/to/dataset/*.fits")
+    filelist = sorted(glob.glob("path/to/dataset/*.fits"))
     dataset = GPI.GPIData(filelist)
 
     # convolved the 2D disk model
@@ -85,7 +85,7 @@ the code will save two fits files in `outputdir`, containing the klipped data an
 associated disk forward model.
 
 Most of the parameters implemented for psf forward model KLIP correction with pyklip can be used (see
-`Picking KLIP Parameters for Disks <https://pyklip.readthedocs.io/en/latest/klip_gpi.html#picking-klip-parameters-for-disks>`_,)
+`Picking KLIP Parameters for Disks <https://pyklip.readthedocs.io/en/latest/klip_gpi.html#picking-klip-parameters-for-disks>`_)
 with the following exceptions:
 
 * spectrum specific keywords (spectrum, flux_overlap, calibrate_flux)
@@ -95,7 +95,7 @@ with the following exceptions:
 Mode parameter can be set only to `'ADI'`, `'SDI'` and `'ADI+SDI'`.`aligned_center` is
 the position were the klip reduction will center the reduced image.
 The code will raise an error if it is not set to the position to which you set the star
-of your model.
+in your model.
 
 
 DiskFM for MCMC or Chi-Square
@@ -147,6 +147,12 @@ Note that even if you have already created a `DiskFM` object to save the FM
 you still need to re-create the `DiskFM` object and load it (*ie*, you still
 need `diskFM` with `load_from_basis = True`).
 
+Finally, the dataset itself (input images) is not saved in the KL basis file. This means
+that if you load the KL basis, you still need to define dataset the exact same way you
+did to measure the KL basis. An error will raise if the dataset is very different
+(not the same PAs, number of images, Wls) but if you use very similar but different
+datasets the code will run but provide wrong forward models.
+
 
 Speeding up DiskFM
 --------------------------
@@ -169,6 +175,13 @@ disk forward model:
 .. code-block:: python
 
     numbasis = [3]
+
+
+Finally, due to the fact that numpy also parallelizes linear algebra routines
+across multiple cores, performance can actually sharply decrease when multiprocessing
+in a mcmc. Please read `Note on parallelized performance
+<https://pyklip.readthedocs.io/en/latest/install.html#note-on-parallelized-performance>`_
+on this subject.
 
 
 Multiwavelength DiskFM
@@ -197,7 +210,7 @@ We recall all the steps in a single block
     import pyklip.fm as fm
 
     # read in the data into a dataset
-    filelist = glob.glob("path/to/dataset/*.fits")
+    filelist = sorted(glob.glob("path/to/dataset/*.fits"))
     dataset = GPI.GPIData(filelist)
 
     # in case of multiWL data, you might want to stack them first to speed things up

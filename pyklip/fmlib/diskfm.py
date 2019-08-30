@@ -98,20 +98,13 @@ class DiskFM(NoFM):
 
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
-        # Attributes of input/output
+        # Attributes of input
         self.inputs_shape = inputs_shape
-        self.numbasis = numbasis
-        self.numims = inputs_shape[0]
 
-        # Input dataset attributes
-        # self.images = dataset.input
-        self.PAs = dataset.PAs
-        self.wvs = dataset.wvs
-        self.nfiles = int(np.nanmax(
-            dataset.filenums)) + 1  # Get the number of files
+        self.numbasis = numbasis
 
         # Outputs attributes
-        output_imgs_shape = dataset.input.shape + self.numbasis.shape
+        output_imgs_shape = inputs_shape + self.numbasis.shape
         self.output_imgs_shape = output_imgs_shape
         self.outputs_shape = output_imgs_shape
 
@@ -152,32 +145,64 @@ class DiskFM(NoFM):
 
         klparam_dict = manager.dict()
         # Coords where align_and_scale places model center
-        # default aligned_center if none:
+
         if aligned_center is None:
             aligned_center = [
-                int(dataset.input.shape[2] // 2),
-                int(dataset.input.shape[1] // 2),
+                int(inputs_shape[2] // 2),
+                int(inputs_shape[1] // 2),
             ]
-            # aligned_center = [
-            #     np.mean(dataset.centers[:, 0]),
-            #     np.mean(dataset.centers[:, 1]),
-            # ]
-            # FIXME I put the one that was by defaut in previous version for continuity.
-            # But this is not the one set by default in fm.klip_dataset so I need to
-            # change it.
-            # This is not ideal, but this is how fm.klip_dataset is set by defaut so we
-            # should have the same defaut
+            # FIXME I put the one that was by defaut in previous DiskFM version for
+            # continuity. But this is not the one set by default in fm.klip_dataset
+            # so I need to change it to have the same defaut
 
         if self.load_from_basis is True:  # We want to load the FM basis
 
+            # We load the FM basis files, before preparing the model to
+            # be sure that the aligned_center is identical to the one used
+            # when measuring the KL
             self.load_basis_files(dataset)
-            # We load the FM basis files, before preparing the model to be sure the
-            # parameters (IWA, OWA, aligned_center) are identical to the one used used
-            # on the data when measuring the KL
+
+            # we test that the PAs and wls identical to the ones that
+            # were previously used when we measured the kl_basis. This is
+            # a proxy to avoid saving the whole dataset but still testing
+            # it's identical.
+            if np.size(self.PAs) != np.size(dataset.PAs):
+                raise ValueError('''The # of PAs in the dataset loaded is not
+                                identical to the # of PAs in the dataset used to
+                                measure the KL basis. Some images were maybe r
+                                emoved'''
+                                 )
+            else:
+                if any(self.PAs != dataset.PAs):
+                    raise ValueError('''The PAs in the dataset loaded are not
+                                identical to the PAs in the dataset used to measure
+                                the KL basis. Some images were maybe permutated'''
+                                     )
+
+            if np.size(self.wvs) != np.size(dataset.wvs):
+                raise ValueError(
+                            '''The # of Wavelengths in the dataset loaded is not
+                            identical to the # of Wavelengths in the dataset used to
+                            measure the KL basis. Pb in the collapse?''')
+            else:
+                if any(self.wvs != dataset.wvs):
+                    raise ValueError(
+                                '''The Wavelengths in the dataset loaded are not
+                                identical to the Wavelengths in the dataset used to
+                                measure the KL basis.''')
 
         else:  # We want to save the basis or just a single disk FM
+
+            self.PAs = dataset.PAs
+            self.wvs = dataset.wvs
+
             # define the center
             self.aligned_center = aligned_center
+
+        self.nfiles = int(np.nanmax(
+            dataset.filenums)) + 1  # Get the number of files
+        self.nwvs = int(np.size(np.unique(self.wvs)))
+        # Get the number of wvls
 
         # Prepare the first disk for FM
         self.update_disk(model_disk)
@@ -201,8 +226,7 @@ class DiskFM(NoFM):
         self.model_disks = np.zeros(self.inputs_shape)
 
         # Extract the # of WL per files
-        n_wv_per_file = int(self.inputs_shape[0] //
-                            self.nfiles)  # Number of wavelenths per file.
+        n_wv_per_file = self.nwvs  # Number of wavelenths per file.
 
         model_disk_shape = np.shape(model_disk)
 
@@ -403,6 +427,12 @@ class DiskFM(NoFM):
             # center will be used for all the models after we load.
             klparam_dict["aligned_center_x"] = np.float64(ref_center[0])
             klparam_dict["aligned_center_y"] = np.float64(ref_center[1])
+
+            # Those are saved only to be used as a test when we load that
+            # the dataset is identical to the one that was use to
+            # produce the kl basis
+            klparam_dict["PAs"] = np.float64(self.PAs)
+            klparam_dict["wvs"] = np.float64(self.wvs)
 
             curr_im = str(input_img_num)
             if len(curr_im) < 3:
@@ -687,6 +717,12 @@ class DiskFM(NoFM):
             self.klparam_dict["aligned_center_y"],
         ]
 
+        # Those are loaded only to be used as a test that
+        # the dataset is identical to the one that was use initially to
+        # produce the kl basis
+        self.PAs = self.klparam_dict["PAs"]
+        self.wvs = self.klparam_dict["wvs"]
+
         numthreads = self.numthreads
 
         # implement the thread pool
@@ -908,8 +944,7 @@ class DiskFM(NoFM):
         # klip image-speccube.fits produced by.fm.klip_dataset
         if np.size(np.shape(self.model_disk)) > 2:
 
-            n_wv_per_file = int(self.inputs_shape[0] //
-                                self.nfiles)  # Number of WL per file.
+            n_wv_per_file = self.nwvs  # Number of WL per file.
 
             # Collapse across all files, keeping the wavelengths intact.
             fmout_return = np.zeros([
