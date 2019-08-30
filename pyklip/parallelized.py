@@ -78,7 +78,7 @@ def _kwargs_options(**kwargs):
     :return:
     '''
 
-    global charis_reduction
+    global charis_reduction, parallel
     charis_reduction = False
 
     if kwargs.get('parallel') is not None:
@@ -466,7 +466,7 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
 
 def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numbasis, maxnumbasis_void, radstart, radend,
                             phistart, phiend, movement, ref_center, minrot_void, maxrot_void, spectrum_void, mode_void,
-                            corr_smooth_void, psf_library_good_void, psf_library_corr_void, lite_void, dtype=None,
+                            corr_smooth_void, psf_library_good_void, psf_library_corr_void, lite, dtype=None,
                             algo_void='empca', niter=15, **kwargs):
     '''
     MC edited function
@@ -505,9 +505,12 @@ def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numba
     if np.size(section_ind) <= 1:
         print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
         return False
-    aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1],
-                                           aligned_shape[2] * aligned_shape[3]),
-                                 dtype=dtype)[wv_index]
+
+    if lite:
+        aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]), dtype=dtype)
+    else:
+        aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1],
+                                                  aligned_shape[2] * aligned_shape[3]), dtype=dtype)[wv_index]
     ref_psfs = aligned_imgs_np[:, section_ind[0]]
     ref_psfs[np.where(np.isnan(ref_psfs))] = 0
 
