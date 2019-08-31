@@ -54,22 +54,6 @@ def test_mean_collapse():
     ans = parallelized._mean_collapse(test_cube, weights, axis=0)
     assert np.array_equal(ans, np.array([3., 4., 5.]))
 
-    with warnings.catch_warnings(record=True) as w:
-        # Cause all warnings to always be triggered.
-        warnings.simplefilter("always")
-        ans = parallelized._mean_collapse(test_cube, weights)
-        # Verify no warning's been triggered
-        assert len(w) == 0
-        assert np.array_equal(ans, np.array([1., 4., 7.]))
-
-    weights[0, 1] = 2.
-    with warnings.catch_warnings(record=True) as w:
-        # Cause all warnings to always be triggered.
-        warnings.simplefilter("always")
-        ans = parallelized._mean_collapse(test_cube, weights, axis=0)
-        # Verify no warning's been triggered
-        assert len(w) == 1
-        assert "normalized" in str(w[-1].message)
 
 def test_weighted_mean_collapse():
 
@@ -205,7 +189,7 @@ class weighted_empca_section_TestCase(unittest.TestCase):
                                                         phistart=0, phiend=0.1, movement=None, ref_center=[100, 100],
                                                         minrot_void=None, maxrot_void=None, spectrum_void=None,
                                                         mode_void=None, corr_smooth_void=None, psf_library_good_void=None,
-                                                        psf_library_corr_void=None, lite_void=None, dtype=None,
+                                                        psf_library_corr_void=None, lite=False, dtype=None,
                                                         algo_void='empca', niter=15)
 
         assert parallelized._weighted_empca_section(scidata_indices_void=None, wv_value_void=None, wv_index=0,
@@ -213,7 +197,7 @@ class weighted_empca_section_TestCase(unittest.TestCase):
                                                     phistart=0, phiend=1, movement=None, ref_center=[100, 100],
                                                     minrot_void=None, maxrot_void=None, spectrum_void=None,
                                                     mode_void=None, corr_smooth_void=None, psf_library_good_void=None,
-                                                    psf_library_corr_void=None, lite_void=None, dtype=None,
+                                                    psf_library_corr_void=None, lite=False, dtype=None,
                                                     algo_void='empca', niter=15)
 
     @mock.patch('pyklip.parallelized._arraytonumpy')
@@ -245,7 +229,7 @@ class weighted_empca_section_TestCase(unittest.TestCase):
                                              phistart=-2*np.pi, phiend=2*np.pi, movement=None, ref_center=ref_center,
                                              minrot_void=None, maxrot_void=None, spectrum_void=None,
                                              mode_void=None, corr_smooth_void=None, psf_library_good_void=None,
-                                             psf_library_corr_void=None, lite_void=None, dtype=None,
+                                             psf_library_corr_void=None, lite=False, dtype=None,
                                              algo_void='empca', niter=15)
 
         np.testing.assert_array_equal(mock_aligned[wv_index], mock_set_pixel_weights.call_args[0][0])
