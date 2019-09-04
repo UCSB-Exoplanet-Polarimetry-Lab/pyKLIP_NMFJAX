@@ -23,7 +23,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 TESTDIR = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 
-def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
+def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
     Test DiskFM package. Creata Model disk. Create a disk model class.
     Measure and save the KL basis + measure a FM. Load the KL basis.
@@ -176,16 +176,16 @@ def make_phony_disk(dim):
 
 if __name__ == "__main__":
 
-    # test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1)
-    # test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=1)
-    # test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=2)
+    run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1)
+    run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=1)
+    run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
 
-    # test_diskfm(just_loading=True, ext=".h5", nwls=1, annulitest=1)
-    # test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=1)
-    # test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=2)
+    run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=1)
+    run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=1)
+    run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
 
-    test_diskfm(just_loading=False, ext=".pkl", nwls=1)
-    test_diskfm(just_loading=False, ext=".pkl", nwls=2)
+    run_test_diskFM(just_loading=False, ext=".pkl", nwls=1)
+    run_test_diskFM(just_loading=False, ext=".pkl", nwls=2)
 
-    test_diskfm(just_loading=True, ext=".pkl", nwls=1)
-    test_diskfm(just_loading=True, ext=".pkl", nwls=2)
+    run_test_diskFM(just_loading=True, ext=".pkl", nwls=1)
+    run_test_diskFM(just_loading=True, ext=".pkl", nwls=2)
