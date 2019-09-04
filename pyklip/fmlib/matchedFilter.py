@@ -492,7 +492,14 @@ class MatchedFilter(NoFM):
                 #     # plt.show()
                 #     # exit()
 
-                if self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=self.edge_threshold:
+                if np.size(klipped[where_fk,N_KL_id]) == 0:
+                    quitnow = True
+                elif self.rm_edge and float(np.sum(np.isfinite(klipped[where_fk,N_KL_id])))/float(np.size(klipped[where_fk,N_KL_id]))<=self.edge_threshold:
+                    quitnow = True
+                else:
+                    quitnow = False
+
+                if quitnow:
                     fmout1[0,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout1[1,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
                     fmout1[2,spec_id,N_KL_id,input_img_num,row_id,col_id] = np.nan
