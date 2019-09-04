@@ -4,7 +4,6 @@ author: johan mazoyer
 # pylint: disable=C0103
 import os
 import glob
-import warnings
 
 import numpy as np
 import astropy.io.fits as fits
@@ -14,7 +13,6 @@ import pyklip.instruments.GPI as GPI
 from pyklip.fmlib.diskfm import DiskFM
 import pyklip.fm as fm
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
 os.environ["OMP_NUM_THREADS"] = "1"
 
 ########################################################
@@ -22,6 +20,35 @@ os.environ["OMP_NUM_THREADS"] = "1"
 
 TESTDIR = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
+
+def make_phony_disk(dim):
+    """
+    Create a very simple disk model
+
+    Args:
+        dim: Dimension of the array
+
+    Returns:
+        centered ellisp disk
+
+    """
+
+    phony_disk = np.zeros((dim, dim))
+    PA_rad = 0.4712388980  # 27 deg
+
+    x = np.arange(dim, dtype=np.float)[None, :] - dim // 2
+    y = np.arange(dim, dtype=np.float)[:, None] - dim // 2
+
+    x1 = x * np.cos(PA_rad) + y * np.sin(PA_rad)
+    y1 = -x * np.sin(PA_rad) + y * np.cos(PA_rad)
+
+    x2 = x1
+    y2 = y1 / np.cos(np.radians(76))
+    rho2dellip = np.sqrt(x2**2 + y2**2)
+
+    phony_disk[np.where((rho2dellip > 80) & (rho2dellip < 85))] = 1
+
+    return phony_disk
 
 def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
@@ -144,38 +171,8 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
                return_klip_dataset)) < 1)
 
 
-def make_phony_disk(dim):
-    """
-    Create a very simple disk model
 
-    Args:
-        dim: Dimension of the array
-
-    Returns:
-        centered ellisp disk
-
-    """
-
-    phony_disk = np.zeros((dim, dim))
-    PA_rad = 0.4712388980  # 27 deg
-
-    x = np.arange(dim, dtype=np.float)[None, :] - dim // 2
-    y = np.arange(dim, dtype=np.float)[:, None] - dim // 2
-
-    x1 = x * np.cos(PA_rad) + y * np.sin(PA_rad)
-    y1 = -x * np.sin(PA_rad) + y * np.cos(PA_rad)
-
-    x2 = x1
-    y2 = y1 / np.cos(np.radians(76))
-    rho2dellip = np.sqrt(x2**2 + y2**2)
-
-    phony_disk[np.where((rho2dellip > 80) & (rho2dellip < 85))] = 1
-
-    return phony_disk
-
-
-if __name__ == "__main__":
-
+def test_disk_helper():
     run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1)
     run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=1)
     run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
@@ -189,3 +186,9 @@ if __name__ == "__main__":
 
     run_test_diskFM(just_loading=True, ext=".pkl", nwls=1)
     run_test_diskFM(just_loading=True, ext=".pkl", nwls=2)
+
+
+if __name__ == "__main__":
+    test_disk_helper()
+
+
