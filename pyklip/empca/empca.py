@@ -240,14 +240,17 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             P3D[i] = P*P[i]
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
-        
+        import pdb; pdb.set_trace()
+        time1 = time.time()
         C = matutils.lstsq(A, b, maxproc=ncpus).T
+        time1 = time.time() - time1
         import pdb; pdb.set_trace()
+        time2 = time.time()
         for i_obs in range(nobs):
-            b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
-            A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
-            C.T[i_obs] = np.linalg.lstsq(A, b)[0] # shape nvec
-        import pdb; pdb.set_trace()
+            #b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
+            #A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
+            C.T[i_obs] = np.linalg.lstsq(A[i_obs], b[i_obs], rcond=None)[0] # shape nvec
+        time2 = time.time() - time2
         ##############################################################
         # Compute the weighted residual (chi squared) value from the
         # previous fit.
@@ -278,13 +281,19 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
+            import pdb; pdb.set_trace()
+            time3 = time.time()
             P = matutils.lstsq(A, b, maxproc=ncpus).T
+            time3 = time.time() - time3
             import pdb; pdb.set_trace()
+            time4 = time.time()
             for i_var in range(nvar):
-                b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
-                A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
-                P.T[i_var] = np.linalg.lstsq(A, b)[0] # shape nvec
+                #b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
+                #A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
+                P.T[i_var] = np.linalg.lstsq(A[i_var], b[i_var], rcond=None)[0] # shape nvec
+            time4 = time.time() - time4
             import pdb; pdb.set_trace()
+
 
     ##################################################################
     # Normalize the low-rank approximation.
