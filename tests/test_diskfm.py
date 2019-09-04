@@ -15,6 +15,7 @@ from pyklip.fmlib.diskfm import DiskFM
 import pyklip.fm as fm
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+os.environ["OMP_NUM_THREADS"] = "1"
 
 ########################################################
 ########################################################
@@ -24,13 +25,14 @@ TESTDIR = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
-    Test DiskFM package. Creata Model disk. Create a disk model class. Measure and save
-    the KL basis + measure a FM. Load the KL basis. Re-measuure a FM from loaded KL
-    basis. Make sure the 2 FMs are not zero and that they are identical
+    Test DiskFM package. Creata Model disk. Create a disk model class.
+    Measure and save the KL basis + measure a FM. Load the KL basis.
+    Re-measuure a FM from loaded KL basis. Make sure the 2 FMs are not
+    zero and that they are identical
 
     Args:
-        just_loading: if True we are not measuring the KL basis, just loading it
-                      from file
+        just_loading: if True we are not measuring the KL basis, just
+                        loading it from file
         ext: type of saving (h5 or pickle)
         nwls: number of wavelength when we collaps the data
 
@@ -40,8 +42,8 @@ def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
 
     # grab the files
-    filelist = sorted(glob.glob(TESTDIR +
-                         os.path.join("data", "S20131210*distorcorr.fits")))
+    filelist = sorted(
+        glob.glob(TESTDIR + os.path.join("data", "S20131210*distorcorr.fits")))
     dataset = GPI.GPIData(filelist, quiet=True)
 
     # set a few parameters
@@ -135,7 +137,8 @@ def test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     assert np.nanmax(np.abs(return_klip_dataset)) > 0.0
     assert np.nanmax(np.abs(return_by_fm_parallelized)) > 0.0
 
-    # test that fm.klip_dataset and diskobj.fm_parallelized give very similar result
+    # test that fm.klip_dataset and diskobj.fm_parallelized
+    # give very similar result
     assert (np.nanmax(
         np.abs((return_klip_dataset - return_by_fm_parallelized) /
                return_klip_dataset)) < 1)
@@ -154,7 +157,7 @@ def make_phony_disk(dim):
     """
 
     phony_disk = np.zeros((dim, dim))
-    PA_rad = np.radians(27)
+    PA_rad = 0.4712388980  # 27 deg
 
     x = np.arange(dim, dtype=np.float)[None, :] - dim // 2
     y = np.arange(dim, dtype=np.float)[:, None] - dim // 2
