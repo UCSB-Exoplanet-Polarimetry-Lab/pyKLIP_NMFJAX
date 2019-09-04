@@ -22,3 +22,6 @@ testing_scripts/
 docs/build/
 .cache/
 examples/.ipynb_checkpoints/
+build/
+.pytest_cache/
+dist/
