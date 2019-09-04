@@ -176,13 +176,13 @@ def make_phony_disk(dim):
 
 if __name__ == "__main__":
 
-    test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1)
-    test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=1)
-    test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=2)
+    # test_diskfm(just_loading=False, ext=".h5", nwls=1, annulitest=1)
+    # test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=1)
+    # test_diskfm(just_loading=False, ext=".h5", nwls=2, annulitest=2)
 
-    test_diskfm(just_loading=True, ext=".h5", nwls=1, annulitest=1)
-    test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=1)
-    test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=2)
+    # test_diskfm(just_loading=True, ext=".h5", nwls=1, annulitest=1)
+    # test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=1)
+    # test_diskfm(just_loading=True, ext=".h5", nwls=2, annulitest=2)
 
     test_diskfm(just_loading=False, ext=".pkl", nwls=1)
     test_diskfm(just_loading=False, ext=".pkl", nwls=2)
