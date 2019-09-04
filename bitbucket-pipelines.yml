@@ -4,6 +4,9 @@
 # You can specify a custom docker image from Dockerhub as your build environment
 image: continuumio/anaconda3
 
+options:
+  max-time: 20 # configure default 20 minute timeout
+
 pipelines:
   default:
     - step:
