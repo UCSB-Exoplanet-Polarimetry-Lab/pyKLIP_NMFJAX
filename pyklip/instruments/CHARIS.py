@@ -12,7 +12,7 @@ import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
 
-
+#TODO: change userIWA, userOWA to simply IWA, OWA
 class CHARISData(Data):
     """
     A sequence of GPI Data. Each GPIData object has the following fields and functions

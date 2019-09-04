@@ -69,7 +69,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     psf_lib_shape = psf_library_shape
 
 def _kwargs_options(**kwargs):
-
+#TODO: delete this function
     '''
     a function to deal with some simple options that can be passed in through kwargs (such as turning parallel
     programming on and off for debug purposes)
@@ -664,7 +664,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #grab the parangs
     parangs = _arraytonumpy(img_pa, dtype=dtype)
     filenums = _arraytonumpy(img_filenums, dtype=dtype)
-
+    # TODO: branch empca here
     for file_index, parang, filenum in zip(scidata_indices, parangs[scidata_indices], filenums[scidata_indices]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
@@ -1553,6 +1553,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
                  highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
                  time_collapse="mean",**kwargs):
+    # TODO: combine all the time, wavelength collapse into a single function that takes in the user keywords and
+    #       select within that function. Raise error for movement, minrot when user choses both empca and non zero
+    #       values for the two parameters
+    #       eliminate **kwargs
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
