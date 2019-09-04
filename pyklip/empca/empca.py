@@ -34,6 +34,27 @@ Original: Stephen Bailey, Spring 2012
 Rewritten by Timothy Brandt, Spring 2016
 """
 
+def np_calc_chisq(data, b, w, coef):
+    """
+    Calculate chi squared
+
+    Args:
+        im: nim x npix, single-precision numpy.ndarray. Data to be fit by the basis images
+        b: nvec x npts, double precision numpy.ndarray. The nvec basis images.
+        w: nim x npts, single-precision numpy.ndarray. Weights (inverse variances) of the data.
+        coef: nvec x npts, double precision numpy.ndarray. The coefficients of the basis image fits.
+
+    Returns:
+        chisq, the total chi squared summed over all points and all images
+    """
+
+    chisq = 0
+    nim = data.shape[0]
+    for i in range(nim):
+        chisq += np.sum((data[i] - np.sum(coef[i] * b.T, axis=1)) ** 2 * w[i])
+
+    return chisq
+
 def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66, normalize_weights=False):
     '''
     MC edited function
@@ -131,7 +152,7 @@ def nan_smooth(im, ivar, sig=1, spline_filter=False):
 
     return imsmooth
 
-def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=None, silent=True):
+def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, silent=True):
     '''
     replaes the linear algebra in clip_math with weighted low-rank approximation as an alternative model psf construction to test the performance on S/N. Code is adapted from Tim's ADI algorithm
     Perform iterative lower rank matrix approximation of data[obs, var]
@@ -198,9 +219,13 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=Non
     if maxcpus is not None:
         ncpus = min(ncpus, maxcpus)
 
-    chisq_orig = matutils.calc_chisq(dataC, P*0, weightsC, C, maxproc=ncpus)
+    #chisq_orig = matutils.calc_chisq(dataC, P*0, weightsC, C, maxproc=ncpus)
+    chisq_orig = np_calc_chisq(dataC, P*0, weightsC, C)
     chisq_last = chisq_orig
     datwgt = dataC*weightsC
+
+    # for np.linalg.lstsq instead of matutils, C shape needs to be inverted now
+    C = C.T
 
     for itr in range(1, niter + 1):
 
@@ -215,16 +240,22 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=Non
             P3D[i] = P*P[i]
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
-
+        
         C = matutils.lstsq(A, b, maxproc=ncpus).T
-
+        import pdb; pdb.set_trace()
+        for i_obs in range(nobs):
+            b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
+            A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
+            C.T[i_obs] = np.linalg.lstsq(A, b)[0] # shape nvec
+        import pdb; pdb.set_trace()
         ##############################################################
         # Compute the weighted residual (chi squared) value from the
         # previous fit.
         ##############################################################
 
         if not silent:
-            chisq = matutils.calc_chisq(dataC, P, weightsC, C.T, maxproc=ncpus)
+            #chisq = matutils.calc_chisq(dataC, P, weightsC, C.T, maxproc=ncpus)
+            chisq = np_calc_chisq(dataC, P, weightsC, C.T)
             print('%3d  %9.3g  %12.6f %11.3f' % (itr, chisq - chisq_last, 1 - chisq / chisq_orig, time.time() - tstart))
             chisq_last = chisq
 
@@ -234,20 +265,26 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=Non
             # Compute the low-rank approximation to the data.
             ##########################################################
 
-            model = matutils.dot(C.T, P, maxproc=ncpus)
+            # model = matutils.dot(C.T, P, maxproc=ncpus)
+            model = np.dot(C.T, P)
 
         else:
 
             ##########################################################
             # Update the low-rank approximation.
             ##########################################################
-
             C3D = np.empty((C.shape[0], C.shape[0], C.shape[1]))
             for i in range(C.shape[0]):
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
             P = matutils.lstsq(A, b, maxproc=ncpus).T
+            import pdb; pdb.set_trace()
+            for i_var in range(nvar):
+                b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
+                A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
+                P.T[i_var] = np.linalg.lstsq(A, b)[0] # shape nvec
+            import pdb; pdb.set_trace()
 
     ##################################################################
     # Normalize the low-rank approximation.
