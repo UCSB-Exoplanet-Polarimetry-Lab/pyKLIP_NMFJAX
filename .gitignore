@@ -2,8 +2,6 @@
 *.out
 *.pyc
 *.zip
-*~
-*.so
 
 #ignore fits files
 !pyklip/pickles/*.fits
@@ -11,8 +9,11 @@
 version.py
 tests/*.fits
 tests/*.h5
+tests/*.png
+tests/*.pkl
 examples/*.fits
-*.pkl
+tutorial_Occulted_2001-01-01_*.fits
+P1640_tutorial_data.tar.gz
 
 
 #ignore auxiliary directories
@@ -22,7 +23,8 @@ gitstats/
 .vscode/
 testing_scripts/
 docs/build/
-.*cache/
+.cache/
 examples/.ipynb_checkpoints/
 build/
-pyklip/empca/build/
+.pytest_cache/
+dist/
