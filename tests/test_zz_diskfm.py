@@ -181,12 +181,12 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
 
 def test_disk_helper():
     run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1)
-    run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=1)
-    run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
-    run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
+    # run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=1)
+    # run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
+    # run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
 
     run_test_diskFM(just_loading=False, ext=".pkl", nwls=1, annulitest=1)
-    run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
+    # run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
 
     # # remove the files created by my disk FM test
     # dirpath = os.path.join(TESTDIR, 'diskfm_dir')
