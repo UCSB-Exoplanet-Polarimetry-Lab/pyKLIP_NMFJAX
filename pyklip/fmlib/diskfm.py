@@ -85,7 +85,8 @@ class DiskFM(NoFM):
             Initilaizes the DiskFM class
 
         """
-
+        # make sure the dimensions have the good shape
+        # and that they are numpy arrays to access their shape
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
         else:
@@ -126,9 +127,9 @@ class DiskFM(NoFM):
             self.numthreads = numthreads
 
         # Set up global multi-processing dictionaries for saving FM basis
-        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, section_ind_dict
-        global radstart_dict, radend_dict, phistart_dict, phiend_dict, input_img_num_dict
-        global klparam_dict
+        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict
+        global section_ind_dict,radstart_dict, radend_dict, phistart_dict
+        global phiend_dict, input_img_num_dict, klparam_dict
 
         manager = mp.Manager()
         klmodes_dict = manager.dict()
@@ -420,27 +421,24 @@ class DiskFM(NoFM):
             # in the saving and loading
 
             [IWA, OWA] = IOWA
-            klparam_dict["IWA"] = np.float64(IWA)
-            klparam_dict["OWA"] = np.float64(OWA)
+            klparam_dict['IWA'] = np.float64(IWA)
+            klparam_dict['OWA'] = np.float64(OWA)
 
             # save the center for aligning the image in KLIP-FM. In practice, this
             # center will be used for all the models after we load.
-            klparam_dict["aligned_center_x"] = np.float64(ref_center[0])
-            klparam_dict["aligned_center_y"] = np.float64(ref_center[1])
+            klparam_dict['aligned_center_x'] = np.float64(ref_center[0])
+            klparam_dict['aligned_center_y'] = np.float64(ref_center[1])
 
             # Those are saved only to be used as a test when we load that
             # the dataset is identical to the one that was use to
             # produce the kl basis
-            klparam_dict["PAs"] = np.float64(self.PAs)
-            klparam_dict["wvs"] = np.float64(self.wvs)
-
-            curr_im = str(input_img_num)
-            if len(curr_im) < 3:
-                curr_im = "00" + curr_im
+            klparam_dict['PAs'] = np.float64(self.PAs)
+            klparam_dict['wvs'] = np.float64(self.wvs)
 
             # To have a single identifier for each set of section/image for the
             # dictionnaries key, we use section first pixel and image number
-            namkey = "idsec" + str(section_ind[0][0]) + "i" + curr_im
+            curr_im = str(input_img_num).zfill(3)
+            namkey = 'idsec' + str(section_ind[0][0]) + 'i' + curr_im
             # saving the KL modes dictionnaries
             klmodes_dict[namkey] = klmodes
             evals_dict[namkey] = evals
@@ -609,17 +607,17 @@ class DiskFM(NoFM):
             # make a single dictionnary and save in h5
 
             saving_in_h5_dict = {
-                "klmodes_dict": dict(klmodes_dict),
-                "evecs_dict": dict(evecs_dict),
-                "evals_dict": dict(evals_dict),
-                "ref_psfs_indicies_dict": dict(ref_psfs_indicies_dict),
-                "section_ind_dict": dict(section_ind_dict),
-                "radstart_dict": dict(radstart_dict),
-                "radend_dict": dict(radend_dict),
-                "phistart_dict": dict(phistart_dict),
-                "phiend_dict": dict(phiend_dict),
-                "input_img_num_dict": dict(input_img_num_dict),
-                "klparam_dict": dict(klparam_dict),
+                'klmodes_dict': dict(klmodes_dict),
+                'evecs_dict': dict(evecs_dict),
+                'evals_dict': dict(evals_dict),
+                'ref_psfs_indicies_dict': dict(ref_psfs_indicies_dict),
+                'section_ind_dict': dict(section_ind_dict),
+                'radstart_dict': dict(radstart_dict),
+                'radend_dict': dict(radend_dict),
+                'phistart_dict': dict(phistart_dict),
+                'phiend_dict': dict(phiend_dict),
+                'input_img_num_dict': dict(input_img_num_dict),
+                'klparam_dict': dict(klparam_dict),
             }
 
             _save_dict_to_hdf5(saving_in_h5_dict, self.basis_filename)
@@ -650,6 +648,8 @@ class DiskFM(NoFM):
         if file_extension == ".pkl":
             pkl_file = open(self.basis_filename, "rb")
             if version_info.major == 3:
+                # Using encoding='latin1' is required for unpickling NumPy arrays
+                # and instances of datetime, date and time pickled by Python 2.
                 self.klmodes_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evecs_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evals_dict = pickle.load(pkl_file, encoding="latin1")
@@ -687,20 +687,20 @@ class DiskFM(NoFM):
             # path_basish5, name_basish5 = path.split(self.basis_filename)
             saving_in_h5_dict = _load_dict_from_hdf5(self.basis_filename)
 
-            self.klmodes_dict = saving_in_h5_dict["klmodes_dict"]
-            self.evecs_dict = saving_in_h5_dict["evecs_dict"]
-            self.evals_dict = saving_in_h5_dict["evals_dict"]
+            self.klmodes_dict = saving_in_h5_dict['klmodes_dict']
+            self.evecs_dict = saving_in_h5_dict['evecs_dict']
+            self.evals_dict = saving_in_h5_dict['evals_dict']
             self.ref_psfs_indicies_dict = saving_in_h5_dict[
-                "ref_psfs_indicies_dict"]
-            self.section_ind_dict = saving_in_h5_dict["section_ind_dict"]
+                'ref_psfs_indicies_dict']
+            self.section_ind_dict = saving_in_h5_dict['section_ind_dict']
 
-            self.radstart_dict = saving_in_h5_dict["radstart_dict"]
-            self.radend_dict = saving_in_h5_dict["radend_dict"]
-            self.phistart_dict = saving_in_h5_dict["phistart_dict"]
-            self.phiend_dict = saving_in_h5_dict["phiend_dict"]
-            self.input_img_num_dict = saving_in_h5_dict["input_img_num_dict"]
+            self.radstart_dict = saving_in_h5_dict['radstart_dict']
+            self.radend_dict = saving_in_h5_dict['radend_dict']
+            self.phistart_dict = saving_in_h5_dict['phistart_dict']
+            self.phiend_dict = saving_in_h5_dict['phiend_dict']
+            self.input_img_num_dict = saving_in_h5_dict['input_img_num_dict']
 
-            self.klparam_dict = saving_in_h5_dict["klparam_dict"]
+            self.klparam_dict = saving_in_h5_dict['klparam_dict']
 
             del saving_in_h5_dict
 
@@ -709,19 +709,19 @@ class DiskFM(NoFM):
 
         # load parameters of the correction that fm.klip_dataset produced
         # when we saved the FM basis.
-        self.IWA = self.klparam_dict["IWA"]
-        self.OWA = self.klparam_dict["OWA"]
+        self.IWA = self.klparam_dict['IWA']
+        self.OWA = self.klparam_dict['OWA']
 
         self.aligned_center = [
-            self.klparam_dict["aligned_center_x"],
-            self.klparam_dict["aligned_center_y"],
+            self.klparam_dict['aligned_center_x'],
+            self.klparam_dict['aligned_center_y'],
         ]
 
         # Those are loaded only to be used as a test that
         # the dataset is identical to the one that was use initially to
         # produce the kl basis
-        self.PAs = self.klparam_dict["PAs"]
-        self.wvs = self.klparam_dict["wvs"]
+        self.PAs = self.klparam_dict['PAs']
+        self.wvs = self.klparam_dict['wvs']
 
         numthreads = self.numthreads
 

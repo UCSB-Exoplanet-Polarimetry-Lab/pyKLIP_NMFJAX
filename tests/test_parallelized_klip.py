@@ -20,6 +20,7 @@ else:
     import unittest.mock as mock
     from unittest.mock import patch
 
+import pytest
 
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
@@ -94,7 +95,7 @@ def test_exmaple_gpi_klip_dataset():
 
     print("{0} seconds to run".format(time()-t1))
 
-
+#@pytest.mark.skip("Taking too long")
 def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     """
     Tests ADI reduction with fakes injected at certain position angles. And tests we can run it twice and still be ok
@@ -116,6 +117,7 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
 
     # create the dataset object
     dataset = GPI.GPIData(filelist, skipslices=[0, 36], bad_sat_spots=[3], highpass=False)
+    dataset.spectral_collapse(collapse_channels=2, align_frames=False)
 
     # save old centesr for later
     oldcenters = np.copy(dataset.centers)
@@ -152,7 +154,7 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     speccube_kl20 = spec_hdulist[1].data
 
     # check to make sure it's the right shape
-    assert(speccube_kl20.shape == (35, 281, 281))
+    assert(speccube_kl20.shape == (2, 281, 281))
 
     # look at the output data. Validate the KL mode cube
     spec_hdulist = fits.open("{out}/{pre}-KLmodes-all.fits".format(out=outputdir, pre=prefix))
