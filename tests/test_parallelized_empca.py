@@ -22,149 +22,118 @@ else:
 # this script contains additional tests for parallelized
 # mostly for functions and features added since weighted empca is introduced
 
-def test_select_algo():
+class test_collapse_data(unittest.TestCase):
 
-    assert parallelized._select_algo('empca') == parallelized._weighted_empca_section
-    assert parallelized._select_algo('EMpca') == parallelized._weighted_empca_section
-    assert parallelized._select_algo('klip') == parallelized._klip_section_multifile
+    def test_median_collapse(self):
 
-def test_median_collapse():
+        test_cube = np.reshape(np.arange(9), (3,3))
+        weights = 2.
+        ans = parallelized._collapse_data(test_cube, collapse_method='median')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = parallelized._collapse_data(test_cube, weights, axis=0, collapse_method='median')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
 
-    test_cube = np.reshape(np.arange(9), (3,3))
-    weights = np.reshape(np.zeros(9), (3,3))
-    weights[0] = 1.
+    def test_mean_collapse(self):
 
-    ans = parallelized._median_collapse(test_cube)
-    assert np.array_equal(ans, np.array([1., 4., 7.]))
-    ans = parallelized._median_collapse(test_cube, weights)
-    assert np.array_equal(ans, np.array([1., 0., 0.]))
-    ans = parallelized._median_collapse(test_cube, weights, axis=0)
-    assert np.array_equal(ans, np.array([0., 0., 0.]))
-    ans = parallelized._median_collapse(test_cube, weights, axis=1)
-    assert np.array_equal(ans, np.array([1., 0., 0.]))
+        test_cube = np.reshape(np.arange(9), (3, 3))
+        weights = 2.
+        ans = parallelized._collapse_data(test_cube, collapse_method='mean')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = parallelized._collapse_data(test_cube, weights, axis=0, collapse_method='mean')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
 
-def test_mean_collapse():
+    def test_weighted_mean_collapse(self):
 
-    test_cube = np.reshape(np.arange(9), (3, 3))
-    weights = np.reshape(np.ones(9), (3, 3))
+        test_cube = np.reshape(np.arange(9), (3, 3))
+        weights = np.reshape(np.ones(9), (3, 3))
+        ans = parallelized._collapse_data(test_cube, collapse_method='weighted_mean')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = parallelized._collapse_data(test_cube, weights, axis=0, collapse_method='weighted-mean')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
+        weights = test_cube
+        ans = parallelized._collapse_data(test_cube, weights, axis=1, collapse_method='weighted mean')
+        assert np.array_equal(ans, (np.nanmean(test_cube*weights, axis=1) / np.nanmean(weights, axis=1)))
 
-    ans = parallelized._mean_collapse(test_cube)
-    assert np.array_equal(ans, np.array([1., 4., 7.]))
+    def test_trimmed_mean_collapse(self):
 
-    ans = parallelized._mean_collapse(test_cube, weights, axis=0)
-    assert np.array_equal(ans, np.array([3., 4., 5.]))
+        test_cube = np.array([[2., 1., 4., 0., 3.],
+                              [5., 9., 7., 6., 8.]])
+        ans = parallelized._collapse_data(test_cube, axis=1, collapse_method='Trimmed-mean')
+        assert np.array_equal(ans, np.array([2, 7]))
+        test_cube = np.array([[2., 1., 4., 0., 3., 5.],
+                              [10., 9., 7., 6., 8., 11.]])
+        ans = parallelized._collapse_data(test_cube, axis=1, collapse_method='trimmed_mean')
+        assert np.array_equal(ans, np.array([2.5, 8.5]))
 
-
-def test_weighted_mean_collapse():
-
-    test_cube = np.reshape(np.arange(9), (3, 3))
-    weights = np.reshape(np.ones(9), (3, 3))
-
-    ans = parallelized._weighted_mean_collapse(test_cube)
-    assert np.array_equal(ans, np.array([1., 4., 7.]))
-
-    ans = parallelized._weighted_mean_collapse(test_cube, weights, axis=0)
-    assert np.array_equal(ans, np.array([3., 4., 5.]))
-
-    weights = test_cube
-
-    ans = parallelized._weighted_mean_collapse(test_cube, weights, axis=1)
-    assert np.array_equal(ans, (np.nanmean(test_cube*weights, axis=1) / np.nanmean(weights, axis=1)))
-
-def test_trimmed_mean_collapse():
-
-    test_cube = np.array([[2., 1., 4., 0., 3.],
-                          [5., 9., 7., 6., 8.]])
-
-    ans = parallelized._trimmed_mean_collapse(test_cube, axis = 1)
-    assert np.array_equal(ans, np.array([2, 7]))
-
-    test_cube = np.array([[2., 1., 4., 0., 3., 5.],
-                          [10., 9., 7., 6., 8., 11.]])
-    ans = parallelized._trimmed_mean_collapse(test_cube, axis = 1)
-    assert np.array_equal(ans, np.array([2.5, 8.5]))
-
-def test_select_collapse():
-
-    assert parallelized._select_collapse('mediAN') == parallelized._median_collapse
-    assert parallelized._select_collapse('meaN') == parallelized._mean_collapse
-    assert parallelized._select_collapse('weighted mean') == parallelized._weighted_mean_collapse
-    assert parallelized._select_collapse('WeIGhTed_MeAN') == parallelized._weighted_mean_collapse
-    assert parallelized._select_collapse('WeIGhTed-MeAN') == parallelized._weighted_mean_collapse
-    assert parallelized._select_collapse('WeIGhTed_MeDIan') == parallelized._mean_collapse
-    assert parallelized._select_collapse('trIMmEd_MeAN') == parallelized._trimmed_mean_collapse
-
-@mock.patch.object(CHARIS.CHARISData, 'savedata')
-@mock.patch('pyklip.parallelized._mean_collapse')
-@mock.patch('pyklip.parallelized.os')
-def test_save_spectral_cubes(mock_os, mock_mean_collapse, mock_savedata):
-
-    filelist = glob.glob('./tests/data/CHARISData_test_cube*.fits')
-    assert filelist
-    nimg = len(filelist)
-    numbasis = [1]
-    dataset = CHARIS.CHARISData(filelist, None, None, update_hdrs=False)
-    inputshape = (nimg, 22, 201, 201)
-    dataset.input = dataset.input.reshape(inputshape)
-    outputshape = (len(numbasis),) + inputshape
-    pixel_weights = np.ones(outputshape)
-
-    # output shape expected error test
-    dataset.output = np.array(dataset.input) # shape (N, wv, y, x)
-    with pytest.raises(ValueError):
-        parallelized._save_spectral_cubes(dataset, pixel_weights, 'mean', numbasis, False,
-                                          'anydir', 'anyprefix')
-
-    # savedata test
-    dataset.output = np.array([dataset.input]) # shape (1, N, wv, y, x)
-    mock_spectral_cubes = ['speccube1']
-    mock_mean_collapse.return_value = mock_spectral_cubes
-    mock_os.path.join.return_value = 'anyfilepath'
-    dataset.klipparams = 'numbasis={numbasis}'
-    parallelized._save_spectral_cubes(dataset, pixel_weights, 'mean', numbasis, False,
-                                      'anydir', 'anyprefix')
-    mock_savedata.assert_called_with('anyfilepath', mock_spectral_cubes[0], klipparams='numbasis=1',
-                                     filetype='PSF Subtracted Spectral Cube')
-
-    # flux calibration test
-    pass
-
-@mock.patch('pyklip.parallelized._mean_collapse')
-@mock.patch('pyklip.parallelized._median_collapse')
-@mock.patch.object(CHARIS.CHARISData, 'savedata')
-def test_save_wv_collapsed_images(mock_savedata, mock_median_collapse, mock_mean_collapse):
-
-    filelist = glob.glob('./tests/data/CHARISData_test_cube*.fits')
-    assert filelist
-    nimg = len(filelist)
-    numbasis = [1]
-    dataset = CHARIS.CHARISData(filelist, None, None, update_hdrs=False)
-    inputshape = (nimg, 22, 201, 201)
-    dataset.input = dataset.input.reshape(inputshape)
-    outputshape = (len(numbasis),) + inputshape
-    pixel_weights = np.ones(outputshape)
-
-    # output shape expected error test
-    dataset.output = np.array(dataset.input)  # shape (N, wv, y, x)
-    with pytest.raises(ValueError):
-        parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis,
-                                               'mean', None, None, False,
-                                               'anydir', 'anyprefix')
-
-    # test spectrum is None case
-    dataset.output = np.array([dataset.input])  # shape (1, N, wv, y, x)
-    mock_median_collapse.return_value = 'any spectral cubes'
-    mock_mean_collapse.return_value = ['KLmode_cube']
-    dataset.klipparams = 'numbasis={numbasis}'
-    parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis, 'mean',
-                              None, None, False, 'anydir', 'anyprefix')
-    mock_mean_collapse.assert_called_with('any spectral cubes', axis=1)
-    mock_savedata.assert_called_with('anydir/anyprefix-KL1modes-all.fits', ['KLmode_cube'], klipparams='numbasis=[1]',
-                                     filetype='KL Mode Cube', zaxis=numbasis)
-
-    # test spectrum is not None case
-
-    # test flux calibration
+# @mock.patch.object(CHARIS.CHARISData, 'savedata')
+# @mock.patch('pyklip.parallelized.os')
+# def test_save_spectral_cubes(mock_os, mock_dataset_init, mock_savedata):
+#
+#     nimg = 10
+#     numbasis = [1, 2]
+#     mock_dataset_init.return_value =
+#     dataset = CHARIS.CHARISData()
+#     inputshape = (nimg, 22, 201, 201)
+#     dataset.input = dataset.input.reshape(inputshape)
+#     outputshape = (len(numbasis),) + inputshape
+#     pixel_weights = np.ones(outputshape)
+#
+#     # output shape expected error test
+#     dataset.output = np.array(dataset.input) # shape (N, wv, y, x)
+#     with pytest.raises(ValueError):
+#         parallelized._save_spectral_cubes(dataset, pixel_weights, 'mean', numbasis, False,
+#                                           'anydir', 'anyprefix')
+#
+#     # savedata test
+#     dataset.output = np.array([dataset.input]) # shape (1, N, wv, y, x)
+#     mock_spectral_cubes = ['speccube1']
+#     mock_mean_collapse.return_value = mock_spectral_cubes
+#     mock_os.path.join.return_value = 'anyfilepath'
+#     dataset.klipparams = 'numbasis={numbasis}'
+#     parallelized._save_spectral_cubes(dataset, pixel_weights, 'mean', numbasis, False,
+#                                       'anydir', 'anyprefix')
+#     mock_savedata.assert_called_with('anyfilepath', mock_spectral_cubes[0], klipparams='numbasis=1',
+#                                      filetype='PSF Subtracted Spectral Cube')
+#
+#     # flux calibration test
+#     pass
+#
+# @mock.patch('pyklip.parallelized._mean_collapse')
+# @mock.patch('pyklip.parallelized._collapse_method')
+# @mock.patch.object(CHARIS.CHARISData, 'savedata')
+# def test_save_wv_collapsed_images(mock_savedata, mock_collapse_method, mock_mean_collapse):
+#
+#     filelist = glob.glob('./tests/data/CHARISData_test_cube*.fits')
+#     assert filelist
+#     nimg = len(filelist)
+#     numbasis = [1]
+#     dataset = CHARIS.CHARISData(filelist, None, None, update_hdrs=False)
+#     inputshape = (nimg, 22, 201, 201)
+#     dataset.input = dataset.input.reshape(inputshape)
+#     outputshape = (len(numbasis),) + inputshape
+#     pixel_weights = np.ones(outputshape)
+#
+#     # output shape expected error test
+#     dataset.output = np.array(dataset.input)  # shape (N, wv, y, x)
+#     with pytest.raises(ValueError):
+#         parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis,
+#                                                'mean', None, None, False,
+#                                                'anydir', 'anyprefix')
+#
+#     # test spectrum is None case
+#     dataset.output = np.array([dataset.input])  # shape (1, N, wv, y, x)
+#     mock_collapse_method.return_value = 'any spectral cubes'
+#     mock_mean_collapse.return_value = ['KLmode_cube']
+#     dataset.klipparams = 'numbasis={numbasis}'
+#     parallelized._save_wv_collapsed_images(dataset, pixel_weights, 'median', numbasis, 'mean',
+#                               None, None, False, 'anydir', 'anyprefix')
+#     mock_mean_collapse.assert_called_with('any spectral cubes', axis=1)
+#     mock_savedata.assert_called_with('anydir/anyprefix-KL1modes-all.fits', ['KLmode_cube'], klipparams='numbasis=[1]',
+#                                      filetype='KL Mode Cube', zaxis=numbasis)
+#
+#     # test spectrum is not None case
+#
+#     # test flux calibration
 
 class weighted_empca_section_TestCase(unittest.TestCase):
 
@@ -238,11 +207,3 @@ class weighted_empca_section_TestCase(unittest.TestCase):
         assert mock_weighted_empca.call_args[1]['weights'] == 'some weights'
         assert mock_weighted_empca.call_args[1]['niter'] == 15
         assert mock_weighted_empca.call_args[1]['nvec'] == 2
-
-class parallelized_empca_TestCase(unittest.TestCase):
-
-    '''
-    test empca related features in parallelized
-    '''
-    pass
-

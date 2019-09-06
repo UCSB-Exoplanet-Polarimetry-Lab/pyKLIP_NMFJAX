@@ -240,17 +240,10 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             P3D[i] = P*P[i]
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
-        import pdb; pdb.set_trace()
-        time1 = time.time()
         C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
-        time1 = time.time() - time1
-        import pdb; pdb.set_trace()
-        time2 = time.time()
         #b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
         #A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
-        D = np.linalg.solve(A, b).T # shape nvec
-        time2 = time.time() - time2
-        import pdb; pdb.set_trace()
+        #C = np.linalg.solve(A, b).T # shape nvec
         ##############################################################
         # Compute the weighted residual (chi squared) value from the
         # previous fit.
@@ -281,27 +274,19 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
-            import pdb; pdb.set_trace()
-            time3 = time.time()
             P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
-            time3 = time.time() - time3
-            import pdb; pdb.set_trace()
-            time4 = time.time()
-            singular_matrix = 0
+            #singular_matrix = 0
             #b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
             #A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
-            try:
-                P2 = np.linalg.solve(A, b).T # shape nvec
-            except:
-                cond_num = np.linalg.cond(A)
+            #try:
+            #    P2 = np.linalg.solve(A, b).T # shape nvec
+            #except:
+            #    cond_num = np.linalg.cond(A)
             
             # np.linalg.svd should fix the problem without having to resort to the following comments:            
             # grab the good indices for which cond_num < some large number
             # linalg.solve the good indices
             # loop solve the bad indices and check if they are just 0s
-
-            time4 = time.time() - time4
-            import pdb; pdb.set_trace()
 
 
     ##################################################################

@@ -24,7 +24,6 @@ except ImportError:
     mkl_exists = False
 
 # can turn off for debugging purposes
-# this can now also be accomplished by passing parallel=True/False as a **kwargs in klip_dataset()
 global parallel
 parallel = True
 
@@ -68,219 +67,124 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     psf_lib = psf_library
     psf_lib_shape = psf_library_shape
 
-def _kwargs_options(**kwargs):
-#TODO: delete this function
-    '''
-    a function to deal with some simple options that can be passed in through kwargs (such as turning parallel
-    programming on and off for debug purposes)
-    currently only deals with two options: parallel, charis_reduction, but additional options can be easily added
-    :param kwargs:
-    :return:
-    '''
+def _collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
+    """
+    Function to collapse multi-dimensional data along axis using collapse method
 
-    global charis_reduction, parallel
-    charis_reduction = False
+    Args:
+        data: (multi-dimension)arrays of 2D images or 3D cubes.
+        pixel_weights: ones if collapse method is not weighted collapse
+        axis: axis index along which to collapse
+        collapse_method: currently support 'median', 'mean', 'weighted-mean', 'trimmed-mean'
 
-    if kwargs.get('parallel') is not None:
-        parallel = kwargs.get('parallel')
-        print('parallel programming set to:', parallel)
+    Returns:
+        Collapsed data
+    """
 
-        charis_reduction = kwargs.get('charis_reduction')
-
-    return
-
-def _select_algo(algo):
-    '''
-    MC edited function
-    selects which private function to run
-
-    :param algo: user input algorithm name
-    :return: the correct function to call in subsequent reduction process
-    '''
-
-    if algo.lower() == 'empca':
-        return _weighted_empca_section
-    else:
-        return _klip_section_multifile
-
-
-def _median_collapse(data, pixel_weights=None, axis=1):
-    '''
-    MC edited function
-    function to median-collapse the data in time dimension
-
-    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
-    :param pixel_weights: pixel weights, should be ones
-    :param axis: axis index along which to collapse
-    :return: data with the specified axis collapsed using the median
-    '''
-
-    if pixel_weights is None:
-        pixel_weights = np.ones(data.shape)
-
-    return np.nanmedian(pixel_weights * data, axis=axis)
-
-
-def _mean_collapse(data, pixel_weights=None, axis=1):
-    '''
-    MC edited function
-    function to mean-collapse the data in time dimension
-
-    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
-    :param pixel_weights: pixel weights, should be ones
-    :param axis: axis index along which to collapse
-    :return: data with the specified axis collapsed using the mean
-    '''
-
-    if pixel_weights is None:
-        pixel_weights = np.ones(data.shape)
-
-    return np.nanmean(pixel_weights * data, axis=axis)
-
-
-def _weighted_mean_collapse(data, pixel_weights=None, axis=1):
-    '''
-    MC edited function
-    function to mean-collapse the data in specified dimension, weighted by pixel_weights
-
-    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
-    :param pixel_weights: pixel weights
-    :param axis: axis along which to collapse
-    :return: data with the specified axis collapsed using weighted mean
-    '''
-
-    if pixel_weights is None:
-        pixel_weights = np.ones(data.shape)
-
-    collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
-    collapsed_data /= np.nanmean(pixel_weights, axis=axis)
-
-    return  collapsed_data
-
-
-def _trimmed_mean_collapse(data, pixel_weights=None, axis=1):
-    '''
-    MC edited function
-    Tim's trimmed mean method to collapse wavelength dimension with the addition of pixel weights
-
-    :param data: (multi-dimension)arrays of 2D images or 3D cubes.
-    :param axis: axis along which to collapse
-    :return: data with the specified axis collapsed using weighted mean
-    '''
-
-    if pixel_weights is None:
-        pixel_weights = np.ones(data.shape)
-
-    collapsed = np.sort(pixel_weights * data, axis=axis)
-    collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
-    collapsed = np.nanmean(collapsed, axis=axis)
-
-    return collapsed
-
-
-def _select_collapse(collapse_method):
-    '''
-    MC edited function
-    select the supported time or wavelength collapse function based on input string
-
-    :param collapse_method: a string that specifies the collapse function
-    :return: the collapse function to use, currently support 'mean', 'median', 'weighted-mean', 'trimmed-mean'
-    '''
-
-    if collapse_method is None:
-        print('input collapse method is None, default to mean collapse...')
-        return _mean_collapse
     if collapse_method.lower() == 'median':
-        return _median_collapse
-    elif collapse_method.lower() == 'mean':
-        return _mean_collapse
-    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        return _weighted_mean_collapse
-    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        return  _trimmed_mean_collapse
-    else:
-        # default function if imput does not match any supported pattern
-        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
-        return _mean_collapse
 
+        return np.nanmedian(data, axis=axis)
+
+    elif collapse_method.lower() == 'mean':
+
+        return np.nanmean(data, axis=axis)
+
+    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        if pixel_weights is None:
+            pixel_weights = np.ones(data.shape)
+        collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
+        collapsed_data /= np.nanmean(pixel_weights, axis=axis)
+
+        return collapsed_data
+
+    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        collapsed = np.sort(data, axis=axis)
+        collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
+        collapsed = np.nanmean(collapsed, axis=axis)
+
+        return collapsed
+
+    else:
+        # default to mean collapse if input does not match any supported pattern
+        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
+
+        return np.nanmean(data, axis=axis)
 
 def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_cal, outputdirpath, fileprefix):
-    '''
-    MC edited function
-    Re-factoring a segment of code in klip_dataset() into a function that time-collapse the image cubes and saves them.
 
-    :param dataset: an instance of CHARISData class
-    :param pixel_weights: pixel weights for dataset.output, same shape as dataset.output
-    :param time_collapse: method for time collapse. Support: 'mean', 'weighted-mean', 'median'
-    :param numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-    :param flux_cal: option to calibrate flux
-    :param outputdirpath: output directory
-    :param fileprefix: file prefix
-    :return: non-flux-calibrated array of spectral cubes, each cube time-collapsed from a sequence of
-             post-processed spectral cubes under a KLbasis number. Shape (b, wv, y, x)
     '''
+    Saves spectral cubes by collapsing dataset along time dimension
 
-    if len(dataset.output.shape) != 5:
-        raise ValueError('output data has unexpected shape:{}'.format(dataset.output.shape))
+    Args:
+        dataset: an instance of CHARISData class
+        pixel_weights: pixel weights for dataset.output, same shape as dataset.output
+        time_collapse: method for time collapse. Support: 'mean', 'weighted-mean', 'median'
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        flux_cal: option to calibrate flux
+        outputdirpath: output directory
+        fileprefix: file prefix
+
+    Returns:
+        saves collapsed spectral cubes to output
+    '''
 
     print('time collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
-    time_collapse_fn = _select_collapse(time_collapse)
-    spectral_cubes = time_collapse_fn(dataset.output, pixel_weights, axis=1)
+    spectral_cubes = _collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse)
 
     if flux_cal:
         spectral_cubes = np.array([dataset.calibrate_output(cube, spectral=True)
                                         for cube in spectral_cubes])
 
     for KLcutoff, spectral_cube in zip(numbasis, spectral_cubes):
-        filename = '{}-KL{}-speccube-{}-time-collapse.fits'.format(fileprefix, KLcutoff, time_collapse.lower())
+        filename = '{}-KL{}-speccube.fits'.format(fileprefix, KLcutoff)
         filepath = os.path.join(outputdirpath, filename)
         dataset.savedata(filepath, spectral_cube, klipparams=dataset.klipparams.format(numbasis=KLcutoff),
                          filetype="PSF Subtracted Spectral Cube")
 
     return
 
-
-def _save_wv_collapsed_images(dataset, pixel_weights, time_collapse, numbasis, wv_collapse,
+def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs,
                               spectrum, spectra_template, flux_cal, outputdirpath, fileprefix):
-    '''
-    MC edited function
-    :param dataset: an instance of CHARISData
-    :param pixel_weights: pixel weights for dataset.output, same shape as dataset.output
-    :param time_collapse: method for time collapse. Support: 'mean', 'weighted-mean', 'median'
-    :param numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-    :param wv_collapse: method for wavelength collapse. Supports: 'mean' or 'trimmed-mean'
-    :spectrum: refer to klip_dataset()
-    :param flux_cal: option to calibrate flux
-    :param outputdirpath: output directory
-    :param fileprefix: file prefix
-    :return: array of wavelength collapsed images, shape of (b, y, x)
-    '''
+    """
 
-    if len(dataset.output.shape) != 5:
-        raise ValueError('output data has unexpected shape:{}'.format(dataset.output.shape))
+    Args:
+        dataset: an instance of CHARISData
+        pixel_weights: pixel weights for dataset.output, same shape as dataset.output
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        time_collapse: method for time collapse. Support: 'median', 'mean', 'weighted-mean'
+        wv_collapse: method for wavelength collapse. Supports: 'median', 'mean', 'weighted-mean', 'trimmed-mean'
+        num_wvs: number of wavelength slices
+        spectrum: refer to klip_dataset() docstring
+        spectra_template:
+        flux_cal: option to calibrate flux
+        outputdirpath: output directory
+        fileprefix: file prefix
+
+    Returns:
+        saves wavelength collapsed images to output
+
+    """
 
     print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
-    time_collapse_fn = _select_collapse(time_collapse)
-    wv_collapse_fn = _select_collapse(wv_collapse)
+    spectral_cubes = _collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse) # spectral_cubes shape (b, wv, y, x)
 
-    spectral_cubes = time_collapse_fn(dataset.output, pixel_weights, axis=1) # spectral_cubes shape (b, wv, y, x)
-
-    if spectrum is None:
-        KLmode_cube = wv_collapse_fn(spectral_cubes, axis=1)
+    if spectrum is None or num_wvs == 1:
+        KLmode_cube = _collapse_data(spectral_cubes, axis=1, collapse_method=wv_collapse)
     else:
-        # if spectrum weighting is carried out, currently only support mean-collapse weighted by pixel_weights*spectrum
+        # if spectrum weighting is carried out, the collapse method is default to mean collapse weighted by spectrum
+        # which is an exact copy of the original code before this refactoring
+        # TODO: make spectral weighting work with all collapse methods
         print('spectrum weighting turned on...\n'
               'default to mean collapse weighted by pixel_weights * spectra_template...')
         spectra_template = spectra_template.reshape(dataset.output.shape[1:3])  # make same shape as dataset.output
-        KLmode_cube = np.nanmean(dataset.output, pixel_weights * spectra_template[None, :, :, None, None], axis=(1, 2))
+        KLmode_cube = np.nanmean(pixel_weights * dataset.output * spectra_template[None, :, :, None, None], axis=(1, 2))
         KLmode_cube /= np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis=(1, 2))
 
     if flux_cal:
         KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
-    numbasis_str = '-'.join(str(basis) for basis in numbasis)
-    filename = '{}-KL{}modes-all.fits'.format(fileprefix, numbasis_str)
+    filename = '{}-KLmodes-all.fits'.format(fileprefix)
     filepath = os.path.join(outputdirpath, filename)
     numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
     dataset.savedata(filepath, KLmode_cube,
@@ -467,9 +371,9 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
 def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numbasis, maxnumbasis_void, radstart, radend,
                             phistart, phiend, movement, ref_center, minrot_void, maxrot_void, spectrum_void, mode_void,
                             corr_smooth_void, psf_library_good_void, psf_library_corr_void, lite, dtype=None,
-                            algo_void='empca', niter=15, **kwargs):
+                            algo_void='empca', niter=15):
     '''
-    MC edited function
+
     run weighted expectation maximization pca on a section of a specific wavelength slice for all images
 
     Args:
@@ -549,7 +453,7 @@ def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numb
 
 def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, corr_smooth=1, psflib_good=None,
-                            psflib_corr=None, lite=False, dtype=None, algo='klip', **kwargs):
+                            psflib_corr=None, lite=False, dtype=None, algo='klip'):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -1188,7 +1092,11 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
 
-        _klip_section_function = _select_algo(algo)
+        if algo.lower() == 'empca':
+            _klip_section_function = _weighted_empca_section
+        else:
+            _klip_section_function = _klip_section_multifile
+
         if parallel:
             outputs += [tpool.apply_async(_klip_section_function, 
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
@@ -1255,7 +1163,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
                       annuli_spacing="constant", maxnumbasis=None, corr_smooth=1,
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
-                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False,**kwargs):
+                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False):
     """
     multithreaded KLIP PSF Subtraction
 
@@ -1296,7 +1204,6 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf', 'empca')
         compute_noise_cube:  if True, compute the noise in each pixel assuming azimuthally uniform noise
-        kwargs: for additional features not originally implemented
 
     Returns:
         sub_imgs: array of [array of 2D images (PSF subtracted)] using different number of KL basis vectors as
@@ -1481,7 +1388,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
-        _klip_section_function = _select_algo(algo)
+        if algo.lower() == 'empca':
+            _klip_section_function = _weighted_empca_section
+        else:
+            _klip_section_function = _klip_section_multifile
+
         if parallel:
             outputs += [tpool.apply_async(_klip_section_function, (scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
@@ -1489,7 +1400,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                                                                         aligned_center, minrot, maxrot, spectrum,
                                                                         mode, corr_smooth, 
                                                                         psf_library_good, psf_library_corr, False,
-                                                                        dtype, algo), kwargs)
+                                                                        dtype, algo))
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
@@ -1499,7 +1410,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                                                 aligned_center, minrot, maxrot, spectrum,
                                                 mode, corr_smooth,
                                                 psf_library_good, psf_library_corr, False,
-                                                dtype, algo, **kwargs)
+                                                dtype, algo)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
 
@@ -1552,11 +1463,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
                  highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
-                 time_collapse="mean",**kwargs):
-    # TODO: combine all the time, wavelength collapse into a single function that takes in the user keywords and
-    #       select within that function. Raise error for movement, minrot when user choses both empca and non zero
+                 time_collapse="mean", wv_collapse='mean'):
+    # TODO: Raise error for movement, minrot when user choses both empca and non zero
     #       values for the two parameters
-    #       eliminate **kwargs
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1597,8 +1506,9 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         restore_aligned The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str):     algorithm to use ('klip', 'nmf')
+        algo (str):     algorithm to use ('klip', 'nmf', 'empca')
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median'
+        wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
 
     Returns
         Saved files in the output directory
@@ -1620,7 +1530,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             numbasis = np.array([numbasis])
 
-    _kwargs_options(**kwargs)
 
     # check how we will collapse the data
     # MC edit: time collapse re-factored into function "select_collapse"
@@ -1733,13 +1642,13 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     dataset.klipparams = klipparams
 
     # set all the klip_parallelized.py args here
-    pyklip_args = dict({'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement,
+    pyklip_args = {'OWA':dataset.OWA, 'mode':mode, 'annuli':annuli, 'subsections':subsections, 'movement':movement,
                     'numbasis':numbasis, 'numthreads':numthreads, 'minrot':minrot, 'aligned_center':aligned_center,
                     'annuli_spacing':annuli_spacing, 'maxnumbasis':maxnumbasis, 'corr_smooth':corr_smooth,
                     'spectrum':spectra_template, 'psf_library':master_library,
                     'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
                     'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
-                    'algo':algo, 'compute_noise_cube':weighted}, **kwargs)
+                    'algo':algo, 'compute_noise_cube':weighted}
 
     #Set MLK parameters
     if mkl_exists:
@@ -1883,63 +1792,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # create weights for each pixel. If we aren't doing weighted mean, weights are just ones
     pixel_weights = 1./stddev_frames**2
 
-    if charis_reduction:
-        # MC edit
-        # refactored the remainder of klip_dataset() into two helper functions to collapse and save output
-        # currently uses a temporary keyword 'charis_reduction', passed in through **kwargs, to allow/reject use of
-        # these refactored code if running on charis data
-        # remove this 'charis_reduction' condition only after testing this refactored code and confirm that it
-        # correctly replaces the original
-
-        wv_collapse = kwargs.get('wv_collapse')
-        _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, calibrate_flux, outputdirpath, fileprefix)
-        _save_wv_collapsed_images(dataset, pixel_weights, time_collapse, numbasis, wv_collapse, spectrum,
-                                  spectra_template, calibrate_flux, outputdirpath, fileprefix)
-
-        # Restore old setting
-        if mkl_exists:
-            mkl.set_num_threads(old_mkl)
-
-        return
-
-
-    # collapse in time and wavelength to examine KL modes
-    if spectrum is None or num_wvs == 1:
-        KLmode_cube = np.nanmean(pixel_weights * dataset.output, axis=(1,2))
-        if weighted:
-            # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
-            KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))
-    else:
-        #do the mean combine by weighting by the spectrum
-        spectra_template = spectra_template.reshape(dataset.output.shape[1:3]) #make same shape as dataset.output
-        KLmode_cube = np.nanmean(pixel_weights * dataset.output * spectra_template[None,:,:,None,None], axis=(1,2))\
-                        / np.nanmean(spectra_template[None, :, :, None, None] * pixel_weights, axis = (1, 2))
-    # broadband flux calibration for KL mode cube
-    if calibrate_flux:
-        KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
-    numbasis_str = '[' + " ".join(str(basis) for basis in numbasis) + ']'
-    dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KLmodes-all.fits", KLmode_cube,
-                     klipparams=klipparams.format(numbasis=numbasis_str), filetype="KL Mode Cube",
-                     zaxis=numbasis)
-
-    # if there is more than one wavelenght channel, save spectral data cubes too
     if num_wvs > 1:
-        # for each KL mode, collapse in time to examine spectra
-        KLmode_spectral_cubes = np.nanmean(pixel_weights * dataset.output, axis=1)
-        if weighted:
-            # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that. 
-            KLmode_spectral_cubes /= np.nanmean(pixel_weights, axis=1)
+        _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, calibrate_flux, outputdirpath, fileprefix)
 
-        for KLcutoff, spectral_cube in zip(numbasis, KLmode_spectral_cubes):
-            # calibrate spectral cube if needed
-            if calibrate_flux:
-                spectral_cube = dataset.calibrate_output(spectral_cube, spectral=True)
-            dataset.savedata(outputdirpath + os.path.sep + fileprefix + "-KL{0}-speccube.fits".format(KLcutoff),
-                             spectral_cube, klipparams=klipparams.format(numbasis=KLcutoff),
-                             filetype="PSF Subtracted Spectral Cube")
+    _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs, spectrum,
+                              spectra_template, calibrate_flux, outputdirpath, fileprefix)
 
-
-
-    #Restore old setting
+    # Restore old setting
     if mkl_exists:
         mkl.set_num_threads(old_mkl)
+
+    return
