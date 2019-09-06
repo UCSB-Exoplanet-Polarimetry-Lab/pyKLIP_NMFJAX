@@ -128,7 +128,7 @@ class DiskFM(NoFM):
 
         # Set up global multi-processing dictionaries for saving FM basis
         global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict
-        global section_ind_dict,radstart_dict, radend_dict, phistart_dict
+        global section_ind_dict, radstart_dict, radend_dict, phistart_dict
         global phiend_dict, input_img_num_dict, klparam_dict
 
         manager = mp.Manager()
@@ -171,8 +171,7 @@ class DiskFM(NoFM):
                 raise ValueError('''The # of PAs in the dataset loaded is not
                                 identical to the # of PAs in the dataset used to
                                 measure the KL basis. Some images were maybe r
-                                emoved'''
-                                 )
+                                emoved''')
             else:
                 if any(self.PAs != dataset.PAs):
                     raise ValueError('''The PAs in the dataset loaded are not
@@ -182,13 +181,13 @@ class DiskFM(NoFM):
 
             if np.size(self.wvs) != np.size(dataset.wvs):
                 raise ValueError(
-                            '''The # of Wavelengths in the dataset loaded is not
+                    '''The # of Wavelengths in the dataset loaded is not
                             identical to the # of Wavelengths in the dataset used to
                             measure the KL basis. Pb in the collapse?''')
             else:
                 if any(self.wvs != dataset.wvs):
                     raise ValueError(
-                                '''The Wavelengths in the dataset loaded are not
+                        '''The Wavelengths in the dataset loaded are not
                                 identical to the Wavelengths in the dataset used to
                                 measure the KL basis.''')
 
@@ -532,8 +531,9 @@ class DiskFM(NoFM):
         # broadband flux calibration for KL mode cube
         if calibrate_flux:
             KLmode_cube = dataset.calibrate_output(KLmode_cube, spectral=False)
+
         dataset.savedata(
-            outputdir + "/" + fileprefix + "-fmpsf-KLmodes-all.fits",
+            path.join(outputdir, fileprefix + "-fmpsf-KLmodes-all.fits"),
             KLmode_cube,
             klipparams=klipparams.format(numbasis=str(numbasis)),
             filetype="KL Mode Cube",
@@ -557,8 +557,9 @@ class DiskFM(NoFM):
                     spectral_cube = dataset.calibrate_output(spectral_cube,
                                                              spectral=True)
                 dataset.savedata(
-                    outputdir + "/" + fileprefix +
-                    "-fmpsf-KL{0}-speccube.fits".format(KLcutoff),
+                    path.join(
+                        outputdir, fileprefix +
+                        "-fmpsf-KL{0}-speccube.fits".format(KLcutoff)),
                     spectral_cube,
                     klipparams=klipparams.format(numbasis=KLcutoff),
                     filetype="PSF Subtracted Spectral Cube",
@@ -984,7 +985,7 @@ def _save_dict_to_hdf5(dic, filename):
 
     """
     with h5py.File(filename, "w") as h5file:
-        _recursively_save_dict_contents_to_group(h5file, "/", dic)
+        _recursively_save_dict_contents_to_group(h5file, '/', dic)
 
 
 def _load_dict_from_hdf5(filename):
@@ -1000,7 +1001,7 @@ def _load_dict_from_hdf5(filename):
     """
 
     with h5py.File(filename, "r") as h5file:
-        return _recursively_load_dict_contents_from_group(h5file, "/")
+        return _recursively_load_dict_contents_from_group(h5file, '/')
 
 
 def _recursively_save_dict_contents_to_group(h5file, path, dic):
@@ -1021,7 +1022,7 @@ def _recursively_save_dict_contents_to_group(h5file, path, dic):
         if isinstance(item, (np.ndarray, np.int64, np.float64, str, bytes)):
             h5file[path + key] = item
         elif isinstance(item, dict):
-            _recursively_save_dict_contents_to_group(h5file, path + key + "/",
+            _recursively_save_dict_contents_to_group(h5file, path + key + '/',
                                                      item)
         else:
             raise ValueError("Cannot save {0} type in h5 (key = {1})".format(
@@ -1046,5 +1047,5 @@ def _recursively_load_dict_contents_from_group(h5file, path):
             ans[key] = item[()]
         elif isinstance(item, h5py._hl.group.Group):
             ans[key] = _recursively_load_dict_contents_from_group(
-                h5file, path + key + "/")
+                h5file, path + key + '/')
     return ans

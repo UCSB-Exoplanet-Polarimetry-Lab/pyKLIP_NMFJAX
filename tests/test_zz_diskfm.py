@@ -4,6 +4,8 @@ author: johan mazoyer
 # pylint: disable=C0103
 import os
 import glob
+import distutils.dir_util
+import shutil
 
 import numpy as np
 import astropy.io.fits as fits
@@ -50,6 +52,7 @@ def make_phony_disk(dim):
 
     return phony_disk
 
+
 def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     """
     Test DiskFM package. Creata Model disk. Create a disk model class.
@@ -72,6 +75,9 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     filelist = sorted(
         glob.glob(TESTDIR + os.path.join("data", "S20131210*distorcorr.fits")))
     dataset = GPI.GPIData(filelist, quiet=True)
+
+    diskfm_dir = os.path.join(TESTDIR, 'diskfm_dir')
+    distutils.dir_util.mkpath(diskfm_dir)
 
     # set a few parameters
     mov_here = 8
@@ -97,7 +103,8 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
             numbasis,
             dataset,
             model_convolved,
-            basis_filename=TESTDIR + fileprefix + "_KLbasis" + ext,
+            basis_filename=os.path.join(diskfm_dir,
+                                        fileprefix + "_KLbasis" + ext),
             save_basis=True,
             aligned_center=[xcen, ycen],
         )
@@ -110,7 +117,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
             annuli=annulitest,
             subsections=1,
             mode="ADI",
-            outputdir=TESTDIR,
+            outputdir=diskfm_dir,
             fileprefix=fileprefix,
             aligned_center=[xcen, ycen],
             mute_progression=True,
@@ -120,19 +127,20 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         )
 
     if nwls == 1:
-        fmout_klip_dataset = fits.getdata(TESTDIR + fileprefix +
-                                          "-fmpsf-KLmodes-all.fits")
+        fmout_klip_dataset = fits.getdata(
+            os.path.join(diskfm_dir, fileprefix + '-fmpsf-KLmodes-all.fits'))
     else:
         fmout_klip_dataset = fits.getdata(
-            TESTDIR + fileprefix +
-            "-fmpsf-KL{0}-speccube.fits".format(numbasis[0]))
+            os.path.join(
+                diskfm_dir,
+                fileprefix + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])))
 
     diskobj = DiskFM(
         dataset.input.shape,
         numbasis,
         dataset,
         model_convolved,
-        basis_filename=TESTDIR + fileprefix + "_KLbasis" + ext,
+        basis_filename=os.path.join(diskfm_dir, fileprefix + "_KLbasis" + ext),
         load_from_basis=True,
     )
 
@@ -147,7 +155,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         return_by_fm_parallelized = modelfm_here[0][0]  # first KL, first WL
 
     # fits.writeto(
-    #     TESTDIR + fileprefix + "_fm_parallelized-fmpsf.fits",
+    #     diskfm_dir + fileprefix + "_fm_parallelized-fmpsf.fits",
     #     return_by_fm_parallelized,
     #     overwrite=True,
     # )
@@ -155,7 +163,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     # # print(fmout_klip_dataset[0].shape)
     # # print(modelfm_here[0][0].shape)
     # fits.writeto(
-    #     TESTDIR + fileprefix + "_res.fits",
+    #     diskfm_dir + fileprefix + "_res.fits",
     #     return_klip_dataset - return_by_fm_parallelized,
     #     overwrite=True
     # )
@@ -171,18 +179,20 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
                return_klip_dataset)) < 1)
 
 
-
 def test_disk_helper():
     run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1)
-    run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
-    run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
+    # run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=1)
+    # run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
+    # run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
 
     run_test_diskFM(just_loading=False, ext=".pkl", nwls=1, annulitest=1)
-    run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
+    # run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
 
+    # # remove the files created by my disk FM test
+    # dirpath = os.path.join(TESTDIR, 'diskfm_dir')
+    # if os.path.exists(dirpath) and os.path.isdir(dirpath):
+    #     shutil.rmtree(dirpath)
 
 
 if __name__ == "__main__":
     test_disk_helper()
-
-
