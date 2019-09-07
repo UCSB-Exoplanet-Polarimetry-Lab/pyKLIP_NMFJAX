@@ -242,10 +242,13 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
         #C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
         Ainv = np.linalg.pinv(A)
-        Ainv_prime = Ainv.copy()
-        for k in range(Ainv.shape[1]):
-            Ainv_prime[:,k,:] = Ainv[:,k,:] * b
-        C = np.sum(Ainv_prime, axis = 2).T
+        # Ainv_prime = Ainv.copy()
+        # for k in range(Ainv.shape[1]):
+        #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
+        # C = np.sum(Ainv_prime, axis = 2).T
+
+        C = np.einsum('nmp,np->nm', Ainv, b).T
+        #C = (Ainv@b[..., None]).T[0]
 
         #C3 = np.diagonal(np.tensordot(Ainv, b.T, axes = 1), axis1=0, axis2=2)
 
@@ -294,10 +297,13 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             #P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
             Ainv = np.linalg.pinv(A)
-            Ainv_prime = Ainv.copy()
-            for k in range(Ainv.shape[1]):
-                Ainv_prime[:,k,:] = Ainv[:,k,:] * b
-            P = np.sum(Ainv_prime, axis = 2).T
+            # Ainv_prime = Ainv.copy()
+            # for k in range(Ainv.shape[1]):
+            #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
+            # P = np.sum(Ainv_prime, axis = 2).T
+            
+            P = np.einsum('nmp,np->nm', Ainv, b).T
+            #P = (Ainv@b[..., None]).T[0]
 
             #P3 = np.diagonal(np.tensordot(Ainv, b.T, axes=1), axis1=0, axis2=2).T
         
