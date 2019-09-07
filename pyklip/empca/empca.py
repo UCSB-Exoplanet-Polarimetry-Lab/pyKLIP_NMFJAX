@@ -227,11 +227,9 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
     # for np.linalg.lstsq instead of matutils, C shape needs to be inverted now
     C = C.T
 
-    debug_time = time.time()
     for itr in range(1, niter + 1):
 
         tstart = time.time()
-
         ##############################################################
         # Solve for best-fit coefficients with the previous/first
         # low-rank approximation.
@@ -241,12 +239,16 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             P3D[i] = P*P[i]
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
-        C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
+        #C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
-        C3 = np.zeros(C.shape)
         Ainv = np.linalg.pinv(A)
-        import pdb; pdb.set_trace()
-        C3 = np.diagonal(np.tensordot(Ainv, b.T, axes = 1), axis1=0, axis2=2)
+        Ainv_prime = Ainv.copy()
+        for k in range(Ainv.shape[1]):
+            Ainv_prime[:,k,:] = Ainv[:,k,:] * b
+        C = np.sum(Ainv_prime, axis = 2).T
+
+        #C3 = np.diagonal(np.tensordot(Ainv, b.T, axes = 1), axis1=0, axis2=2)
+
         # for k in range(Ainv.shape[0]):
         #     C3.T[k] = np.dot(Ainv[k], b[k])
 
@@ -289,11 +291,16 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
-            P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus)
+            #P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
-            P3 = np.zeros(P.shape)
             Ainv = np.linalg.pinv(A)
-            P3 = np.diagonal(np.tensordot(Ainv, b.T, axes=1), axis1=0, axis2=2).T
+            Ainv_prime = Ainv.copy()
+            for k in range(Ainv.shape[1]):
+                Ainv_prime[:,k,:] = Ainv[:,k,:] * b
+            P = np.sum(Ainv_prime, axis = 2).T
+
+            #P3 = np.diagonal(np.tensordot(Ainv, b.T, axes=1), axis1=0, axis2=2).T
+        
             # for k in range(Ainv.shape[0]):
             #     P3.T[k] = np.dot(Ainv[k], b[k])
 
@@ -314,8 +321,6 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             # grab the good indices for which cond_num < some large number
             # linalg.solve the good indices
             # loop solve the bad indices and check if they are just 0s
-    debug_time = time.time() - debug_time
-    import pdb; pdb.set_trace()
 
     ##################################################################
     # Normalize the low-rank approximation.
