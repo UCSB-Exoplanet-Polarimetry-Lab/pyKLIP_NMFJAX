@@ -25,7 +25,7 @@ except ImportError:
 
 # can turn off for debugging purposes
 global parallel
-parallel = True
+parallel = False
 
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,

@@ -227,6 +227,7 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
     # for np.linalg.lstsq instead of matutils, C shape needs to be inverted now
     C = C.T
 
+    debug_time = time.time()
     for itr in range(1, niter + 1):
 
         tstart = time.time()
@@ -241,9 +242,23 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
         C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
+
+        C3 = np.zeros(C.shape)
+        Ainv = np.linalg.pinv(A)
+        import pdb; pdb.set_trace()
+        C3 = np.diagonal(np.tensordot(Ainv, b.T, axes = 1), axis1=0, axis2=2)
+        # for k in range(Ainv.shape[0]):
+        #     C3.T[k] = np.dot(Ainv[k], b[k])
+
+        # for k in range(A.shape[0]):
+        #     C2.T[k] = np.linalg.lstsq(A[k], b[k], rcond=None)[0]
+        #     Ainv = np.linalg.pinv(A[k])
+        #     C3.T[k] = np.dot(Ainv, b[k])
+
         #b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
         #A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
         #C = np.linalg.solve(A, b).T # shape nvec
+
         ##############################################################
         # Compute the weighted residual (chi squared) value from the
         # previous fit.
@@ -274,7 +289,19 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
-            P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
+            P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus)
+
+            P3 = np.zeros(P.shape)
+            Ainv = np.linalg.pinv(A)
+            P3 = np.diagonal(np.tensordot(Ainv, b.T, axes=1), axis1=0, axis2=2).T
+            # for k in range(Ainv.shape[0]):
+            #     P3.T[k] = np.dot(Ainv[k], b[k])
+
+            # for k in range(A.shape[0]):
+            #     P2.T[k] = np.linalg.lstsq(A[k], b[k], rcond=None)[0]
+            #     Ainv = np.linalg.pinv(A[k])
+            #     P3.T[k] = np.dot(Ainv, b[k])
+
             #singular_matrix = 0
             #b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
             #A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
@@ -287,7 +314,8 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             # grab the good indices for which cond_num < some large number
             # linalg.solve the good indices
             # loop solve the bad indices and check if they are just 0s
-
+    debug_time = time.time() - debug_time
+    import pdb; pdb.set_trace()
 
     ##################################################################
     # Normalize the low-rank approximation.
