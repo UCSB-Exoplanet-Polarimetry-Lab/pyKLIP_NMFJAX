@@ -489,7 +489,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     """
     if dtype is None:
         dtype = ctypes.c_float
-    
+
     #create a coordinate system. Can use same one for all the images because they have been aligned and scaled
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
@@ -1103,8 +1103,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                                                 maxnumbasis,
                                                 radstart, radend, phistart, phiend, movement,
                                                 aligned_center, minrot, maxrot, spectrum,
-                                                mode, corr_smooth, None, None, lite, dtype, algo), 
-                                          kwds=kwargs)
+                                                mode, corr_smooth, None, None, lite, dtype, algo))
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
@@ -1112,8 +1111,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                                                maxnumbasis,
                                                radstart, radend, phistart, phiend, movement,
                                                aligned_center, minrot, maxrot, spectrum,
-                                               mode, corr_smooth, None, None, lite, dtype, algo, 
-                                               **kwargs)
+                                               mode, corr_smooth, None, None, lite, dtype, algo)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
 

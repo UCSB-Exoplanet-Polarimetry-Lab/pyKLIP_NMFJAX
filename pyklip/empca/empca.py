@@ -242,15 +242,14 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
         #C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
         Ainv = np.linalg.pinv(A)
+        C = np.einsum('nmp,np->nm', Ainv, b).T
+
         # Ainv_prime = Ainv.copy()
         # for k in range(Ainv.shape[1]):
         #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
         # C = np.sum(Ainv_prime, axis = 2).T
 
-        C = np.einsum('nmp,np->nm', Ainv, b).T
         #C = (Ainv@b[..., None]).T[0]
-
-        #C3 = np.diagonal(np.tensordot(Ainv, b.T, axes = 1), axis1=0, axis2=2)
 
         # for k in range(Ainv.shape[0]):
         #     C3.T[k] = np.dot(Ainv[k], b[k])
@@ -297,16 +296,14 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             #P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
             Ainv = np.linalg.pinv(A)
+            P = np.einsum('nmp,np->nm', Ainv, b).T
+            #P = (Ainv@b[..., None]).T[0]
+
             # Ainv_prime = Ainv.copy()
             # for k in range(Ainv.shape[1]):
             #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
             # P = np.sum(Ainv_prime, axis = 2).T
-            
-            P = np.einsum('nmp,np->nm', Ainv, b).T
-            #P = (Ainv@b[..., None]).T[0]
 
-            #P3 = np.diagonal(np.tensordot(Ainv, b.T, axes=1), axis1=0, axis2=2).T
-        
             # for k in range(Ainv.shape[0]):
             #     P3.T[k] = np.dot(Ainv[k], b[k])
 
@@ -323,11 +320,6 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             #except:
             #    cond_num = np.linalg.cond(A)
             
-            # np.linalg.svd should fix the problem without having to resort to the following comments:            
-            # grab the good indices for which cond_num < some large number
-            # linalg.solve the good indices
-            # loop solve the bad indices and check if they are just 0s
-
     ##################################################################
     # Normalize the low-rank approximation.
     ##################################################################
