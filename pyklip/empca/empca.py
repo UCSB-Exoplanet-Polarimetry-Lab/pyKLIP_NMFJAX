@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-#this is the version MC implemented in pyklip previously, to be compared to the original empca and merged
-
 import numpy as np
 import numpy.fft as fft
 import scipy.linalg as la
@@ -12,7 +10,6 @@ from scipy.stats import t
 import sys
 import multiprocessing
 import time
-import matutils
 
 """
 Weighted Principal Component Analysis using Expectation Maximization
@@ -219,14 +216,11 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
     if maxcpus is not None:
         ncpus = min(ncpus, maxcpus)
 
-    #chisq_orig = matutils.calc_chisq(dataC, P*0, weightsC, C, maxproc=ncpus)
     chisq_orig = np_calc_chisq(dataC, P*0, weightsC, C)
     chisq_last = chisq_orig
     datwgt = dataC*weightsC
 
-    # for np.linalg.lstsq instead of matutils, C shape needs to be inverted now
-    C = C.T
-
+    singular_matrix = 0
     for itr in range(1, niter + 1):
 
         tstart = time.time()
@@ -234,42 +228,27 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
         # Solve for best-fit coefficients with the previous/first
         # low-rank approximation.
         ##############################################################
+
         P3D = np.empty((P.shape[0], P.shape[0], P.shape[1]))
         for i in range(P.shape[0]):
             P3D[i] = P*P[i]
         A = np.tensordot(weights, P3D.T, axes=1)
         b = np.dot(datwgt, P.T)
-        #C = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
-
-        Ainv = np.linalg.pinv(A)
-        C = np.einsum('nmp,np->nm', Ainv, b).T
-
-        # Ainv_prime = Ainv.copy()
-        # for k in range(Ainv.shape[1]):
-        #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
-        # C = np.sum(Ainv_prime, axis = 2).T
-
-        #C = (Ainv@b[..., None]).T[0]
-
-        # for k in range(Ainv.shape[0]):
-        #     C3.T[k] = np.dot(Ainv[k], b[k])
-
-        # for k in range(A.shape[0]):
-        #     C2.T[k] = np.linalg.lstsq(A[k], b[k], rcond=None)[0]
-        #     Ainv = np.linalg.pinv(A[k])
-        #     C3.T[k] = np.dot(Ainv, b[k])
-
-        #b = np.dot(P, ( weightsC[i_obs]*dataC[i_obs] )) # shape nvec
-        #A = np.dot(P, (P*weightsC[i_obs]).T) # shape (nvec, nvec)
-        #C = np.linalg.solve(A, b).T # shape nvec
-
+        
+        try:
+            C = np.linalg.solve(A, b).T
+        except:
+            singular_matrix += 1
+            Ainv = np.linalg.pinv(A)
+            C = np.einsum('nmp,np->nm', Ainv, b).T
+            
         ##############################################################
         # Compute the weighted residual (chi squared) value from the
         # previous fit.
         ##############################################################
 
         if not silent:
-            #chisq = matutils.calc_chisq(dataC, P, weightsC, C.T, maxproc=ncpus)
+
             chisq = np_calc_chisq(dataC, P, weightsC, C.T)
             print('%3d  %9.3g  %12.6f %11.3f' % (itr, chisq - chisq_last, 1 - chisq / chisq_orig, time.time() - tstart))
             chisq_last = chisq
@@ -280,7 +259,6 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
             # Compute the low-rank approximation to the data.
             ##########################################################
 
-            # model = matutils.dot(C.T, P, maxproc=ncpus)
             model = np.dot(C.T, P)
 
         else:
@@ -293,39 +271,20 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
                 C3D[i] = C*C[i]
             A = np.tensordot(weights.T, C3D.T, axes=1)
             b = np.dot(datwgt.T, C.T)
-            #P = matutils.lstsq(A.copy(), b.copy(), maxproc=ncpus).T
 
-            Ainv = np.linalg.pinv(A)
-            P = np.einsum('nmp,np->nm', Ainv, b).T
-            #P = (Ainv@b[..., None]).T[0]
+            try:
+                P = np.linalg.solve(A, b).T
+            except:
+                singular_matrix += 1
+                Ainv = np.linalg.pinv(A)
+                P = np.einsum('nmp,np->nm', Ainv, b).T
 
-            # Ainv_prime = Ainv.copy()
-            # for k in range(Ainv.shape[1]):
-            #     Ainv_prime[:,k,:] = Ainv[:,k,:] * b
-            # P = np.sum(Ainv_prime, axis = 2).T
-
-            # for k in range(Ainv.shape[0]):
-            #     P3.T[k] = np.dot(Ainv[k], b[k])
-
-            # for k in range(A.shape[0]):
-            #     P2.T[k] = np.linalg.lstsq(A[k], b[k], rcond=None)[0]
-            #     Ainv = np.linalg.pinv(A[k])
-            #     P3.T[k] = np.dot(Ainv, b[k])
-
-            #singular_matrix = 0
-            #b = np.dot(C, weightsC.T[i_var] * dataC.T[i_var]) # shape nvec
-            #A = np.dot(C, (C * weightsC.T[i_var]).T) # shape (nvec,nvec)
-            #try:
-            #    P2 = np.linalg.solve(A, b).T # shape nvec
-            #except:
-            #    cond_num = np.linalg.cond(A)
-            
     ##################################################################
     # Normalize the low-rank approximation.
     ##################################################################
 
-    #TODO: think more carefully about whether normalization is needed
     for k in range(nvec):
         P[k] /= np.linalg.norm(P[k])
     
+    print('singular matrix:{}'.format(singular_matrix))
     return model
