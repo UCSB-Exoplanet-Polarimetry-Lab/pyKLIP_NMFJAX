@@ -7,13 +7,13 @@ from scipy.stats import t
 
 def make_polar_coordinates(x, y, center=[0,0]):
     '''
-    MC edited function
-    make a polar coordinate meshgrid using x,y meshgrid
+    Args:
+        x: meshgrid of x coordinates
+        y: meshgrid of y coordinates
+        center: new location of origin
 
-    :param x: meshgrid of x coordinates
-    :param y: meshgrid of y coordinates
-    :param center: new location of origin
-    :return: polar coordinates centered at the specified origin
+    Returns:
+        polar coordinates centered at the specified origin
     '''
 
     r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)

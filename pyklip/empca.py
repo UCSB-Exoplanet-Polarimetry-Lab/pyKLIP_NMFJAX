@@ -285,6 +285,8 @@ def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, 
 
     for k in range(nvec):
         P[k] /= np.linalg.norm(P[k])
-    
-    print('singular matrix:{}'.format(singular_matrix))
+
+    if singular_matrix > 0:
+        print('number of singular matrices encountered:{}'.format(singular_matrix))
+
     return model

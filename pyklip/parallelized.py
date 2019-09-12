@@ -2,7 +2,7 @@ import pyklip.klip as klip
 import pyklip.spectra_management as spec
 import pyklip.fakes as fakes
 import pyklip.kpp.stat.stat_utils as stat_utils
-import pyklip.empca.empca as empca
+import pyklip.empca as empca
 import multiprocessing as mp
 import ctypes
 import numpy as np
@@ -368,73 +368,6 @@ def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, rads
     return True
 
 
-def _weighted_empca_section(scidata_indices_void, wv_value_void, wv_index, numbasis, maxnumbasis_void, radstart, radend,
-                            phistart, phiend, movement, ref_center, minrot_void, maxrot_void, spectrum_void, mode_void,
-                            corr_smooth_void, psf_library_good_void, psf_library_corr_void, lite, dtype=None,
-                            algo_void='empca', niter=15):
-    '''
-
-    run weighted expectation maximization pca on a section of a specific wavelength slice for all images
-
-    Args:
-        *_void: useless arguments for this function. Due to amount of work needed to refactor original code, this is the
-                rather inelegant way to work around it for now.
-        wv_index: index of the wavelenght we are processing
-        numbasis: number of basis vectors to use (can be a scalar or list like)
-        radstart: inner radius of the annulus (in pixels)
-        radend: outer radius of the annulus (in pixels)
-        phistart: lower bound in CCW angle from x axis for the start of the section
-        phiend: upper boundin CCW angle from y axis for the end of the section
-        ref_center: 2 element list for the center of the science frames. Science frames should all be aligned. In [x,y] format
-        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        niter: number of iterations for empca
-        img_shape: size of 2D image slices of the multi-dimensional data, used to create meshgrid
-
-        
-    Returns:
-        Saves data to shared memory output array
-    '''
-
-    if dtype is None:
-        dtype = ctypes.c_float
-
-    # make coordinates for all aligned images
-    x, y = np.meshgrid(np.arange(original_shape[2]), np.arange(original_shape[1])) # shape (x, y)
-    x.shape = (x.shape[0] * x.shape[1]) # shape (x*y)
-    y.shape = (y.shape[0] * y.shape[1]) # shape (x*y)
-    r, phi = klip.make_polar_coordinates(x, y, ref_center) # shape (x*y)
-
-    # grab the working section of aligned images and set nan pixels to 0
-    section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
-    if np.size(section_ind) <= 1:
-        print("section is too small ({0} pixels), skipping...".format(np.size(section_ind)))
-        return False
-
-    if lite:
-        aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]), dtype=dtype)
-    else:
-        aligned_imgs_np = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1],
-                                                  aligned_shape[2] * aligned_shape[3]), dtype=dtype)[wv_index]
-    ref_psfs = aligned_imgs_np[:, section_ind[0]]
-    ref_psfs[np.where(np.isnan(ref_psfs))] = 0
-
-    # set weights for empca
-    rflat = np.reshape(r[section_ind[0]], -1)
-    weights = empca.set_pixel_weights(ref_psfs, rflat, mode='standard', inner_sup=17, outer_sup=66)
-
-    # run empca reduction
-    output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]),
-                                dtype=dtype)
-    for i, rank in enumerate(numbasis):
-        model = empca.weighted_empca(ref_psfs, weights=weights, niter=niter, nvec=rank)
-        # subtract model from original unsmoothed data
-        model_subtracted = aligned_imgs_np[:, section_ind[0]] - model
-        # write to output
-        output_imgs_np[:, section_ind[0], i] = model_subtracted
-
-    return True
-
-
 def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numbasis, radstart, radend, phistart,
                                      phiend, minmove, ref_center=None, minrot=0):
     """
@@ -481,7 +414,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
         corr_smooth (float): size of sigma of Gaussian smoothing kernel (in pixels) when computing most correlated PSFs. If 0, no smoothing
         lite: if True, use low memory footprint mode
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str): algorithm to use ('klip', 'nmf')
+        algo (str): algorithm to use ('klip', 'nmf', 'empca')
 
     Returns:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -494,10 +427,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
     x.shape = (x.shape[0] * x.shape[1]) #Flatten
     y.shape = (y.shape[0] * y.shape[1])
-    r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
-    phi = np.arctan2(y - ref_center[1], x - ref_center[0])
-    # make sure phi is in range [-pi, pi)
-    phi = (phi % (2*np.pi)) - np.pi
+    r, phi = klip.make_polar_coordinates(x, y, ref_center) #flattened polar coordinates
 
     #grab the pixel location of the section we are going to anaylze
     section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
@@ -515,6 +445,31 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
 
     ref_psfs = aligned_imgs[:,  section_ind[0]]
+
+    if algo.lower() == 'empca':
+
+        try:
+            allnans = np.where(np.isnan(ref_psfs))
+            ref_psfs[allnans] = 0.
+            # TODO: try setting nan locations to 1 and their weight to 0,
+            #       test this with SNR as np.allclose will no work (and OWA has to be set to None)
+
+            # set weights for empca
+            rflat = np.reshape(r[section_ind[0]], -1)
+            weights = empca.set_pixel_weights(ref_psfs, rflat, mode='standard', inner_sup=17, outer_sup=66)
+
+            # run empca reduction
+            output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]), dtype=dtype)
+            for i, rank in enumerate(numbasis):
+                psf_model = empca.weighted_empca(ref_psfs, weights=weights, niter=15, nvec=rank)
+                output_imgs_np[:, section_ind[0], i] = aligned_imgs[:, section_ind[0]] - psf_model
+
+        except (ValueError, RuntimeError, TypeError) as err:
+            print(err.args)
+            return False
+
+        return True
+
     
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
@@ -568,7 +523,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #grab the parangs
     parangs = _arraytonumpy(img_pa, dtype=dtype)
     filenums = _arraytonumpy(img_filenums, dtype=dtype)
-    # TODO: branch empca here
+
     for file_index, parang, filenum in zip(scidata_indices, parangs[scidata_indices], filenums[scidata_indices]):
         try:
             _klip_section_multifile_perfile(file_index, section_ind, ref_psfs_mean_sub, covar_psfs, corr_psfs,
@@ -1092,13 +1047,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
 
-        if algo.lower() == 'empca':
-            _klip_section_function = _weighted_empca_section
-        else:
-            _klip_section_function = _klip_section_multifile
-
         if parallel:
-            outputs += [tpool.apply_async(_klip_section_function, 
+            outputs += [tpool.apply_async(_klip_section_multifile,
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
                                                 maxnumbasis,
                                                 radstart, radend, phistart, phiend, movement,
@@ -1107,7 +1057,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
-            outputs += [_klip_section_function(scidata_indices, this_wv, wv_index, numbasis,
+            outputs += [_klip_section_multifile(scidata_indices, this_wv, wv_index, numbasis,
                                                maxnumbasis,
                                                radstart, radend, phistart, phiend, movement,
                                                aligned_center, minrot, maxrot, spectrum,
@@ -1386,13 +1336,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
-        if algo.lower() == 'empca':
-            _klip_section_function = _weighted_empca_section
-        else:
-            _klip_section_function = _klip_section_multifile
-
         if parallel:
-            outputs += [tpool.apply_async(_klip_section_function, (scidata_indices, wv_value, wv_index, numbasis,
+            outputs += [tpool.apply_async(_klip_section_multifile, (scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
                                                                         radstart, radend, phistart, phiend, movement,
                                                                         aligned_center, minrot, maxrot, spectrum,
@@ -1402,7 +1347,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
-            outputs += [_klip_section_function(scidata_indices, wv_value, wv_index, numbasis,
+            outputs += [_klip_section_multifile(scidata_indices, wv_value, wv_index, numbasis,
                                                 maxnumbasis,
                                                 radstart, radend, phistart, phiend, movement,
                                                 aligned_center, minrot, maxrot, spectrum,
@@ -1462,8 +1407,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
                  highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
                  time_collapse="mean", wv_collapse='mean'):
-    # TODO: Raise error for movement, minrot when user choses both empca and non zero
-    #       values for the two parameters
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1515,7 +1458,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                             For ADI only, the wv is omitted so only 4D cube
     """
     ######### Check inputs ##########
-    
+
+    # empca currently does not support movement or minrot
+    if algo.lower() == 'empca' and (minrot != 0 or movement != 0):
+        raise ValueError('empca currently does not support movement, minrot selection criteria, '
+                         'must be set to 0')
+
     # defaullt numbasis if none
     if numbasis is None:
         totalimgs = dataset.input.shape[0]
