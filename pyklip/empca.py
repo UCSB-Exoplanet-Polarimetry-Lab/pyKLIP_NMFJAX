@@ -14,19 +14,6 @@ import time
 """
 Weighted Principal Component Analysis using Expectation Maximization
 
-Classic PCA is great but it doesn't know how to handle noisy or
-missing data properly.  This module provides Weighted Expectation
-Maximization PCA, an iterative method for solving PCA while properly
-weighting data.  Missing data is simply the limit of weight=0.
-
-Given data[nobs, nvar] and weights[nobs, nvar],
-
-    lowrankbasis, lowrankfit = empca(data, weights, options...)
-
-returns the low rank basis set (nvec vectors each of length nvar) and
-the best resulting approximation to the data in a weighted
-least-squares sense.
-
 Original: Stephen Bailey, Spring 2012
 Rewritten by Timothy Brandt, Spring 2016
 """
@@ -52,18 +39,20 @@ def np_calc_chisq(data, b, w, coef):
 
     return chisq
 
-def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66, normalize_weights=False):
+def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66):
     '''
-    MC edited function
+    Args:
+        imflat: array of flattend images, shape (N, number of section indices)
+        rflat: radial component of the polar coordinates flattened to 1D, length = number of section indices
+        mode:
+            'standard': assume poission statistics to calculate variance as sqrt(photon count)
+                        use inverse sqrt(variance) as pixel weights and multiply by a radial weighting
+        inner_sup: radius within which to supress weights
+        outer_sup: radius beyond which to supress weights
 
-    :param imflat: array of flattend images, shape (N, number of section indices)
-    :param rflat: radial component of the polar coordinates flattened to 1D, length = number of section indices
-    :param inner_sup: radius within which to supress weights
-    :param outer_sup: radius beyond which to supress weights
-    :param mode:
-        'standard': assume poission statistics to calculate variance as sqrt(photon count)
-                    use inverse sqrt(variance) as pixel weights and multiply by a radial weighting
-    :return: pixel weights for empca
+    Returns:
+        pixel weights for empca
+
     '''
 
     #default weights are ones
@@ -75,16 +64,20 @@ def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66
         weights *= 1 / (1 + np.exp((inner_sup - rflat) / 1.))
         weights *= 1 / (1 + np.exp((rflat - outer_sup) / 1.))
 
-    if normalize_weights:
-        #TODO: implement correct axis for np.nanmean
-        weights /= np.nanmean(weights)
-
     return weights
 
 def _random_orthonormal(nvec, nvar, seed=1):
     '''
-    Return array of random orthonormal vectors A[nvec, nvar] 
+    Generate random orthonormal vectors as initial guess model
     Doesn't protect against rare duplicate vectors leading to 0s
+
+    Args:
+        nvec: rank of model
+        nvar: number of parameters (e.g. number of pixels in an image for psf fitting)
+        seed:
+
+    Returns:
+        array of random orthonormal vectors A[nvec, nvar]
     '''
 
     if seed is not None:
@@ -103,68 +96,26 @@ def _random_orthonormal(nvec, nvar, seed=1):
         raise ValueError("random orthonormal is nan")
     return A
 
-def nan_smooth(im, ivar, sig=1, spline_filter=False):
-    '''
-    Private function _smooth smooths an image accounting for the
-    inverse variance.
-    Parameters
-    ----------
-    im : ndarray
-        2D image to smooth
-    ivar : ndarray
-        2D inverse variance, shape should match im
-    sig : float (optional)
-        standard deviation of Gaussian smoothing kernel
-        Default 1
-    spline_filter: boolean (optional)
-        Spline filter the result?  Default False.
-    Returns
-    -------
-    imsmooth : ndarray
-        smoothed image of the same size as im
-    '''
-
-    if not isinstance(im, np.ndarray) or not isinstance(ivar, np.ndarray):
-        raise TypeError("image and ivar passed to _smooth must be ndarrays")
-    if im.shape != ivar.shape or len(im.shape) != 2:
-        raise ValueError("image and ivar must be 2D ndarrays of the same shape")
-
-    masked = np.copy(im)
-    nan_locs = np.where(np.isnan(im))
-    masked[nan_locs] = 0
-
-    nx = int(sig * 4 + 1) * 2 + 1
-    x = np.arange(nx) - nx / 2
-    x, y = np.meshgrid(x, x)
-
-    window = np.exp(-(x ** 2 + y ** 2) / (2 * sig ** 2))
-    # think about whether this is properly normalized (accounting for nan values in the image that should not contribute)
-    imsmooth = signal.convolve2d(masked*ivar, window, mode='same')
-    imsmooth /= signal.convolve2d(ivar, window, mode='same') + 1e-35
-    imsmooth *= (masked != 0)
-    imsmooth[nan_locs] = np.nan
-
-    if spline_filter:
-        imsmooth = ndimage.spline_filter(imsmooth)
-
-    return imsmooth
-
 def weighted_empca(data, weights=None, niter=25, nvec=5, randseed=1, maxcpus=1, silent=True):
     '''
-    replaes the linear algebra in clip_math with weighted low-rank approximation as an alternative model psf construction to test the performance on S/N. Code is adapted from Tim's ADI algorithm
-    Perform iterative lower rank matrix approximation of data[obs, var]
-    using weights[obs, var].
-    
+    Perform iterative low-rank matrix approximation of data using weights.
+
     Generated model vectors are not orthonormal and are not
     rotated/ranked by ability to model the data, but as a set
     they are good at describing the data.
-    
-    Optional:
-      - niter : maximum number of iterations to perform
-      - nvec  : number of vectors to solve
-      - randseed : rand num generator seed; if None, don't re-initialize
+
+    Args:
+        data: images to model
+        weights: weights for every pixel
+        niter: maximum number of iterations to perform
+        nvec: number of vectors to solve (rank of the approximation)
+        randseed: rand num generator seed; if None, don't re-initialize
+        maxcpus: maximum cpus to use for parallel programming
+        silent: bool, whether to show chi_squared for each iteration
+
     Returns:
-    psfs: the weighted low-rank approximation model for the psf, dot(C.T, P), where P is the basis matrix of shape k*i, this model psf will replace klip_psf in klip_math
+        returns the best low-rank approximation to the data in a weighted
+        least-squares sense (dot product of coefficients and basis vectors).
     '''
 
     if weights is None:

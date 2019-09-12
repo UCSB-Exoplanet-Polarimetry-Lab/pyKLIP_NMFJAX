@@ -69,7 +69,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
 
 def _collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
     """
-    Function to collapse multi-dimensional data along axis using collapse method
+    Function to collapse multi-dimensional data along axis using collapse_method
 
     Args:
         data: (multi-dimension)arrays of 2D images or 3D cubes.
@@ -147,6 +147,8 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
 def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs,
                               spectrum, spectra_template, flux_cal, outputdirpath, fileprefix):
     """
+    Saves KLmode cube, shape (b, y, x), each slice is a 2D image collapsed along both time and
+    wavelength dimension for a specific numbasis
 
     Args:
         dataset: an instance of CHARISData
@@ -163,7 +165,6 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
 
     Returns:
         saves wavelength collapsed images to output
-
     """
 
     print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
