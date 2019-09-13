@@ -39,7 +39,7 @@ def np_calc_chisq(data, b, w, coef):
 
     return chisq
 
-def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66):
+def set_pixel_weights(imflat, rflat, ivar=None, mode='standard', inner_sup=17, outer_sup=66):
     '''
     Args:
         imflat: array of flattend images, shape (N, number of section indices)
@@ -63,6 +63,10 @@ def set_pixel_weights(imflat, rflat, mode='standard', inner_sup=17, outer_sup=66
         weights *= imflat != 0
         weights *= 1 / (1 + np.exp((inner_sup - rflat) / 1.))
         weights *= 1 / (1 + np.exp((rflat - outer_sup) / 1.))
+
+    if mode.lower() == 'standard_ivar':
+        #TODO: add ivar to CHARISData class and implement this method
+        pass
 
     return weights
 
