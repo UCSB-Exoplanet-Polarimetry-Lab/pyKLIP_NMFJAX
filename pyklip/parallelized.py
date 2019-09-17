@@ -450,21 +450,21 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     if algo.lower() == 'empca':
 
         try:
-            section_allnans = np.where(np.isnan(ref_psfs))
-            ref_psfs[section_allnans] = 0.
+            full_model = np.zeros(ref_psfs.shape)
+            ref_psfs[np.isnan(ref_psfs)] = 0.
+            good_ind = np.sum(ref_psfs > 0., axis=0) > numbasis[-1]
 
             # set weights for empca
+            # TODO: change the inner and outer suppression angle to not be hard coded
             rflat = np.reshape(r[section_ind[0]], -1) # 1D array of radii, size=number of pixels in the section
-            #weights = empca.set_pixel_weights(ref_psfs, rflat, mode='standard', inner_sup=17, outer_sup=66)
+            weights = empca.set_pixel_weights(ref_psfs[:, good_ind], rflat[good_ind], mode='standard', inner_sup=17,
+                                              outer_sup=66)
 
             # run empca reduction
             output_imgs_np = _arraytonumpy(output, (output_shape[0], output_shape[1] * output_shape[2], output_shape[3]), dtype=dtype)
             for i, rank in enumerate(numbasis):
                 # get indices of the image section that have enough finite values along the time dimension
-                good_ind = np.sum(ref_psfs > 0., axis=0) > rank
-                weights = empca.set_pixel_weights(ref_psfs[:, good_ind], rflat[good_ind], mode='standard', inner_sup=17, outer_sup=66)
                 good_ind_model = empca.weighted_empca(ref_psfs[:, good_ind], weights=weights, niter=15, nvec=rank)
-                full_model = np.zeros(ref_psfs.shape)
                 full_model[:, good_ind] = good_ind_model
                 output_imgs_np[:, section_ind[0], i] = aligned_imgs[:, section_ind[0]] - full_model
 
