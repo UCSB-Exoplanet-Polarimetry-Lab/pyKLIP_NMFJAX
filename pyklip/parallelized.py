@@ -67,48 +67,6 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     psf_lib = psf_library
     psf_lib_shape = psf_library_shape
 
-def _collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
-    """
-    Function to collapse multi-dimensional data along axis using collapse_method
-
-    Args:
-        data: (multi-dimension)arrays of 2D images or 3D cubes.
-        pixel_weights: ones if collapse method is not weighted collapse
-        axis: axis index along which to collapse
-        collapse_method: currently support 'median', 'mean', 'weighted-mean', 'trimmed-mean'
-
-    Returns:
-        Collapsed data
-    """
-
-    if collapse_method.lower() == 'median':
-
-        return np.nanmedian(data, axis=axis)
-
-    elif collapse_method.lower() == 'mean':
-
-        return np.nanmean(data, axis=axis)
-
-    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        if pixel_weights is None:
-            pixel_weights = np.ones(data.shape)
-        collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
-        collapsed_data /= np.nanmean(pixel_weights, axis=axis)
-
-        return collapsed_data
-
-    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        collapsed = np.sort(data, axis=axis)
-        collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
-        collapsed = np.nanmean(collapsed, axis=axis)
-
-        return collapsed
-
-    else:
-        # default to mean collapse if input does not match any supported pattern
-        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
-
-        return np.nanmean(data, axis=axis)
 
 def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_cal, outputdirpath, fileprefix):
 
@@ -130,7 +88,7 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
 
     print('time collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
-    spectral_cubes = _collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse)
+    spectral_cubes = klip.collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse)
 
     if flux_cal:
         spectral_cubes = np.array([dataset.calibrate_output(cube, spectral=True)
@@ -143,6 +101,7 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
                          filetype="PSF Subtracted Spectral Cube")
 
     return
+
 
 def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs,
                               spectrum, spectra_template, flux_cal, outputdirpath, fileprefix):
@@ -169,10 +128,10 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
 
     print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
-    spectral_cubes = _collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse) # spectral_cubes shape (b, wv, y, x)
+    spectral_cubes = klip.collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse) # spectral_cubes shape (b, wv, y, x)
 
     if spectrum is None or num_wvs == 1:
-        KLmode_cube = _collapse_data(spectral_cubes, axis=1, collapse_method=wv_collapse)
+        KLmode_cube = klip.collapse_data(spectral_cubes, axis=1, collapse_method=wv_collapse)
     else:
         # if spectrum weighting is carried out, the collapse method is default to mean collapse weighted by spectrum
         # which is an exact copy of the original code before this refactoring
@@ -193,6 +152,7 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
                      zaxis=numbasis)
 
     return
+
 
 def _arraytonumpy(shared_array, shape=None, dtype=None):
     """

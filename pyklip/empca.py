@@ -59,8 +59,10 @@ def set_pixel_weights(imflat, rflat, ivar=None, mode='standard', inner_sup=17, o
     weights = np.ones(imflat.shape)
 
     if mode.lower() == 'standard':
+        # this is simply using sqrt(pixel value) as the standard deviation, hence inverse weights
         weights = 1. / (np.sqrt(np.abs(imflat)) + 10)
         weights *= imflat != 0
+        # suppress contribution from pixels beyond inner and outer working angles
         weights *= 1 / (1 + np.exp((inner_sup - rflat) / 1.))
         weights *= 1 / (1 + np.exp((rflat - outer_sup) / 1.))
 

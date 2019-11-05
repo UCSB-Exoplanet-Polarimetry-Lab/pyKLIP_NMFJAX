@@ -12,7 +12,6 @@ import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
 
-#TODO: change userIWA, userOWA to simply IWA, OWA
 class CHARISData(Data):
     """
     A sequence of GPI Data. Each GPIData object has the following fields and functions
@@ -72,7 +71,7 @@ class CHARISData(Data):
     ####################
 
     def __init__(self, filepaths, guess_spot_index, guess_spot_locs, skipslices=None,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, userIWA=None, userOWA=None):
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, IWA=None, OWA=None):
         """
         Initialization code for CHARISData
 
@@ -85,7 +84,7 @@ class CHARISData(Data):
         self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
                       skipslices=skipslices, PSF_cube=PSF_cube, 
                       recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
-                      update_hdrs=update_hdrs, userIWA=userIWA, userOWA=userOWA)
+                      update_hdrs=update_hdrs, IWA=IWA, OWA=OWA)
 
     ################################
     ### Instance Required Fields ###
@@ -165,7 +164,7 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index, guess_spot_loc, skipslices=None, 
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, userIWA=None, userOWA=None):
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, IWA=None, OWA=None):
         """
         Method to open and read a list of GPI data
 
@@ -178,8 +177,8 @@ class CHARISData(Data):
             recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
             recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
-            userIWA: a floating point scalar (not array). Specifies to inner working angle in pixels
-            userOWA: a floating point scalar (not array). Specifies to outer working angle in pixels
+            IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
+            OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
         Returns:
             Technically none. It saves things to fields of the GPIData object. See object doc string
@@ -316,10 +315,10 @@ class CHARISData(Data):
         self.spot_fluxes = spot_fluxes
         self.spot_locs = spot_locs
 
-        if userIWA != None:
-            self._IWA = userIWA
-        if userOWA != None:
-            self._OWA = userOWA
+        if IWA != None:
+            self._IWA = IWA
+        if OWA != None:
+            self._OWA = OWA
 
         # Required for automatically querying Simbad for the spectral type of the star.
         try:
@@ -537,7 +536,6 @@ class CHARISData(Data):
             saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
         self.psfs = []
-        numwaves = np.size(np.unique(self.wvs))
 
         for i,frame in enumerate(self.input):
             this_spot_locs = self.spot_locs[i]
@@ -691,7 +689,6 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     # write flux
     hdr.set(flux_key, value=flux, comment="Peak flux of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
 
-
 def generate_psf(frame, locations, boxrad=5):
     """
     Generates a GPI PSF for the frame based on the satellite spots
@@ -732,6 +729,6 @@ def generate_psf(frame, locations, boxrad=5):
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)
-    genpsf = np.mean(genpsf, axis=0) #average the different psfs together    
+    genpsf = np.mean(genpsf, axis=0) #average the different psfs together
 
     return genpsf
