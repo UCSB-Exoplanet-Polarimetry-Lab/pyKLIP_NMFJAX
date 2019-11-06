@@ -8,7 +8,7 @@ import astropy.io.fits as fits
 import pyklip
 import pyklip.instruments.CHARIS as CHARIS
 import pyklip.klip as klip
-import pyklip.empca.empca as empca
+import pyklip.empca as empca
 import pytest
 import sys
 if sys.version_info < (3,3):
@@ -18,7 +18,7 @@ else:
     import unittest
     import unittest.mock as mock
 
-# this script contains tests for some functions in pyklip.klip and pyklip.empca.empca
+# this script contains unit tests for some functions in pyklip.klip and pyklip.empca
 
 class klip_functions_TestCase(unittest.TestCase):
 
@@ -52,6 +52,43 @@ class klip_functions_TestCase(unittest.TestCase):
         testarray.fill(-np.pi/2)
         assert np.array_equal(phi[ind], testarray)
 
+    def test_median_collapse(self):
+        test_cube = np.reshape(np.arange(9), (3, 3))
+        weights = 2.
+        ans = klip.collapse_data(test_cube, collapse_method='median')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = klip.collapse_data(test_cube, weights, axis=0, collapse_method='median')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
+
+    def test_mean_collapse(self):
+        test_cube = np.reshape(np.arange(9), (3, 3))
+        weights = 2.
+        ans = klip.collapse_data(test_cube, collapse_method='mean')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = klip.collapse_data(test_cube, weights, axis=0, collapse_method='mean')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
+
+    def test_weighted_mean_collapse(self):
+        test_cube = np.reshape(np.arange(9), (3, 3))
+        weights = np.reshape(np.ones(9), (3, 3))
+        ans = klip.collapse_data(test_cube, collapse_method='weighted_mean')
+        assert np.array_equal(ans, np.array([1., 4., 7.]))
+        ans = klip.collapse_data(test_cube, weights, axis=0, collapse_method='weighted-mean')
+        assert np.array_equal(ans, np.array([3., 4., 5.]))
+        weights = test_cube
+        ans = klip.collapse_data(test_cube, weights, axis=1, collapse_method='weighted mean')
+        assert np.array_equal(ans, (np.nanmean(test_cube * weights, axis=1) / np.nanmean(weights, axis=1)))
+
+    def test_trimmed_mean_collapse(self):
+        test_cube = np.array([[2., 1., 4., 0., 3.],
+                              [5., 9., 7., 6., 8.]])
+        ans = klip.collapse_data(test_cube, axis=1, collapse_method='Trimmed-mean')
+        assert np.array_equal(ans, np.array([2, 7]))
+        test_cube = np.array([[2., 1., 4., 0., 3., 5.],
+                              [10., 9., 7., 6., 8., 11.]])
+        ans = klip.collapse_data(test_cube, axis=1, collapse_method='trimmed_mean')
+        assert np.array_equal(ans, np.array([2.5, 8.5]))
+
 class empca_functions_TestCase(unittest.TestCase):
 
     '''
@@ -59,4 +96,5 @@ class empca_functions_TestCase(unittest.TestCase):
     '''
 
     def test_set_pixel_weights(self):
+        # TODO: write test for this function after more weighting schemes are implemented
         pass

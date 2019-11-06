@@ -409,6 +409,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
 
     if algo.lower() == 'empca':
 
+        #TODO: include scidata_indices selection in here
         try:
             full_model = np.zeros(ref_psfs.shape)
             ref_psfs[np.isnan(ref_psfs)] = 0.
