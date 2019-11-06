@@ -409,6 +409,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
 
     if algo.lower() == 'empca':
 
+        #TODO: include scidata_indices selection in here
         try:
             full_model = np.zeros(ref_psfs.shape)
             ref_psfs[np.isnan(ref_psfs)] = 0.
@@ -1441,12 +1442,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             numbasis = np.array([numbasis])
 
 
-    # check how we will collapse the data
-    # MC edit: time collapse re-factored into function "select_collapse"
-    #          if input is not valid, will default to mean collapse
-    # valid_time_collapse = ["mean", "weighted-mean"]
-    # if not time_collapse.lower() in valid_time_collapse:
-    #     raise ValueError("Cannot collpase data using {0}. Valid options are {1}".format(time_collapse, valid_time_collapse))
     time_collapse = time_collapse.lower()
     weighted = "weighted" in time_collapse # boolean whether to use weights
 
