@@ -5,6 +5,68 @@ import scipy.ndimage as ndimage
 import scipy.interpolate as sinterp
 from scipy.stats import t
 
+def make_polar_coordinates(x, y, center=[0,0]):
+    '''
+    Args:
+        x: meshgrid of x coordinates
+        y: meshgrid of y coordinates
+        center: new location of origin
+
+    Returns:
+        polar coordinates centered at the specified origin
+    '''
+
+    r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
+    phi = np.arctan2(y - center[1], x - center[0])
+    # make sure phi is in range [-pi, pi)
+    phi = (phi % (2 * np.pi)) - np.pi
+
+    return r, phi
+
+
+def collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
+    """
+    Function to collapse multi-dimensional data along axis using collapse_method
+
+    Args:
+        data: (multi-dimension)arrays of 2D images or 3D cubes.
+        pixel_weights: ones if collapse method is not weighted collapse
+        axis: axis index along which to collapse
+        collapse_method: currently support 'median', 'mean', 'weighted-mean', 'trimmed-mean'
+
+    Returns:
+        Collapsed data
+    """
+
+    if collapse_method.lower() == 'median':
+
+        return np.nanmedian(data, axis=axis)
+
+    elif collapse_method.lower() == 'mean':
+
+        return np.nanmean(data, axis=axis)
+
+    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        if pixel_weights is None:
+            pixel_weights = np.ones(data.shape)
+        collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
+        collapsed_data /= np.nanmean(pixel_weights, axis=axis)
+
+        return collapsed_data
+
+    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+        collapsed = np.sort(data, axis=axis)
+        collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
+        collapsed = np.nanmean(collapsed, axis=axis)
+
+        return collapsed
+
+    else:
+        # default to mean collapse if input does not match any supported pattern
+        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
+
+        return np.nanmean(data, axis=axis)
+
 
 def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, return_basis_and_eig=False):
     """
@@ -191,6 +253,7 @@ def estimate_movement(radius, parang0=None, parangs=None, wavelength0=None, wave
     moves = np.sqrt((x-x0)**2 + (y-y0)**2)
     return moves
 
+
 def calc_scaling(sats, refwv=18):
     """
     Helper function that calculates the wavelength scaling factor from the satellite spot locations.
@@ -321,6 +384,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1, dtype=floa
 
 
     return resampled_img
+
 
 def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
     """
@@ -587,6 +651,4 @@ def define_annuli_bounds(annuli, IWA, OWA, annuli_spacing='constant'):
         raise ValueError("Too many annuli, some annuli are less than 1 pixel")
 
     return rad_bounds
-
-
 

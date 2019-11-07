@@ -33,8 +33,9 @@ def test_p1640_tutorial(mock_klip_parallelized):
                                                                                         'P1640_support', 'tutorial')
 
 
-    tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data' \
-                  '.tar.gz '
+    #tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data' \
+    #              '.tar.gz '
+    tarball_get = 'wget --no-check-certificate https://onedrive.live.com/download?cid=71F85EECD88DF08C\&resid=71F85EECD88DF08C%21119153\&authkey=AE1Q53wMCBnoQYg -O P1640_tutorial_data.tar.gz'
     tarball_command = 'tar -xvf P1640_tutorial_data.tar.gz'
 
     # time it
