@@ -11,6 +11,7 @@ import astropy.units as u
 import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
+import pyklip.global_centroid as global_centroid
 
 class CHARISData(Data):
     """
@@ -70,8 +71,11 @@ class CHARISData(Data):
     ### Constructors ###
     ####################
 
-    def __init__(self, filepaths, guess_spot_index, guess_spot_locs, skipslices=None,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, IWA=None, OWA=None):
+    def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, skipslices=None,
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None,
+                 sat_fit_method='global', IWA=None, OWA=None):
+        # TODO: remove recalc_wvs, recalc_centers from __init__ and readdata?
+        # TODO: match signature of base methods?
         """
         Initialization code for CHARISData
 
@@ -82,9 +86,10 @@ class CHARISData(Data):
         self._output = None
         self.flipx = False
         self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
-                      skipslices=skipslices, PSF_cube=PSF_cube, 
+                      skipslices=skipslices, PSF_cube=PSF_cube,
                       recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
-                      update_hdrs=update_hdrs, IWA=IWA, OWA=OWA)
+                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method,
+                      IWA=IWA, OWA=OWA)
 
     ################################
     ### Instance Required Fields ###
@@ -163,20 +168,24 @@ class CHARISData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, guess_spot_index, guess_spot_loc, skipslices=None, 
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None, IWA=None, OWA=None):
+    def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, skipslices=None,
+                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None,
+                 sat_fit_method='global', IWA=None, OWA=None):
         """
         Method to open and read a list of GPI data
 
         Args:
             filespaths: a list of filepaths
-            guess_spot_index:
-            guess_spot_loc:
+            guess_spot_index: the wavelength index for which the initial guess is given
+            guess_spot_loc: initial guess of the satellite spot pixel indices.
+                            If None, will default to rough guesses for the four satellite spots of a typical
+                            CHARIS data cube at the first wavelength slice, in [[x, y],...] format
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
             recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
             recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
+            sat_fit_method: 'global' or 'local'
             IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
             OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
@@ -190,6 +199,10 @@ class CHARISData(Data):
         # check that the list of files actually contains something
         if len(filepaths) == 0:
             raise ValueError("An empty filelist was passed in")
+
+        if guess_spot_loc is None:
+            # default to typical locations for 4 satellite spots in a CHARIS data cube, each location in [x, y] format
+            guess_spot_loc = [[129, 90], [109, 129], [71, 109], [91, 70]]
 
         #make some lists for quick appending
         data = []
@@ -211,6 +224,13 @@ class CHARISData(Data):
 
         # flag to see if we modified any headers
         modified_hdrs = False
+
+        # fit for satellite spots globally if enabled
+        spot_fit_coeffs = None
+        photcal = None
+        if update_hdrs == True and sat_fit_method.lower() == 'global':
+            print('fitting satellite spots globally')
+            spot_fit_coeffs, photcal = _measure_sat_spots_global(filepaths)
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
@@ -244,6 +264,26 @@ class CHARISData(Data):
             if 'SATS0_0' in exthdr and not update_hdrs == True:
                 # read in sat spots from file
                 spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
+            elif sat_fit_method.lower() == 'global' and update_hdrs == True:
+                hdulist = fits.open(filepath)
+                im = hdulist[1].data.copy()
+
+                # TODO: decide whether to smooth, and whether to photocalibrate images here
+                # ivar = hdulist[2].data
+                # for j in range(im.shape[0]):
+                    # im[j] = _smooth(im[j], ivar[j], sig=0.5, spline_filter=True)
+                    # im[j] *= thiswvs[j] ** 2 / phot[i][j]
+
+                # TODO: spot_flux use peak flux or aperture flux?
+                spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], im, thiswvs)
+                for wv_ind in cube_wv_indices:
+                    for spot_num in range(len(guess_spot_loc)):
+                        fitx = spot_loc[wv_ind, spot_num, 0]
+                        fity = spot_loc[wv_ind, spot_num, 1]
+                        fitflux = spot_flux[wv_ind, spot_num]
+                        _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
+                spot_flux = np.nanmean(spot_flux, axis=1)
+                modified_hdrs = True
             else:
                 print("Finding satellite spots for cube {0}".format(index))
                 try:
@@ -284,7 +324,7 @@ class CHARISData(Data):
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
         rot_angles = (np.array(rot_angles).reshape([dims[0] * dims[1]])) 
-        wvs = np.array(wvs).reshape([dims[0] * dims[1]])
+        wvs = np.array(wvs).reshape([dims[0] * dims[1]]) # wvs now has shape (N*nwv)
         wv_indices = np.array(wv_indices).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
@@ -591,11 +631,16 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
 
     return np.array(spot_locs), np.array(spot_fluxes)
 
+
 def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=True, hdr=None):
     """
     Find sat spots in a datacube. TODO: return sat spot psf cube also
 
     If a header is passed, it will write the sat spot fluxes and locations to the header
+
+    Args:
+        cube: a single data cube
+        wvs: array of wavelength values for this data cube, different from "wvs" in CHARISData class, this wvs here has shape (nwv,)
     """
     # use dictionary to store list of locs/fluxes for each slice
     spot_locs = {}
@@ -670,6 +715,47 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
 
     return np.array(locs), np.array(fluxes), np.array(fwhms)
 
+
+def _measure_sat_spots_global(infiles, photocal=False):
+    '''
+    Main function of this module to fit for the locations of the four satellite spots
+
+    Args:
+        infiles: input data cubes to be recentered
+        photocal: boolean, whether to scale each wavelength to the same photometric scale
+
+    Returns:
+        p: fitted coefficients for all data cubes
+        phot: photocalibration scale factor
+
+    '''
+
+    # TODO: allow user to input initial guess for the satellite spots
+    # TODO: spotflux use peak flux or aperture flux?
+
+    if len(infiles) == 0:
+        raise IOError("Cannot open file")
+
+    astrogrid_status = [None for infile in infiles]
+    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, astrogrid_status=astrogrid_status, smooth_coef=True)
+    xsol, ysol = global_centroid.fitallrelcen(infiles, r1=15, r2=45)
+
+    p = centroid_params.copy()
+    if mask is not None:
+        mask = np.where(mask)
+
+    p[:, 2] += xsol - x + np.median((x - xsol)[mask])
+    p[:, 5] += ysol - y + np.median((y - ysol)[mask])
+
+    # TODO: dx, dy here are not referenced anywhere?
+    if photocal:
+        phot, dx, dy = global_centroid.specphotcal(infiles, p)
+    else:
+        phot = 1.
+
+    return p, phot
+
+
 def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     """
     Write a single meausred satellite spot to the header
@@ -682,12 +768,14 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     flux_key = 'SATF{0}_{1}'.format(wv_ind, spot_num)
 
     # store x/y postion as a string
+    # TODO: is 3 decimal digits enough?
     pos_string = "{x:7.3f} {y:7.3f}".format(x=pos[0], y=pos[1])
 
     # write positions
     hdr.set(pos_key, value=pos_string, comment="Location of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
     # write flux
     hdr.set(flux_key, value=flux, comment="Peak flux of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
+
 
 def generate_psf(frame, locations, boxrad=5):
     """
