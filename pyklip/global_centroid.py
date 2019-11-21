@@ -39,30 +39,20 @@ class Task(object):
 
 
 def _smooth(im, ivar, sig=1, spline_filter=False):
-    """
-
+    '''
     Private function _smooth smooths an image accounting for the
     inverse variance.  It optionally spline filters the result to save
     time in later calls to ndimage.map_coordinates.
 
-    Parameters
-    ----------
-    im : ndarray
-        2D image to smooth
-    ivar : ndarray
-        2D inverse variance, shape should match im
-    sig : float (optional)
-        standard deviation of Gaussian smoothing kernel
-        Default 1
-    spline_filter: boolean (optional)
-        Spline filter the result?  Default False.
+    Args:
+        im: ndarray, 2D image to smooth
+        ivar: ndarray, 2D inverse variance, shape should match im
+        sig: float, standard deviation of Gaussian smoothing kernel, default 1
+        spline_filter: boolean, spline filter the result?  Default False.
 
-    Returns
-    -------
-    imsmooth : ndarray
-        smoothed image of the same size as im
-
-    """
+    Returns:
+        imsmooth : ndarray, smoothed image of the same size as im
+    '''
 
     if not isinstance(im, np.ndarray) or not isinstance(ivar, np.ndarray):
         raise TypeError("image and ivar passed to _smooth must be ndarrays")
@@ -85,32 +75,20 @@ def _smooth(im, ivar, sig=1, spline_filter=False):
 
 
 def _spotloc(phi, sep, pitch=15, D=8.2):
-    """
-
+    '''
     Private function _spotloc computes the location of four
     satellite spots in units of lambda
 
-    Parameters
-    ----------
-    phi: float
-        the angle of spots in degrees
-    sep : float
-        the separation of the spots in units of lambda/D
-    pitch : float (optional)
-        Lenslet pitch in units of milliarcseconds
-        Default 15
-    D : float (optional)
-        Telescope effective aperture in meters
-        Default 8.2
+    Args:
+        phi: float, the angle of spots in degrees
+        sep: float, the separation of the spots in units of lambda/D
+        pitch: float, lenslet pitch in units of milliarcseconds. Default 15
+        D: float, telescope effective aperture in meters. Default 8.2
 
-    Returns
-    -------
-    r : ndarray
-        array of (identical) separations in units of lenslets/microns
-    phi : ndarray
-        array of spot angles in radians
-
-    """
+    Returns:
+        r : ndarray, array of (identical) separations in units of lenslets/microns
+        phi : ndarray, array of spot angles in radians
+    '''
 
     phi = np.arange(4) * np.pi / 2 + phi
     r = sep * 1e-6 / D * 3600 * 180 / np.pi / (pitch * 1e-3)
@@ -120,25 +98,20 @@ def _spotloc(phi, sep, pitch=15, D=8.2):
 
 
 def _par_to_dx_dy(p, lam):
-    """
-
+    '''
     Private function _par_to_dx_dy.  Use the parameters given by
     argument p (as a list), together with the wavelength array, to
     compute the offsets as a function of wavelength given as a
     second-order polynomial in wavelength.
 
-    Parameters
-    ----------
-    p : list of floats, the coefficients of the polynomial fit to the centroid
-    lam : wavelength(s), either as a number or as an array
+    Args:
+        p: list of floats, the coefficients of the polynomial fit to the centroid
+        lam: wavelength(s), either as a number or as an array
 
-    Returns
-    -------
+    Returns:
+        dx, dy : tuple of 1D arrays, each the same shape as lam, with the wavelength-dependent offsets
 
-    dx, dy : tuple of 1D arrays, each the same shape as lam, with the
-               wavelength-dependent offsets
-
-    """
+    '''
 
     order = (len(p) - 2) // 2
     dx = (lam * 0 + 1.) * p[0]
@@ -152,34 +125,25 @@ def _par_to_dx_dy(p, lam):
 
 
 def _spotintens(p, cube, lam):
-    """
-
+    '''
     Private function _spotintens computes the negative of the sum of
     the intensity of the four satellite spots induced by the SCExAO DM
     in XYdiag mode.  It is intended to be passed to a minimization
     routine (to maximize sum of the intensities).
 
-    Parameters
-    ----------
-    p : list of floats
-        p[0] is the angle of spots in degrees
-        p[1] is the separation in lambda/D
-        p[2] - p[-1] are the coefficients of the
-                     polynomial fit to the centroid
-    cube : 3D ndarray
-        Input data cube, assumed to be smoothed and spline filtered
-    lam : 1D ndarray
-        Wavelength array in microns corresponding to the
-        first axis of cube
+    Args:
+        p: list of floats
+           p[0] is the angle of spots in degrees
+           p[1] is the separation in lambda/D
+           p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
+        cube: 3D ndarray, input data cube, assumed to be smoothed and spline filtered
+        lam: 1D ndarray, wavelength array in microns corresponding to the first axis of cube
 
-    Returns
-    -------
-    sumval : float
-        Returns the negative of the sum of the spot intensities
-        at the four locations given by p, with integer multiples
-        of pi/2 added to p[0].
+    Returns:
+        sumval : float, the negative of the sum of the spot intensities at the four locations
+                 given by p, with integer multiples of pi/2 added to p[0].
 
-    """
+    '''
 
     if not isinstance(cube, np.ndarray):
         raise TypeError("cube must be a 3-dimensional ndarray")
@@ -205,25 +169,20 @@ def _spotintens(p, cube, lam):
 
 
 def _resid(im1, im2):
-    """
-
+    '''
     Private function _resid takes two images, and subtracts a constant
     and a scaled version of the second image from the first.  It
     returns the sum of the squared residuals.
 
-    Parameters
-    ----------
-    im1 : ndarray
-    im2 : ndarray
-        Note: im2 and im1 must have matching dimensions.
+    Args:
+        im1: ndarray, image
+        im2: ndarray, image of the same dimensions as im1
 
-    Returns
-    -------
-    chisq : float
-        Sum of the squared residuals after subtracting the
-        best fit constant+im2 model from im1
+    Returns:
+        chisq : float, sum of the squared residuals after subtracting the
+                best fit constant+im2 model from im1
 
-    """
+    '''
 
     if not isinstance(im1, np.ndarray) or not isinstance(im2, np.ndarray):
         raise TypeError("Images passed to _resid must be ndarrays.")
@@ -242,39 +201,31 @@ def _resid(im1, im2):
 
 
 def _resid_xy(p, im1, im2, x, y):
-    """
-
+    '''
     Private function _resid_xy computes the residual between im1 and
     im2, but with an offset applied to the positions of im2 before
     finding the residual.  The residual is only computed at certain
     points given by ndarrays x and y.  This function is intended to be
     passed to a minimization routine.
 
-    Parameters
-    ----------
-    p : list of two floats
-        p[0] is the x offset between im1 and im2
-        p[1] is the y offset
-    im1 : 2D ndarray
-        reference image, assumed to be spline_filtered
-    im2 : 2D ndarray
-        comparison image, assumed to be spline_filtered
-    x : 2D ndarray
-        x coordinates of the points at which to fit im2 to im1
-    y : 2D ndarray
-        y coordinates of the points at which to fit im2 to im1
-
-    Returns
-    -------
-    chisq : float
-        Square of the residuals between im1 and a model made by
-        translating im2 and sampling at x and y.
-
     The function calls map_coordinates to compute the reference and
     comparison images at the appropriate points, then calls _resid to
     fit the model and compute the residual.
 
-    """
+    Args:
+        p: list of two floats
+           p[0] is the x offset between im1 and im2
+           p[1] is the y offset
+        im1: 2D ndarray, reference image, assumed to be spline_filtered
+        im2: 2D ndarray, comparison image, assumed to be spline_filtered
+        x: 2D ndarray, x coordinates of the points at which to fit im2 to im1
+        y: 2D ndarray, y coordinates of the points at which to fit im2 to im1
+
+    Returns:
+        chisq : float, square of the residuals between im1 and a model made by
+                translating im2 and sampling at x and y.
+
+    '''
 
     dx, dy = [p[0], p[1]]
     ref_im = ndimage.map_coordinates(im1, [y, x], prefilter=False)
@@ -284,35 +235,31 @@ def _resid_xy(p, im1, im2, x, y):
 
 
 def _cc_resid(p, pp, cube, lam, x, y, retarr=False):
-    """
-
+    '''
     Private function _cc_resid cross-correlates wavelength slices of a
     data cube to a reference wavelength.  The output is the sum of the
     squares of the lenslet-by-lenslet differences between the
     reference and scaled/shifted slices (after optimizing the relative
     scale), or the scaled/shifted slices themselves (as a template).
 
-    Parameters
-    ----------
-    p : list of floats, the coefficients of the polynomial fit to the centroid
-    pp : list of floats, the coefficients of the reference polynomial
-                 fit to the centroid (used to keep the reference center
-                 in place when optimizing p)
-    cube : 3D ndarray, data cube
-    lam : 1D ndarray, wavelengths
-    x : ndarray with x lenslet coordinates of the cube to use in the calculation
-    y : ndarray with y lenslet coordinates of the cube to use in the calculation
-    retarr (optional) : return the scaled/shifted template rather than
-                 the cross-correlation score?  Default False.
+    Args:
+        p: list of floats, the coefficients of the polynomial fit to the centroid
+        pp: list of floats, the coefficients of the reference polynomial fit to the
+            centroid (used to keep the reference center in place when optimizing p)
+        cube: 3D ndarray, data cube
+        lam: 1D ndarray, wavelengths
+        x: ndarray with x lenslet coordinates of the cube to use in the calculation
+        y: ndarray with y lenslet coordinates of the cube to use in the calculation
+        retarr: return the scaled/shifted template rather than the
+                           cross-correlation score? Default False.
 
-    Returns
-    -------
-    If retarr is False (default), return the sum of the squared differences
-    of the various wavelength channels with the reference channel.  If
-    retarr is True, return the template image, the average of all of the
-    scaled and shifted images at the input x and y coordinates.
+    Returns:
+        If retarr is False (default), return the sum of the squared differences
+        of the various wavelength channels with the reference channel.  If
+        retarr is True, return the template image, the average of all of the
+        scaled and shifted images at the input x and y coordinates.
 
-    """
+    '''
 
     dx1, dy1 = _par_to_dx_dy(p, lam)
     ny, nx = [cube.shape[1], cube.shape[2]]
@@ -348,14 +295,15 @@ def _cc_resid(p, pp, cube, lam, x, y, retarr=False):
 
 
 def get_sats_satf(p, cube, lam):
-    # TODO: update this function to use notations and functions in the cleaned version
     '''
     retrieves the pixel locations of all four satellite spots at each wavelength,
     and the negative sum of the four spot intensities at each wavelength
+
     Args:
-        p:
-        cube:
-        lam:
+        p: list of floats, the coefficients of the polynomial fit to the centroid
+        cube: ndarray, data cube for which the centroid is fitted
+        lam: ndarray, wavelengths for the datacube
+
     Returns:
         sats: pixel locations (in [x,y] format) of all four satellite spots at each wavelength, shape (wvs, 4, 2)
         satf: float, negative sum of the four spot intensities at each wavelength
@@ -389,39 +337,31 @@ def get_sats_satf(p, cube, lam):
 
 
 def recen(p, cube, lam, sats, satf, n=None, scale=False, head=None, outfile=None,
-          mask=None, data_HDU1=False):
-    """
-
+          mask=None, data_HDU1=True):
+    '''
     Function recen recenters the input data according to the offset
     parameters given in the argument p.  Optionally scale the data by
     wavelength to undo the scaling of diffraction.  Return the
     recentered cube.
 
-    Parameters
-    ----------
+    Args:
+        p: list of floats, the coefficients of the polynomial fit to the centroid
+        cube: 3D ndarray, data cube
+        lam: 1D array of wavelengths
+        sats: fitted satellite spot indices before recentering
+        satf: fitted satellite spot fluxes
+        n : integer, spatial dimension of recentered cube.  Default original cube size
+        scale: boolean, rescale by wavelength?  Default False
+        head: fits header for output file.  Default None
+        outfile: string or None, name of output file.  Default None
+        mask: boolean lenslet mask
+        data_HDU1: boolean, write data to HDU1 and leave HDU0 with no data?  Default True.
 
-    p : list of floats, the coefficients of the polynomial fit to the centroid
-    cube : 3D ndarray, data cube
-    lam : 1D array of wavelengths
-    sats: fitted satellite spot indices before recentering
-    satf: fitted satellite spot fluxes
+    Returns:
+        3D ndarray, nlam x n x n, recentered (optionally scaled by wavelength) data cube.
 
-    n (optional) : integer, spatial dimension of recentered cube.  Default original cube size
-    scale (optional) : boolean, rescale by wavelength?  Default False
-    head (optional) : fits header for output file.  Default None
-    outfile (optional) : string or None, name of output file.  Default None
-    mask (optional) : boolean lenslet mask
-    data_HDU1 (optional) : boolean, write data to HDU1 and leave HDU0
-                    with no data?  Default False.
+    '''
 
-    Returns
-    -------
-
-    cencube : 3D ndarray, nlam x n x n, recentered (optionally scaled
-                    by wavelength) data cube.
-
-    """
-    # TODO: implement segment to save spots locations in the recentered cubes
     if n is None:
         n = cube.shape[1]
 
@@ -470,29 +410,24 @@ def recen(p, cube, lam, sats, satf, n=None, scale=False, head=None, outfile=None
 
 
 def fitrelcen(image1, image2, x, y, method='Powell'):
-    """
-
+    '''
     Function fitrelcen fits for the offset between two images without
     any wavelength dependence by calling _resid_xy, minimizing the sum
     of the squared differences between the images (after optimizing
     over the wavelength-dependent relative normalization).
 
-    Parameters
-    ----------
-    image1 : 2D ndarray, first image
-    image2 : 2D ndarray, second image
-    x : ndarray, x coordinates of pixels/lenslets to use
-    y : ndarray, y coordinates of pixels/lenslets to use
+    Args:
+        image1: 2D ndarray, first image
+        image2:2D ndarray, second image
+        x: ndarray, x coordinates of pixels/lenslets to use
+        y: ndarray, y coordinates of pixels/lenslets to use
+        method : method passed to scipy.optimize.minimize. Default 'Powell'.
 
-    method (optional) : method passed to scipy.optimize.minimize.
-                 Default 'Powell'.
+    Returns:
+        xc, yc : two floating point numbers giving the best-fit offset between
+                 image1 and image2
 
-    Returns
-    -------
-    xc, yc : two floating point numbers giving the best-fit offset
-                 between image1 and image2
-
-    """
+    '''
 
     xc, yc = optimize.minimize(_resid_xy, [0, 0],
                                (image1, image2, x, y), method=method).x
@@ -501,40 +436,36 @@ def fitrelcen(image1, image2, x, y, method='Powell'):
 
 
 def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
-    """
-
+    '''
     Function fitcen.  Fit for the center of a CHARIS data cube using
     the satellite spots by maximizing the agreement between scaled
     cube slices around the spot locations.  If no spot locations are
     provided, use only the diffraction pattern itself in an annulus
     around the image center.
 
-    Parameters
-    ----------
-    cube : 3D ndarray, CHARIS data cube
-    ivar : 3D ndarray, inverse variance of the CHARIS data cube
-    lam : 1D ndarray, wavelengths
+    Args:
+        cube: 3D ndarray, CHARIS data cube
+        ivar: 3D ndarray, inverse variance of the CHARIS data cube
+        lam: 1D ndarray, wavelengths
+        spotsep: float or None.  If float, separation of the satellite spots in units
+                 of lambda/D.  If None, only use the diffraction pattern in an annulus
+                 between r1 and r2.
+        i1: int, first slice of the data cube to use.  Default 1 (skip slice 0)
+        i2: int, high limit of slices to use.  Default -1 (skip last slice)
+        r1: float, minimum separation from approximate center for the annulus of the
+            diffraction pattern to use in centroiding.  Default 15
+        r2: float, maximum separation from approximate center for the annulus of the
+            diffraction pattern to use in centroiding.  Default 35
+        spot_dx: float, radius around spot location to cut out in order to match the
+                 spot location as a function of wavelength.  Default 4
 
-    spotsep : float or None.  If float, separation of the satellite spots
-                in units of lambda/D.  If None, only use the diffraction
-                pattern in an annulus between r1 and r2.
-    i1 : int, first slice of the data cube to use.  Default 1 (skip slice 0)
-    i2 : int, high limit of slices to use.  Default -1 (skip last slice)
-    r1 : float, minimum separation from approximate center for the annulus
-                of the diffraction pattern to use in centroiding.  Default 15
-    r2 : float, maximum separation from approximate center for the annulus
-                of the diffraction pattern to use in centroiding.  Default 35
-    spot_dx : float, radius around spot location to cut out in order to
-                match the spot location as a function of wavelength.  Default 4
+    Returns:
+        p : list of floats
+            p[0] is the angle of spots in degrees
+            p[1] is the separation in lambda/D
+            p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
 
-    Returns
-    -------
-    p : list of floats
-        p[0] is the angle of spots in degrees
-        p[1] is the separation in lambda/D
-        p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
-
-    """
+    '''
 
     ####################################################################
     # Lightly smooth the cube before starting.
@@ -638,43 +569,37 @@ def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
 
 def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None,
                     smooth_coef=True, maxcpus=multiprocessing.cpu_count() // 2):
-    """
-
+    '''
     Function fitcen_parallel.  Centroid a series of CHARIS data cubes
     in parallel using fitcen.  By default, get the wavelengths and
     astrogrid parameters from the headers.  This might fail on early
     CHARIS data before the standardization of headers.
 
-    Parameters
-    ----------
-    infiles : list of file names for CHARIS data cubes
+    Args:
+        infiles: list of file names for CHARIS data cubes
+        astrogrid_status: None or list of astrogrid configurations for SCExAO.
+                          If None, try to read the astrogrid configuration from the header.
+                          If this fails, assume there is no astrogrid and centroid using the
+                          general diffraction pattern.  Default None.
+        astrogrid_sep: None or list of astrogrid spot separations in units of lambda/D.
+                       If None, try to read from the header.
+                       If that fails, centroid using the general diffraction pattern.
+                       Default None.
+        smooth_coef: boolean.  smooth the nonlinear coefficients of the centroid fit (the terms
+                     proportional to lambda and lambda^2) over the sequence of cubes?
+                     Default True.
+        maxcpus: int, maximum number of CPUs to use in parallelization
 
-    astrogrid_status : None or list of astrogrid configurations for
-                  SCExAO.  If None, try to read the astrogrid
-                  configuration from the header.  If this fails,
-                  assume there is no astrogrid and centroid using the
-                  general diffraction pattern.  Default None.
-    astrogrid_sep : None or list of astrogrid spot separations in units
-                  of lambda/D.  If None, try to read from the header.
-                  If that fails, centroid using the general diffraction
-                  pattern.  Default None.
-    smooth_coef : boolean.  smooth the nonlinear coefficients of the
-                  centroid fit (the terms proportional to lambda and
-                  lambda^2) over the sequence of cubes?  Default True.
-    maxcpus : int, maximum number of CPUs to use in parallelization
+    Returns:
+        [centroid_params, x, y, mask]
 
-    Returns
-    -------
-    [centroid_params, x, y, mask]
+        centroid_params : 2D array of centroid parameters, first dimension is the number of files.
+                          Second dimension is the length of theh wavelength-dependent model.
+        x : x-coordinates of the centroid at the middle wavelength
+        y : y-coordinates of the centroid at the middle wavelength
+        mask : 1D boolean array, True if astrogrid was on, or None if the astrogrid was never on.
 
-    centroid_params : 2D array of centroid parameters, first dimension
-                  is the number of files.  Second dimension is the
-                  length of theh wavelength-dependent model.
-    x : x-coordinates of the centroid at the middle wavelength
-    y : y-coordinates of the centroid at the middle wavelength
-    mask : 1D boolean array, True if astrogrid was on, or None if the
-                  astrogrid was never on.
-    """
+    '''
 
     ####################################################################
     # First try to load the astrogrid status and spot separations from
@@ -788,33 +713,23 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None,
     return [centroid_params, x, y, mask]
 
 
-def fitallrelcen(infiles, r1=15, r2=50,
-                 maxcpus=multiprocessing.cpu_count() // 2):
-    """
-
+def fitallrelcen(infiles, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2):
+    '''
     Function fitallrelcen.  Fit for the relative centroids between all
     pairs of frames at the central wavelength using the PSF in an
     annulus around the center.  Return the best-fit relative offets.
 
-    Parameters
-    ----------
-    infiles : list of file names
+    Args:
+        infiles: list of file names
+        r1: int, minimum separation in lenslets from the image center for annular reference region.  Default 15.
+        r2: int, maximum separation in lenslets from the image center for annular reference region.  Default 50.
+        maxcpus: int, maximum number of CPUs to allocate for parallelization. Default 1/2 of the available CPUs.
 
-    r1 (optional) : int, minimum separation in lenslets from the image
-                   center for annular reference region.  Default 15.
-    r2 (optional) : int, maximum separation in lenslets from the image
-                   center for annular reference region.  Default 50.
-    maxcpus (optional) : int, maximum number of CPUs to allocate for
-                   parallelization.  Default 1/2 of the available CPUs.
+    Returns:
+        xsol : 1D ndarray of the relative centers in x
+        ysol : 1D ndarray of the relative centers in y
 
-    Returns
-    -------
-    xsol, ysol
-    xsol : 1D ndarray of the relative centers in x
-    ysol : 1D ndarray of the relative centers in y
-
-
-    """
+    '''
 
     ncpus = min(multiprocessing.cpu_count(), maxcpus)
 
@@ -899,32 +814,25 @@ def fitallrelcen(infiles, r1=15, r2=50,
 
 
 def polyfit(x, y, order=2, clip=2.5, niter=5, mask=None, return_y=True):
-    """
-
+    '''
     Smooth a series of points with a polynomial, iteratively clipping
     outliers.
 
-    Parameters
-    ----------
+    Args:
+        x: 1D ndarray of x coordinates for the polynomial fit
+        y: 1D ndarray of y coordinates for the polynomial fit
+        order: int, order of the polynomial to fit.  Default 2.
+        clip: float, number of sigma outliers to clip.  Default 2.5.
+        niter: int, number of iterations of sigma clipping.  Default 5.
+        mask: boolean ndarray or None: mask each y value?  Default None
+        return_y: boolean, return smoothed y values (as opposed to coefficients of the polynomial fit)?
+                  Default True.
 
-    x : 1D ndarray of x coordinates for the polynomial fit
-    y : 1D ndarray of y coordinates for the polynomial fit
+    Returns:
+        y_smoothed : 1D array, if return_y=True
+        coef : array of the polynomial coefficients if return_y=False
 
-    order (optional) : int, order of the polynomial to fit.  Default 2.
-    clip (optional) : float, number of sigma outliers to clip.  Default 2.5.
-    niter (optional) : int, number of iterations of sigma clipping.  Default 5.
-    mask (optional) : boolean ndarray or None: mask each y value?  Default None
-    return_y : boolean, return smoothed y values (as opposed to
-               coefficients of the polynomial fit)?  Default True.
-
-    Returns
-    -------
-
-    y_smoothed : 1D array, if return_y=True
-    or
-    coef : array of the polynomial coefficients if return_y=False
-
-    """
+    '''
 
     if len(x) <= order and not return_y:
         return y
@@ -962,22 +870,22 @@ def polyfit(x, y, order=2, clip=2.5, niter=5, mask=None, return_y=True):
 
 
 def specphotcal(infiles, cencoef, aperture=1.):
-    """
-
+    '''
     Function specphotcal.  Computes approximate photometry from the
     satellite spots (using aperture photometry) and scale each
     wavelength to this photometric value.  This should crudely put the
     cubes in units of contrast, though it omits the scaling of
     satellite spot intensity with 1/lambda^2.
 
-    Parameters
-    ----------
-    infiles : list of file names with CHARIS data cubes
-    cencoef : 2D ndarray with coefficeitns
+    Args:
+        infiles: list of file names with CHARIS data cubes
+        cencoef: 2D ndarray with coefficeitns
+        aperture: float, radius of aperture for photometry in units of lambda/D
 
-    aperture : float, radius of aperture for photometry in units of lambda/D
+    Returns:
+        all_phot: photocalibration coefficients
 
-    """
+    '''
 
     fids = [int(re.sub('.*CRSA', '', re.sub('_cube.fits', '', infile)))
             for infile in infiles]
@@ -1041,4 +949,4 @@ def specphotcal(infiles, cencoef, aperture=1.):
         all_x += [dx + nx // 2]
         all_y += [dy + ny // 2]
 
-    return [all_phot, all_x, all_y]
+    return all_phot

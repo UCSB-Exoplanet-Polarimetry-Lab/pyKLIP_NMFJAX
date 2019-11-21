@@ -21,8 +21,6 @@ class CHARISData(Data):
         filepaths: list of filepaths to files
         skipslices: a list of datacube slices to skip (supply index numbers e.g. [0,1,2,3])
         PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
-        recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
-        recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
         update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
 
 
@@ -72,10 +70,7 @@ class CHARISData(Data):
     ####################
 
     def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, skipslices=None,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None,
-                 sat_fit_method='global', IWA=None, OWA=None):
-        # TODO: remove recalc_wvs, recalc_centers from __init__ and readdata?
-        # TODO: match signature of base methods?
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
         Initialization code for CHARISData
 
@@ -87,7 +82,6 @@ class CHARISData(Data):
         self.flipx = False
         self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
                       skipslices=skipslices, PSF_cube=PSF_cube,
-                      recalc_wvs=recalc_wvs, recalc_centers=recalc_centers,
                       update_hdrs=update_hdrs, sat_fit_method=sat_fit_method,
                       IWA=IWA, OWA=OWA)
 
@@ -169,10 +163,9 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, skipslices=None,
-                 PSF_cube=None, recalc_wvs=True, recalc_centers=True, update_hdrs=None,
-                 sat_fit_method='global', IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
-        Method to open and read a list of GPI data
+        Method to open and read a list of CHARIS data
 
         Args:
             filespaths: a list of filepaths
@@ -182,15 +175,13 @@ class CHARISData(Data):
                             CHARIS data cube at the first wavelength slice, in [[x, y],...] format
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
-            recalc_wvs: if True, uses sat spot positions and the central wavelength to recalculate wavelength solution
-            recalc_centers: if True, uses a least squares fit and the satellite spots to recalculate the img centers
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
             sat_fit_method: 'global' or 'local'
             IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
             OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
         Returns:
-            Technically none. It saves things to fields of the GPIData object. See object doc string
+            Technically none. It saves things to fields of the CHARISData object. See object doc string
         """
         # check to see if user just inputted a single filename string
         if isinstance(filepaths, str):
@@ -227,7 +218,6 @@ class CHARISData(Data):
 
         # fit for satellite spots globally if enabled
         spot_fit_coeffs = None
-        photcal = None
         if update_hdrs == True and sat_fit_method.lower() == 'global':
             print('fitting satellite spots globally')
             spot_fit_coeffs, photcal = _measure_sat_spots_global(filepaths)
@@ -340,7 +330,7 @@ class CHARISData(Data):
             spot_fluxes *= inttime0/inttimes
 
 
-        #set these as the fields for the GPIData object
+        #set these as the fields for the CHARISData object
         self._input = data
         self._centers = centers
         self._filenums = filenums
@@ -386,7 +376,7 @@ class CHARISData(Data):
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
                  extra_exthdr_keywords = None, extra_prihdr_keywords = None):
         """
-        Save data in a GPI-like fashion. Aka, data and header are in the first extension header
+        Save data and header in the first extension header
 
         Note: In principle, the function only works inside klip_dataset(). In order to use it outside of klip_dataset,
             you need to define the following attributes:
@@ -424,6 +414,7 @@ class CHARISData(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
+        # TODO: remove this next paragraph?
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
         # The following paragraph is only valid when reading raw GPI cube.
@@ -730,7 +721,7 @@ def _measure_sat_spots_global(infiles, photocal=False):
 
     '''
 
-    # TODO: allow user to input initial guess for the satellite spots
+    # TODO: allow user to input initial guess for the satellite spots?
     # TODO: spotflux use peak flux or aperture flux?
 
     if len(infiles) == 0:
@@ -747,9 +738,9 @@ def _measure_sat_spots_global(infiles, photocal=False):
     p[:, 2] += xsol - x + np.median((x - xsol)[mask])
     p[:, 5] += ysol - y + np.median((y - ysol)[mask])
 
-    # TODO: dx, dy here are not referenced anywhere?
+    # TODO: dx, dy here are not referenced anywhere, so maybe change specphotcal to return only phot
     if photocal:
-        phot, dx, dy = global_centroid.specphotcal(infiles, p)
+        phot = global_centroid.specphotcal(infiles, p)
     else:
         phot = 1.
 
@@ -768,7 +759,6 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     flux_key = 'SATF{0}_{1}'.format(wv_ind, spot_num)
 
     # store x/y postion as a string
-    # TODO: is 3 decimal digits enough?
     pos_string = "{x:7.3f} {y:7.3f}".format(x=pos[0], y=pos[1])
 
     # write positions
@@ -803,8 +793,8 @@ def generate_psf(frame, locations, boxrad=5):
         #interpolate image to grab satellite psf with it centered
         #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
         #create arrays of size 2*boxrad+2)
-        x,y = np.meshgrid(np.arange(spotx-boxrad, spotx+boxrad+0.1, 1), np.arange(spoty-boxrad, spoty+boxrad+0.1, 1))
-        spotpsf = ndimage.map_coordinates(cleaned, [y,x])
+        x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad, spoty + boxrad + 0.1, 1))
+        spotpsf = ndimage.map_coordinates(cleaned, [y, x])
 
         # if applicable, do a background subtraction
         if boxrad >= 7:
