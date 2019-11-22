@@ -69,7 +69,7 @@ class CHARISData(Data):
     ### Constructors ###
     ####################
 
-    def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, skipslices=None,
+    def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
                  PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
         Initialization code for CHARISData
@@ -80,10 +80,9 @@ class CHARISData(Data):
         super(CHARISData, self).__init__()
         self._output = None
         self.flipx = False
-        self.readdata(filepaths, guess_spot_index, guess_spot_locs, 
-                      skipslices=skipslices, PSF_cube=PSF_cube,
-                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method,
-                      IWA=IWA, OWA=OWA)
+        self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_loc=guess_spot_locs,
+                      guess_center_loc=guess_center_loc, skipslices=skipslices, PSF_cube=PSF_cube,
+                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, IWA=IWA, OWA=OWA)
 
     ################################
     ### Instance Required Fields ###
@@ -162,7 +161,7 @@ class CHARISData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, skipslices=None,
+    def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, guess_center_loc=None, skipslices=None,
                  PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
         Method to open and read a list of CHARIS data
@@ -173,6 +172,7 @@ class CHARISData(Data):
             guess_spot_loc: initial guess of the satellite spot pixel indices.
                             If None, will default to rough guesses for the four satellite spots of a typical
                             CHARIS data cube at the first wavelength slice, in [[x, y],...] format
+            guess_center_loc: initial guess of the primary star center in [x, y] format
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
@@ -220,7 +220,7 @@ class CHARISData(Data):
         spot_fit_coeffs = None
         if update_hdrs == True and sat_fit_method.lower() == 'global':
             print('fitting satellite spots globally')
-            spot_fit_coeffs, photcal = _measure_sat_spots_global(filepaths)
+            spot_fit_coeffs, photcal = _measure_sat_spots_global(filepaths, guess_center_loc=guess_center_loc)
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
@@ -707,7 +707,7 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     return np.array(locs), np.array(fluxes), np.array(fwhms)
 
 
-def _measure_sat_spots_global(infiles, photocal=False):
+def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
     '''
     Main function of this module to fit for the locations of the four satellite spots
 
@@ -728,7 +728,8 @@ def _measure_sat_spots_global(infiles, photocal=False):
         raise IOError("Cannot open file")
 
     astrogrid_status = [None for infile in infiles]
-    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, astrogrid_status=astrogrid_status, smooth_coef=True)
+    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, astrogrid_status=astrogrid_status,
+                                                                  smooth_coef=True, guess_center_loc=guess_center_loc)
     xsol, ysol = global_centroid.fitallrelcen(infiles, r1=15, r2=45)
 
     p = centroid_params.copy()

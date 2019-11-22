@@ -435,7 +435,7 @@ def fitrelcen(image1, image2, x, y, method='Powell'):
     return [xc, yc]
 
 
-def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
+def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
     '''
     Function fitcen.  Fit for the center of a CHARIS data cube using
     the satellite spots by maximizing the agreement between scaled
@@ -450,6 +450,7 @@ def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
         spotsep: float or None.  If float, separation of the satellite spots in units
                  of lambda/D.  If None, only use the diffraction pattern in an annulus
                  between r1 and r2.
+        guess_center_loc: manually specify initial location of image center if necessary, in [x, y] format
         i1: int, first slice of the data cube to use.  Default 1 (skip slice 0)
         i2: int, high limit of slices to use.  Default -1 (skip last slice)
         r1: float, minimum separation from approximate center for the annulus of the
@@ -495,11 +496,15 @@ def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
     # Initial center using inner region of the cube (not the spots)
     ####################################################################
 
-    x = np.arange(cube.shape[1]) - cube.shape[1] // 2
-    x, y = np.meshgrid(x, x)
-    indx = np.where((x ** 2 + y ** 2 > r1 ** 2) * (x ** 2 + y ** 2 < r2 ** 2))
-    xc0, yc0 = optimize.minimize(_cc_resid, [0, 0], ([0, 0], cubesmooth[i1:i2], lam[i1:i2], x[indx], y[indx], False),
-                                 method='Powell').x
+    if guess_center_loc is None:
+        x = np.arange(cube.shape[1]) - cube.shape[1] // 2
+        x, y = np.meshgrid(x, x)
+        indx = np.where((x ** 2 + y ** 2 > r1 ** 2) * (x ** 2 + y ** 2 < r2 ** 2))
+        xc0, yc0 = optimize.minimize(_cc_resid, [0, 0], ([0, 0], cubesmooth[i1:i2], lam[i1:i2], x[indx], y[indx], False),
+                                     method='Powell').x
+    else:
+        xc0 = guess_center_loc[0]
+        yc0 = guess_center_loc[1]
 
     if spotsep is None:
         return [xc0, yc0]
@@ -567,8 +572,8 @@ def fitcen(cube, ivar, lam, spotsep=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
     return list([phi, spotsep]) + cen_coef
 
 
-def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None,
-                    smooth_coef=True, maxcpus=multiprocessing.cpu_count() // 2):
+def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_coef=True,
+                    guess_center_loc=None, maxcpus=multiprocessing.cpu_count() // 2):
     '''
     Function fitcen_parallel.  Centroid a series of CHARIS data cubes
     in parallel using fitcen.  By default, get the wavelengths and
@@ -588,6 +593,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None,
         smooth_coef: boolean.  smooth the nonlinear coefficients of the centroid fit (the terms
                      proportional to lambda and lambda^2) over the sequence of cubes?
                      Default True.
+        guess_center_loc: manually specify initial location of image center if necessary, in [x, y] format
         maxcpus: int, maximum number of CPUs to use in parallelization
 
     Returns:
@@ -654,7 +660,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None,
         else:
             spotsep = None
 
-        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, 1, -1)))
+        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, guess_center_loc, 1, -1)))
 
     for i in range(ncpus):
         tasks.put(None)
