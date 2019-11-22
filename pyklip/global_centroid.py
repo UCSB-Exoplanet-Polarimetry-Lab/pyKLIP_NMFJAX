@@ -496,10 +496,12 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     # Initial center using inner region of the cube (not the spots)
     ####################################################################
 
+
+    x = np.arange(cube.shape[1]) - cube.shape[1] // 2
+    x, y = np.meshgrid(x, x)
+    indx = np.where((x ** 2 + y ** 2 > r1 ** 2) * (x ** 2 + y ** 2 < r2 ** 2))
+
     if guess_center_loc is None:
-        x = np.arange(cube.shape[1]) - cube.shape[1] // 2
-        x, y = np.meshgrid(x, x)
-        indx = np.where((x ** 2 + y ** 2 > r1 ** 2) * (x ** 2 + y ** 2 < r2 ** 2))
         xc0, yc0 = optimize.minimize(_cc_resid, [0, 0], ([0, 0], cubesmooth[i1:i2], lam[i1:i2], x[indx], y[indx], False),
                                      method='Powell').x
     else:
