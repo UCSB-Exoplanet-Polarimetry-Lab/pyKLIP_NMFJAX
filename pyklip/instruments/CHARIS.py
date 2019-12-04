@@ -11,7 +11,7 @@ import astropy.units as u
 import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
-import pyklip.global_centroid as global_centroid
+import pyklip.instruments.utils.global_centroid as global_centroid
 
 class CHARISData(Data):
     """
