@@ -32,7 +32,7 @@ Features
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
   `GPI <http://planetimager.org/>`_, SPHERE, MagAO/VisAO, and Keck/NIRC2.
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
-* Version 1.1 - see :ref:`release-notes` for update notes
+* Version 2.0 - see :ref:`release-notes` for update notes
 
 Bugs/Feature Requests
 ------------------------

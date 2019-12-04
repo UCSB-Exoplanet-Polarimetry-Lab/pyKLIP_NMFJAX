@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pyklip',
-    version='1.1',
+    version='2.0',
     description='pyKLIP: PSF Subtraction for Exoplanets and Disks',
     url='https://bitbucket.org/pyKLIP/pyklip',
     author='pyKLIP Developers',
