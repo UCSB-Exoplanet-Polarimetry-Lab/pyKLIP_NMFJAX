@@ -3,6 +3,9 @@
 Release Notes
 ==============
 
+Version 2.0.1
+ * Update Python 3 version to Python 3.6
+
 Version 2.0
  * Forgot to update for a long while. Lots of new changes. A few key summaries below.
  * Forward modeling for planet detection, astrometry, photometry, spectral extraction, and disk forward modeling
