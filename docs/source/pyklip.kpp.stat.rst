@@ -1,19 +1,19 @@
-pyklip\.kpp\.stat package
-=========================
+pyklip.kpp.stat package
+=======================
 
 Submodules
 ----------
 
-pyklip\.kpp\.stat\.statPerPix\_utils module
--------------------------------------------
+pyklip.kpp.stat.statPerPix\_utils module
+----------------------------------------
 
 .. automodule:: pyklip.kpp.stat.statPerPix_utils
     :members:
     :undoc-members:
     :show-inheritance:
 
-pyklip\.kpp\.stat\.stat\_utils module
--------------------------------------
+pyklip.kpp.stat.stat\_utils module
+----------------------------------
 
 .. automodule:: pyklip.kpp.stat.stat_utils
     :members:
