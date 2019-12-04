@@ -110,7 +110,7 @@ class NoFM(object):
         return
 
 
-    def fm_end_sector(selfself, **kwargs):
+    def fm_end_sector(self, **kwargs):
         """
         Does some forward modelling at the end of a sector after all images have been klipped for that sector.
 

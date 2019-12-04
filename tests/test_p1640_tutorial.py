@@ -17,13 +17,13 @@ matplotlib.use('Agg')
 def test_p1640_tutorial(mock_klip_parallelized):
     """
     Tests P1640 support by running through the P1640 tutorial without the interactive parts.
-     
-    Follows the P1640 tutorial in docs and runs a test using the tutorial as a guideline. Goes through downloading the 
+
+    Follows the P1640 tutorial in docs and runs a test using the tutorial as a guideline. Goes through downloading the
     sample tarball, extracting the datacubes, fitting the grid spots, running KLIP on the datacubes, and outputting
-    the files. The test checks that there are the correct number of files in each step outputted in the correct 
+    the files. The test checks that there are the correct number of files in each step outputted in the correct
     directories.
-    The test also ignores all interactive modes such as vetting the cubes and grid spots. 
-    
+    The test also ignores all interactive modes such as vetting the cubes and grid spots.
+
     """
 
     #create a mocked klip parallelized
@@ -31,16 +31,22 @@ def test_p1640_tutorial(mock_klip_parallelized):
 
     directory = os.path.dirname(os.path.abspath(__file__)) + os.path.sep + os.path.join('..', 'pyklip', 'instruments',
                                                                                         'P1640_support', 'tutorial')
-    tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data' \
-                  '.tar.gz '
+
+
+    #tarball_get = 'wget https://sites.google.com/site/aguilarja/otherstuff/pyklip-tutorial-data/P1640_tutorial_data' \
+    #              '.tar.gz '
+    tarball_get = 'wget --no-check-certificate https://onedrive.live.com/download?cid=71F85EECD88DF08C\&resid=71F85EECD88DF08C%21119153\&authkey=AE1Q53wMCBnoQYg -O P1640_tutorial_data.tar.gz'
     tarball_command = 'tar -xvf P1640_tutorial_data.tar.gz'
 
     # time it
     t1 = time()
 
+    p1640datadir = os.path.join(directory,'data')
+    os.chdir(p1640datadir)
     os.system(tarball_get)
     os.system(tarball_command)
-    filelist = glob.glob("*Occulted*fits")
+
+    filelist = glob.glob(p1640datadir +os.path.sep+ "*Occulted*.fits")
     # should have 3 files in the directory after downloading and unzipping the tarball.
     assert (len(filelist) == 3)
 
@@ -51,7 +57,8 @@ def test_p1640_tutorial(mock_klip_parallelized):
 
     # Fit grid spots
     import pyklip.instruments.P1640_support.P1640spots as P1640spots
-    spot_filepath = directory + os.path.sep + 'shared_spot_folder/'
+    spot_filepath = os.path.join(directory,'shared_spot_folder')+ os.path.sep
+    # spot_filepath = directory + os.path.sep + 'shared_spot_folder/'
     spot_filesuffix = '-spot'
     spot_fileext = 'csv'
     for test_file in good_cubes:
@@ -67,7 +74,8 @@ def test_p1640_tutorial(mock_klip_parallelized):
     import pyklip.instruments.P1640 as P1640
     import pyklip.parallelized as parallelized
     dataset = P1640.P1640Data(filelist, spot_directory=spot_filepath)
-    output = directory + os.path.sep + "output/"
+    output = os.path.join(directory,'output')+ os.path.sep
+
     parallelized.klip_dataset(dataset, outputdir=output, fileprefix="woohoo", annuli=5, subsections=4, movement=3,
                               numbasis=[1, 20, 100], calibrate_flux=False, mode="SDI")
     # should have 4 outputted files
@@ -76,6 +84,15 @@ def test_p1640_tutorial(mock_klip_parallelized):
 
     print("{0} seconds to run".format(time() - t1))
 
+    ### for the purpose of this test, we are cleaning after ourselves the DL data
+    ### and the images
+    for item in os.listdir(p1640datadir):
+        if (item.endswith(".fits")) or (item.endswith(".gz")):
+            os.remove(os.path.join(p1640datadir, item))
+
+    for item in os.listdir(output):
+        if item.endswith(".fits"):
+            os.remove(os.path.join(output, item))
 
 if __name__ == "__main__":
     test_p1640_tutorial()

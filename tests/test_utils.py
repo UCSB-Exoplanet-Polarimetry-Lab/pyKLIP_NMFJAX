@@ -310,5 +310,37 @@ def test_nair():
     n0 = nair.nMathar(3.39, 101325, 273.15+20, 56.98)
     assert np.abs(n0 - 1.00026740+ 1.75e-8) < 3e-8
 
+
+def test_field_dependent_correction():
+    """
+    Test the field dependent correction in fakes.inject_planet() 
+    """
+    def correction(input_stamp, dx_stamp, dy_stamp):
+        output_stamp = input_stamp * np.abs(dx_stamp) * np.abs(dy_stamp/2)
+        return output_stamp
+
+    psf = np.ones([1, 101, 101])
+    test_img = np.zeros([1, 101, 101])
+    centers = np.array([[50, 50]])
+    fakes.inject_planet(test_img, centers, psf, None, 0, 0, thetas=np.array([0]),
+                        field_dependent_correction=correction)
+
+    print(test_img[0, 50, 50], test_img[0, 0, 0])
+    # center of the image should have no throughput
+    assert test_img[0, 50, 50] == pytest.approx(0, 1e-8)
+    # edge of field is artifically enhanced
+    assert test_img[0, 0, 0] == pytest.approx(50 * 25, 1e-8)
+
+    # try it for a Gaussian now
+    test_img = np.zeros([1, 101, 101])
+    centers = np.array([[50, 50]])
+    fakes.inject_planet(test_img, centers, np.array([1]), None, 0, 0, thetas=np.array([0]),
+                        field_dependent_correction=correction)
+    # we should have injected data into the image
+    assert np.size(np.where(test_img != 0)) > 0
+    # center of field should have no throughput
+    assert test_img[0, 50, 50] == pytest.approx(0, 1e-8)
+
+
 if __name__ == "__main__":
-    test_nair()
+    test_field_dependent_correction()

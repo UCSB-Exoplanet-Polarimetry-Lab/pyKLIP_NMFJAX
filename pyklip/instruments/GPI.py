@@ -102,6 +102,8 @@ class GPIData(Data):
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
     spot_ratio2 = {} #second order ratios for Y and J
+    spot_ratio_h = {} # For datasets where PPM was stuck in Hapod
+    spot_ratio_h2 = {} # (and second order for Y/J)
     lenslet_scale = 1.0 # arcseconds per pixel (pixel scale)
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
@@ -126,6 +128,14 @@ class GPIData(Data):
             spot_ratio[band] = float(config.get("instrument", "APOD_{0}".format(band)))
             if (band == 'Y') | (band == 'J'):
                 spot_ratio2[band] = float(config.get("instrument", "APOD_{0}_2".format(band)))
+                spot_ratio_h[band] = float(config.get("instrument", "APOD_H_{0}".format(band)))
+                spot_ratio_h2[band] = float(config.get("instrument", "APOD_H_{0}_2".format(band)))
+            elif (band == 'K1'):
+                spot_ratio_h[band] = float(config.get("instrument", "APOD_H_{0}".format(band)))
+            elif (band == 'K2'):
+                ## No lab measurement exists for Hapod/K2 combination, so falling back to APOD_K2
+                spot_ratio_h[band] = float(config.get("instrument", "APOD_K2".format(band)))
+
         observatory_latitude = float(config.get("observatory", "observatory_lat"))
     except ConfigParser.Error as e:
         print("Error reading GPI configuration file: {0}".format(e.message))
@@ -414,8 +424,14 @@ class GPIData(Data):
         self.wv_indices = wv_indices
         self.spot_flux = spot_fluxes
         self.flux_units = "DN"
-        if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
-        if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio2[ppm_band]
+        if filt_band == ppm_band:
+            if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
+            if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio2[ppm_band]
+        elif ppm_band == "H": # For when GPI was stuck at PPM='H'
+            if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio_h[filt_band]
+            if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio_h2[filt_band]    
+        else:
+            raise AssertionError("Unsupported filt_band/ppm_band combination")
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -1040,9 +1056,19 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
             if 'DN2CON0' in exthdr.keys():
                 for i in range(channels):
                     if spot_order == 1: # Use first order spot ratios
-                        spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                        if ppm_band == filt_band:
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                        elif ppm_band == "H":
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio_h[filt_band])
+                        else:
+                            raise AssertionError("Unsupported filt_band/ppm_band combination")
                     elif spot_order == 2: # Use second order spot ratios
-                        spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio2[ppm_band])
+                        if ppm_band == filt_band:
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio2[ppm_band])
+                        elif ppm_band == "H":
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio_h2[filt_band])
+                        else:
+                            raise AssertionError("Unsupported filt_band/ppm_band combination")
             else:
                 for i in range(channels):
                     #grab sat spot fluxes if they're there

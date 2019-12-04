@@ -538,6 +538,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
         fpm_band = prihdr['SLITNAME']
         camera = prihdr['CAMNAME']
         pupil = prihdr['PMSNAME']
+        rotmode = prihdr['ROTMODE'].lower()
 
         #for NIRC2, we only have broadband but want to keep the GPI array shape to make processing easier
         if prihdr['CURRINST'].strip() == 'NIRC2':
@@ -548,7 +549,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
                 parang = prihdr['ROTNORTH']*np.ones(1)
             else:
                 try:
-                    parang = get_pa(hdulist, obsdate=obsdate, rotmode='vertical angle', write_hdr=True)*np.ones(1)
+                    parang = get_pa(hdulist, obsdate=obsdate, rotmode=rotmode, write_hdr=True)*np.ones(1)
                 except:
                     parang = np.nan*np.ones(1)
             
@@ -556,7 +557,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
                 # Ignore header and use Radon transform to find star center.
                 try:
                     center = [get_star(hdulist, ctr=NIRC2Data.fpm_yx[('_').join([camera, fpm_band])], obsdate=obsdate,
-                                    hp_size=0, im_smooth=0, sp_width=31, rad=100, radon_wdw=400, smooth=1,
+                                    hp_size=0, im_smooth=0, sp_width=0, rad=100, radon_wdw=400, smooth=1,
                                     write_hdr=True, pool=pool, silent=True)]
                 except:
                     center = [[np.nan, np.nan]]
@@ -574,7 +575,7 @@ def _nirc2_process_file(filepath, highpass=False, find_star='auto', meas_star_fl
                 else:
                     try:
                         center = [get_star(hdulist, ctr=NIRC2Data.fpm_yx[('_').join([camera, fpm_band])], obsdate=obsdate,
-                                        hp_size=0, im_smooth=0, sp_width=31, rad=100, radon_wdw=400, smooth=1,
+                                        hp_size=0, im_smooth=0, sp_width=0, rad=100, radon_wdw=400, smooth=1,
                                         write_hdr=True, pool=pool, silent=True)]
                     except:
                         center = [[np.nan, np.nan]]
@@ -673,9 +674,9 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
         obsdate: date of observation; will try to get from prihdr if not provided.
         rotmode: 'vertical angle' for ADI mode with PA rotating on detector, or
                  'position angle' for mode with PA orientation fixed on detector.
-                 ('position angle' currently UNSUPPORTED)
         mean_pa: if True (default), return the mean PA during the exposure.
                  If False, return the PA at the start of the exposure only.
+                 Only applies to vertical angle mode.
         write_hdr: if True (default), writes keys to file header and saves them.
     """
     
@@ -690,7 +691,7 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
     
     # Additional offset to narrow cam PA not included in INSTANGL keyword.
     # This offset changed after instrument servicing on April 13, 2015.
-    if prihdr['CAMNAME']=='narrow':
+    if prihdr['CAMNAME'].lower() == 'narrow':
         if obsdate < date_2015_4_13:
             zp_offset = -0.252 # [deg]; from Yelda et al. 2010
         elif obsdate >= date_2015_4_13:
@@ -702,22 +703,22 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
     if rotmode is None:
         global _last_rotmode
         try:
-            rotmode = prihdr['ROTMODE'].strip()
+            rotmode = prihdr['ROTMODE'].strip().lower()
             _last_rotmode = rotmode
         except:
-            rotmode = _last_rotmode
+            rotmode = _last_rotmode.lower()
     rotposn = prihdr['ROTPOSN'] # [deg]
     instangl = prihdr['INSTANGL'] # [deg]
 
-    if rotmode == 'vertical angle':
+    if rotmode.lower() == 'vertical angle':
         parang = prihdr['PARANG'] # [deg]
         pa_deg = parang + rotposn - instangl + zp_offset # [deg]
-    elif rotmode == 'position angle':
+    elif rotmode.lower() == 'position angle':
         pa_deg = rotposn - instangl + zp_offset # [deg]
     else:
         raise NotImplementedError
     
-    if mean_PA:
+    if mean_PA and (rotmode.lower() == 'vertical angle'):
         # Get info for PA smearing calculation.
         epochobj = prihdr['DATE-OBS']
         name = prihdr['targname']
@@ -729,7 +730,7 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
         ydimref =  prihdr['naxis2']
         tel = prihdr['TELESCOP']
         dec = prihdr['DEC'] + prihdr['DECOFF']
-        if tel=='Keck II':
+        if tel.lower() == 'keck ii':
             tel = 'keck2' # just cleaning up str
         
         # Calculate total time of exposure (integration + readout).
@@ -777,8 +778,8 @@ def get_pa(hdulist, obsdate=None, rotmode=None, mean_PA=True, write_hdr=True):
         # Flip signs to conform to pyKLIP rotation convention.
         prihdr['TOTEXP'] = (totexp, 'Total exposure time [hours]')
         prihdr['PASTART'] = (-1*pa_deg, "Position angle at exposure start [deg]")
-        prihdr['PASMEAR'] = (-1*(vpmean - vpref), "Position angle rotation during exposure [deg]")
-        prihdr['ROTNORTH'] = (-1*pa_deg_mean, "Mean position angle of exposure [deg]")
+        prihdr['PASMEAR'] = (-1*(vpmean - vpref), "Exposure's weighted-mean PA minus PASTART [deg]")
+        prihdr['ROTNORTH'] = (-1*pa_deg_mean, "Mean PA of North during exposure [deg]")
         
         hdulist.flush()
     
@@ -800,7 +801,7 @@ def par_angle(HA, dec, lat):
     
     return np.degrees(parallang) # [deg]
 
-def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
+def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=0, spike_angles=None,
               r_mask='all', rad=100, rad_out=np.inf, radon_wdw=400, smooth=1, PAadj=0.,
               write_hdr=True, pool=None, silent=True):
     """
@@ -811,9 +812,13 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
         hdulist: a FITS HDUList (NOT a single HDU).
         ctr: (y,x) coordinate pair estimate for star position for image [pix].
         obsdate: date of observation; will try to get from prihdr if not provided.
-        hp_size: size of high-pass filter median boxcar in [pix].
-        im_smooth: size of high-pass filter median boxcar in [pix].
-        sp_width: width of diffraction spike mask in [pix].
+        hp_size: size of high-pass filter box (via Fourier transform) in [pix].
+        im_smooth: sigma of smoothing Gaussian function in [pix].
+        sp_width: width of diffraction spike mask in [pix]; default is 0 (no masking).
+        spike_angles: list of discrete angles from the assumed star positions along 
+            which the radon transform will sum intensity to search for the true star
+            position (it picks the maximum sum). These should match the angles
+            of the strongest diffraction spikes [deg].
         r_mask: 'all' to mask out circle around ctr coords; anything else to do no radial masking.
         rad: r_mask=='all' will mask out all r <= rad [pix].
         rad_out: r_mask=='all' will mask out all r > rad_out [pix].
@@ -865,19 +870,25 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
     # Additional offset to narrow cam PA not included in INSTANGL keyword.
     # This offset changed after instrument servicing on April 13, 2015.
     date_2015_4_13 = time.strptime("2015-4-13", "%Y-%m-%d")
-    if hdr['CAMNAME']=='narrow':
+    if hdr['CAMNAME'].lower()=='narrow':
         if obsdate < date_2015_4_13:
             zp_offset = -0.252 # [deg]; from Yelda et al. 2010
         elif obsdate >= date_2015_4_13:
             zp_offset = -0.262 # [deg]; from Service et al. 2016
-    elif hdr['CAMNAME']=='wide':
+    elif hdr['CAMNAME'].lower()=='wide':
         zp_offset = 0.
     
+    # Select angles along which to perform radon based on rotator mode.
     # Position angle (pa) of telescope optics only, from header info.
-    pa_tele = hdr['INSTANGL'] - zp_offset - hdr['ROTPOSN'] # [deg]
-    # Angles at which diffraction spikes occur in NIRC2 data [deg].
-    spike_angles = pa_tele + 30.0 + np.arange(3)*60.0 + PAadj # [deg]
-    # Boolen mask excluding everything except diffraction spikes.
+    if hdr['ROTMODE'].lower() == 'vertical angle':
+        pa_tele = hdr['INSTANGL'] - zp_offset - hdr['ROTPOSN'] # [deg]
+    # Other case is either 'position angle' mode or unidentified.
+    else:
+        pa_tele = hdr['PARANG'] # [deg]
+    if spike_angles is None:
+        # Angles at which diffraction spikes occur in NIRC2 data [deg].
+        spike_angles = pa_tele + 30.0 + np.arange(3)*60.0 + PAadj # [deg]
+    # Boolean mask excluding everything except diffraction spikes.
     spikemask = ~ make_spikemask(data_filt, hdr, ctr, spike_angles, yy, xx, sp_width) # ~ is inverse boolean
     
     mask_total = spikemask.copy()
@@ -897,7 +908,7 @@ def get_star(hdulist, ctr, obsdate, hp_size=0, im_smooth=0, sp_width=31,
     (x_radon, y_radon) = searchCenter(data_masked.filled(0.), ctr[1], ctr[0],
                             size_window=radon_wdw, size_cost=7, m=0.2, M=0.8,
                             smooth=smooth, theta=spike_angles)
-    
+
     if not silent: print("radon y,x = {0}, {1}".format(y_radon, x_radon))
     
     if write_hdr:
@@ -926,7 +937,7 @@ def make_spikemask(data, hdr, ctr, spike_angles, yy, xx, width=31):
     
     mask = np.zeros(data.shape, dtype=np.bool)
     
-    if width != 0.:
+    if (width > 0) & (not np.isnan(width)):
         yy_ctr = yy - ctr[0]
         xx_ctr = xx - ctr[1]
         
@@ -939,6 +950,8 @@ def make_spikemask(data, hdr, ctr, spike_angles, yy, xx, width=31):
             spikemask = (yy_ctr <= (mx + band)) & (yy_ctr >= (mx - band))
             # Replace False with True in mask wherever either spikemask or mask is True.
             mask = mask | spikemask
+    else:
+        mask = np.ones(data.shape, dtype=np.bool)
     
     return mask
 

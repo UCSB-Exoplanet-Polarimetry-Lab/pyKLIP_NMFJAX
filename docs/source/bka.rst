@@ -290,7 +290,7 @@ For MCMC, we can also plot the corner plot to look at our posterior distribution
 .. code-block:: python
 
     fig = plt.figure()
-    fig = fma.make_corner_plot(fig=fig)
+    fig = fit.make_corner_plot(fig=fig)
 
 .. image:: imgs/betpic_j_bka_corner.png
 
@@ -342,7 +342,7 @@ Generally, it is good to look at the fit visually, and examine the residual plot
 .. code-block:: python
 
     fig = plt.figure()
-    fig = fma.best_fit_and_residuals(fig=fig)
+    fig = fit.best_fit_and_residuals(fig=fig)
 
 And here is the example from the three frames of beta Pic b J-band GPI data:
 
@@ -367,19 +367,19 @@ calibration uncertainities in, so it will need to be done by hand.
 
 .. code-block:: python
 
-    fma.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
+    fit.propogate_errs(star_center_err=0.05, platescale=GPI.GPIData.lenslet_scale*1000, platescale_err=0.007, pa_offset=-0.1, pa_uncertainty=0.13)
 
 
     # show what the raw uncertainites are on the location of the planet
-    print("\nPlanet Raw RA offset is {0} +/- {1}, Raw Dec offset is {2} +/- {3}".format(fma.raw_RA_offset.bestfit, fma.raw_RA_offset.error,
-                                                                                        fma.raw_Dec_offset.bestfit, fma.raw_Dec_offset.error)) 
+    print("\nPlanet Raw RA offset is {0} +/- {1}, Raw Dec offset is {2} +/- {3}".format(fit.raw_RA_offset.bestfit, fit.raw_RA_offset.error,
+                                                                                        fit.raw_Dec_offset.bestfit, fit.raw_Dec_offset.error)) 
     
     # Full error budget included
-    print("Planet RA offset is at {0} with a 1-sigma uncertainity of {1}".format(fma.RA_offset.bestfit, fma.RA_offset.error))
-    print("Planet Dec offset is at {0} with a 1-sigma uncertainity of {1}".format(fma.Dec_offset.bestfit, fma.Dec_offset.error))
+    print("Planet RA offset is at {0} with a 1-sigma uncertainity of {1}".format(fit.RA_offset.bestfit, fit.RA_offset.error))
+    print("Planet Dec offset is at {0} with a 1-sigma uncertainity of {1}".format(fit.Dec_offset.bestfit, fit.Dec_offset.error))
 
     # Propogate errors into separation and PA space
-    print("Planet separation is at {0} with a 1-sigma uncertainity of {1}".format(fma.sep.bestfit, fma.sep.error))
-    print("Planet PA at {0} with a 1-sigma uncertainity of {1}".format(fma.PA.bestfit, fma.PA.error))
+    print("Planet separation is at {0} with a 1-sigma uncertainity of {1}".format(fit.sep.bestfit, fit.sep.error))
+    print("Planet PA at {0} with a 1-sigma uncertainity of {1}".format(fit.PA.bestfit, fit.PA.error))
 
 

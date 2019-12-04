@@ -473,7 +473,7 @@ class GenericData(Data):
         # collapse data again
         input_data = np.array(input_data)
         dims = input_data.shape
-        if np.szie(dims) > 3:
+        if np.size(dims) > 3:
             nframes = np.prod(dims[:-2])
             # collapse in all dimensions except y and x
             input_data.shape = (nframes, dims[-2], dims[-1])

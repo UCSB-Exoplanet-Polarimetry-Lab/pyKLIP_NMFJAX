@@ -24,5 +24,5 @@ setup(
         'Programming Language :: Python :: 3.5',
         ],
     keywords='KLIP PSF Subtraction Exoplanets Astronomy',
-    install_requires=['numpy', 'scipy', 'astropy']
+    install_requires=['numpy', 'scipy', 'astropy', 'matplotlib', 'emcee', 'corner']
     )

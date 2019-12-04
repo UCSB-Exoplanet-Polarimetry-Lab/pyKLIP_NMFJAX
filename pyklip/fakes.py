@@ -70,7 +70,7 @@ def convert_polar_to_image_pa(theta, astr_hdr):
     return pa
 
 
-def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=None):
+def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=None, field_dependent_correction=None, center=None):
     """
     Injects a fake planet with a Gaussian PSF into a dataframe
 
@@ -80,7 +80,12 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=No
         amplitude: peak of the Gaussian PSf (in appropriate units not dictacted here)
         fwhm: fwhm of gaussian
         stampsize: integer specfying the width of the stamp box in which the planet is defined
-
+        field_dependent_correction: a function of the form ``output_stamp = correction(input_stamp, input_dx, input_dy)
+                            where, input_stamp is a 2-D image of shape (y_stamp, x_stamp). input_dx and input_dy have
+                            the same shape and represent the offset of each pixel from the star (in pixel units). The 
+                            function returns an output_stamp of the same shape, but corrected for any field dependent
+                            throughputs or distortions.
+        center: (x,y) reference position (typically of a coronagraph center) that is used ONLY by the field dependent correction
     Returns:
         frame: the frame with the injected planet
     """
@@ -108,12 +113,20 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=No
     ymax = y[-1][-1]
 
     psf = amplitude * np.exp(-((x - xpos)**2. + (y - ypos)**2.) / (2. * sigma**2))
+    
+    # if specified, make field dependent PSF correction
+    if field_dependent_correction is not None:
+        dx_psf = np.arange(xmin, xmax+1, 1) - center[0]
+        dy_psf = np.arange(ymin, ymax+1, 1) - center[1]
+        # convert to 2D
+        dx_psf, dy_psf = np.meshgrid(dx_psf, dy_psf)
+        psf = field_dependent_correction(psf, dx_psf, dy_psf)
 
     frame[ymin:ymax+1, xmin:xmax+1] += psf
     return frame
 
 
-def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None, stampsize=None):
+def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None, stampsize=None, field_dependent_correction=None):
     """
     Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
@@ -130,6 +143,11 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
         thetas: ignore PA, supply own thetas (CCW angle from +x axis toward +y)
                 array of size N
         stampsize: in pixels, the width of the square stamp to inject the image into. Defaults to 3*fwhm if None
+        field_dependent_correction: a function of the form ``output_stamp = correction(input_stamp, input_dx, input_dy)
+                                    where, input_stamp is a 2-D image of shape (y_stamp, x_stamp). input_dx and input_dy have
+                                    the same shape and represent the offset of each pixel from the star (in pixel units). The 
+                                    function returns an output_stamp of the same shape, but corrected for any field dependent
+                                    throughputs or distortions.
 
     Returns:
         saves result in input "frames" variable
@@ -204,15 +222,24 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
                 xpsf = xpsf[:-(ymax-ny + 1),:]
                 ymax = ny
 
+            psf = ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
+            # if specified, make field dependent PSF correction
+            if field_dependent_correction is not None:
+                dx_psf = np.arange(xmin, xmax+1, 1) - center[0]
+                dy_psf = np.arange(ymin, ymax+1, 1) - center[1]
+                # convert to 2D
+                dx_psf, dy_psf = np.meshgrid(dx_psf, dy_psf)
+                psf = field_dependent_correction(psf, dx_psf, dy_psf)
+
             #inject into frame
-            frame[ymin:ymax + 1, xmin:xmax + 1] += ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
+            frame[ymin:ymax + 1, xmin:xmax + 1] += psf
         else:
             if stampsize is None:
                 stampsize = 3 * fwhm
             # convert boxsize to an integer
             stampsize = int(np.ceil(stampsize))
 
-            _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm, stampsize=stampsize)
+            _inject_gaussian_planet(frame, x_pl, y_pl, inputpsf, fwhm=fwhm, stampsize=stampsize, field_dependent_correction=field_dependent_correction, center=center)
 
 
 def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spectrum = None, PSF_cube = None, PSF_cube_wvs = None,
@@ -977,7 +1004,7 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         if thetas is not None:
             if np.ndim(thetas) != 0:
                 raise IndexError("thetas cannot be a list because you only passed in one frame")
-                thetas = [thetas]
+            thetas = [thetas]
         # turn them into lists so we can reuse the same code
         frames = [frames]
         centers = [centers]
@@ -991,7 +1018,6 @@ def retrieve_planet(frames, centers, astr_hdrs, sep, pa, searchrad=7, guessfwhm=
         if thetas is not None:
             if np.ndim(thetas) != 1:
                 raise IndexError("thetas must be a list because you only passed in multiple frames")
-                thetas = [thetas]
     else:
         raise IndexError("frames is either 2-D or 3-D, not {0)-D".format(frames_ndim))
 

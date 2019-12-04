@@ -86,7 +86,7 @@ def smoothCostFunction(costFunction, halfWidth = 0):
     return newFunction
     
  
-def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.8, size_cost = 5, theta = [45, 135], ray = False, smooth = 2, decimals = 2):
+def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.8, size_cost = 5, theta = [45, 135], ray = False, smooth = 2, decimals = 2, output_cost=False):
     """
     This function searches the center in a grid, 
     calculate the cost function of Radon Transform (Pueyo et al., 2015), 
@@ -126,17 +126,18 @@ def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.
     size_window = size_window - size_cost
     (xs, ys) = samplingRegion(size_window, theta, m = m, M = M, ray = ray)
     #the center of the sampling region is (0,0), don't forget to shift the center!
-
+    
     for j, x0 in enumerate(x_centers):
         for i, y0 in enumerate(y_centers):
             value = 0
             
             for x1, y1 in zip(xs, ys):
-                x = x0 + x1    #Shifting the center, this now is the coordinate of the RAW IMAGE
+                #Shifting the center, this now is the coordinate of the RAW IMAGE
+                x = x0 + x1
                 y = y0 + y1
-            
+                
                 value += image_interp(x, y)
-        
+            
             costFunction[i, j] = value  #Create the cost function
 
     costFunction = smoothCostFunction(costFunction, halfWidth = smooth)
@@ -167,8 +168,12 @@ def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.
         y_cen = np.mean(y_centers_new[idx[0]])
         
         x_ctr_assign = x_cen
-        y_ctr_assign = y_cen    
-       
+        y_ctr_assign = y_cen
+    
     x_cen = round(x_cen, decimals)
     y_cen = round(y_cen, decimals)
-    return x_cen, y_cen
+
+    if output_cost:
+        return x_cen, y_cen, costFunction
+    else:
+        return x_cen, y_cen
