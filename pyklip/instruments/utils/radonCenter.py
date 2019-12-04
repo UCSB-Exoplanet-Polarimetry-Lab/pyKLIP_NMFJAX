@@ -86,7 +86,7 @@ def smoothCostFunction(costFunction, halfWidth = 0):
     return newFunction
     
  
-def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.8, size_cost = 5, theta = [45, 135], ray = False, smooth = 2, decimals = 2):
+def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.8, size_cost = 5, theta = [45, 135], ray = False, smooth = 2, decimals = 2, output_cost=False):
     """
     This function searches the center in a grid, 
     calculate the cost function of Radon Transform (Pueyo et al., 2015), 
@@ -172,4 +172,8 @@ def searchCenter(image, x_ctr_assign, y_ctr_assign, size_window, m = 0.2, M = 0.
     
     x_cen = round(x_cen, decimals)
     y_cen = round(y_cen, decimals)
-    return x_cen, y_cen
+
+    if output_cost:
+        return x_cen, y_cen, costFunction
+    else:
+        return x_cen, y_cen
