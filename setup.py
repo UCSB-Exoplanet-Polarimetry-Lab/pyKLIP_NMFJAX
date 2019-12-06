@@ -1,9 +1,14 @@
 from setuptools import setup, find_packages
 
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
 setup(
     name='pyklip',
     version='2.0.1',
     description='pyKLIP: PSF Subtraction for Exoplanets and Disks',
+    long_description=long_description,
+    long_description_content_type="text/markdown",
     url='https://bitbucket.org/pyKLIP/pyklip',
     author='pyKLIP Developers',
     author_email='jwang@astro.berkeley.edu',
