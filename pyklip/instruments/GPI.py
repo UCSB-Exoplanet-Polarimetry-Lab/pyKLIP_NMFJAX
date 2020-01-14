@@ -156,6 +156,10 @@ class GPIData(Data):
         super(GPIData, self).__init__()
         self._output = None
         self.bad_sat_spots = bad_sat_spots
+
+        # GPI cubes are in a right handed coordinate system. Need to flip to left handed
+        self.flipx = True
+        
         if filepaths is None:
             print("Creating a blank GPI data instance with all fields set to None. Did you want to do this?")
             self._input = None

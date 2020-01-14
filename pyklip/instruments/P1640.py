@@ -119,6 +119,8 @@ class P1640Data(Data):
         super(P1640Data, self).__init__()
         self._output = None
 
+        self.flipx = True ### TODO: Is this true?
+
         # P1640 stuff
         self.corefilenames = corefilepaths
         self.spot_directory = spot_directory

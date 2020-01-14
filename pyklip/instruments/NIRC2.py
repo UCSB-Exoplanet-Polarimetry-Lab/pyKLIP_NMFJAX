@@ -123,6 +123,9 @@ class NIRC2Data(Data):
         """
         super(NIRC2Data, self).__init__()
         self._output = None
+
+        self.flipx = True ### TODO: is this right?????
+        
         if filepaths is None:
             self._input = None
             self._centers = None
