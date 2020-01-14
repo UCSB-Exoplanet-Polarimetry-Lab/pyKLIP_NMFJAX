@@ -706,19 +706,18 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     return True
 
 
-def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,
+def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=False, hdrs=None,
                 disable_wcs_rotation = False,pool=None):
     """
     derotate a sequences of images by their respective angles
 
     Args:
         imgs: array of shape (N,y,x) containing N images
-        angles: array of length N with the angle to rotate each frame. Each angle should be CW in degrees.
-                (TODO: fix this angle convention)
+        angles: array of length N with the angle to rotate each frame. Each angle should be CCW in degrees.
         centers: array of shape N,2 with the [x,y] center of each frame
         new_centers: a 2-element array with the new center to register each frame. Default is middle of image
         numthreads: number of threads to be used
-        flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
+        flipx: flip the x axis after rotation if desired
         hdrs: array of N wcs astrometry headers
 
     Returns:

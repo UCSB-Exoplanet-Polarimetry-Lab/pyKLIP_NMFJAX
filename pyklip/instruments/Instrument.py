@@ -25,7 +25,7 @@ class Data(object):
         output_wcs: Array of N wcs astrometry headers for each output image (does not need to be implemneted)
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters
-        flipx: (optional) True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
+        flipx: (optional) False by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
 
     Methods:
         readdata(): reread in the dadta
@@ -42,7 +42,7 @@ class Data(object):
         # set the outer working angle (optional parameter)
         self.OWA = None
         # determine whether a reflection is needed for North-up East-left (optional)
-        self.flipx = True
+        self.flipx = False
         # self output centers and wcs to None until after running KLIP
         self.output_centers = None
         self.output_wcs = None
