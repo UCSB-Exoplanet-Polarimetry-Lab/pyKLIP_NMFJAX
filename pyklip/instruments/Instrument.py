@@ -5,6 +5,7 @@ import multiprocessing as mp
 import numpy as np
 import astropy.io.fits as fits
 import pyklip.klip as klip
+import pyklip.instruments.utils.wcsgen as wcsgen
 
 class Data(object):
     """
@@ -327,6 +328,7 @@ class GenericData(Data):
         wvs: Array of N wavelengths of the images (used for SDI) [in microns]. For polarization data, defaults to "None"
         IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
         filenames: Array of size N for the actual filepath of the file that corresponds to the data
+        flipx (boo): if True, the input images are right-handed (East clockwise of North) and need to be flipped for North-up-East-left
 
     Attributes:
         input: Array of shape (N,y,x) for N images of shape (y,x)
@@ -340,7 +342,7 @@ class GenericData(Data):
         output: Array of shape (b, len(files), len(uniq_wvs), y, x) where b is the number of different KL basis cutoffs
     """
     # Constructor
-    def __init__(self, input_data, centers, parangs=None, wvs=None, IWA=0, filenames=None):
+    def __init__(self, input_data, centers, parangs=None, wvs=None, IWA=0, filenames=None, flipx=False):
         super(GenericData, self).__init__()
         # read in the data
         if np.array(input_data).ndim == 1:
@@ -377,7 +379,9 @@ class GenericData(Data):
             self._filenums = np.arange(nfiles)
             self._filenames = np.array(["{0}".format(i) for i in self.filenums])
 
-        self._wcs = np.array([None for _ in range(nfiles)])
+        self.flipx = flipx
+
+        self._wcs = np.array([wcsgen.generate_wcs(parang, center, flipx=flipx) for parang, center in zip(self._PAs, self.centers)])
 
         self._output = None
 
@@ -524,7 +528,6 @@ class GenericData(Data):
             hdulist[0].header['PSFPARAM'] = (klipparams, "KLIP parameters")
             hdulist[0].header.add_history("pyKLIP reduction with parameters {0}".format(klipparams))
 
-
         # write z axis units if necessary
         if zaxis is not None:
             # Writing a KL mode Cube
@@ -551,6 +554,13 @@ class GenericData(Data):
             for i, wv in enumerate(uniquewvs):
                 hdulist[0].header['WV{0}'.format(i)] = (wv, "Wavelength of slice {0}".format(i))
 
+
+        # store WCS information
+        wcshdr = self.wcs[0].to_header()
+        for key in wcshdr.keys():
+            hdulist[0].header[key] = wcshdr[key]
+
+        # but update the image center
         center = self.output_centers[0]
         hdulist[0].header.update({'PSFCENTX': center[0], 'PSFCENTY': center[1]})
         hdulist[0].header.update({'CRPIX1': center[0], 'CRPIX2': center[1]})
