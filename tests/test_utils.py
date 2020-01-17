@@ -1,16 +1,22 @@
+import os
 import pytest
 import math
 import numpy as np
 import scipy
+import astropy.io.fits as fits
 import astropy.modeling as modeling
 import pyklip.fakes as fakes
 import pyklip.klip as klip
 import pyklip.instruments.utils.nair as nair
 import pyklip.instruments.utils.wcsgen as wcsgen
+import pyklip.instruments.Instrument as Instrument
+import pyklip.parallelized as parallelized
 
 """
 This suite of tests is designed to test utility functions in pyKLIP
 """
+
+testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 def _verify_planet_location(data, true_location, true_flux=None, true_fwhm=None, thresholds=None, searchrad=None):
     """
@@ -363,6 +369,15 @@ def test_wcs_generation():
     assert xmax > 50
     assert ymax > 50
 
+    dataset = Instrument.GenericData(np.array([test_img, test_img]), np.array([center, center]), parangs=np.array([parang, parang]), flipx=flipx)
+    parallelized.klip_dataset(dataset, outputdir=testdir, fileprefix="wcstest", algo='none', movement=0)
+
+    with fits.open("{out}/{pre}-KLmodes-all.fits".format(out=testdir, pre="wcstest")) as hdulist:
+        output_frame = hdulist[0].data
+        ymax, xmax = np.unravel_index(np.nanargmax(output_frame), test_img.shape)
+        assert xmax < 50
+        assert ymax > 50
+
     # test right handed coordinate system
     test_img = np.zeros([101, 101])
 
@@ -374,29 +389,19 @@ def test_wcs_generation():
 
     # inject planet at PA of 45 degrees. Before the 90 degree rotation and flipping, it should be in +x/-y space. 
     fakes.inject_planet(test_img.reshape([1, 101, 101]), np.array([center]), np.array([1]), [wcs], 20, 45, fwhm=3)
-    # debug
-    # import astropy.io.fits as fits
-    # hdu = fits.PrimaryHDU(test_img)
-    # wcsheader = wcs.to_header()
-    # print(wcsheader)
-    # hdu.header['CTYPE1'] = wcsheader['CTYPE1']
-    # hdu.header['CRVAL1'] = wcsheader['CRVAL1']
-    # hdu.header['CRPIX1'] = wcsheader['CRPIX1']
-    # hdu.header['CDELT1'] = wcsheader['CDELT1']
-    # hdu.header['CTYPE2'] = wcsheader['CTYPE2']
-    # hdu.header['CRVAL2'] = wcsheader['CRVAL2']
-    # hdu.header['CRPIX2'] = wcsheader['CRPIX2']
-    # hdu.header['CDELT2'] = wcsheader['CDELT2']
-    # hdu.header['PC1_1'] = wcsheader['PC1_1']
-    # hdu.header['PC1_2'] = wcsheader['PC1_2']
-    # hdu.header['PC2_1'] = wcsheader['PC2_1']
-    # hdu.header['PC2_2'] = wcsheader['PC2_2']
-    # hdulist = fits.HDUList([hdu])
-    # hdulist.writeto("wcstest.fits", output_verify="warn", overwrite=True)
 
     ymax, xmax = np.unravel_index(np.argmax(test_img), test_img.shape)
     assert xmax > 50
     assert ymax < 50
+
+    dataset = Instrument.GenericData(np.array([test_img, test_img]), np.array([center, center]), parangs=np.array([parang, parang]), flipx=flipx)
+    parallelized.klip_dataset(dataset, outputdir=testdir, fileprefix="wcstest_flipped", algo='none', movement=0)
+    
+    with fits.open("{out}/{pre}-KLmodes-all.fits".format(out=testdir, pre="wcstest_flipped")) as hdulist:
+        output_frame = hdulist[0].data
+        ymax, xmax = np.unravel_index(np.nanargmax(output_frame), test_img.shape)
+        assert xmax < 50
+        assert ymax > 50
 
 if __name__ == "__main__":
     test_wcs_generation()

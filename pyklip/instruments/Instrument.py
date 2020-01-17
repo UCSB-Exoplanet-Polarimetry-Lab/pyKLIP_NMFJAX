@@ -556,7 +556,7 @@ class GenericData(Data):
 
 
         # store WCS information
-        wcshdr = self.wcs[0].to_header()
+        wcshdr = self.output_wcs[0].to_header()
         for key in wcshdr.keys():
             hdulist[0].header[key] = wcshdr[key]
 

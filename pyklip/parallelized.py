@@ -696,6 +696,9 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             import pyklip.nmf_imaging as nmf_imaging
             klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs, componentNum=numbasis[0])
             klipped = klipped.reshape(klipped.shape[0], 1)
+        elif algo.lower() == "none":
+            klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis
+            klipped = klipped.T # retrun in shape (p, b) as expected
     except (ValueError, RuntimeError, TypeError) as err:
         print(err.args)
         return False
@@ -1147,6 +1150,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         import pyklip.nmf_imaging as nmf_imaging
         if np.size(numbasis) > 1:
             raise ValueError("NMF can only be run with one basis")
+    elif algo.lower() == 'none':
+        pass
     else:
         raise ValueError("Algo {0} is not supported".format(algo))
 
@@ -1411,7 +1416,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         restore_aligned The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str):     algorithm to use ('klip', 'nmf', 'empca')
+        algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median'
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
 
@@ -1427,6 +1432,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if algo.lower() == 'empca' and (minrot != 0 or movement != 0):
         raise ValueError('empca currently does not support movement, minrot selection criteria, '
                          'must be set to 0')
+    elif algo.lower() == 'none':
+        # remove some psfsubtraction params
+        movement = 0
+        minmove = 0
+        numbasis = [1]
 
     # defaullt numbasis if none
     if numbasis is None:
