@@ -55,7 +55,7 @@ class MatchedFilter(NoFM):
             spectrallib: if not None, a list of spectra in raw DN units. The spectra should:
                     - have the total flux of the star, ie correspond to a contrast of 1.
                     - represent the total flux of the PSF and not the simply peak value.
-                    - be corrected for atmospheric and instrumental transmission.
+                    - be multiplied by the atmospheric and instrumental transmission.
                     - have the same size as the number of images in the dataset.
             save_per_sector: If not None, should be a filename where the fmout array will be saved after each sector.
                     (Caution: huge file!! easily tens of Gb.)
