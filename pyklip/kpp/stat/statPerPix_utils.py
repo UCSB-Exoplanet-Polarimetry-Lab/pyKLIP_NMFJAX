@@ -80,8 +80,8 @@ def get_image_stat_map_perPixMasking(image,
     chunk_size = N_pix//N_threads
         
     if N_threads != -1 and chunk_size :
-        pool = NoDaemonPool(processes=N_threads)
-        #pool = mp.Pool(processes=N_threads)
+        # pool = NoDaemonPool(processes=N_threads)
+        pool = mp.Pool(processes=N_threads)
 
         N_chunks = N_pix//chunk_size
 
