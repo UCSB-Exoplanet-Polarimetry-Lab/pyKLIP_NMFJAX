@@ -1,11 +1,11 @@
-pyklip\.kpp\.detection package
-==============================
+pyklip.kpp.detection package
+============================
 
 Submodules
 ----------
 
-pyklip\.kpp\.detection\.detection module
-----------------------------------------
+pyklip.kpp.detection.detection module
+-------------------------------------
 
 .. automodule:: pyklip.kpp.detection.detection
     :members:

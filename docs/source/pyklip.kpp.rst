@@ -1,5 +1,5 @@
-pyklip\.kpp package
-===================
+pyklip.kpp package
+==================
 
 Subpackages
 -----------

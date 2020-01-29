@@ -386,7 +386,7 @@ def align_and_scale(img, new_center, old_center=None, scale_factor=1, dtype=floa
     return resampled_img
 
 
-def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
+def rotate(img, angle, center, new_center=None, flipx=False, astr_hdr=None):
     """
     Rotate an image by the given angle about the given center.
     Optional: can shift the image to a new image center after rotation. Also can reverse x axis for those left
@@ -397,7 +397,7 @@ def rotate(img, angle, center, new_center=None, flipx=True, astr_hdr=None):
         angle: angle CCW to rotate by (degrees)
         center: 2 element list [x,y] that defines the center to rotate the image to respect to
         new_center: 2 element list [x,y] that defines the new image center after rotation
-        flipx: default is True, which reverses x axis.
+        flipx: reverses x axis after rotation
         astr_hdr: wcs astrometry header for the image
     Returns:
         resampled_img: new 2D image

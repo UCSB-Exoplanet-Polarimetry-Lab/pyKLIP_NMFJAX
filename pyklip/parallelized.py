@@ -696,6 +696,9 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             import pyklip.nmf_imaging as nmf_imaging
             klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs, componentNum=numbasis[0])
             klipped = klipped.reshape(klipped.shape[0], 1)
+        elif algo.lower() == "none":
+            klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis
+            klipped = klipped.T # retrun in shape (p, b) as expected
     except (ValueError, RuntimeError, TypeError) as err:
         print(err.args)
         return False
@@ -706,19 +709,18 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     return True
 
 
-def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=True, hdrs=None,
+def rotate_imgs(imgs, angles, centers, new_center=None, numthreads=None, flipx=False, hdrs=None,
                 disable_wcs_rotation = False,pool=None):
     """
     derotate a sequences of images by their respective angles
 
     Args:
         imgs: array of shape (N,y,x) containing N images
-        angles: array of length N with the angle to rotate each frame. Each angle should be CW in degrees.
-                (TODO: fix this angle convention)
+        angles: array of length N with the angle to rotate each frame. Each angle should be CCW in degrees.
         centers: array of shape N,2 with the [x,y] center of each frame
         new_centers: a 2-element array with the new center to register each frame. Default is middle of image
         numthreads: number of threads to be used
-        flipx: flip the x axis to get a left handed coordinate system (oh astronomers...)
+        flipx: flip the x axis after rotation if desired
         hdrs: array of N wcs astrometry headers
 
     Returns:
@@ -1148,6 +1150,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         import pyklip.nmf_imaging as nmf_imaging
         if np.size(numbasis) > 1:
             raise ValueError("NMF can only be run with one basis")
+    elif algo.lower() == 'none':
+        pass
     else:
         raise ValueError("Algo {0} is not supported".format(algo))
 
@@ -1412,7 +1416,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         restore_aligned The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str):     algorithm to use ('klip', 'nmf', 'empca')
+        algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median'
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
 
@@ -1428,6 +1432,11 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if algo.lower() == 'empca' and (minrot != 0 or movement != 0):
         raise ValueError('empca currently does not support movement, minrot selection criteria, '
                          'must be set to 0')
+    elif algo.lower() == 'none':
+        # remove some psfsubtraction params
+        movement = 0
+        minmove = 0
+        numbasis = [1]
 
     # defaullt numbasis if none
     if numbasis is None:

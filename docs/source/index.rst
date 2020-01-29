@@ -32,7 +32,7 @@ Features
   `P1640 <http://www.amnh.org/our-research/physical-sciences/astrophysics/research/project-1640>`_,
   `GPI <http://planetimager.org/>`_, SPHERE, MagAO/VisAO, and Keck/NIRC2.
 * If confused about what a function is doing, read the docstring for it. We have tried our best to document everything
-* Version 1.1 - see :ref:`release-notes` for update notes
+* See :ref:`release-notes` for update notes
 
 Bugs/Feature Requests
 ------------------------
@@ -44,7 +44,7 @@ Attribution
 -----------------------
 The development of pyKLIP is led by Jason Wang with contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, 
 Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, Kate Follette, Maxwell Millar-Blanchaer, Alexandra Greenbaum, 
-Simon Ko, Tom Esposito, Elijah Spiro, Pauline Arriaga, Bin Ren, Alan Rainot, and Laurent Pueyo. 
+Simon Ko, Tom Esposito, Elijah Spiro, Pauline Arriaga, Bin Ren, Alan Rainot, Arthur Vigan, Graça Rocha and Jacob Golomb, and Laurent Pueyo. 
 If you use this code, please cite the Astrophysical Source Code Library record of it (`ASCL <http://ascl.net/1506.001>`_ or
 `ADS <http://adsabs.harvard.edu/abs/2015ascl.soft06001W>`_)
 
@@ -69,6 +69,7 @@ Contents
    instruments/index
    contrast_curves
    bka
+   planetevidence
    fm_spect
    fmmf
    kpop_gpi

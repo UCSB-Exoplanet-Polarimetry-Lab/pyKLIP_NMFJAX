@@ -1,15 +1,22 @@
+import os
 import pytest
 import math
 import numpy as np
 import scipy
+import astropy.io.fits as fits
 import astropy.modeling as modeling
 import pyklip.fakes as fakes
 import pyklip.klip as klip
 import pyklip.instruments.utils.nair as nair
+import pyklip.instruments.utils.wcsgen as wcsgen
+import pyklip.instruments.Instrument as Instrument
+import pyklip.parallelized as parallelized
 
 """
 This suite of tests is designed to test utility functions in pyKLIP
 """
+
+testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 def _verify_planet_location(data, true_location, true_flux=None, true_fwhm=None, thresholds=None, searchrad=None):
     """
@@ -342,5 +349,59 @@ def test_field_dependent_correction():
     assert test_img[0, 50, 50] == pytest.approx(0, 1e-8)
 
 
+def test_wcs_generation():
+    """
+    Tests the code to generate WCS coordinate headers
+    """
+    # generate a zero image
+    test_img = np.zeros([101, 101])
+
+    parang = 80 # 90 degree rotation
+    flipx = False # lefthanded
+    center = [50, 50]
+
+    wcs = wcsgen.generate_wcs(parang, center, flipx=flipx)
+
+    # inject planet at PA of 45 degrees. Before the 90 degree rotation, it should be in +x/+y space. 
+    fakes.inject_planet(test_img.reshape([1, 101, 101]), np.array([center]), np.array([1]), [wcs], 20, 45, fwhm=3)
+
+    ymax, xmax = np.unravel_index(np.argmax(test_img), test_img.shape)
+    assert xmax > 50
+    assert ymax > 50
+
+    dataset = Instrument.GenericData(np.array([test_img, test_img]), np.array([center, center]), parangs=np.array([parang, parang]), flipx=flipx)
+    parallelized.klip_dataset(dataset, outputdir=testdir, fileprefix="wcstest", algo='none', movement=0)
+
+    with fits.open("{out}/{pre}-KLmodes-all.fits".format(out=testdir, pre="wcstest")) as hdulist:
+        output_frame = hdulist[0].data
+        ymax, xmax = np.unravel_index(np.nanargmax(output_frame), test_img.shape)
+        assert xmax < 50
+        assert ymax > 50
+
+    # test right handed coordinate system
+    test_img = np.zeros([101, 101])
+
+    parang = 80 # 90 degree rotation
+    flipx = True # lefthanded
+    center = [50, 50]
+
+    wcs = wcsgen.generate_wcs(parang, center, flipx=flipx)
+
+    # inject planet at PA of 45 degrees. Before the 90 degree rotation and flipping, it should be in +x/-y space. 
+    fakes.inject_planet(test_img.reshape([1, 101, 101]), np.array([center]), np.array([1]), [wcs], 20, 45, fwhm=3)
+
+    ymax, xmax = np.unravel_index(np.argmax(test_img), test_img.shape)
+    assert xmax > 50
+    assert ymax < 50
+
+    dataset = Instrument.GenericData(np.array([test_img, test_img]), np.array([center, center]), parangs=np.array([parang, parang]), flipx=flipx)
+    parallelized.klip_dataset(dataset, outputdir=testdir, fileprefix="wcstest_flipped", algo='none', movement=0)
+    
+    with fits.open("{out}/{pre}-KLmodes-all.fits".format(out=testdir, pre="wcstest_flipped")) as hdulist:
+        output_frame = hdulist[0].data
+        ymax, xmax = np.unravel_index(np.nanargmax(output_frame), test_img.shape)
+        assert xmax < 50
+        assert ymax > 50
+
 if __name__ == "__main__":
-    test_field_dependent_correction()
+    test_wcs_generation()
