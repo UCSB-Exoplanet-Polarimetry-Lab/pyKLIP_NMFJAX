@@ -64,10 +64,6 @@ Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of 
                               calibrate_flux=True, mode="ADI+SDI")
 
 
-.. note::
-    On windows, don't forget to use the idiom ``if __name__ == '__main__':`` at the begining of your script or you might
-    encounter an error.
-
 This will save the processed KLIP images in the field ``dataset.output`` and as FITS files saved using the directory and fileprefix
 specified. The FITS files contain two different kinds of outputs. The first is a "KL-mode cube", a single 3D datacube where the z-axis is all the
 different KL mode cutoffs used to model the stellar PSF. Here is an example KL-mode cube using GPI public data on beta
