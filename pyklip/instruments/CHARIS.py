@@ -748,7 +748,6 @@ def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
     p[:, 2] += xsol - x + np.median((x - xsol)[mask])
     p[:, 5] += ysol - y + np.median((y - ysol)[mask])
 
-    # TODO: dx, dy here are not referenced anywhere, so maybe change specphotcal to return only phot
     if photocal:
         phot = global_centroid.specphotcal(infiles, p)
     else:

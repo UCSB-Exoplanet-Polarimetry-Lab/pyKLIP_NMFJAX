@@ -93,7 +93,6 @@ def _spotloc(phi, sep, pitch=15, D=8.2, astrogrid='XYdiag'):
     '''
 
     phi = np.arange(4) * np.pi / 2 + phi
-    # TODO: check if [0, 2] and [1, 3] do correspond to 'X' and 'Y' respectively
     if astrogrid == 'Xdiag':
         phi = np.take(phi, [1, 3])
     elif astrogrid == 'Ydiag':
@@ -496,7 +495,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
         cubesmooth[i] *= mask
         cubesmooth[i] = ndimage.spline_filter(cubesmooth[i])
     # print(np.mean(cube), np.mean(cubesmooth), np.std(cube), np.std(cubesmooth))
-    # TODO: generalize these next lines for alternating spots
+
     if spotsep is not None:
         if np.abs(spotsep - 15.9) < 1:
             phi = -18 * np.pi / 180
