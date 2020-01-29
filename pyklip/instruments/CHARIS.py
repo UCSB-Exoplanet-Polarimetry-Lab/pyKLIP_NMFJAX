@@ -80,7 +80,7 @@ class CHARISData(Data):
         super(CHARISData, self).__init__()
         self._output = None
         self.flipx = False
-        self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_loc=guess_spot_locs,
+        self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_locs=guess_spot_locs,
                       guess_center_loc=guess_center_loc, skipslices=skipslices, PSF_cube=PSF_cube,
                       update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, IWA=IWA, OWA=OWA)
 
@@ -161,7 +161,7 @@ class CHARISData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, guess_center_loc=None, skipslices=None,
+    def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
                  PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
         Method to open and read a list of CHARIS data
@@ -169,7 +169,7 @@ class CHARISData(Data):
         Args:
             filespaths: a list of filepaths
             guess_spot_index: the wavelength index for which the initial guess is given
-            guess_spot_loc: initial guess of the satellite spot pixel indices.
+            guess_spot_locs: initial guess of the satellite spot pixel indices.
                             If None, will default to rough guesses for the four satellite spots of a typical
                             CHARIS data cube at the first wavelength slice, in [[x, y],...] format
             guess_center_loc: initial guess of the primary star center in [x, y] format
@@ -191,9 +191,11 @@ class CHARISData(Data):
         if len(filepaths) == 0:
             raise ValueError("An empty filelist was passed in")
 
-        if guess_spot_loc is None:
+        if guess_spot_locs is None:
             # default to typical locations for 4 satellite spots in a CHARIS data cube, each location in [x, y] format
-            guess_spot_loc = [[129, 90], [109, 129], [71, 109], [91, 70]]
+            guess_spot_locs = [[129, 90], [109, 129], [71, 109], [91, 70]]
+            # TODO: modify _measure_sat_spots() to handle alternating diffraction spots,
+            #       and then modify the conditional default guess_spot_locs values correspondingly
 
         #make some lists for quick appending
         data = []
@@ -236,7 +238,10 @@ class CHARISData(Data):
             cube[np.where(input_minfilter == 0)] = np.nan
 
             # recalculate parang if necessary
-            parang = prihdr['PARANG'] + 113.5
+            try:
+                parang = prihdr['PARANG'] + 113.5
+            except:
+                parang = 0.
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
@@ -255,29 +260,35 @@ class CHARISData(Data):
                 # read in sat spots from file
                 spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
             elif sat_fit_method.lower() == 'global' and update_hdrs == True:
-                hdulist = fits.open(filepath)
-                im = hdulist[1].data.copy()
+                astrogrid_status = prihdr['X_GRDST']
 
                 # TODO: decide whether to smooth, and whether to photocalibrate images here
-                # ivar = hdulist[2].data
-                # for j in range(im.shape[0]):
-                    # im[j] = _smooth(im[j], ivar[j], sig=0.5, spline_filter=True)
-                    # im[j] *= thiswvs[j] ** 2 / phot[i][j]
+                # with fits.open(filepath) as hdulist:
+                #     im = hdulist[1].data.copy()
+                #     ivar = hdulist[2].data.copy()
+                #     for j in range(im.shape[0]):
+                #         im[j] = _smooth(im[j], ivar[j], sig=0.5, spline_filter=True)
+                #         im[j] *= thiswvs[j] ** 2 / phot[i][j]
 
                 # TODO: spot_flux use peak flux or aperture flux?
-                spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], im, thiswvs)
+                spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], cube, thiswvs,
+                                                                    astrogrid=astrogrid_status)
+
                 for wv_ind in cube_wv_indices:
-                    for spot_num in range(len(guess_spot_loc)):
+                    for spot_num in range(len(spot_loc[wv_ind])):
                         fitx = spot_loc[wv_ind, spot_num, 0]
                         fity = spot_loc[wv_ind, spot_num, 1]
                         fitflux = spot_flux[wv_ind, spot_num]
+                        if np.isnan(fitflux):
+                            fitflux = 'nan'
                         _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
                 spot_flux = np.nanmean(spot_flux, axis=1)
                 modified_hdrs = True
             else:
                 print("Finding satellite spots for cube {0}".format(index))
                 try:
-                    spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc, hdr=exthdr, highpass=False)
+                    spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_locs,
+                                                                        hdr=exthdr, highpass=False)
                 except ValueError:
                     print("Unable to locate sat spots for cube{0}. Skipping...".format(index))
                     continue
@@ -319,7 +330,7 @@ class CHARISData(Data):
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-        spot_locs = np.array(spot_locs).reshape([dims[0] * dims[1], 4, 2])
+        spot_locs = np.array(spot_locs).reshape([dims[0] * dims[1], spot_locs[0].shape[1], 2])
         inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
 
         # if there is more than 1 integration time, normalize all data to the first integration time
@@ -622,7 +633,7 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
 
     return np.array(spot_locs), np.array(spot_fluxes)
 
-
+#TODO: modify _measure_sat_spots() to handle alternating diffraction spots
 def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=True, hdr=None):
     """
     Find sat spots in a datacube. TODO: return sat spot psf cube also
@@ -727,9 +738,7 @@ def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
     if len(infiles) == 0:
         raise IOError("Cannot open file")
 
-    astrogrid_status = [None for infile in infiles]
-    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, astrogrid_status=astrogrid_status,
-                                                                  smooth_coef=True, guess_center_loc=guess_center_loc)
+    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, smooth_coef=True, guess_center_loc=guess_center_loc)
     xsol, ysol = global_centroid.fitallrelcen(infiles, r1=15, r2=45)
 
     p = centroid_params.copy()

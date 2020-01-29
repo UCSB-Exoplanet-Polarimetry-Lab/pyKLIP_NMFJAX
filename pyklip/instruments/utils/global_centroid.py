@@ -74,7 +74,7 @@ def _smooth(im, ivar, sig=1, spline_filter=False):
     return imsmooth
 
 
-def _spotloc(phi, sep, pitch=15, D=8.2):
+def _spotloc(phi, sep, pitch=15, D=8.2, astrogrid='XYdiag'):
     '''
     Private function _spotloc computes the location of four
     satellite spots in units of lambda
@@ -84,6 +84,8 @@ def _spotloc(phi, sep, pitch=15, D=8.2):
         sep: float, the separation of the spots in units of lambda/D
         pitch: float, lenslet pitch in units of milliarcseconds. Default 15
         D: float, telescope effective aperture in meters. Default 8.2
+        astrogrid: astrogrid status read from the header, determines the pattern of the diffraction spots
+
 
     Returns:
         r : ndarray, array of (identical) separations in units of lenslets/microns
@@ -91,6 +93,11 @@ def _spotloc(phi, sep, pitch=15, D=8.2):
     '''
 
     phi = np.arange(4) * np.pi / 2 + phi
+    # TODO: check if [0, 2] and [1, 3] do correspond to 'X' and 'Y' respectively
+    if astrogrid == 'Xdiag':
+        phi = np.take(phi, [1, 3])
+    elif astrogrid == 'Ydiag':
+        phi = np.take(phi, [0, 2])
     r = sep * 1e-6 / D * 3600 * 180 / np.pi / (pitch * 1e-3)
     r = r * np.ones(phi.shape)
 
@@ -124,7 +131,7 @@ def _par_to_dx_dy(p, lam):
     return dx, dy
 
 
-def _spotintens(p, cube, lam):
+def _spotintens(p, cube, lam, astrogrid='XYdiag'):
     '''
     Private function _spotintens computes the negative of the sum of
     the intensity of the four satellite spots induced by the SCExAO DM
@@ -138,6 +145,7 @@ def _spotintens(p, cube, lam):
            p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
         cube: 3D ndarray, input data cube, assumed to be smoothed and spline filtered
         lam: 1D ndarray, wavelength array in microns corresponding to the first axis of cube
+        astrogrid: astrogrid status read from the header, determines the pattern of the diffraction spots
 
     Returns:
         sumval : float, the negative of the sum of the spot intensities at the four locations
@@ -152,7 +160,7 @@ def _spotintens(p, cube, lam):
     if len(cube) != len(lam):
         raise ValueError("Dimensions of lam and cube must match")
 
-    r, phi = _spotloc(p[0], p[1])
+    r, phi = _spotloc(p[0], p[1], astrogrid=astrogrid)
     rcosphi = r * np.cos(phi)
     rsinphi = r * np.sin(phi)
     sumval = 0
@@ -294,7 +302,7 @@ def _cc_resid(p, pp, cube, lam, x, y, retarr=False):
         return chisq
 
 
-def get_sats_satf(p, cube, lam):
+def get_sats_satf(p, cube, lam, astrogrid='XYdiag'):
     '''
     retrieves the pixel locations of all four satellite spots at each wavelength,
     and the negative sum of the four spot intensities at each wavelength
@@ -303,6 +311,7 @@ def get_sats_satf(p, cube, lam):
         p: list of floats, the coefficients of the polynomial fit to the centroid
         cube: ndarray, data cube for which the centroid is fitted
         lam: ndarray, wavelengths for the datacube
+        astrogrid: astrogrid status read from the header, determines the pattern of the diffraction spots
 
     Returns:
         sats: pixel locations (in [x,y] format) of all four satellite spots at each wavelength, shape (wvs, 4, 2)
@@ -316,14 +325,19 @@ def get_sats_satf(p, cube, lam):
     if len(cube) != len(lam):
         raise ValueError("Dimensions of lam and cube must match")
 
-    r, phi = _spotloc(p[0], p[1])
+    r, phi = _spotloc(p[0], p[1], astrogrid=astrogrid)
     rcosphi = r * np.cos(phi)
     rsinphi = r * np.sin(phi)
 
     dx, dy = _par_to_dx_dy(p[2:], lam)
 
-    sats = np.zeros((len(lam), 4, 2))
-    satf = np.zeros((len(lam), 4))
+    if astrogrid == 'Xdiag' or astrogrid == 'Ydiag':
+        spot_num = 2
+    else:
+        spot_num = 4
+
+    sats = np.zeros((len(lam), spot_num, 2))
+    satf = np.zeros((len(lam), spot_num))
 
     for i in range(cube.shape[0]):
         x = rcosphi * lam[i] + cube.shape[2] // 2 + dx[i]
@@ -435,7 +449,7 @@ def fitrelcen(image1, image2, x, y, method='Powell'):
     return [xc, yc]
 
 
-def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4):
+def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4, astrogrid='XYdiag'):
     '''
     Function fitcen.  Fit for the center of a CHARIS data cube using
     the satellite spots by maximizing the agreement between scaled
@@ -459,6 +473,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
             diffraction pattern to use in centroiding.  Default 35
         spot_dx: float, radius around spot location to cut out in order to match the
                  spot location as a function of wavelength.  Default 4
+        astrogrid: astrogrid status read from the header, determines the pattern of the diffraction spots
 
     Returns:
         p : list of floats
@@ -481,7 +496,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
         cubesmooth[i] *= mask
         cubesmooth[i] = ndimage.spline_filter(cubesmooth[i])
     # print(np.mean(cube), np.mean(cubesmooth), np.std(cube), np.std(cubesmooth))
-
+    # TODO: generalize these next lines for alternating spots
     if spotsep is not None:
         if np.abs(spotsep - 15.9) < 1:
             phi = -18 * np.pi / 180
@@ -518,7 +533,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     # each wavelength
     ####################################################################
 
-    p1 = optimize.minimize(_spotintens, p0, (cubesmooth[i1:i2], lam[i1:i2]), method='Powell').x
+    p1 = optimize.minimize(_spotintens, p0, (cubesmooth[i1:i2], lam[i1:i2], astrogrid), method='Powell').x
     phi, spotsep = [p1[0], p1[1]]
 
     ####################################################################
@@ -526,7 +541,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     # by cross-correlation.
     ####################################################################
 
-    _r, _phi = _spotloc(phi, spotsep)
+    _r, _phi = _spotloc(phi, spotsep, astrogrid=astrogrid)
     rcosphi = _r * np.cos(_phi) * lam[iref]
     rsinphi = _r * np.sin(_phi) * lam[iref]
 
@@ -551,7 +566,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     # (derived from the spots) to shift the coefficients of the fit
     ####################################################################
 
-    p3 = optimize.minimize(_spotintens, [phi, spotsep, 0, 0], (np.asarray([avgspots]), np.asarray([lam0])),
+    p3 = optimize.minimize(_spotintens, [phi, spotsep, 0, 0], (np.asarray([avgspots]), np.asarray([lam0]), astrogrid),
                            method='Powell').x
 
     ####################################################################
@@ -620,7 +635,12 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
         for ifile in infiles:
             head = fits.open(ifile)[0].header
             try:
-                astrogrid_status += [head['X_GRDST']]
+                if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag':
+                    print('cannot parse astrogrid information from header, default to XYdiag at 15.5 lambda/D spot separation...')
+                    astrogrid_status += [None]
+                else:
+                    astrogrid_status += [head['X_GRDST']]
+
                 astrogrid_sep += [head['X_GRDSEP']]
             except:
                 astrogrid_status += [None]
@@ -654,15 +674,13 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
         lam *= 1e-3
         lamlist += [lam]
 
-        if astrogrid_status[i] == 'XYdiag':
-            spotsep = astrogrid_sep[i]
-            grid_on[i] = 1
-        elif astrogrid_status[i] is None:
+        if astrogrid_status[i] is None:
             spotsep = 15.5
         else:
-            spotsep = None
+            spotsep = astrogrid_sep[i]
+            grid_on[i] = 1
 
-        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, guess_center_loc, 1, -1)))
+        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, guess_center_loc, 1, -1, 15, 35, 4, astrogrid_status[i])))
 
     for i in range(ncpus):
         tasks.put(None)
@@ -673,6 +691,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
         index, result = results.get()
         if centroid_params is None:
             centroid_params = np.zeros((len(fids), len(result)))
+
         centroid_params[index] = result
 
     x = None
@@ -856,7 +875,7 @@ def polyfit(x, y, order=2, clip=2.5, niter=5, mask=None, return_y=True):
 
         _arr = arr.copy()
         if mask is not None:
-            ok *= mask
+            ok = ok * mask
         for j in range(order + 1):
             _arr[:, j] *= ok
 
@@ -910,6 +929,7 @@ def specphotcal(infiles, cencoef, aperture=1.):
         hdulist = fits.open(infiles[i], mode='update')
         im = hdulist[1].data
         head = hdulist[0].header
+        astrogrid_status = head['X_GRDST']
         lam = head['lam_min'] * np.exp(np.arange(im.shape[0]) * head['dloglam'])
         lam *= 1e-3
 
@@ -921,12 +941,12 @@ def specphotcal(infiles, cencoef, aperture=1.):
         x = np.arange(nx)
         y = np.arange(ny)
         x, y = np.meshgrid(x, y)
-        _r, _phi = _spotloc(phi[i], sep[i])
+        _r, _phi = _spotloc(phi[i], sep[i], astrogrid=astrogrid_status)
 
         # Manual offsets to account for the fact that two of the spots
         # lie atop spiders.  Check to see if the first spot is atop a
         # spider or not.
-
+        # TODO: change these lines to accomadate different astrogrid setup
         if np.abs(_phi[0] % np.pi - 2.8) < np.pi / 4:
             _dphi = -np.pi / 2 + 12 * np.pi / 180 * np.asarray([1, -1, 1, -1])
         else:
