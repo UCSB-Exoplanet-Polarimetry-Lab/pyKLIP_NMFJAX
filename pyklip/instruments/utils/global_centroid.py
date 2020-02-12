@@ -635,7 +635,8 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
             head = fits.open(ifile)[0].header
             try:
                 if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag':
-                    print('cannot parse astrogrid information from header, default to XYdiag at 15.5 lambda/D spot separation...')
+                    print('{}: cannot parse astrogrid information from header, default to XYdiag at 15.5 lambda/D spot '
+                          'separation...'.format(os.path.basename(ifile)))
                     astrogrid_status += [None]
                 else:
                     astrogrid_status += [head['X_GRDST']]

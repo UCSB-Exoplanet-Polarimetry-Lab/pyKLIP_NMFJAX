@@ -59,7 +59,12 @@ class CHARISData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
-    lenslet_scale = 0.0162 # arcseconds per pixel (pixel scale)
+    # TODO: add lenslet scales to CHARISData property, and also error bars too?
+    lenslet_scale_quote = 0.0162 # arcseconds per pixel (pixel scale), original quoted value for instrument specs
+    lenslet_scale_x = 0.01616 # calibrated lenslet scale, corrected for plate scale distortions
+    lenslet_scale_y = 0.01603 # calibrated lenslet scale, corrected for plate scale distortions
+    lenslet_scale_x_err = 0.00005
+    lenslet_scale_y_err = 0.00007
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
@@ -613,12 +618,16 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
     """
     spot_locs = []
     spot_fluxes = []
+    if hdr['X_GRDST'] == 'Xdiag' or hdr['X_GRDST'] == 'Ydiag':
+        number_of_spots = 2
+    else:
+        number_of_spots = 4
 
     for i in wv_indices:
         thiswv_spot_locs = []
         thiswv_spot_fluxes = []
 
-        for spot_num in range(4):
+        for spot_num in range(number_of_spots):
             loc_str = hdr['SATS{0}_{1}'.format(i, spot_num)]
             loc = loc_str.split()
             loc = [float(loc[0]), float(loc[1])]
