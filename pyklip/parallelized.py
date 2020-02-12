@@ -663,15 +663,21 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
         if include_rdi:
             rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
-
+    
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
+
+        #subctract the mean and remove the Nans from the RDI PSFs (this was already done in
+        # _klip_section_multifile for the other PSFs)
+        rdi_psfs_selected = rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:, None]
+        rdi_psfs_selected[np.where(np.isnan(rdi_psfs_selected))] = 0
+
         # compute covariances. I could just grab these from ~20 lines above, but too lazy
         rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
         # compute cross term
         # cross term has shape N_dataset_ref x N_rdi_selected
         covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:,None]),
-                                 (rdi_psfs_selected - np.mean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
+                                 (rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
         # piece together covariance matrix. It should looke like
         # [ cov_ref, cov_ref_x_rdi ]
         # [ cov_rdi_x_ref, cov_rdi ]
