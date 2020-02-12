@@ -58,10 +58,10 @@ class DiskFM(NoFM):
                             - In "Save Basis mode", or "Simple FM mode" we define it
                             and then check that it is the same one used for the images
                             in fm.klip_dataset
+            mode: careful, defined here and in fm.klip_dataset
             annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
             subsections: deprecated parameter, ignored here and defined
                          in fm.klip_dataset
-            mode: deprecated parameter, ignored here and defined in fm.klip_dataset
 
         Returns:
             A DiskFM Object
@@ -77,9 +77,9 @@ class DiskFM(NoFM):
                  save_basis=False,
                  aligned_center=None,
                  numthreads=None,
+                 mode='RDI',
                  annuli=None,
-                 subsections=None,
-                 mode=None):
+                 subsections=None):
         """
 
             Initilaizes the DiskFM class
@@ -115,6 +115,8 @@ class DiskFM(NoFM):
 
         self.save_basis = save_basis
         self.load_from_basis = load_from_basis
+
+        self.mode = mode
 
         if self.load_from_basis:
             # Its useless to save and load at the same time.
@@ -190,12 +192,13 @@ class DiskFM(NoFM):
                         '''The Wavelengths in the dataset loaded are not
                                 identical to the Wavelengths in the dataset used to
                                 measure the KL basis.''')
+            
 
         else:  # We want to save the basis or just a single disk FM
 
             self.PAs = dataset.PAs
             self.wvs = dataset.wvs
-
+            
             # define the center
             self.aligned_center = aligned_center
 
@@ -206,6 +209,7 @@ class DiskFM(NoFM):
 
         # Prepare the first disk for FM
         self.update_disk(model_disk)
+
 
     def update_disk(self, model_disk):
         """
@@ -379,20 +383,28 @@ class DiskFM(NoFM):
 
         # using original Kl modes and reference models, compute the perturbed KL modes
         # (spectra is already in models)
-        delta_KL = fm.perturb_specIncluded(evals,
-                                           evecs,
-                                           klmodes,
-                                           refs,
-                                           model_ref,
-                                           return_perturb_covar=False)
+        
+        if self.mode == 'RDI':
+            postklip_psf,  _ = self.calculate_fm(klmodes,
+                                                numbasis,
+                                                sci,
+                                                model_sci)
+        else:
+            delta_KL = fm.perturb_specIncluded(evals,
+                                            evecs,
+                                            klmodes,
+                                            refs,
+                                            model_ref,
+                                            return_perturb_covar=False)
 
-        # calculate postklip_psf using delta_KL
-        postklip_psf, _, _ = fm.calculate_fm(delta_KL,
-                                             klmodes,
-                                             numbasis,
-                                             sci,
-                                             model_sci,
-                                             inputflux=None)
+            # calculate postklip_psf using delta_KL
+            postklip_psf, _, _ = fm.calculate_fm(delta_KL,
+                                                klmodes,
+                                                numbasis,
+                                                sci,
+                                                model_sci,
+                                                inputflux=None)
+
 
         # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
@@ -433,6 +445,7 @@ class DiskFM(NoFM):
             # produce the kl basis
             klparam_dict['PAs'] = np.float64(self.PAs)
             klparam_dict['wvs'] = np.float64(self.wvs)
+            
 
             # To have a single identifier for each set of section/image for the
             # dictionnaries key, we use section first pixel and image number
@@ -464,7 +477,7 @@ class DiskFM(NoFM):
         Returns:
             Same but cleaned up if necessary
         """
-
+        
         # save the KL basis.
         if self.save_basis:
             self.save_kl_basis()
@@ -510,6 +523,17 @@ class DiskFM(NoFM):
             None
 
         """
+        klipparamslist = dataset.klipparams.split(',')
+        mode = [s for s in klipparamslist if "mode" in s][0].split('=')[1]
+        
+        print(self.mode)
+        print(mode)
+        # check that the mode use for  klip_dataset and to define diskFM is the same
+        if self.mode != mode:
+            raise ValueError("Reduction mode for DiskFM ({0}) is different from the one defined in klip_dataset ({1})".format(
+                self.mode, mode))
+
+
 
         weighted = len(np.shape(pixel_weights)) > 1
         numwvs = dataset.numwvs
@@ -767,10 +791,9 @@ class DiskFM(NoFM):
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
 
         # align and scale the images for each image. Use map to do this asynchronously
-
         # I need to run this code at least once in non-parallel mode to initialize the
-        # global variable outputs_shape in fm.py, because if I don't I cannot use
-        # fm._save_rotated_section. This is a short stuff and we do it only once.
+        # global variable outputs_shape in fm.py. This is a short stuff and we do it only once.
+
         fm._tpool_init(
             original_imgs,
             original_imgs_shape,
@@ -789,6 +812,9 @@ class DiskFM(NoFM):
             None,
             None,
         )
+
+        fmout_data = None
+        fmout_shape = None
 
         tpool = mp.Pool(
             processes=numthreads,
@@ -813,6 +839,7 @@ class DiskFM(NoFM):
             ),
             maxtasksperchild=50,
         )
+
 
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
@@ -965,6 +992,135 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis=1)
 
         return fmout_return
+    
+    def calculate_fm_oversub(self,original_KL, numbasis, sci, model_sci):
+        r"""
+        Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
+        and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
+        the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
+
+        Note: if inputflux is None and delta_KL_nospec has three dimensions (ie delta_KL_nospec was calculated using
+        pertrurb_nospec() or perturb_nospec_modelsBased()) then only klipped_oversub and klipped_selfsub are returned.
+        Besides they will have an extra first spectral dimension.
+
+        Args:
+            delta_KL_nospec: perturbed KL modes but without the spectral info. delta_KL = spectrum x delta_Kl_nospec.
+                            Shape is (numKL, wv, pix). If inputflux is None, delta_KL_nospec = delta_KL
+            orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
+            numbasis: array of KL mode cutoffs
+                    If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
+            sci: array of size p representing the science data
+            model_sci: array of size p corresponding to the PSF of the science frame
+            input_spectrum: array of size wv with the assumed spectrum of the model
+
+        If delta_KL_nospec does NOT include a spectral dimension or if inputflux is not None:
+        Returns:
+            fm_psf: array of shape (b,p) showing the forward modelled PSF
+                    Skipped if inputflux = None, and delta_KL_nospec has 3 dimensions.
+            klipped_oversub: array of shape (b, p) showing the effect of oversubtraction as a function of KL modes
+            klipped_selfsub: array of shape (b, p) showing the effect of selfsubtraction as a function of KL modes
+            Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
+                (shape of b,p)
+
+        If inputflux = None and if delta_KL_nospec include a spectral dimension:
+        Returns:
+            klipped_oversub: Sum(<S|KL>KL) with klipped_oversub.shape = (size(numbasis),Npix)
+            klipped_selfsub: Sum(<N|DKL>KL) + Sum(<N|KL>DKL) with klipped_selfsub.shape = (size(numbasis),N_lambda or N_ref,N_pix)
+        """
+        if np.size(numbasis) == 1:
+            return self.calculate_fm_singleNumbasis_oversub(original_KL, numbasis, sci, model_sci)
+
+        max_basis = original_KL.shape[0]
+        if numbasis[0] is None:
+            numbasis_index = [max_basis-1]
+        else:
+            numbasis_index = np.clip(numbasis - 1, 0, max_basis-1)
+
+        # science PSF models, ready for FM
+        # /!\ JB: If subtracting the mean. It should be done here. not in klip_math since we don't use model_sci there.
+        model_sci_mean_sub = model_sci # should be subtracting off the mean?
+        model_nanpix = np.where(np.isnan(model_sci_mean_sub))
+        model_sci_mean_sub[model_nanpix] = 0
+        model_sci_mean_sub_rows = np.tile(model_sci_mean_sub, (max_basis,1))
+        # model_rows_selected = np.tile(sci_mean_sub, (np.size(numbasis),1)) # don't need this because of python behavior where I don't need to duplicate rows
+
+        # Forward model the PSF, only for oversubtracton (planet attenauted by speckle KL modes),
+        #
+        # Klipped = N-Sum(<N|KL>KL)
+        # With  N = noise/speckles (science image)
+        #       KL = KL modes
+        #
+        # sci_mean_sub_rows.shape = (max_basis,N_pix)  (tiled)
+        # model_sci_mean_sub_rows.shape = (max_basis,N_pix) (tiled)
+        # original_KL.shape = (max_basis,N_pix)
+        oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, original_KL.T)
+        
+        # lower_tri is a matrix with all the element below and one the diagonal equal to unity. 
+        # The upper part of the matrix is full of zeros.
+        # lower_tri,shape = (max_basis,max_basis)
+        # oversubtraction_inner_products = (N_ref=max_basis,max_basis)
+        lower_tri = np.tril(np.ones([max_basis,max_basis]))
+        oversubtraction_inner_products = oversubtraction_inner_products * lower_tri
+        klipped_oversub = np.dot(np.take(oversubtraction_inner_products, numbasis_index, axis=0), original_KL)
+        
+        return model_sci - klipped_oversub , klipped_oversub
+  
+
+    def calculate_fm_singleNumbasis_oversub(self, original_KL, numbasis, sci, model_sci):
+        r"""
+        Same function as calculate_fm() but faster when numbasis has only one element. It doesn't do the mutliplication with
+        the triangular matrix.
+
+        Calculate what the PSF looks up post-KLIP using knowledge of the input PSF, assumed spectrum of the science target,
+        and the partially calculated KL modes (\Delta Z_k^\lambda in Laurent's paper). If inputflux is None,
+        the spectral dependence has already been folded into delta_KL_nospec (treat it as delta_KL).
+
+
+        Args:
+            orignal_KL: unpertrubed KL modes (array of size [numbasis, numpix])
+            numbasis: array of (ONE ELEMENT ONLY) KL mode cutoffs
+                    If numbasis is [None] the number of KL modes to be used is automatically picked based on the eigenvalues.
+            sci: array of size p representing the science data
+            model_sci: array of size p corresponding to the PSF of the science frame
+            input_spectrum: array of size wv with the assumed spectrum of the model
+
+        Returns:
+            fm_psf: array of shape (b,p) showing the forward modelled PSF
+            klipped_oversub: array of shape (b, p) showing the effect of oversubtraction as a function of KL modes
+            Note: psf_FM = model_sci - klipped_oversub - klipped_selfsub to get the FM psf as a function of K Lmodes
+                (shape of b,p)
+
+        """
+        max_basis = original_KL.shape[0]
+
+        N_pix = np.size(sci)
+
+        # science PSF models, ready for FM
+        # /!\ JB: If subtracting the mean. It should be done here. not in klip_math since we don't use model_sci there.
+        model_sci_mean_sub = model_sci # should be subtracting off the mean?
+        model_nanpix = np.where(np.isnan(model_sci_mean_sub))
+        model_sci_mean_sub[model_nanpix] = 0
+        model_sci_mean_sub_rows = np.reshape(model_sci_mean_sub,(1,N_pix))
+
+        # Forward model the PSF only for oversubtraction
+        # 1 for oversubtracton only (planet attenauted by speckle KL modes),
+        #
+        # Klipped = N-Sum(<N|KL>KL) 
+        # With  N = noise/speckles (science image)
+        #       KL = KL modes
+        #
+        # sci_mean_sub_rows.shape = (1,N_pix)
+        # model_sci_mean_sub_rows.shape = (1,N_pix)
+        # original_KL.shape = (max_basis,N_pix)
+
+        oversubtraction_inner_products = np.dot(model_sci_mean_sub_rows, original_KL.T)
+
+        oversubtraction_inner_products[max_basis::] = 0
+        klipped_oversub = np.dot(oversubtraction_inner_products, original_KL)
+
+        return model_sci[None,:] - klipped_oversub, klipped_oversub
+
+
 
 
 ##############################################################################
@@ -1049,3 +1205,5 @@ def _recursively_load_dict_contents_from_group(h5file, path):
             ans[key] = _recursively_load_dict_contents_from_group(
                 h5file, path + key + '/')
     return ans
+
+
