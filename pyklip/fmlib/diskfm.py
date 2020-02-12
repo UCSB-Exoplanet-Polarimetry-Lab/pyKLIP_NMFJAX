@@ -77,7 +77,7 @@ class DiskFM(NoFM):
                  save_basis=False,
                  aligned_center=None,
                  numthreads=None,
-                 mode='RDI',
+                 mode='ADI',
                  annuli=None,
                  subsections=None):
         """
@@ -525,9 +525,7 @@ class DiskFM(NoFM):
         """
         klipparamslist = dataset.klipparams.split(',')
         mode = [s for s in klipparamslist if "mode" in s][0].split('=')[1]
-        
-        print(self.mode)
-        print(mode)
+
         # check that the mode use for  klip_dataset and to define diskFM is the same
         if self.mode != mode:
             raise ValueError("Reduction mode for DiskFM ({0}) is different from the one defined in klip_dataset ({1})".format(
