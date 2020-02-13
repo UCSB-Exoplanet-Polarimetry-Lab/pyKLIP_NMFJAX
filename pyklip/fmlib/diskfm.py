@@ -385,10 +385,12 @@ class DiskFM(NoFM):
         # (spectra is already in models)
         
         if self.mode == 'RDI':
-            postklip_psf,  _ = self.calculate_fm(klmodes,
+            postklip_psf, _ = self.calculate_fm_oversub(
+                                                klmodes,
                                                 numbasis,
                                                 sci,
-                                                model_sci)
+                                                model_sci
+                                                )
         else:
             delta_KL = fm.perturb_specIncluded(evals,
                                             evecs,

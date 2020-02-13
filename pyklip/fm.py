@@ -25,7 +25,7 @@ except ImportError:
     mkl_exists = False
 
 # for debugging purposes
-parallel = True
+parallel = False
 
 def find_id_nearest(array, value):
     """
@@ -1308,7 +1308,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                           numbasis,maxnumbasis,
                                                           movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                          flipx, corr_smooth, fm_class, psf_library_good, psf_library_good, mute_progression))
+                                                          flipx, corr_smooth, fm_class, psf_library_good, psf_library_corr, mute_progression))
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
@@ -1317,7 +1317,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                                                   parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                                   numbasis,maxnumbasis,
                                                                   movement,flux_overlap,PSF_FWHM, aligned_center, minrot, maxrot, mode, spectrum,
-                                                                  flipx, corr_smooth, fm_class,psflib_good=psf_library_good, psflib_corr=psf_library_good,mute=mute_progression)
+                                                                  flipx, corr_smooth, fm_class,psflib_good=psf_library_good, psflib_corr=psf_library_corr, mute=mute_progression)
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
         # Run post processing on this sector here
@@ -1601,9 +1601,18 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     if include_rdi:
         num_good_rdi = np.size(psflib_good)
         maxbasis_possible += num_good_rdi
-        psf_library = _arraytonumpy(psf_lib, (psf_lib_shape[0], psf_lib_shape[1]*psf_lib_shape[2]), dtype=dtype)
+        psf_library = _arraytonumpy(psf_lib, (psf_lib_shape[0], psf_lib_shape[1]*psf_lib_shape[2]), dtype=fm_class.data_type)
 
 
+    # create a selection matrix for selecting elements
+    unique_wvs = np.unique(wvs_imgs)
+    numwv = np.size(unique_wvs)
+    # numcubes = np.size(wvs_imgs)/numwv
+    numpix = np.shape(section_ind)[1]
+    print(np.shape(section_ind))
+    print(numpix)
+    
+    
     
     if maxbasis_possible > maxbasis_requested:
         xcorr = corr_psfs[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
@@ -1611,11 +1620,13 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
             # calculate real xcorr between image and RDI PSFs for this sector for only the maxnumbasis
             # best reference PSFs.
             # grab the maxnumbasis most correlated PSFs from the library
+            
             num_rdi_psfs_first_downselect = np.min([maxnumbasis, num_good_rdi])
             rdi_best_corr_max_possbile_indices = np.argsort(psflib_corr[img_num, psflib_good])[-num_rdi_psfs_first_downselect:]
             # grab these PSFs
             rdi_best_corr_max_possible = psf_library[psflib_good[rdi_best_corr_max_possbile_indices]]
             rdi_best_corr_max_possible = rdi_best_corr_max_possible[:, section_ind[0]]
+            
             # recalculate their correlations in this sector
             sci_img = aligned_imgs[img_num, section_ind[0]].reshape(1, numpix)
             # to calculate correlation, first subtract off mean for each image
@@ -1640,6 +1651,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxbasis_requested:]  # sorted smallest first so need to grab from the end
+        print('imhere 2')
         
         if include_rdi:
             # separate out the RDI ones
@@ -1657,6 +1669,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         if include_rdi:
             rdi_psfs_selected = psf_library[rdi_closest_matched]
             rdi_psfs_selected = rdi_psfs_selected[:, section_ind[0]]
+    
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[file_ind[0], :]
@@ -1664,7 +1677,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
         if include_rdi:
             rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
-
+    
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
 
@@ -1690,17 +1703,14 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
-
+    
     print('toto',ref_psfs_selected.shape, np.mean(ref_psfs_selected))
-    # create a selection matrix for selecting elements
-    unique_wvs = np.unique(wvs_imgs)
-    numwv = np.size(unique_wvs)
-    numcubes = np.size(wvs_imgs)/numwv
-    numpix = np.shape(section_ind)[1]
-    numref = np.shape(ref_psfs_indicies)[0]
 
-    # restore NaNs
-    ref_psfs_mean_sub[ref_nanpix] = np.nan
+
+    # numref = np.shape(ref_psfs_indicies)[0]
+
+    # # restore NaNs
+    # ref_psfs_mean_sub[ref_nanpix] = np.nan
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.data_type)[wv_index]
 
@@ -1846,9 +1856,6 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         master_library = psf_library.master_library
         rdi_corr_matrix = psf_library.correlation
         rdi_good_psfs = psf_library.isgoodpsf
-        print('master_library',master_library.shape, np.mean(master_library))
-        print('rdi_corr_matrix',rdi_corr_matrix.shape, np.mean(rdi_corr_matrix))
-        print('rdi_good_psfs',rdi_good_psfs.shape, np.mean(rdi_good_psfs))
     else:
         master_library = None
         rdi_corr_matrix = None
@@ -1927,7 +1934,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
                                      aligned_center=aligned_center, numthreads=numthreads,
                                      minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
                                      flipx=dataset.flipx, annuli_spacing=annuli_spacing,
-                                     psf_library=master_library, psf_library_good=rdi_corr_matrix, psf_library_corr=rdi_good_psfs,
+                                     psf_library=master_library, psf_library_good=rdi_good_psfs, psf_library_corr=rdi_corr_matrix,
                                      N_pix_sector=N_pix_sector, mute_progression=mute_progression, compute_noise_cube=weighted)
 
     klipped, fmout, perturbmag, klipped_center, stddev_frames = klip_outputs # images are already rotated North up East left

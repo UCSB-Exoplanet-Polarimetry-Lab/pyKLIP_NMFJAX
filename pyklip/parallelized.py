@@ -667,8 +667,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
 
-        #subctract the mean and remove the Nans from the RDI PSFs (this was already done in
-        # _klip_section_multifile for the other PSFs)
+        #subctract the mean and remove the Nans from the RDI PSFs before measuring the covariance.
+        # this was already done in _klip_section_multifile for the other PSFs)
         rdi_psfs_selected = rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:, None]
         rdi_psfs_selected[np.where(np.isnan(rdi_psfs_selected))] = 0
 
