@@ -207,7 +207,7 @@ class Data(object):
         """
         return NotImplementedError("Subclass needs to implement this!")
 
-    def spectral_collapse(self, collapse_channels=1, align_frames=True, numthreads=None, additional_params=None):
+    def spectral_collapse(self, collapse_channels=1, align_frames=True, aligned_center=None, numthreads=None, additional_params=None):
         """
         Collapses the dataset spectrally, bining the data into the desired number of output wavelengths. 
         This bins each cube individually; it does not bin the data tempoarally. 
@@ -216,7 +216,8 @@ class Data(object):
 
         Args:
             collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
-            align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
+            align_frames (bool): if True, aligns each channel before collapse so that they are centered properly (default is the mean of the centers of the wl)
+            aligned_center: Array of shape (2) [x_cent, y_cent] for the centering the images to a given value
             numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
             additional_params (list of str): other dataset parameters to collapse. Assume each variable has first dimension of Nframes
         """
@@ -261,7 +262,9 @@ class Data(object):
                 # for this range of wvs, one (x,y) center per cube
                 centers_4d = self.centers.reshape([Ncubes, self.numwvs, 2])
                 mean_centers =  np.mean(centers_4d[:,i_start:i_end,:], axis=1)
-
+                if aligned_center is not None:
+                    mean_centers = mean_centers*0. + aligned_center
+                    
                 tasks = [tpool.apply_async(klip.align_and_scale, args=(img, old_center, new_center))        
                          for cube_j, new_center in enumerate(mean_centers)
                           for img, old_center in zip(input_4d[cube_j, i_start:i_end], centers_4d[cube_j, i_start:i_end])
@@ -272,11 +275,17 @@ class Data(object):
                 derotated.shape = (Ncubes, slices_this_group, self.input.shape[1], self.input.shape[2])
                 input_4d[:, i_start:i_end, :, :] = derotated
 
-
-            collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
+            ## small modif to avoid annoying runtime warning if input_4d[:,i_start:i_end,:,:] is all nans
+            collapsed_4d[:,i,:,:] = np.NaN if np.all(input_4d[:,i_start:i_end,:,:]!=input_4d[:,i_start:i_end,:,:]) \
+                                        else np.nanmean(np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1))
+            
+            
             wvs_collapsed[:, i] = np.mean(self.wvs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
-            pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
+            pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)            
             centers_collapsed[:,i,:] = np.mean(self.centers.reshape([Ncubes, self.numwvs, 2])[:,i_start:i_end,:], axis=1)
+            if aligned_center is not None:
+                centers_collapsed[:,i,:] = centers_collapsed[:,i,:]*0 + aligned_center
+            
             # append arrays, we'll reshape them later
             # these variables are all the same for a single cube, so we can just select one
             wcs_collapsed.append(self.wcs.reshape([Ncubes, self.numwvs])[:,i_start]) 
