@@ -135,6 +135,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
                 diskfm_dir,
                 fileprefix + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])))
 
+    
     diskobj = DiskFM(
         dataset.input.shape,
         numbasis,
@@ -143,6 +144,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         basis_filename=os.path.join(diskfm_dir, fileprefix + "_KLbasis" + ext),
         load_from_basis=True,
     )
+    zeraze
 
     diskobj.update_disk(model_convolved)
     modelfm_here = diskobj.fm_parallelized()

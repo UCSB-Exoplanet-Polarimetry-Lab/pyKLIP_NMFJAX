@@ -79,7 +79,9 @@ class DiskFM(NoFM):
                  numthreads=None,
                  mode='ADI',
                  annuli=None,
-                 subsections=None):
+                 subsections=None,
+                 psf_library=None
+                 ):
         """
 
             Initilaizes the DiskFM class
@@ -163,7 +165,7 @@ class DiskFM(NoFM):
             # We load the FM basis files, before preparing the model to
             # be sure that the aligned_center is identical to the one used
             # when measuring the KL
-            self.load_basis_files(dataset)
+            self.load_basis_files(dataset, psf_library= psf_library)
 
             # we test that the PAs and wls identical to the ones that
             # were previously used when we measured the kl_basis. This is
@@ -385,7 +387,7 @@ class DiskFM(NoFM):
         # (spectra is already in models)
         
         if self.mode == 'RDI':
-            postklip_psf, _ = self.calculate_fm_oversub(
+            postklip_psf,  _ = self.calculate_fm_oversub(
                                                 klmodes,
                                                 numbasis,
                                                 sci,
@@ -654,7 +656,7 @@ class DiskFM(NoFM):
                              """ is not a possible extension. Filenames can
                 haves 2 recognizable extension2: .h5 and .pkl""")
 
-    def load_basis_files(self, dataset):
+    def load_basis_files(self, dataset, psf_library = None):
         """
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
@@ -790,6 +792,20 @@ class DiskFM(NoFM):
         # Create Custom Shared Memory array fmout to save output of forward modelling
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
 
+        # We will not keep track of validity of perturbation so we don't need those
+        perturbmag = None
+        perturbmag_shape = None
+        
+        
+        if psf_library is not None:
+            psf_lib = mp.Array(self.data_type, np.size(psf_library))
+            psf_lib_np = fm._arraytonumpy(psf_lib, psf_library.shape, dtype=self.data_type)
+            psf_lib_np[:] = psf_library
+            psf_lib_shape = psf_library.shape
+        else:
+            psf_lib = None
+            psf_lib_shape = None
+        
         # align and scale the images for each image. Use map to do this asynchronously
         # I need to run this code at least once in non-parallel mode to initialize the
         # global variable outputs_shape in fm.py. This is a short stuff and we do it only once.
@@ -809,8 +825,10 @@ class DiskFM(NoFM):
             None,
             fmout_data,
             fmout_shape,
-            None,
-            None,
+            perturbmag,
+            perturbmag_shape, 
+            psf_lib, 
+            psf_lib_shape
         )
 
         fmout_data = None
@@ -830,12 +848,12 @@ class DiskFM(NoFM):
                 pa_imgs,
                 wvs_imgs,
                 centers_imgs,
-                None,
-                None,
                 fmout_data,
                 fmout_shape,
-                None,
-                None,
+                perturbmag,
+                perturbmag_shape, 
+                None, 
+                psf_lib_shape
             ),
             maxtasksperchild=50,
         )
