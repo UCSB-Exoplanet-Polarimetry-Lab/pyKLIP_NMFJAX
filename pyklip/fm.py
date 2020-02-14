@@ -1609,10 +1609,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     numwv = np.size(unique_wvs)
     # numcubes = np.size(wvs_imgs)/numwv
     numpix = np.shape(section_ind)[1]
-    print(np.shape(section_ind))
-    print(numpix)
-    
-    
     
     if maxbasis_possible > maxbasis_requested:
         xcorr = corr_psfs[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
@@ -1651,7 +1647,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         
         sort_ind = np.argsort(xcorr)
         closest_matched = sort_ind[-maxbasis_requested:]  # sorted smallest first so need to grab from the end
-        print('imhere 2')
         
         if include_rdi:
             # separate out the RDI ones
@@ -1704,8 +1699,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
     
-    print('toto',ref_psfs_selected.shape, np.mean(ref_psfs_selected))
-
 
     # numref = np.shape(ref_psfs_indicies)[0]
 
