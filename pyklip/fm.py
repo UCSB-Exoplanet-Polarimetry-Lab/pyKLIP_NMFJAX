@@ -2,6 +2,7 @@
 #KLIP Forward Modelling
 import os
 from sys import stdout
+import warnings
 from time import time
 import itertools
 import multiprocessing as mp
@@ -97,7 +98,6 @@ def klip_math(sci, refs, numbasis, covar_psfs=None, model_sci=None, models_ref=N
         # plt.show()
 
         max_basis = find_id_nearest(evals/evals[2],10**-1.25)+1
-        print(max_basis)
         evals = evals[:max_basis]
         evecs = evecs[:,:max_basis]
     else:
@@ -551,6 +551,7 @@ def calculate_fm_singleNumbasis(delta_KL_nospec, original_KL, numbasis, sci, mod
         delta_KL = np.dot(inputflux, delta_KL_nospec) # this will take the last dimension of input_spectrum (wv) and sum over the second to last dimension of delta_KL_nospec (wv)
     else:
         delta_KL = delta_KL_nospec
+
 
     # Forward model the PSF
     # 3 terms: 1 for oversubtracton (planet attenauted by speckle KL modes),
@@ -1365,7 +1366,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         # Let's take the mean based on number of images stacked at a location
         sub_imgs = _arraytonumpy(output_imgs, output_imgs_shape,dtype=fm_class.data_type)
         sub_imgs_numstacked = _arraytonumpy(output_imgs_numstacked, original_imgs_shape, dtype=ctypes.c_int)
-        sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
+        
+        # Remove annoying RuntimeWarnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            sub_imgs = sub_imgs / sub_imgs_numstacked[:,:,:,None]
 
         # Let's reshape the output images
         # move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
@@ -1482,7 +1487,6 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
-    import warnings
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
@@ -1971,7 +1975,10 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
         # collapse in time and wavelength to examine KL modes
         if spectrum is None:
-            KLmode_cube = np.nanmean(pixel_weights * klipped, axis=(1,2))
+            # Remove annoying RuntimeWarnings
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                KLmode_cube = np.nanmean(pixel_weights * klipped, axis=(1,2))
             if weighted:
                 # if the pixel weights aren't just 1 (i.e., weighted case), we need to normalize for that
                 KLmode_cube /= np.nanmean(pixel_weights, axis=(1,2))

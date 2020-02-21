@@ -1,5 +1,6 @@
 import abc
 import os
+import warnings
 import subprocess
 import multiprocessing as mp
 import numpy as np
@@ -275,8 +276,11 @@ class Data(object):
                     derotated.shape = (Ncubes, slices_this_group, self.input.shape[1], self.input.shape[2])
                     input_4d[:, i_start:i_end, :, :] = derotated
 
+                # Remove annoying RuntimeWarnings when input_4d is all nans
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
+                    collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
 
-                collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
                 wvs_collapsed[:, i] = np.mean(self.wvs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
                 pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
                 centers_collapsed[:,i,:] = np.mean(self.centers.reshape([Ncubes, self.numwvs, 2])[:,i_start:i_end,:], axis=1)
