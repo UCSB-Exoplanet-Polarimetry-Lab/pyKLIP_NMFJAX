@@ -58,7 +58,7 @@ class DiskFM(NoFM):
                             - In "Save Basis mode", or "Simple FM mode" we define it
                             and then check that it is the same one used for the images
                             in fm.klip_dataset
-            mode: careful, defined here and in fm.klip_dataset
+            mode: deprecated parameter, ignored here and defined in fm.klip_dataset
             annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
             subsections: deprecated parameter, ignored here and defined
                          in fm.klip_dataset
@@ -117,8 +117,6 @@ class DiskFM(NoFM):
 
         self.save_basis = save_basis
         self.load_from_basis = load_from_basis
-
-        self.mode = mode
 
         if self.load_from_basis:
             # Its useless to save and load at the same time.
@@ -323,6 +321,7 @@ class DiskFM(NoFM):
                       numbasis=None,
                       fmout=None,
                       flipx=True,
+                      mode='ADI',
                       **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from
@@ -351,6 +350,7 @@ class DiskFM(NoFM):
             parang: parallactic angle of input image [DEGREES]
             numbasis: array of KL basis cutoffs
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
+            mode: mode of the reduction ('RDI', 'ADI', 'SDI'). If RDI only, we only measure the oversubctraction
             kwargs: any other variables that we don't use but are part of the input
 
         Returns:
@@ -386,7 +386,7 @@ class DiskFM(NoFM):
         # using original Kl modes and reference models, compute the perturbed KL modes
         # (spectra is already in models)
         
-        if self.mode == 'RDI':
+        if mode == 'RDI':
             postklip_psf,  _ = self.calculate_fm_oversub(
                                                 klmodes,
                                                 numbasis,
@@ -434,6 +434,12 @@ class DiskFM(NoFM):
         if self.save_basis is True:
             # save the parameter used in KLIP-FM. We save a float64 to avoid pbs
             # in the saving and loading
+
+            if mode == 'RDI':
+                klparam_dict['isRDI'] = np.float64(1.)
+            else:
+                klparam_dict['isRDI'] = np.float64(0.)
+            
 
             [IWA, OWA] = IOWA
             klparam_dict['IWA'] = np.float64(IWA)
@@ -527,15 +533,6 @@ class DiskFM(NoFM):
             None
 
         """
-        klipparamslist = dataset.klipparams.split(',')
-        mode = [s for s in klipparamslist if "mode" in s][0].split('=')[1]
-
-        # check that the mode use for  klip_dataset and to define diskFM is the same
-        if self.mode != mode:
-            raise ValueError("Reduction mode for DiskFM ({0}) is different from the one defined in klip_dataset ({1})".format(
-                self.mode, mode))
-
-
 
         weighted = len(np.shape(pixel_weights)) > 1
         numwvs = dataset.numwvs
@@ -602,6 +599,7 @@ class DiskFM(NoFM):
             None
 
         """
+
         # Convert everything to np arrays and types to be safe for the saving.
         for key in section_ind_dict.keys():
             section_ind_dict[key] = np.asarray(section_ind_dict[key])
@@ -736,6 +734,8 @@ class DiskFM(NoFM):
 
         # load parameters of the correction that fm.klip_dataset produced
         # when we saved the FM basis.
+
+        self.isRDI = (self.klparam_dict['isRDI'] == 1)
         self.IWA = self.klparam_dict['IWA']
         self.OWA = self.klparam_dict['OWA']
 
@@ -918,6 +918,15 @@ class DiskFM(NoFM):
         unique_wvs = np.unique(wvs)
         original_imgs_shape = self.inputs_shape
 
+        if self.isRDI:
+            mode = 'RDI'
+        else:
+            mode = None 
+            # We are only interested in the RDI mode 
+            # we don't care since it does not have an 
+            # impact at this point
+
+
         for key in self.dict_keys:  # loop pver the sections/images
             # load KL from the dictionnaries
             original_KL = self.klmodes_dict[key]
@@ -977,6 +986,7 @@ class DiskFM(NoFM):
                 parang=self.pa_imgs_np[img_num],
                 numbasis=self.numbasis,
                 fmout=fmout_np,
+                mode = mode
             )
 
         # put any finishing touches on the FM Output
