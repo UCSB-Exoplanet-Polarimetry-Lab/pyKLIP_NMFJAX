@@ -1677,28 +1677,34 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
         if include_rdi:
             rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
     
+
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
 
-        #subctract the mean and remove the Nans from the RDI PSFs (this was already done in
-        # _klip_section_multifile for the other PSFs)
-        rdi_psfs_selected = rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:, None]
-        rdi_psfs_selected[np.where(np.isnan(rdi_psfs_selected))] = 0
+        #subctract the mean and remove the Nans from the RDI PSFs 
+        rdi_psfs_selected_meansub = rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:, None]
+        rdi_psfs_selected_meansub[np.where(np.isnan(rdi_psfs_selected_meansub))] = 0
+
+        #subctract the mean and remove the Nans from the other PSFs
+        ref_psfs_selected_meansub = ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:, None]
+        ref_psfs_selected_meansub[np.where(np.isnan(ref_psfs_selected_meansub))] = 0
 
         # compute covariances. I could just grab these from ~20 lines above, but too lazy
-        rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
+        rdi_covar = np.cov(rdi_psfs_selected_meansub) # N_rdi_sel x N_rdi_sel
         # compute cross term
         # cross term has shape N_dataset_ref x N_rdi_selected
-        covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:,None]),
-                                 (rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:,None]).T) / (numpix - 1)
+        covar_ref_x_rdi = np.dot(ref_psfs_selected_meansub,rdi_psfs_selected_meansub.T) / (numpix - 1)
         # piece together covariance matrix. It should looke like
         # [ cov_ref, cov_ref_x_rdi ]
         # [ cov_rdi_x_ref, cov_rdi ]
         # first append the horizontal component to get shape of N_all_refs x N_dataset_ref
+        
         covar_files = np.append(covar_files, covar_ref_x_rdi, axis=1)
         # now append the bottom half
         covar_files_bottom = np.append(covar_ref_x_rdi.T, rdi_covar, axis=1)
         covar_files = np.append(covar_files, covar_files_bottom, axis=0)
+        
+
 
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)

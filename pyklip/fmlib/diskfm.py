@@ -860,7 +860,7 @@ class DiskFM(NoFM):
             maxtasksperchild=50,
         )
 
-        print("Begin align and scale images for each wavelength")
+        # print("Begin align and scale images for each wavelength")
         aligned_outputs = []
         for threadnum in range(self.numthreads):
             aligned_outputs += [
