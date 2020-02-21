@@ -796,7 +796,7 @@ class DiskFM(NoFM):
         perturbmag = None
         perturbmag_shape = None
         
-        
+       
         if psf_library is not None:
             psf_lib = mp.Array(self.data_type, np.size(psf_library))
             psf_lib_np = fm._arraytonumpy(psf_lib, psf_library.shape, dtype=self.data_type)
@@ -848,16 +848,17 @@ class DiskFM(NoFM):
                 pa_imgs,
                 wvs_imgs,
                 centers_imgs,
+                None,
+                None,
                 fmout_data,
                 fmout_shape,
                 perturbmag,
                 perturbmag_shape, 
-                None, 
+                psf_lib, 
                 psf_lib_shape
             ),
             maxtasksperchild=50,
         )
-
 
         print("Begin align and scale images for each wavelength")
         aligned_outputs = []
