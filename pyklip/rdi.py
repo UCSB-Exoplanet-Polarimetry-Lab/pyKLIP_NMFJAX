@@ -144,7 +144,7 @@ class PSFLibrary(object):
             print("Done making correlation matrix")
 
 
-    def save_correlation(self, filename, clobber=False, format="fits"):
+    def save_correlation(self, filename, overwrite=False, format="fits"):
         """
         Saves self.correlation to a file specified by filename
         Args:
@@ -158,10 +158,10 @@ class PSFLibrary(object):
             hdu = fits.PrimaryHDU(self.master_correlation)
             if os.path.isfile(filename):
             #If the file already exists give user warning.     
-                if clobber:
-                    hdu.writeto(filename, clobber=clobber)
+                if overwrite:
+                    hdu.writeto(filename, overwrite=overwrite)
                 else: 
-                    print("save_correlation: File already exists. Set clobber=True to overwrite")
+                    print("save_correlation: File already exists. Set overwrite=True to overwrite")
             else:
                 hdu.writeto(filename)
 
