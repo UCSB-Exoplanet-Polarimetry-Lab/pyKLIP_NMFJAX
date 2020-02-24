@@ -265,7 +265,10 @@ class CHARISData(Data):
                 # read in sat spots from file
                 spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
             elif sat_fit_method.lower() == 'global' and update_hdrs == True:
-                astrogrid_status = prihdr['X_GRDST']
+                try:
+                    astrogrid_status = prihdr['X_GRDST']
+                except:
+                    astrogrid_status = None
 
                 # TODO: decide whether to smooth, and whether to photocalibrate images here
                 # with fits.open(filepath) as hdulist:
