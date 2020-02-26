@@ -216,11 +216,11 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             if xmax >= nx:
                 ypsf = ypsf[:,:-(xmax-nx + 1)]
                 xpsf = xpsf[:,:-(xmax-nx + 1)]
-                xmax = nx
+                xmax = nx - 1
             if ymax >= ny:
                 ypsf = ypsf[:-(ymax-ny + 1),:]
                 xpsf = xpsf[:-(ymax-ny + 1),:]
-                ymax = ny
+                ymax = ny - 1
 
             psf = ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
             # if specified, make field dependent PSF correction
@@ -681,7 +681,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
 
 
     #now calculate flux
-    xfitbox, yfitbox = np.meshgrid(np.arange(0,2* searchrad+1, 1.0)-xfit, np.arange(0, 2*searchrad+1, 1.0)-yfit)
+    xfitbox, yfitbox = np.meshgrid(np.arange(0,fitbox.shape[1], 1.0)-xfit, np.arange(0, fitbox.shape[0], 1.0)-yfit)
     #correlate data with a gaussian to get flux
     sigma = fwhm/(2*np.sqrt(2*np.log(2)))
     ## attempt to calculate sigma using moments
