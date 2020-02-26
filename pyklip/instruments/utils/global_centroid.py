@@ -588,7 +588,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     return list([phi, spotsep]) + cen_coef
 
 
-def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_coef=True,
+def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astrogrid_sep=None, smooth_coef=True,
                     guess_center_loc=None, maxcpus=multiprocessing.cpu_count() // 2):
     '''
     Function fitcen_parallel.  Centroid a series of CHARIS data cubes
@@ -597,7 +597,10 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
     CHARIS data before the standardization of headers.
 
     Args:
-        infiles: list of file names for CHARIS data cubes
+        infiles: input files
+        cubes: all image cubes in the data set corresponding to filenames, shape (ncube, nwv, ny, nx)
+        ivars: inverse variance frames corresponding to cubes
+        prihdrs: primary headers for the cubes
         astrogrid_status: None or list of astrogrid configurations for SCExAO.
                           If None, try to read the astrogrid configuration from the header.
                           If this fails, assume there is no astrogrid and centroid using the
@@ -616,7 +619,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
         [centroid_params, x, y, mask]
 
         centroid_params : 2D array of centroid parameters, first dimension is the number of files.
-                          Second dimension is the length of theh wavelength-dependent model.
+                          Second dimension is the length of the wavelength-dependent model.
         x : x-coordinates of the centroid at the middle wavelength
         y : y-coordinates of the centroid at the middle wavelength
         mask : 1D boolean array, True if astrogrid was on, or None if the astrogrid was never on.
@@ -631,8 +634,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
     if astrogrid_status is None:
         astrogrid_status = []
         astrogrid_sep = []
-        for ifile in infiles:
-            head = fits.open(ifile)[0].header
+        for head in prihdrs:
             try:
                 if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag':
                     print('{}: cannot parse astrogrid information from header, default to XYdiag at 15.5 lambda/D spot '
@@ -654,22 +656,22 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
     for w in consumers:
         w.start()
 
-    fids = [int(re.sub('.*CRSA', '', re.sub('_cube.fits', '', infile)))
+    # TODO: test if fids = np.arange(len(cubes)) work identically, if so, get rid of infiles variable
+    fids = [int(re.sub('.*CRSA', '', re.sub('_.*', '', infile)))
             for infile in infiles]
 
     lamlist = []
-    grid_on = np.zeros(len(fids), np.int32)
+    grid_on = np.zeros(len(cubes), np.int32)
 
     ####################################################################
     # Load each file, get the wavelengths, and pass it to fitcen.
     ####################################################################
 
-    for i in range(len(fids)):
+    for i in range(len(cubes)):
 
-        hdulist = fits.open(infiles[i])
-        cube = hdulist[1].data
-        ivar = hdulist[2].data
-        head = hdulist[0].header
+        cube = cubes[i]
+        ivar = ivars[i]
+        head = prihdrs[i]
         lam = head['lam_min'] * np.exp(np.arange(cube.shape[0]) * head['dloglam'])
         lam *= 1e-3
         lamlist += [lam]
@@ -711,6 +713,7 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
 
     if smooth_coef:
 
+        # TODO: what purpose does fids do here in polyfit?
         x1 = polyfit(fids, centroid_params[:, 3], mask=mask, return_y=False)
         x2 = polyfit(fids, centroid_params[:, 4], mask=mask, return_y=False)
         y1 = polyfit(fids, centroid_params[:, 6], mask=mask, return_y=False)
@@ -740,14 +743,15 @@ def fitcen_parallel(infiles, astrogrid_status=None, astrogrid_sep=None, smooth_c
     return [centroid_params, x, y, mask]
 
 
-def fitallrelcen(infiles, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2):
+def fitallrelcen(cubes, ivars, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2):
     '''
     Function fitallrelcen.  Fit for the relative centroids between all
     pairs of frames at the central wavelength using the PSF in an
     annulus around the center.  Return the best-fit relative offets.
 
     Args:
-        infiles: list of file names
+        cubes: all image cubes in the data set, shape (ncube, nwv, ny, nx)
+        ivars: inverse variance frames corresponding to cubes
         r1: int, minimum separation in lenslets from the image center for annular reference region.  Default 15.
         r2: int, maximum separation in lenslets from the image center for annular reference region.  Default 50.
         maxcpus: int, maximum number of CPUs to allocate for parallelization. Default 1/2 of the available CPUs.
@@ -760,18 +764,25 @@ def fitallrelcen(infiles, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2
 
     ncpus = min(multiprocessing.cpu_count(), maxcpus)
 
-    shape = fits.open(infiles[0])[1].data.shape
+    cubes = np.array(cubes)
+    ivars = np.array(ivars)
+    if len(cubes.shape) != 4:
+        raise ValueError('input cubes have the wrong shape, expect (ncube, nwv, ny, nx), have {}'.format(cubes.shape))
+    if cubes.shape != ivars.shape:
+        raise ValueError('science data (cubes) and inverse variance data (ivars) have different shapes')
+    ncube = cubes.shape[0]
+    shape = cubes[0].shape
     iref = shape[0] // 2
 
     ####################################################################
     # Lightly smooth all images first.
     ####################################################################
 
-    allims = np.zeros((len(infiles), shape[1], shape[2]))
+    allims = np.zeros(cubes.shape)
 
-    for i in range(len(infiles)):
-        im = fits.open(infiles[i])[1].data[iref]
-        ivar = fits.open(infiles[i])[2].data[iref]
+    for i in range(ncube):
+        im = cubes[i, iref]
+        ivar = ivars[i, iref]
         allims[i] = _smooth(im, ivar, 0.5, True)
 
     tasks = multiprocessing.Queue()
@@ -797,9 +808,9 @@ def fitallrelcen(infiles, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2
     y = y[ok].copy()
     x = x[ok].copy()
 
-    for i in range(len(infiles)):
-        for j in range(i + 1, len(infiles)):
-            index = i * (len(infiles)) + j
+    for i in range(ncube):
+        for j in range(i + 1, ncube):
+            index = i * (ncube) + j
             tasks.put(Task(index, fitrelcen, (allims[i], allims[j], x, y)))
 
     for k in range(ncpus):
@@ -812,29 +823,28 @@ def fitallrelcen(infiles, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2
     # add an offset later based on the absolute centroiding routine.
     ####################################################################
 
-    arr_x = np.zeros((len(infiles), len(infiles)))
-    arr_y = np.zeros((len(infiles), len(infiles)))
+    arr_x = np.zeros((ncube, ncube))
+    arr_y = np.zeros((ncube, ncube))
 
-    for i in range(len(infiles)):
-        for j in range(i + 1, len(infiles)):
+    for i in range(ncube):
+        for j in range(i + 1, ncube):
             index, result = results.get()
-            fid2 = index % len(infiles)
-            fid1 = index // len(infiles)
+            fid2 = index % ncube
+            fid1 = index // ncube
 
             arr_x[fid1, fid2] = result[0]
             arr_x[fid2, fid1] = -result[0]
             arr_y[fid1, fid2] = result[1]
             arr_y[fid2, fid1] = -result[1]
 
-    n = len(infiles)
-    b = np.zeros((n + 1))
-    b[:n] = np.sum(arr_x, axis=0)
-    arr = np.ones((n, n + 1))
-    arr[:, :n] *= -1
-    arr[:, :n] += n * np.identity(n)
+    b = np.zeros((ncube + 1))
+    b[:ncube] = np.sum(arr_x, axis=0)
+    arr = np.ones((ncube, ncube + 1))
+    arr[:, :ncube] *= -1
+    arr[:, :ncube] += ncube * np.identity(ncube)
     xsol = np.linalg.lstsq(arr.T, b, rcond=-1)[0]
 
-    b[:n] = np.sum(arr_y, axis=0)
+    b[:ncube] = np.sum(arr_y, axis=0)
     ysol = np.linalg.lstsq(arr.T, b, rcond=-1)[0]
 
     return xsol, ysol
