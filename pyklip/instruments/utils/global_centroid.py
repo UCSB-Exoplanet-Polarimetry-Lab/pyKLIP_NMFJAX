@@ -314,7 +314,7 @@ def get_sats_satf(p, cube, lam, astrogrid='XYdiag'):
 
     Returns:
         sats: pixel locations (in [x,y] format) of all four satellite spots at each wavelength, shape (wvs, 4, 2)
-        satf: float, negative sum of the four spot intensities at each wavelength
+        satf: float, peak fluxes (interpolated pixel value) at the fitted spot locations
     '''
 
     if not isinstance(cube, np.ndarray):
