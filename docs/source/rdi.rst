@@ -15,7 +15,8 @@ Here we will assume you have a 3-D cube of frames from a long series of data (e.
 already in the variable ``psflib_imgs``. This could be made from your own code, or from ``dataset.input`` after you read in a
 large list of files into the Data object. All of these images need to be aligned to some defined ``aligned_center``, a [x,y] array.
 If the images haven't been aligned to this common center already, you can use :py:meth:`pyklip.klip.align_and_scale` to register each
-frame. You will also need ``psflib_filenames``, an array of filenames, so that each frame has a corresponding filename.
+frame. If you are using GPI IFS data, you can also use the :py:meth:`pyklip.instruments.Instrument.Data.spectral_collapse` to 
+simultaeously center and collapse a dataset. You will also need ``psflib_filenames``, an array of filenames, so that each frame has a corresponding filename.
 This again can be taken from ``dataset.filenames`` if you don't have it already, but have read in all the files into a Data object.
 You want to make sure that the filenames are accurate, as this is how we figure out which frames to exclude for RDI (i.e. we don't
 want to use data in the science sequence as reference images in a RDI reduction).
@@ -33,7 +34,7 @@ Note that with a lot of files, generating the correlation matrix can take a long
 
     # save the correlation matrix to disk so that we also don't need to recomptue this ever again
     # In the future we can just pass in the correlation matrix into the PSFLibrary object rather than having it compute it
-    psflib.save_correlation("corr_matrix.fits", clobber=True)
+    psflib.save_correlation("corr_matrix.fits", overwrite=True)
 
 Then, in the future, we don't need to recompute the correlation matrix when setting up the PSF library. Instead we can read it in
 and regenerate the PSFLibrary quickly.
