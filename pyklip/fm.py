@@ -26,7 +26,7 @@ except ImportError:
     mkl_exists = False
 
 # for debugging purposes
-parallel = False
+parallel = True
 
 def find_id_nearest(array, value):
     """
@@ -1709,8 +1709,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
     # numref = np.shape(ref_psfs_indicies)[0]
 
-    # # restore NaNs
-    # ref_psfs_mean_sub[ref_nanpix] = np.nan
+    # restore NaNs
+    ref_psfs_mean_sub[ref_nanpix] = np.nan
 
     aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=fm_class.data_type)[wv_index]
 
