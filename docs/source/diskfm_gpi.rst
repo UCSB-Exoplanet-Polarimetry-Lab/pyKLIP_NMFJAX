@@ -20,7 +20,7 @@ do not change. One can save the KL vectors in a file once so they do not have to
 recomputed every time. For a new disk model, the forward modelling is therfore only a
 array reformating and a matrix multiplication, which can be optimized to be only a few
 seconds. These routines are implemented in PyKLIP and showed on this page. DiskFM currently
-only supports KLIP ADI and KLIP SDI (or ADI + SDI) reduction (but currently not RDI or NMF).
+only supports KLIP ADI, SDI ADI+SDI and RDI reductions (but currently not RDI+ADI/SDI or NMF).
 
 DiskFM Requirements
 --------------------------
