@@ -657,7 +657,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
         w.start()
 
     # TODO: test if fids = np.arange(len(cubes)) work identically, if so, get rid of infiles variable
-    fids = [int(re.sub('.*CRSA', '', re.sub('_.*', '', infile)))
+    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile)))
             for infile in infiles]
 
     lamlist = []
@@ -778,7 +778,7 @@ def fitallrelcen(cubes, ivars, r1=15, r2=50, maxcpus=multiprocessing.cpu_count()
     # Lightly smooth all images first.
     ####################################################################
 
-    allims = np.zeros(cubes.shape)
+    allims = np.zeros([cubes.shape[0], shape[1], shape[2]])
 
     for i in range(ncube):
         im = cubes[i, iref]

@@ -285,7 +285,7 @@ class CHARISData(Data):
         # TODO: distortion correction in parallel?
         for index, filepath in enumerate(filepaths):
             try:
-                if exthdrs[index]['PLATE_CAL'].lower() == 'true':
+                if exthdrs[index]['PLATECAL'].lower() == 'true':
                     continue
             except:
                 pass
@@ -302,8 +302,6 @@ class CHARISData(Data):
         spot_fit_coeffs = None
         if update_hdrs == True and sat_fit_method.lower() == 'global':
             print('fitting satellite spots globally')
-            #TODO: modify measure_sat_spots_global to take cubes instead of filepaths, done, not tested
-            #TODO: also modify all of global_centroid.py to use only extracted data rather than directly read from files, done, not tested
             spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs, guess_center_loc=guess_center_loc)
 
         # fit for satellite spots locally if enabled
@@ -356,9 +354,6 @@ class CHARISData(Data):
 
             # simple mean for center for now
             center = np.mean(spot_loc, axis=1)
-
-            # TODO: check that data are modified through modifying cube (zero-flux pixels modified to be nans)
-
             centers.append(center)
             spot_fluxes.append(spot_flux)
             spot_locs.append(spot_loc)
@@ -367,13 +362,6 @@ class CHARISData(Data):
         # reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
         # wv_indices are never referenced from this point on so they're commented out currently
         data = np.array(data)
-        ### testing begin ###
-        hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(header=None, data=data))
-        filepath = os.path.dirname(filenames[0][0])
-        filepath = os.path.join(filepath, 'testing_nan_hypercube.fits')
-        hdulist.writeto(filepath, overwrite=True)
-        ###  testing end  ###
         dims = data.shape
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
         ivars = np.array(ivars).reshape([dims[0] * dims[1], dims[2], dims[3]])
@@ -448,13 +436,13 @@ class CHARISData(Data):
         modified_indices = np.argwhere(modified_data == True)
         save_data = np.reshape(self._input, dims)
         save_ivars = self.ivars.reshape(dims)
-        save_filenames = self.filenames.reshape([dims[0], dims[1]])
+        save_filenames = np.unique(self.filenames)
         for index in modified_indices:
             hdulist = fits.HDUList()
-            hdulist.append(fits.PrimaryHDU(header=self.prihdrs[index], data=None))
-            hdulist.append(fits.PrimaryHDU(header=self.exthdrs[index], data=save_data[index]))
-            hdulist.append(fits.PrimaryHDU(data=save_ivars[index]))
-            hdulist.writeto(save_filenames[index], overwrite=True)
+            hdulist.append(fits.PrimaryHDU(header=self.prihdrs[index[0]], data=None))
+            hdulist.append(fits.PrimaryHDU(header=self.exthdrs[index[0]], data=save_data[index[0]]))
+            hdulist.append(fits.PrimaryHDU(data=save_ivars[index[0]]))
+            hdulist.writeto(save_filenames[index[0]], overwrite=True)
 
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
@@ -700,12 +688,12 @@ def _distortion_correction(filename, cube, ivar, exthdr):
     '''
 
     # rescaling data and inverse variance to a uniform lenslet scale
-    # pix_val = int(re.sub('.*000', '', re.sub('_.*', '', filename)))
+    # pix_val = int(re.sub('_.*', '', re.sub('.*000', '', filename)))
     # cube.fill(pix_val)
 
-    plate_cal_key = 'PLATE_CAL'
+    plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
-    exthdr.set(plate_cal_key, value=plate_cal_str, comment='indicates whether distortion correction has been applied')
+    exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
     filename = re.sub('.fits', '_plate_cal.fits', filename)
 
     return filename, cube, ivar, exthdr
@@ -850,7 +838,7 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
     # TODO: spotflux use peak flux or aperture flux?
 
     filepaths = np.unique(filenames)
-    centroid_params, x, y, mask = global_centroid.fitcen_parallel(filepaths, cubes, prihdrs, smooth_coef=True,
+    centroid_params, x, y, mask = global_centroid.fitcen_parallel(filepaths, cubes, ivars, prihdrs, smooth_coef=True,
                                                                   guess_center_loc=guess_center_loc)
     xsol, ysol = global_centroid.fitallrelcen(cubes, ivars, r1=15, r2=45)
 
