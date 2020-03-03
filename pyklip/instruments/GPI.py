@@ -950,7 +950,7 @@ class GPIData(Data):
             return 0
         
 
-    def spectral_collapse(self, collapse_channels=1, align_frames=True, numthreads=None):
+    def spectral_collapse(self, collapse_channels=1, align_frames=True, aligned_center=None, numthreads=None):
         """
         GPI wrapper of spectral_collapse(). Adds GPI values to collapse
         
@@ -962,11 +962,12 @@ class GPIData(Data):
         Args:
             collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
             align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
+            aligned_center: Array of shape (2) [x_cent, y_cent] for the centering the images to a given value if align_frames is True
             numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
         """
         gpi_params = ["spot_flux", "dn_per_contrast"]
 
-        super(GPIData, self).spectral_collapse(collapse_channels=collapse_channels, align_frames=align_frames, numthreads=numthreads,
+        super(GPIData, self).spectral_collapse(collapse_channels=collapse_channels, align_frames=align_frames, aligned_center=aligned_center, numthreads=numthreads,
                                                 additional_params=gpi_params)
 
 ######################

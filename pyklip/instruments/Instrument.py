@@ -1,5 +1,6 @@
 import abc
 import os
+import warnings
 import subprocess
 import multiprocessing as mp
 import numpy as np
@@ -206,116 +207,126 @@ class Data(object):
             calib_img: calibrated image of the same shape
         """
         return NotImplementedError("Subclass needs to implement this!")
+    
+    def spectral_collapse(self, collapse_channels=1, align_frames=True, aligned_center=None, numthreads=None, additional_params=None):
+            """
+            Collapses the dataset spectrally, bining the data into the desired number of output wavelengths. 
+            This bins each cube individually; it does not bin the data tempoarally. 
+            If number of wavelengths / output channels is not a whole number, some output channels will have more frames
+            that went into the collapse
 
-    def spectral_collapse(self, collapse_channels=1, align_frames=True, numthreads=None, additional_params=None):
-        """
-        Collapses the dataset spectrally, bining the data into the desired number of output wavelengths. 
-        This bins each cube individually; it does not bin the data tempoarally. 
-        If number of wavelengths / output channels is not a whole number, some output channels will have more frames
-        that went into the collapse
+            Args:
+                collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
+                align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
+                aligned_center: Array of shape (2) [x_cent, y_cent] for the centering the images to a given value
+                numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
+                additional_params (list of str): other dataset parameters to collapse. Assume each variable has first dimension of Nframes
+            """
+            # reshpae input into 4D cube
+            Ncubes = self.input.shape[0] // self.numwvs
+            input_4d = self.input.reshape([Ncubes, self.numwvs, self.input.shape[1], self.input.shape[2]])
 
-        Args:
-            collapse_channels (int): number of output channels to evenly-ish collapse the dataset into. Default is 1 (broadband)
-            align_frames (bool): if True, aligns each channel before collapse so that they are centered properly
-            numthreads (bool,int): number of threads to parallelize align and scale. If None, use default which is all of them
-            additional_params (list of str): other dataset parameters to collapse. Assume each variable has first dimension of Nframes
-        """
-        # reshpae input into 4D cube
-        Ncubes = self.input.shape[0] // self.numwvs
-        input_4d = self.input.reshape([Ncubes, self.numwvs, self.input.shape[1], self.input.shape[2]])
+            slices_per_group = self.numwvs // collapse_channels # how many wavelengths per each output channel
+            leftover_slices = self.numwvs % collapse_channels
 
-        slices_per_group = self.numwvs // collapse_channels # how many wavelengths per each output channel
-        leftover_slices = self.numwvs % collapse_channels
+            collapsed_4d = np.zeros([Ncubes, collapse_channels, self.input.shape[1], self.input.shape[2]])
+            wvs_collapsed = np.zeros([Ncubes, collapse_channels])
+            pas_collapsed = np.zeros([Ncubes, collapse_channels])
+            centers_collapsed = np.zeros([Ncubes, collapse_channels, 2])
+            # appending following as lists
+            wcs_collapsed = [] 
+            filenums_collapsed = []
+            filenames_collapsed = []
+            # additional params, if needed
+            if additional_params is not None:
+                additional_collapsed = []
+                for param_field in additional_params:
+                    param_orig = getattr(self, param_field)
+                    reshaped_shape = (Ncubes, collapse_channels) + param_orig.shape[1:]
+                    additional_collapsed.append(np.zeros(reshaped_shape))
+            # populate the output image
+            next_start_channel = 0 # initialize which channel to start with for the input images
+            for i in range(collapse_channels):
+                # figure out which slices to pick
+                slices_this_group = slices_per_group
+                if leftover_slices > 0:
+                    # take one extra slice, yummy
+                    slices_this_group += 1
+                    leftover_slices -= 1
 
-        collapsed_4d = np.zeros([Ncubes, collapse_channels, self.input.shape[1], self.input.shape[2]])
-        wvs_collapsed = np.zeros([Ncubes, collapse_channels])
-        pas_collapsed = np.zeros([Ncubes, collapse_channels])
-        centers_collapsed = np.zeros([Ncubes, collapse_channels, 2])
-        # appending following as lists
-        wcs_collapsed = [] 
-        filenums_collapsed = []
-        filenames_collapsed = []
-        # additional params, if needed
-        if additional_params is not None:
-            additional_collapsed = []
-            for param_field in additional_params:
-                param_orig = getattr(self, param_field)
-                reshaped_shape = (Ncubes, collapse_channels) + param_orig.shape[1:]
-                additional_collapsed.append(np.zeros(reshaped_shape))
-        # populate the output image
-        next_start_channel = 0 # initialize which channel to start with for the input images
-        for i in range(collapse_channels):
-            # figure out which slices to pick
-            slices_this_group = slices_per_group
-            if leftover_slices > 0:
-                # take one extra slice, yummy
-                slices_this_group += 1
-                leftover_slices -= 1
+                i_start = next_start_channel
+                i_end = next_start_channel + slices_this_group # this is the index after the last one in this group
 
-            i_start = next_start_channel
-            i_end = next_start_channel + slices_this_group # this is the index after the last one in this group
+                if align_frames:
+                    tpool = mp.Pool(processes=numthreads)
 
-            if align_frames:
-                tpool = mp.Pool(processes=numthreads)
+                    # for this range of wvs, one (x,y) center per cube
+                    centers_4d = self.centers.reshape([Ncubes, self.numwvs, 2])
+                    mean_centers =  np.mean(centers_4d[:,i_start:i_end,:], axis=1)
+                    if aligned_center is not None:
+                        mean_centers = mean_centers*0. + aligned_center
 
-                # for this range of wvs, one (x,y) center per cube
-                centers_4d = self.centers.reshape([Ncubes, self.numwvs, 2])
-                mean_centers =  np.mean(centers_4d[:,i_start:i_end,:], axis=1)
+                    tasks = [tpool.apply_async(klip.align_and_scale, args=(img, new_center, old_center))        
+                            for cube_j, new_center in enumerate(mean_centers)
+                            for img, old_center in zip(input_4d[cube_j, i_start:i_end], centers_4d[cube_j, i_start:i_end])
+                            ]
 
-                tasks = [tpool.apply_async(klip.align_and_scale, args=(img, old_center, new_center))        
-                         for cube_j, new_center in enumerate(mean_centers)
-                          for img, old_center in zip(input_4d[cube_j, i_start:i_end], centers_4d[cube_j, i_start:i_end])
-                        ]
+                    # reform back into a giant array
+                    derotated = np.array([task.get() for task in tasks])
+                    derotated.shape = (Ncubes, slices_this_group, self.input.shape[1], self.input.shape[2])
+                    input_4d[:, i_start:i_end, :, :] = derotated
 
-                # reform back into a giant array
-                derotated = np.array([task.get() for task in tasks])
-                derotated.shape = (Ncubes, slices_this_group, self.input.shape[1], self.input.shape[2])
-                input_4d[:, i_start:i_end, :, :] = derotated
+                # Remove annoying RuntimeWarnings when input_4d is all nans
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
+                    collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
 
+                wvs_collapsed[:, i] = np.mean(self.wvs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
+                pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
+                centers_collapsed[:,i,:] = np.mean(self.centers.reshape([Ncubes, self.numwvs, 2])[:,i_start:i_end,:], axis=1)
+                if aligned_center is not None:
+                    centers_collapsed[:,i,:] = centers_collapsed[:,i,:]*0 + aligned_center
+                
+                # append arrays, we'll reshape them later
+                # these variables are all the same for a single cube, so we can just select one
+                wcs_collapsed.append(self.wcs.reshape([Ncubes, self.numwvs])[:,i_start]) 
+                filenums_collapsed.append(self.filenums.reshape([Ncubes, self.numwvs])[:,i_start]) 
+                filenames_collapsed.append(self.filenames.reshape([Ncubes, self.numwvs])[:,i_start])
 
-            collapsed_4d[:,i,:,:] = np.nanmean(input_4d[:,i_start:i_end,:,:], axis=1)
-            wvs_collapsed[:, i] = np.mean(self.wvs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
-            pas_collapsed[:, i] = np.mean(self.PAs.reshape([Ncubes, self.numwvs])[:,i_start:i_end], axis=1)
-            centers_collapsed[:,i,:] = np.mean(self.centers.reshape([Ncubes, self.numwvs, 2])[:,i_start:i_end,:], axis=1)
-            # append arrays, we'll reshape them later
-            # these variables are all the same for a single cube, so we can just select one
-            wcs_collapsed.append(self.wcs.reshape([Ncubes, self.numwvs])[:,i_start]) 
-            filenums_collapsed.append(self.filenums.reshape([Ncubes, self.numwvs])[:,i_start]) 
-            filenames_collapsed.append(self.filenames.reshape([Ncubes, self.numwvs])[:,i_start])
+                if additional_params is not None:
+                    for param_collapsed, param_field in zip(additional_collapsed, additional_params):
+                        param_orig = getattr(self, param_field)
+                        reshaped_shape = (Ncubes, self.numwvs) + param_orig.shape[1:]
+                        param_collapsed[:, i] = np.nanmean(param_orig.reshape(reshaped_shape)[:, i_start:i_end], axis=1)
+
+                next_start_channel = i_end
+
+            # unravel the wavelength information
+            collapsed_4d.shape = [Ncubes * collapse_channels, self.input.shape[1], self.input.shape[2]]
+            wvs_collapsed.shape = [Ncubes * collapse_channels]
+            pas_collapsed.shape = [Ncubes * collapse_channels]
+            centers_collapsed.shape = [Ncubes * collapse_channels, 2]
+
+            # unfold the lists, need to flip the dimensions, so they are ordered properly
+            wcs_collapsed = np.array(wcs_collapsed).T.ravel()
+            filenums_collapsed = np.array(filenums_collapsed).T.ravel()
+            filenames_collapsed = np.array(filenames_collapsed).T.ravel()
+
+            # ok time to set all the variables correctly
+            self._numwvs = collapse_channels
+            self.input = collapsed_4d
+            self.wvs = wvs_collapsed
+            self.PAs = pas_collapsed
+            self.centers = centers_collapsed
+            self.wcs = wcs_collapsed
+            self.filenums = filenums_collapsed
+            self.filenames = filenames_collapsed
 
             if additional_params is not None:
-                for param_collapsed, param_field in zip(additional_collapsed, additional_params):
-                    param_orig = getattr(self, param_field)
-                    reshaped_shape = (Ncubes, self.numwvs) + param_orig.shape[1:]
-                    param_collapsed[:, i] = np.nanmean(param_orig.reshape(reshaped_shape)[:, i_start:i_end], axis=1)
+                for param_field, param_collapsed in zip(additional_params, additional_collapsed):
+                    param_collapsed.shape = (Ncubes * collapse_channels, ) + param_collapsed.shape[2:]
+                    setattr(self, param_field, param_collapsed)
 
-            next_start_channel = i_end
-
-        # unravel the wavelength information
-        collapsed_4d.shape = [Ncubes * collapse_channels, self.input.shape[1], self.input.shape[2]]
-        wvs_collapsed.shape = [Ncubes * collapse_channels]
-        pas_collapsed.shape = [Ncubes * collapse_channels]
-        centers_collapsed.shape = [Ncubes * collapse_channels, 2]
-
-        # unfold the lists, need to flip the dimensions, so they are ordered properly
-        wcs_collapsed = np.array(wcs_collapsed).T.ravel()
-        filenums_collapsed = np.array(filenums_collapsed).T.ravel()
-        filenames_collapsed = np.array(filenames_collapsed).T.ravel()
-
-        # ok time to set all the variables correctly
-        self._numwvs = collapse_channels
-        self.input = collapsed_4d
-        self.wvs = wvs_collapsed
-        self.PAs = pas_collapsed
-        self.centers = centers_collapsed
-        self.wcs = wcs_collapsed
-        self.filenums = filenums_collapsed
-        self.filenames = filenames_collapsed
-
-        if additional_params is not None:
-            for param_field, param_collapsed in zip(additional_params, additional_collapsed):
-                param_collapsed.shape = (Ncubes * collapse_channels, ) + param_collapsed.shape[2:]
-                setattr(self, param_field, param_collapsed)
 
 class GenericData(Data):
     """

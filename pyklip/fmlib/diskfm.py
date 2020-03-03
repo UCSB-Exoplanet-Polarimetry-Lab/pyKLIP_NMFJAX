@@ -58,10 +58,10 @@ class DiskFM(NoFM):
                             - In "Save Basis mode", or "Simple FM mode" we define it
                             and then check that it is the same one used for the images
                             in fm.klip_dataset
+            mode: deprecated parameter, ignored here and defined in fm.klip_dataset
             annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
             subsections: deprecated parameter, ignored here and defined
                          in fm.klip_dataset
-            mode: deprecated parameter, ignored here and defined in fm.klip_dataset
 
         Returns:
             A DiskFM Object
@@ -77,14 +77,18 @@ class DiskFM(NoFM):
                  save_basis=False,
                  aligned_center=None,
                  numthreads=None,
+                 mode=None,
                  annuli=None,
                  subsections=None,
-                 mode=None):
+                 psf_library=None
+                 ):
         """
 
             Initilaizes the DiskFM class
 
         """
+
+        
         # make sure the dimensions have the good shape
         # and that they are numpy arrays to access their shape
         if hasattr(numbasis, "__len__"):
@@ -96,6 +100,25 @@ class DiskFM(NoFM):
             inputs_shape = np.array(inputs_shape)
         else:
             inputs_shape = np.array([inputs_shape])
+        
+        if mode is not None:
+            print(mode)
+            print("Warning: Argument 'mode' in pyklip.fmlib.diskfm.DiskFM class definition "\
+                "is deprecated (not used and will be removed in a future version). " \
+                "KLIP reduction parameters (mode, annuli and subsections) "\
+                "are only defined once in klip_dataset [pyklip.parallelized]. ")
+
+        if annuli is not None:
+            print("Warning: Argument 'annuli' in pyklip.fmlib.diskfm.DiskFM class definition "\
+                "is deprecated (not used and will be removed in a future version). " \
+                "KLIP reduction parameters (mode, annuli and subsections) "\
+                "are only defined once in klip_dataset [pyklip.parallelized].")
+
+        if subsections is not None:
+            print("Warning: Argument 'subsections' in pyklip.fmlib.diskfm.DiskFM class definition "\
+                "is deprecated (not used and will be removed in a future version). " \
+                "KLIP reduction parameters (mode, annuli and subsections) "\
+                "are only defined once in klip_dataset [pyklip.parallelized].")
 
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
@@ -161,7 +184,7 @@ class DiskFM(NoFM):
             # We load the FM basis files, before preparing the model to
             # be sure that the aligned_center is identical to the one used
             # when measuring the KL
-            self.load_basis_files(dataset)
+            self.load_basis_files(dataset, psf_library= psf_library)
 
             # we test that the PAs and wls identical to the ones that
             # were previously used when we measured the kl_basis. This is
@@ -190,12 +213,13 @@ class DiskFM(NoFM):
                         '''The Wavelengths in the dataset loaded are not
                                 identical to the Wavelengths in the dataset used to
                                 measure the KL basis.''')
+            
 
         else:  # We want to save the basis or just a single disk FM
 
             self.PAs = dataset.PAs
             self.wvs = dataset.wvs
-
+            
             # define the center
             self.aligned_center = aligned_center
 
@@ -206,6 +230,7 @@ class DiskFM(NoFM):
 
         # Prepare the first disk for FM
         self.update_disk(model_disk)
+
 
     def update_disk(self, model_disk):
         """
@@ -317,6 +342,7 @@ class DiskFM(NoFM):
                       numbasis=None,
                       fmout=None,
                       flipx=True,
+                      mode=None,
                       **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from
@@ -345,6 +371,8 @@ class DiskFM(NoFM):
             parang: parallactic angle of input image [DEGREES]
             numbasis: array of KL basis cutoffs
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
+            mode: mode of the reduction ('RDI', 'ADI', 'SDI'). If RDI only, we only 
+                    measure the oversubctraction
             kwargs: any other variables that we don't use but are part of the input
 
         Returns:
@@ -369,30 +397,39 @@ class DiskFM(NoFM):
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
-        refs[np.where(np.isnan(refs))] = 0
+
 
         # use the disk model stored
         model_sci = self.model_disks[input_img_num, section_ind[0]]
+        model_sci[np.where(np.isnan(model_sci))] = 0
         model_ref = self.model_disks[ref_psfs_indicies, :]
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
 
-        # using original Kl modes and reference models, compute the perturbed KL modes
-        # (spectra is already in models)
-        delta_KL = fm.perturb_specIncluded(evals,
-                                           evecs,
-                                           klmodes,
-                                           refs,
-                                           model_ref,
-                                           return_perturb_covar=False)
+
+        
+        if mode == 'RDI':
+            #if only RDI we skip the deltaKL calculation since we do only over-subctraction
+            delta_KL = klmodes*0.
+        else:
+            # using original Kl modes and reference models, compute the perturbed KL modes
+            # (spectra is already in models)
+            delta_KL = fm.perturb_specIncluded(evals,
+                                                evecs,
+                                                klmodes,
+                                                refs,
+                                                model_ref,
+                                                return_perturb_covar=False,
+                                                )
 
         # calculate postklip_psf using delta_KL
         postklip_psf, _, _ = fm.calculate_fm(delta_KL,
-                                             klmodes,
-                                             numbasis,
-                                             sci,
-                                             model_sci,
-                                             inputflux=None)
+                                            klmodes,
+                                            numbasis,
+                                            sci,
+                                            model_sci,
+                                            inputflux=None)
+
 
         # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
@@ -419,6 +456,12 @@ class DiskFM(NoFM):
             # save the parameter used in KLIP-FM. We save a float64 to avoid pbs
             # in the saving and loading
 
+            if mode == 'RDI':
+                klparam_dict['isRDI'] = np.float64(1.)
+            else:
+                klparam_dict['isRDI'] = np.float64(0.)
+            
+
             [IWA, OWA] = IOWA
             klparam_dict['IWA'] = np.float64(IWA)
             klparam_dict['OWA'] = np.float64(OWA)
@@ -433,6 +476,7 @@ class DiskFM(NoFM):
             # produce the kl basis
             klparam_dict['PAs'] = np.float64(self.PAs)
             klparam_dict['wvs'] = np.float64(self.wvs)
+            
 
             # To have a single identifier for each set of section/image for the
             # dictionnaries key, we use section first pixel and image number
@@ -464,7 +508,7 @@ class DiskFM(NoFM):
         Returns:
             Same but cleaned up if necessary
         """
-
+        
         # save the KL basis.
         if self.save_basis:
             self.save_kl_basis()
@@ -576,6 +620,7 @@ class DiskFM(NoFM):
             None
 
         """
+
         # Convert everything to np arrays and types to be safe for the saving.
         for key in section_ind_dict.keys():
             section_ind_dict[key] = np.asarray(section_ind_dict[key])
@@ -630,7 +675,7 @@ class DiskFM(NoFM):
                              """ is not a possible extension. Filenames can
                 haves 2 recognizable extension2: .h5 and .pkl""")
 
-    def load_basis_files(self, dataset):
+    def load_basis_files(self, dataset, psf_library = None):
         """
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
@@ -710,6 +755,8 @@ class DiskFM(NoFM):
 
         # load parameters of the correction that fm.klip_dataset produced
         # when we saved the FM basis.
+
+        self.isRDI = (self.klparam_dict['isRDI'] == 1)
         self.IWA = self.klparam_dict['IWA']
         self.OWA = self.klparam_dict['OWA']
 
@@ -766,11 +813,24 @@ class DiskFM(NoFM):
         # Create Custom Shared Memory array fmout to save output of forward modelling
         fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
 
+        # We will not keep track of validity of perturbation so we don't need those
+        perturbmag = None
+        perturbmag_shape = None
+        
+       
+        if psf_library is not None:
+            psf_lib = mp.Array(self.data_type, np.size(psf_library))
+            psf_lib_np = fm._arraytonumpy(psf_lib, psf_library.shape, dtype=self.data_type)
+            psf_lib_np[:] = psf_library
+            psf_lib_shape = psf_library.shape
+        else:
+            psf_lib = None
+            psf_lib_shape = None
+        
         # align and scale the images for each image. Use map to do this asynchronously
-
         # I need to run this code at least once in non-parallel mode to initialize the
-        # global variable outputs_shape in fm.py, because if I don't I cannot use
-        # fm._save_rotated_section. This is a short stuff and we do it only once.
+        # global variable outputs_shape in fm.py. This is a short stuff and we do it only once.
+
         fm._tpool_init(
             original_imgs,
             original_imgs_shape,
@@ -786,9 +846,14 @@ class DiskFM(NoFM):
             None,
             fmout_data,
             fmout_shape,
-            None,
-            None,
+            perturbmag,
+            perturbmag_shape, 
+            psf_lib, 
+            psf_lib_shape
         )
+
+        fmout_data = None
+        fmout_shape = None
 
         tpool = mp.Pool(
             processes=numthreads,
@@ -808,13 +873,15 @@ class DiskFM(NoFM):
                 None,
                 fmout_data,
                 fmout_shape,
-                None,
-                None,
+                perturbmag,
+                perturbmag_shape, 
+                psf_lib, 
+                psf_lib_shape
             ),
             maxtasksperchild=50,
         )
 
-        print("Begin align and scale images for each wavelength")
+        # print("Begin align and scale images for each wavelength")
         aligned_outputs = []
         for threadnum in range(self.numthreads):
             aligned_outputs += [
@@ -871,6 +938,15 @@ class DiskFM(NoFM):
         wvs = self.wvs
         unique_wvs = np.unique(wvs)
         original_imgs_shape = self.inputs_shape
+
+        if self.isRDI:
+            mode = 'RDI'
+        else:
+            mode = None 
+            # We are only interested in the RDI mode 
+            # we don't care since it does not have an 
+            # impact at this point
+
 
         for key in self.dict_keys:  # loop pver the sections/images
             # load KL from the dictionnaries
@@ -931,6 +1007,7 @@ class DiskFM(NoFM):
                 parang=self.pa_imgs_np[img_num],
                 numbasis=self.numbasis,
                 fmout=fmout_np,
+                mode = mode
             )
 
         # put any finishing touches on the FM Output
@@ -965,6 +1042,7 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis=1)
 
         return fmout_return
+    
 
 
 ##############################################################################
@@ -1049,3 +1127,5 @@ def _recursively_load_dict_contents_from_group(h5file, path):
             ans[key] = _recursively_load_dict_contents_from_group(
                 h5file, path + key + '/')
     return ans
+
+
