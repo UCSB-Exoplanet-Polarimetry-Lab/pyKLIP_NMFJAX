@@ -906,7 +906,7 @@ def polyfit(x, y, order=2, clip=2.5, niter=5, mask=None, return_y=True):
         return fit_vals
 
 
-def specphotcal(infiles, cencoef, aperture=1.):
+def specphotcal(infiles, cubes, prihdrs, cencoef, aperture=1.):
     '''
     Function specphotcal.  Computes approximate photometry from the
     satellite spots (using aperture photometry) and scale each
@@ -916,6 +916,8 @@ def specphotcal(infiles, cencoef, aperture=1.):
 
     Args:
         infiles: list of file names with CHARIS data cubes
+        cubes: all image cubes in the data set corresponding to filenames, shape (ncube, nwv, ny, nx)
+        prihdrs: primary headers for the cubes
         cencoef: 2D ndarray with coefficeitns
         aperture: float, radius of aperture for photometry in units of lambda/D
 
@@ -934,11 +936,10 @@ def specphotcal(infiles, cencoef, aperture=1.):
     all_x = []
     all_y = []
 
-    for i in range(len(fids)):
+    for i in range(len(cubes)):
 
-        hdulist = fits.open(infiles[i], mode='update')
-        im = hdulist[1].data
-        head = hdulist[0].header
+        im = cubes[i]
+        head = prihdrs[i]
         astrogrid_status = head['X_GRDST']
         lam = head['lam_min'] * np.exp(np.arange(im.shape[0]) * head['dloglam'])
         lam *= 1e-3

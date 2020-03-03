@@ -1,5 +1,6 @@
 import os
 import copy
+import re
 import numpy as np
 import scipy.ndimage as ndimage
 import astropy.io.fits as fits
@@ -224,8 +225,12 @@ class CHARISData(Data):
         if PSF_cube is not None:
             self.psfs = PSF_cube
 
-        # flag to see if we modified any headers
+        # flag to see if we modified any headers or data cubes
+        # new cubes will be saved separately only when distortion correction is carried out (modified data), and in this
+        # case, modified headers will be updated in the new files not the original ones. However, if only headers are
+        # modified but not the data, then headers will be updated in the original files and no new files will be saved.
         modified_hdrs = False
+        modified_data = np.zeros(len(filepaths)) # zero == False
 
         # read and organize data
         for index, filepath in enumerate(filepaths):
@@ -273,16 +278,30 @@ class CHARISData(Data):
             filenames.append([filepath for i in range(cube.shape[0])])
 
         # rescale all data to a uniform lenslet scale
-        filenames, data, ivars, prihdrs, exthdrs = _distortion_correction(filenames, data, ivars, prihdrs, exthdrs)
-
+        # TODO: distortion correction in parallel?
+        for index, filepath in enumerate(filepaths):
+            try:
+                if prihdrs[index]['PLATE_CAL'].lower() == 'true':
+                    continue
+            except:
+                pass
+            filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
+                                                                          prihdrs[index], exthdrs[index])
+            data[index] = cube
+            ivars[index] = ivar
+            prihdrs[index] = prihdr
+            exthdrs[index] = exthdr
+            filenames[index] = [filename for i in range(cube.shape[0])]
+            modified_data[index] = 1
+        modified_data = modified_data.astype(bool)
         # measure and update headers in the next two segments
 
         # fit for satellite spots globally if enabled
         spot_fit_coeffs = None
         if update_hdrs == True and sat_fit_method.lower() == 'global':
             print('fitting satellite spots globally')
-            #TODO: modify measure_sat_spots_global to take cubes instead of filepaths
-            #TODO: also modify all of global_centroid.py to use only extracted data rather than directly read from files
+            #TODO: modify measure_sat_spots_global to take cubes instead of filepaths, done, not tested
+            #TODO: also modify all of global_centroid.py to use only extracted data rather than directly read from files, done, not tested
             spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs, guess_center_loc=guess_center_loc)
 
         # fit for satellite spots locally if enabled
@@ -336,7 +355,7 @@ class CHARISData(Data):
             # simple mean for center for now
             center = np.mean(spot_loc, axis=1)
 
-            # TODO: check that data are modified through modifying cube
+            # TODO: check that data are modified through modifying cube (zero-flux pixels modified to be nans)
 
             centers.append(center)
             spot_fluxes.append(spot_flux)
@@ -394,6 +413,7 @@ class CHARISData(Data):
         except KeyError:
             self.object_name = "None"
 
+        # TODO: save distortion corrected data here before updating headers, but will need to modify savedata function
         if update_hdrs or (update_hdrs is None and modified_hdrs):
             print("Updating original headers with sat spot measurements.")
             self.update_input_cubes()
@@ -632,27 +652,44 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filenames, data, ivars, prihdrs, exthdrs):
+def _distortion_correction(filename, cube, ivar, prihdr, exthdr):
+    # TODO: how to modify rotation matrix coefficient?
+    # TODO: any other header info needs to be modified?
     '''
 
     Args:
-        filenames: list of file names with shape (nfile, nwv), where the filenames are identical copies along wavelength
-        data:
-        prihdrs:
-        exthdrs:
+        filename: filename for the cube
+        cube:
+        ivar:
+        prihdr:
+        exthdr:
 
     Returns:
+        filename:
+        cube:
+        ivar:
+        prihdr:
+        exthdr:
 
     '''
 
-    # TODO: rescale data and ivars to the uniform lenslet scale, update headers and save to a new set of filenames
-    #       return the new set of filenames along with distortion corrected data, ivars, and headers
-    #       all proceeding operations will be done on the distortion corrected data, which is already saved under
-    #       the new filenames
+    # TODO: rescale data cube and ivar to the uniform lenslet scale, update header
+    #       return a new filename along with distortion corrected cube, ivar, and updated primary&extension header
+    #       all proceeding operations will be done on the distortion corrected data, which will be saved at the
+    #       very end to the new filenames
 
-    filepaths = np.array(filenames)[:, 0]
+    # define keys
+    plate_cal_key = 'PLATE_CAL'
 
-    return filenames, data, ivars, prihdrs, exthdrs
+    # store x/y postion as a string
+    plate_cal_str = 'True'
+
+    # write positions
+    prihdr.set(plate_cal_key, value=plate_cal_str, comment='indicates whether distortion correction has been applied')
+    exthdr.set(plate_cal_key, value=plate_cal_str, comment='indicates whether distortion correction has been applied')
+    filename = re.sub('.fits', '_plate_cal.fits', filename)
+
+    return filename, cube, ivar, prihdr, exthdr
 
 
 def _read_sat_spots_from_hdr(hdr, wv_indices):
@@ -778,6 +815,8 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
     Main function of this module to fit for the locations of the four satellite spots
 
     Args:
+        TODO: check if fids in
+        filenames: list of filenames for every frame of all cubes, shape (ncube, nwv)
         cubes: list of input data cubes to be recentered
         ivars: inverse variance frames corresponding to cubes
         photocal: boolean, whether to scale each wavelength to the same photometric scale
@@ -805,7 +844,8 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
     p[:, 5] += ysol - y + np.median((y - ysol)[mask])
 
     if photocal:
-        phot = global_centroid.specphotcal(infiles, p)
+        # TODO: implement a proper spectral photo-calibration somewhere in the reduction sequence
+        phot = global_centroid.specphotcal(filepaths, cubes, prihdrs, p)
     else:
         phot = 1.
 
