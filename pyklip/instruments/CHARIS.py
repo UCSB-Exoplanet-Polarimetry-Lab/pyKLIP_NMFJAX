@@ -60,7 +60,6 @@ class CHARISData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
-    # TODO: add lenslet scales to CHARISData property, and also error bars too?
     # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
     lenslet_scale_x = 0.01616 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_y = 0.01603 # lenslet scale, calibrated against HST images of M5
@@ -76,8 +75,6 @@ class CHARISData(Data):
     ### Constructors ###
     ####################
 
-    # TODO: add a key in the headers to specify distortion correction status,
-    #       then this program can check the headers to see if input is distortion corrected
     def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
                  PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
         """
@@ -102,6 +99,13 @@ class CHARISData(Data):
     @input.setter
     def input(self, newval):
         self._input = newval
+
+    @property
+    def ivars(self):
+        return self._ivars
+    @ivars.setter
+    def ivars(self, newval):
+        self._ivars = newval
 
     @property
     def centers(self):
@@ -281,15 +285,13 @@ class CHARISData(Data):
         # TODO: distortion correction in parallel?
         for index, filepath in enumerate(filepaths):
             try:
-                if prihdrs[index]['PLATE_CAL'].lower() == 'true':
+                if exthdrs[index]['PLATE_CAL'].lower() == 'true':
                     continue
             except:
                 pass
-            filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
-                                                                          prihdrs[index], exthdrs[index])
+            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index])
             data[index] = cube
             ivars[index] = ivar
-            prihdrs[index] = prihdr
             exthdrs[index] = exthdr
             filenames[index] = [filename for i in range(cube.shape[0])]
             modified_data[index] = 1
@@ -363,11 +365,18 @@ class CHARISData(Data):
 
         # convert everything into numpy arrays
         # reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
-        # ivars and wv_indices are never referenced from this point on so they're commented out currently
+        # wv_indices are never referenced from this point on so they're commented out currently
         data = np.array(data)
+        ### testing begin ###
+        hdulist = fits.HDUList()
+        hdulist.append(fits.PrimaryHDU(header=None, data=data))
+        filepath = os.path.dirname(filenames[0][0])
+        filepath = os.path.join(filepath, 'testing_nan_hypercube.fits')
+        hdulist.writeto(filepath, overwrite=True)
+        ###  testing end  ###
         dims = data.shape
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
-        # ivars = np.array(ivars).reshape([dims[0] * dims[1], dims[2], dims[3]])
+        ivars = np.array(ivars).reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
         rot_angles = (np.array(rot_angles).reshape([dims[0] * dims[1]])) 
@@ -389,6 +398,7 @@ class CHARISData(Data):
 
         #set these as the fields for the CHARISData object
         self._input = data
+        self._ivars = ivars
         self._centers = centers
         self._filenums = filenums
         self._filenames = filenames
@@ -413,7 +423,10 @@ class CHARISData(Data):
         except KeyError:
             self.object_name = "None"
 
-        # TODO: save distortion corrected data here before updating headers, but will need to modify savedata function
+        # if cube has been distortion corrected, save to new file
+        if np.any(modified_data == True):
+            self.save_plate_cal_cubes(modified_data, dims)
+
         if update_hdrs or (update_hdrs is None and modified_hdrs):
             print("Updating original headers with sat spot measurements.")
             self.update_input_cubes()
@@ -428,7 +441,21 @@ class CHARISData(Data):
             with fits.open(filename, mode='update') as hdulist:
                 hdulist[1].header = hdr
                 hdulist.flush()
-        
+
+
+    def save_plate_cal_cubes(self, modified_data, dims):
+
+        modified_indices = np.argwhere(modified_data == True)
+        save_data = np.reshape(self._input, dims)
+        save_ivars = self.ivars.reshape(dims)
+        save_filenames = self.filenames.reshape([dims[0], dims[1]])
+        for index in modified_indices:
+            hdulist = fits.HDUList()
+            hdulist.append(fits.PrimaryHDU(header=self.prihdrs[index], data=None))
+            hdulist.append(fits.PrimaryHDU(header=self.exthdrs[index], data=save_data[index]))
+            hdulist.append(fits.PrimaryHDU(data=save_ivars[index]))
+            hdulist.writeto(save_filenames[index], overwrite=True)
+
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
@@ -472,7 +499,6 @@ class CHARISData(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        # TODO: remove this next paragraph?
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
         # The following paragraph is only valid when reading raw GPI cube.
@@ -652,44 +678,37 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filename, cube, ivar, prihdr, exthdr):
+def _distortion_correction(filename, cube, ivar, exthdr):
     # TODO: how to modify rotation matrix coefficient?
     # TODO: any other header info needs to be modified?
     '''
+    Rescale cube and ivar to a uniform lenslet scale, update extension header indicating distortion correction status,
+    return a new filename along with distortion corrected cube, ivar, and updated extension header.
+    All proceeding operations will be done on the distortion corrected data, which will be saved to the new filenames
 
     Args:
         filename: filename for the cube
-        cube:
-        ivar:
-        prihdr:
-        exthdr:
+        cube: data cube
+        ivar: inverse variance cube for the corresponding data cube
+        exthdr: extension header for the data cube
 
     Returns:
-        filename:
-        cube:
-        ivar:
-        prihdr:
-        exthdr:
-
+        filename: an updated path to save the distortion corrected file
+        cube: distortion corrected cube
+        ivar: distortion corrected inverse variance
+        exthdr: updated header with keyword "PLATE_CAL" indicating distortion correction status
     '''
 
-    # TODO: rescale data cube and ivar to the uniform lenslet scale, update header
-    #       return a new filename along with distortion corrected cube, ivar, and updated primary&extension header
-    #       all proceeding operations will be done on the distortion corrected data, which will be saved at the
-    #       very end to the new filenames
+    # rescaling data and inverse variance to a uniform lenslet scale
+    # pix_val = int(re.sub('.*000', '', re.sub('_.*', '', filename)))
+    # cube.fill(pix_val)
 
-    # define keys
     plate_cal_key = 'PLATE_CAL'
-
-    # store x/y postion as a string
     plate_cal_str = 'True'
-
-    # write positions
-    prihdr.set(plate_cal_key, value=plate_cal_str, comment='indicates whether distortion correction has been applied')
     exthdr.set(plate_cal_key, value=plate_cal_str, comment='indicates whether distortion correction has been applied')
     filename = re.sub('.fits', '_plate_cal.fits', filename)
 
-    return filename, cube, ivar, prihdr, exthdr
+    return filename, cube, ivar, exthdr
 
 
 def _read_sat_spots_from_hdr(hdr, wv_indices):
@@ -815,7 +834,7 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
     Main function of this module to fit for the locations of the four satellite spots
 
     Args:
-        TODO: check if fids in
+        TODO: check if fids in global_centroid.py can be replaced by simply np.arange(len(cubes))
         filenames: list of filenames for every frame of all cubes, shape (ncube, nwv)
         cubes: list of input data cubes to be recentered
         ivars: inverse variance frames corresponding to cubes
@@ -828,10 +847,9 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
 
     '''
 
-    # TODO: allow user to input initial guess for the satellite spots?
     # TODO: spotflux use peak flux or aperture flux?
 
-    filepaths = np.array(filenames)[:, 0]
+    filepaths = np.unique(filenames)
     centroid_params, x, y, mask = global_centroid.fitcen_parallel(filepaths, cubes, prihdrs, smooth_coef=True,
                                                                   guess_center_loc=guess_center_loc)
     xsol, ysol = global_centroid.fitallrelcen(cubes, ivars, r1=15, r2=45)
