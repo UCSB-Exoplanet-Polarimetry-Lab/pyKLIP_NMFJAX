@@ -225,6 +225,7 @@ class CHARISData(Data):
         inttimes = []
         prihdrs = []
         exthdrs = []
+        nan_indices = []
 
         if PSF_cube is not None:
             self.psfs = PSF_cube
@@ -245,6 +246,11 @@ class CHARISData(Data):
                 exthdr = copy.copy(hdulist[1].header)
                 w = wcs.WCS(header=prihdr, naxis=[1, 2])
                 astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] # repeat astrom header for each wavelength slice
+
+            # mask pixels that receive no light as nans. Include masking a 1 pix boundary around NaNs
+            # only record nan indices here, apply mask after distortion correction and global centroid
+            input_minfilter = ndimage.minimum_filter(cube, (0, 1, 1))
+            nan_indices.append(np.where(input_minfilter == 0))
 
             # recalculate parang if necessary
             try:
@@ -289,7 +295,9 @@ class CHARISData(Data):
                     continue
             except:
                 pass
-            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index])
+            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
+                                                                  CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
+                                                                  CHARISData.lenslet_scale_y)
             data[index] = cube
             ivars[index] = ivar
             exthdrs[index] = exthdr
@@ -315,8 +323,7 @@ class CHARISData(Data):
             cube_wv_indices = wv_indices[index]
 
             # mask pixels that receive no light as nans. Include masking a 1 pix boundary around NaNs
-            input_minfilter = ndimage.minimum_filter(cube, (0, 1, 1))
-            cube[np.where(input_minfilter == 0)] = np.nan
+            cube[nan_indices[index]] = np.nan
 
             if 'SATS0_0' in exthdr and not update_hdrs == True:
                 # read in sat spots from file
@@ -444,7 +451,7 @@ class CHARISData(Data):
             hdulist.append(fits.PrimaryHDU(data=save_ivars[index[0]]))
             hdulist.writeto(save_filenames[index[0]], overwrite=True)
 
-
+    # TODO: is this savedata function still needed for CHARIS.py?
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
                  extra_exthdr_keywords = None, extra_prihdr_keywords = None):
@@ -666,7 +673,7 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filename, cube, ivar, exthdr):
+def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, yscale):
     # TODO: how to modify rotation matrix coefficient?
     # TODO: any other header info needs to be modified?
     '''
@@ -679,6 +686,9 @@ def _distortion_correction(filename, cube, ivar, exthdr):
         cube: data cube
         ivar: inverse variance cube for the corresponding data cube
         exthdr: extension header for the data cube
+        lenslet_scale: uniform scale the data will be correct to
+        xscale: measured x-axis lenslet scale for uncorrected CHARIS data
+        yscale: measured y-axis lenslet scale for uncorrected CHARIS data
 
     Returns:
         filename: an updated path to save the distortion corrected file
@@ -688,8 +698,15 @@ def _distortion_correction(filename, cube, ivar, exthdr):
     '''
 
     # rescaling data and inverse variance to a uniform lenslet scale
-    # pix_val = int(re.sub('_.*', '', re.sub('.*000', '', filename)))
-    # cube.fill(pix_val)
+    x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
+    x, y = np.meshgrid(x, x)
+    x_scaling = lenslet_scale / xscale
+    y_scaling = lenslet_scale / yscale
+    x = x * x_scaling + cube.shape[1] // 2
+    y = y * y_scaling + cube.shape[1] // 2
+    for i in range(cube.shape[0]):
+        cube[i] = ndimage.map_coordinates(cube[i], [y, x])
+        ivar[i] = ndimage.map_coordinates(ivar[i], [y, x])
 
     plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
