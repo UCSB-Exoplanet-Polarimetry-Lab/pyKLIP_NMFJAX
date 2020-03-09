@@ -26,7 +26,9 @@ Elijah Spiro: helped develop the MagAO interface
 
 Laurent Pueyo: helped with optimizing the algorithm and provided very useful advice
 
-Pauline Arriaga: wrote disk forward modelling code
+Pauline Arriaga: wrote DiskFM code
+
+Johan Mazoyer: helped develop and test DiskFM (improved speed and added modes)
 
 Bin Ren: Wrote the NMF code
 

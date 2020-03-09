@@ -2,11 +2,12 @@
 
 Basic KLIP Tutorial with GPI
 ============================
-Here, we will explain how to run a simple PSF subtraciton using the KLIP algorithm in pyKLIP. If you are not familiar
+Here, we will explain how to run a simple PSF subtraction using the KLIP algorithm in pyKLIP. If you are not familiar
 with KLIP, we suggest you first read `the KLIP paper <http://arxiv.org/abs/1207.4197>`_ which describes the algorithm
 in detail. In this tutorial, we assume you are familiar with the terminology in KLIP. We will use GPI
-data to explain the process, but other than reading in the data, all the PSF subtraction steps are the same for
-any other dataset.
+data as an example to explain the process. If you are planning to reduce data from another instrument, see
+:ref:`genericdata-label` to learn how to ingest it. We recommend you go through the quick GPI example first. Other than
+reading in the data, all the PSF subtraction steps are the same.
 
 Reading in GPI Data
 --------------------
@@ -61,6 +62,7 @@ Next, we will perform the actual KLIP ADI+SDI subtraction. To take advantage of 
     parallelized.klip_dataset(dataset, outputdir="path/to/save/dir/", fileprefix="myobject",
                               annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
                               calibrate_flux=True, mode="ADI+SDI")
+
 
 This will save the processed KLIP images in the field ``dataset.output`` and as FITS files saved using the directory and fileprefix
 specified. The FITS files contain two different kinds of outputs. The first is a "KL-mode cube", a single 3D datacube where the z-axis is all the

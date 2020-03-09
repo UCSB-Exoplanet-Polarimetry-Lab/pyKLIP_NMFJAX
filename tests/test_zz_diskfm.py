@@ -135,6 +135,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
                 diskfm_dir,
                 fileprefix + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])))
 
+    
     diskobj = DiskFM(
         dataset.input.shape,
         numbasis,

@@ -144,24 +144,32 @@ class PSFLibrary(object):
             print("Done making correlation matrix")
 
 
-    def save_correlation(self, filename, clobber=False, format="fits"):
+    def save_correlation(self, filename, overwrite=False, clobber=None, format="fits"):
         """
         Saves self.correlation to a file specified by filename
         Args:
             filename (str): filepath to store the correlation matrix
+            overwrite (bool): if true overwrite the previous correlation matrix
+            clobber (bool): same as overwrite, but deprecated in astropy. 
             format (str): type of file to store the correlation matrix as. Supports numpy?/fits?/pickle? (TBD)
 
         """
+        
+        if clobber is not None:
+            print("pyklip.rdi.save_correlation: clobber was deprecated in Astropy version 2.0 and" \
+            "will be removed in a future version. Use argument overwrite instead)")
+            overwrite = clobber
+
 
         #TODO: We should probably save more information into the header here, but what exactly it'll be is TBD
         if format == "fits":
             hdu = fits.PrimaryHDU(self.master_correlation)
             if os.path.isfile(filename):
             #If the file already exists give user warning.     
-                if clobber:
-                    hdu.writeto(filename, clobber=clobber)
+                if overwrite:
+                    hdu.writeto(filename, overwrite=overwrite)
                 else: 
-                    print("save_correlation: File already exists. Set clobber=True to overwrite")
+                    print("save_correlation: File already exists. Set overwrite=True to overwrite")
             else:
                 hdu.writeto(filename)
 

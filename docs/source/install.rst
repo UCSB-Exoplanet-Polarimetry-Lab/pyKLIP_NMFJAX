@@ -71,3 +71,36 @@ modify the number of threads MKL uses on a per-code basis by running the followi
     import mkl
     mkl.set_num_threads(1)
 
+
+Parallelization on windows
+--------------------------------
+
+On windows, you might run into the following error::
+
+    RuntimeError:
+            Attempt to start a new process before the current process
+            has finished its bootstrapping phase.
+            This probably means that you are on Windows and you have
+            forgotten to use the proper idiom in the main module:
+                if __name__ == '__main__':
+                    freeze_support()
+                    ...
+            The "freeze_support()" line can be omitted if the program
+            is not going to be frozen to produce a Windows executable.
+
+If so, simply encapsulate the main code of your script within the following if statement ``if __name__ == '__main__':`` as shown below.
+Note that definitions of new functions or include statements can be placed before this statement. Example:
+
+.. code-block:: python
+
+    import glob
+    import pyklip.instruments.GPI as GPI
+    import pyklip.parallelized as parallelized
+
+    if __name__ == '__main__':
+        filelist = glob.glob("path/to/dataset/*.fits")
+        dataset = GPI.GPIData(filelist, highpass=True)
+
+        parallelized.klip_dataset(dataset, outputdir="path/to/save/dir/", fileprefix="myobject",
+                                  annuli=9, subsections=4, movement=1, numbasis=[1,20,50,100],
+                                  calibrate_flux=True, mode="ADI+SDI")
