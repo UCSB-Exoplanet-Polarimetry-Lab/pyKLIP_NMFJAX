@@ -3,6 +3,11 @@
 Release Notes
 ==============
 
+Version 2.1
+ * RDI support in forward modeling framework (currently works for DiskFM, support for other FM modules coming)
+ * GenericData is more feature rich (better saving, automatic wcs generation)
+ * Minor bug fixes and documentation updates
+
 Version 2.0.1
  * Update Python 3 version to Python 3.6
 
