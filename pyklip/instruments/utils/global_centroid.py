@@ -459,7 +459,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     Args:
         cube: 3D ndarray, CHARIS data cube
         ivar: 3D ndarray, inverse variance of the CHARIS data cube
-        lam: 1D ndarray, wavelengths
+        lam: 1D ndarray, wavelengths in microns
         spotsep: float or None.  If float, separation of the satellite spots in units
                  of lambda/D.  If None, only use the diffraction pattern in an annulus
                  between r1 and r2.
@@ -491,10 +491,11 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     iref = i1 + len(lam[i1:i2]) // 2
 
     for i in range(cube.shape[0]):
-        cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
-        cubesmooth[i] *= mask
+        # the following two lines commented out, has been moved to CHARIS.py._distortion_correction()
+        # TODO: remove the following two lines when things finalize
+        # cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
+        # cubesmooth[i] *= mask
         cubesmooth[i] = ndimage.spline_filter(cubesmooth[i])
-    # print(np.mean(cube), np.mean(cubesmooth), np.std(cube), np.std(cubesmooth))
 
     if spotsep is not None:
         if np.abs(spotsep - 15.9) < 1:
@@ -673,7 +674,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
         ivar = ivars[i]
         head = prihdrs[i]
         lam = head['lam_min'] * np.exp(np.arange(cube.shape[0]) * head['dloglam'])
-        lam *= 1e-3
+        lam *= 1e-3 # in microns
         lamlist += [lam]
 
         if astrogrid_status[i] is None:
@@ -783,7 +784,9 @@ def fitallrelcen(cubes, ivars, r1=15, r2=50, maxcpus=multiprocessing.cpu_count()
     for i in range(ncube):
         im = cubes[i, iref]
         ivar = ivars[i, iref]
-        allims[i] = _smooth(im, ivar, 0.5, True)
+        # TODO: smoothing has been moved to CHARIS.py._distortion_correction(), remove next line when things finalize
+        # allims[i] = _smooth(im, ivar, 0.5, True)
+        allims[i] = ndimage.spline_filter(allims[i])
 
     tasks = multiprocessing.Queue()
     results = multiprocessing.Queue()
@@ -926,7 +929,7 @@ def specphotcal(infiles, cubes, prihdrs, cencoef, aperture=1.):
 
     '''
 
-    fids = [int(re.sub('.*CRSA', '', re.sub('_cube.fits', '', infile)))
+    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile)))
             for infile in infiles]
 
     phi = polyfit(fids, cencoef[:, 0], return_y=False)

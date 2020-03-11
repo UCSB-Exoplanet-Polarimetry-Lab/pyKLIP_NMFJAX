@@ -49,7 +49,7 @@ class CHARISData(Data):
 
     Methods:
         readdata(): reread in the data
-        savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
+        savedata(): save a specified data in the CHARIS datacube format (in the 1st extension header)
         calibrate_output(): calibrates flux of self.output
     """
     ##########################
@@ -295,9 +295,9 @@ class CHARISData(Data):
                     continue
             except:
                 pass
-            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
-                                                                  CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
-                                                                  CHARISData.lenslet_scale_y)
+            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], wvs[index],
+                                                                  exthdrs[index], CHARISData.lenslet_scale,
+                                                                  CHARISData.lenslet_scale_x, CHARISData.lenslet_scale_y)
             data[index] = cube
             ivars[index] = ivar
             exthdrs[index] = exthdr
@@ -673,7 +673,7 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, yscale):
+def _distortion_correction(filename, cube, ivar, lam, exthdr, lenslet_scale, xscale, yscale):
     # TODO: how to modify rotation matrix coefficient?
     # TODO: any other header info needs to be modified?
     '''
@@ -685,6 +685,7 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         filename: filename for the cube
         cube: data cube
         ivar: inverse variance cube for the corresponding data cube
+        lam: wavelength array for the cube, in microns
         exthdr: extension header for the data cube
         lenslet_scale: uniform scale the data will be correct to
         xscale: measured x-axis lenslet scale for uncorrected CHARIS data
@@ -696,6 +697,14 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         ivar: distortion corrected inverse variance
         exthdr: updated header with keyword "PLATE_CAL" indicating distortion correction status
     '''
+
+    # lightly smooth data
+    cubesmooth = np.copy(cube)
+    mask = np.any(cubesmooth, axis=0) != 0
+
+    for i in range(cube.shape[0]):
+        cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
+        cubesmooth[i] *= mask
 
     # rescaling data and inverse variance to a uniform lenslet scale
     x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
@@ -711,7 +720,7 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
     exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
-    filename = re.sub('.fits', '_plate_cal.fits', filename)
+    filename = re.sub('.fits', '_platecal.fits', filename)
 
     return filename, cube, ivar, exthdr
 
