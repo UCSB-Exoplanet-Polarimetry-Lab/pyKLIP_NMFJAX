@@ -2,7 +2,7 @@ import os
 import copy
 import re
 import numpy as np
-import scipy.ndimage as ndimage
+from scipy import ndimage, signal
 import astropy.io.fits as fits
 import datetime
 from astropy import wcs
@@ -65,7 +65,7 @@ class CHARISData(Data):
     lenslet_scale_y = 0.01603 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_x_err = 0.00005
     lenslet_scale_y_err = 0.00007
-    lenslet_scale = 0.01616 # CHARIS data will be re-scaled to this uniform lenslet scale
+    lenslet_scale = lenslet_scale_x # CHARIS data will be re-scaled to this uniform lenslet scale
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
@@ -295,9 +295,9 @@ class CHARISData(Data):
                     continue
             except:
                 pass
-            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], wvs[index],
-                                                                  exthdrs[index], CHARISData.lenslet_scale,
-                                                                  CHARISData.lenslet_scale_x, CHARISData.lenslet_scale_y)
+            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
+                                                                  CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
+                                                                  CHARISData.lenslet_scale_y, smooth=True)
             data[index] = cube
             ivars[index] = ivar
             exthdrs[index] = exthdr
@@ -673,21 +673,23 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filename, cube, ivar, lam, exthdr, lenslet_scale, xscale, yscale):
+def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, yscale, smooth=True):
     # TODO: how to modify rotation matrix coefficient?
     # TODO: any other header info needs to be modified?
     '''
     Rescale cube and ivar to a uniform lenslet scale, update extension header indicating distortion correction status,
     return a new filename along with distortion corrected cube, ivar, and updated extension header.
-    All proceeding operations will be done on the distortion corrected data, which will be saved to the new filenames
+    This function currently rescales y-axis to match x, i.e., lenslet_scale = xscale, which is reflected in the static
+    variables of the data class as well. If changing this default, the implementation of distortion must also be modified
+    accordingly.
+    All proceeding operations will be done on the distortion corrected data, which will be saved to the new filenames.
 
     Args:
         filename: filename for the cube
-        cube: data cube
+        cube: data cube, should not have any nan pixels at this point
         ivar: inverse variance cube for the corresponding data cube
-        lam: wavelength array for the cube, in microns
         exthdr: extension header for the data cube
-        lenslet_scale: uniform scale the data will be correct to
+        lenslet_scale: uniform scale the data will be correct to (by default is equal to xscale)
         xscale: measured x-axis lenslet scale for uncorrected CHARIS data
         yscale: measured y-axis lenslet scale for uncorrected CHARIS data
 
@@ -698,31 +700,125 @@ def _distortion_correction(filename, cube, ivar, lam, exthdr, lenslet_scale, xsc
         exthdr: updated header with keyword "PLATE_CAL" indicating distortion correction status
     '''
 
-    # lightly smooth data
-    cubesmooth = np.copy(cube)
-    mask = np.any(cubesmooth, axis=0) != 0
+    if not isinstance(cube, np.ndarray) or not isinstance(ivar, np.ndarray):
+        raise TypeError("cube and ivar must be ndarrays")
+    if cube.shape != ivar.shape:
+        raise ValueError("cube and ivar must be ndarrays of the same shape")
 
-    for i in range(cube.shape[0]):
-        cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
-        cubesmooth[i] *= mask
+    cube_smooth = np.copy(cube)
+    ivar_smooth = np.copy(ivar)
+    cube_cal = np.copy(cube)
+    ivar_cal = np.copy(ivar)
+    # make a mask for pixel locations that receive no light in all wavelengths
+    mask = np.any(cube, axis=0) != 0
 
-    # rescaling data and inverse variance to a uniform lenslet scale
-    x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
-    x, y = np.meshgrid(x, x)
-    x_scaling = lenslet_scale / xscale
-    y_scaling = lenslet_scale / yscale
-    x = x * x_scaling + cube.shape[1] // 2
-    y = y * y_scaling + cube.shape[1] // 2
-    for i in range(cube.shape[0]):
-        cube[i] = ndimage.map_coordinates(cube[i], [y, x])
-        ivar[i] = ndimage.map_coordinates(ivar[i], [y, x])
+    # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
+
+    if smooth:
+        # make 1D kernels of size 5, and perform convolution along x and y separately
+        gain = np.mean(cube_smooth)
+        sigma = 0.5
+        xdel = 1. * np.arange(5) - 2.
+        gx = np.exp(- (xdel ** 2) / (2 * sigma ** 2))
+        gx /= np.sum(gx)
+
+        def _high_res_1dspline(x, a=-0.5):
+            '''
+            Function that returns a 4*4 spline interpolating kernel, evalutated at the given coordinates x
+            The input coordinates x must range from -2 to 2.
+            Since the high resolution spline function is a piecewise function, the first and last element of x must be in
+            range (1, 2) and the 2nd and 3rd element be in range (0, 1).
+
+            Args:
+                x: coordinates at which to evaluate the high resolution spline function
+                a: the constant that defines the spline function
+
+            Returns:
+                a kernal with the same shape as x, with its elements evaluated at x
+
+            '''
+            x = np.abs(x)
+
+            # These constraints costs time to check since this function is in nested for loops
+            # Therefore, use these checks only for debug purposes, comment them out in final working code
+            if max(x) > 2:
+                raise ValueError('high resolution spline interpolating function does not support window size > 5')
+            if len(x.shape) != 1 or len(x) != 4:
+                raise ValueError('high resolution spline kernel must be 1d array of 4 elements')
+            if x[0] < 1 or x[0] > 2 or x[3] < 1 or x[3] > 2 or x[1] > 1 or x[2] > 1:
+                raise ValueError('coordinates must satisfy 2 in range (1,2) and 2 in range(0,1)')
+
+            kernel = np.zeros(x.shape)
+            kernel[1:3] = (a + 2) * x[1:3] ** 3 - (a + 3) * x[1:3] ** 2 + 1
+            kernel[0] = a * x[0] ** 3 - 5 * a * x[0] ** 2 + 8 * a * x[0] - 4 * a
+            kernel[3] = a * x[3] ** 3 - 5 * a * x[3] ** 2 + 8 * a * x[3] - 4 * a
+
+            return kernel
+
+        for wv in range(cube.shape[0]):
+            # convolve every row (along x-axis with fixed y index: i)
+            for i in range(cube.shape[1]):
+                imrow = cube[wv, i]
+                ivarrow = ivar[wv, i]
+                imrow_smooth = signal.convolve(imrow * ivarrow, gx, mode='same')
+                ivarrow_smooth = signal.convolve(ivarrow, gx, mode='same')
+                imrow_smooth /= ivarrow_smooth + 1e-35 # to avoid division by 0
+                cube_smooth[wv, i] = imrow_smooth
+                ivar_smooth[wv, i] = ivarrow_smooth
+
+            # set up coordinates to interpolate
+            x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
+            x, y = np.meshgrid(x, x)
+            x_scaling = lenslet_scale / xscale # by default is 1
+            y_scaling = lenslet_scale / yscale
+            x = x * x_scaling + cube.shape[1] // 2
+            y = y * y_scaling + cube.shape[1] // 2
+            # interpolate + smooth simultaneously along y-axis
+            # skip a 10 pixels edge
+            for i in range(10, cube.shape[1] - 10):
+                for j in range(10, cube.shape[2] - 10):
+                    # high resolution cubic spline function
+                    m = int(x[i, j]) # x index on the original frame
+                    n = int(y[i, j]) # y index on the original frame
+                    d = modf(y[i, j])[0] # distance from interpolated point to n
+                    if n < 2: # symmetric rescaling around geometric center, therefore, no need to check other side
+                        raise ValueError('not enough rows skipped in order to interpolate inside original FOV')
+                    ydel = 1. * np.arange(4) - 1. - d
+                    fy = _high_res_1dspline(ydel)
+                    gy = np.exp(- (ydel ** 2) / (2 * sigma ** 2))
+                    ivar_seg = ivar_smooth[wv, n-1:n+3, m]
+                    combined_kernel = ivar_seg * gy * fy
+                    combined_kernel /= np.sum(combined_kernel)
+                    cube_cal[wv, i, j] = np.sum(cube_smooth[wv, n-1:n+3, m] * combined_kernel)
+                    ivar_cal[wv, i, j] = np.sum(ivar_smooth[wv, n-1:n+3, m] * gy * fy / np.sum(gy * fy))
+        print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
+        cube_cal *= mask
+        ivar_cal *= mask
+        print('signal gain in distortion correction after masking: {}'.format(np.mean(cube_cal) / gain))
+
+    else:
+        x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
+        x, y = np.meshgrid(x, x)
+        x_scaling = lenslet_scale / xscale
+        y_scaling = lenslet_scale / yscale
+        x = x * x_scaling + cube.shape[1] // 2
+        y = y * y_scaling + cube.shape[1] // 2
+        for i in range(cube.shape[0]):
+            cube_cal[i] = ndimage.map_coordinates(cube[i], [y, x])
+            ivar_cal[i] = ndimage.map_coordinates(ivar[i], [y, x])
+
+        for i in range(cube.shape[0]):
+            cube_cal[i] = _smooth(cube_cal[i], ivar_cal[i], 0.5, spline_filter=False)
+            cube_cal[i] *= mask
+            ivar_cal[i] = _smooth(ivar_cal[i], np.ones(ivar_cal[i].shape), 0.5, spline_filter=False)
+            ivar_cal[i] *= mask
 
     plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
     exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
     filename = re.sub('.fits', '_platecal.fits', filename)
 
-    return filename, cube, ivar, exthdr
+    return filename, cube_cal, ivar_cal, exthdr
 
 
 def _read_sat_spots_from_hdr(hdr, wv_indices):
