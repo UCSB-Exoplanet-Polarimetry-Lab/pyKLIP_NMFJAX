@@ -18,7 +18,7 @@ class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None):
         """
         Defining the planet to characterizae
 
@@ -37,6 +37,11 @@ class FMPlanetPSF(NoFM):
             spectrallib_units: can be either "flux"" or "contrast". Flux units requires dividing by the flux of the star to get contrast 
             star_spt: star spectral type, if None default to some random one
             refine_fit: (NOT implemented) refine the separation and pa supplied
+            field_dependent_correction: a function of the form ``output_stamp = correction(input_stamp, input_dx, input_dy)
+                                    where, input_stamp is a 2-D image of shape (y_stamp, x_stamp). input_dx and input_dy have
+                                    the same shape and represent the offset of each pixel from the star (in pixel units). The 
+                                    function returns an output_stamp of the same shape, but corrected for any field dependent
+                                    throughputs or distortions.
         """
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
@@ -109,6 +114,8 @@ class FMPlanetPSF(NoFM):
                 plt.show()
 
         self.psfs_func_list = psfs_func_list
+
+        ### TODO: some initalization of field dependent correction
 
 
     def alloc_fmout(self, output_img_shape):
@@ -208,6 +215,9 @@ class FMPlanetPSF(NoFM):
             psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
             psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
+            # TODO: after initally getting it working, we need to account for the fact that PSFs at different wavelengths got moved, so the 
+            # field dependent correction needs to be done in the reference frame where the planet did not get magnified. 
+
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
             l = int(round(psf_centx + ref_center[0]))
@@ -223,6 +233,9 @@ class FMPlanetPSF(NoFM):
             # use intepolation spline to generate a model PSF and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
                     self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+            # TODO: apply field dependent correction
+            ## calculate for each pixel, the distance from the star (use x_grid, and y_grid)
+            ## apply throuhgput for each pixel based on function that takes input PSF, dx, dy from star. 
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
