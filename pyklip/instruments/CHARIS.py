@@ -175,7 +175,7 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=True, sat_fit_method='global', IWA=None, OWA=None):
         """
         Method to open and read a list of CHARIS data
 
@@ -207,8 +207,6 @@ class CHARISData(Data):
         if guess_spot_locs is None:
             # default to typical locations for 4 satellite spots in a CHARIS data cube, each location in [x, y] format
             guess_spot_locs = [[129, 90], [109, 129], [71, 109], [91, 70]]
-            # TODO: modify _measure_sat_spots() to handle alternating diffraction spots,
-            #       and then modify the conditional default guess_spot_locs values correspondingly
 
         #make some lists for quick appending
         data = []
@@ -295,9 +293,12 @@ class CHARISData(Data):
                     continue
             except:
                 pass
+            import time
+            stime = time.time()
             filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
                                                                   CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
                                                                   CHARISData.lenslet_scale_y, smooth=True)
+            print('cube {} distortion correction: {} seconds'.format(index, time.time() - stime))
             data[index] = cube
             ivars[index] = ivar
             exthdrs[index] = exthdr
@@ -327,6 +328,8 @@ class CHARISData(Data):
 
             if 'SATS0_0' in exthdr and not update_hdrs == True:
                 # read in sat spots from file
+                if index == '0':
+                    print('using existing satellite spots in the headers')
                 spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
             elif sat_fit_method.lower() == 'global' and update_hdrs == True:
                 try:
@@ -349,7 +352,7 @@ class CHARISData(Data):
                         _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
                 spot_flux = np.nanmean(spot_flux, axis=1)
                 modified_hdrs = True
-            else:
+            elif sat_fit_method.lower() == 'local' and update_hdrs == True:
                 print("Finding satellite spots for cube {0}".format(index))
                 try:
                     spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_locs,
@@ -358,6 +361,16 @@ class CHARISData(Data):
                     print("Unable to locate sat spots for cube{0}. Skipping...".format(index))
                     continue
                 modified_hdrs = True # we need to update input cube headers
+            else:
+                if update_hdrs == False:
+                    print('no satellite spots found in current headers and no satellite spots measurement requested')
+                    # this case could happen for data taken without turning on the astrogrid
+                    # set default value for the sake of data class structure, but has no physical meaning
+                    spot_loc = np.full((len(cube_wv_indices), 4, 2), cube.shape[1] // 2)
+                    spot_flux = np.zeros((len(cube_wv_indices), 4))
+                else:
+                    raise ValueError('satellite spots fitting method:{} is not a valid option'.format(sat_fit_method))
+
 
             # simple mean for center for now
             center = np.mean(spot_loc, axis=1)
@@ -711,6 +724,11 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     ivar_cal = np.copy(ivar)
     # make a mask for pixel locations that receive no light in all wavelengths
     mask = np.any(cube, axis=0) != 0
+    # get indices to perform interpolation on
+    # this is to reduce the number of calculations by a factor of ~2 as there are more than half pixels around the image
+    # that receive no light, this doesn't treat the bad pixels inside the image as it doesn't treat the mapping between
+    # the original integer coordinates and the interpolating coordinates.
+    yind, xind = np.nonzero(mask)
 
     # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
 
@@ -720,7 +738,7 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         sigma = 0.5
         xdel = 1. * np.arange(5) - 2.
         gx = np.exp(- (xdel ** 2) / (2 * sigma ** 2))
-        gx /= np.sum(gx)
+        gx /= np.sum(gx) + 1e-35
 
         def _high_res_1dspline(x, a=-0.5):
             '''
@@ -774,27 +792,24 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
             x = x * x_scaling + cube.shape[1] // 2
             y = y * y_scaling + cube.shape[1] // 2
             # interpolate + smooth simultaneously along y-axis
-            # skip a 10 pixels edge
-            for i in range(10, cube.shape[1] - 10):
-                for j in range(10, cube.shape[2] - 10):
-                    # high resolution cubic spline function
-                    m = int(x[i, j]) # x index on the original frame
-                    n = int(y[i, j]) # y index on the original frame
-                    d = modf(y[i, j])[0] # distance from interpolated point to n
-                    if n < 2: # symmetric rescaling around geometric center, therefore, no need to check other side
-                        raise ValueError('not enough rows skipped in order to interpolate inside original FOV')
-                    ydel = 1. * np.arange(4) - 1. - d
-                    fy = _high_res_1dspline(ydel)
-                    gy = np.exp(- (ydel ** 2) / (2 * sigma ** 2))
-                    ivar_seg = ivar_smooth[wv, n-1:n+3, m]
-                    combined_kernel = ivar_seg * gy * fy
-                    combined_kernel /= np.sum(combined_kernel)
-                    cube_cal[wv, i, j] = np.sum(cube_smooth[wv, n-1:n+3, m] * combined_kernel)
-                    ivar_cal[wv, i, j] = np.sum(ivar_smooth[wv, n-1:n+3, m] * gy * fy / np.sum(gy * fy))
-        print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
+            for i,j in zip(yind, xind):
+                # high resolution cubic spline function
+                m = int(x[i, j]) # x index on the original frame
+                n = int(y[i, j]) # y index on the original frame
+                d = np.modf(y[i, j])[0] # distance from interpolated point to n
+                if n < 2: # symmetric rescaling around geometric center, therefore, no need to check other side
+                    raise ValueError('not enough rows skipped in order to interpolate inside original FOV')
+                ydel = 1. * np.arange(4) - 1. - d
+                fy = _high_res_1dspline(ydel)
+                gy = np.exp(- (ydel ** 2) / (2 * sigma ** 2))
+                ivar_seg = ivar_smooth[wv, n-1:n+3, m]
+                combined_kernel = ivar_seg * gy * fy
+                combined_kernel /= np.sum(combined_kernel) + 1e-35
+                cube_cal[wv, i, j] = np.sum(cube_smooth[wv, n-1:n+3, m] * combined_kernel)
+                ivar_cal[wv, i, j] = np.sum(ivar_smooth[wv, n-1:n+3, m] * gy * fy / np.sum(gy * fy))
         cube_cal *= mask
         ivar_cal *= mask
-        print('signal gain in distortion correction after masking: {}'.format(np.mean(cube_cal) / gain))
+        print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
 
     else:
         x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
@@ -854,7 +869,7 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
 
     return np.array(spot_locs), np.array(spot_fluxes)
 
-#TODO: modify _measure_sat_spots() to handle alternating diffraction spots
+
 def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=True, hdr=None):
     """
     Find sat spots in a datacube. TODO: return sat spot psf cube also
