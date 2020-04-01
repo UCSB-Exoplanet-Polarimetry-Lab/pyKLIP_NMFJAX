@@ -367,7 +367,7 @@ class CHARISData(Data):
                     # this case could happen for data taken without turning on the astrogrid
                     # set default value for the sake of data class structure, but has no physical meaning
                     spot_loc = np.full((len(cube_wv_indices), 4, 2), cube.shape[1] // 2)
-                    spot_flux = np.zeros((len(cube_wv_indices), 4))
+                    spot_flux = np.zeros(len(cube_wv_indices))
                 else:
                     raise ValueError('satellite spots fitting method:{} is not a valid option'.format(sat_fit_method))
 
