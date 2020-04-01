@@ -61,8 +61,8 @@ class CHARISData(Data):
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
     # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
-    lenslet_scale_x = 0.01616 # lenslet scale, calibrated against HST images of M5
-    lenslet_scale_y = 0.01603 # lenslet scale, calibrated against HST images of M5
+    lenslet_scale_x = 0.01617 # lenslet scale, calibrated against HST images of M5
+    lenslet_scale_y = 0.01604 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_x_err = 0.00005
     lenslet_scale_y_err = 0.00007
     lenslet_scale = lenslet_scale_x # CHARIS data will be re-scaled to this uniform lenslet scale
