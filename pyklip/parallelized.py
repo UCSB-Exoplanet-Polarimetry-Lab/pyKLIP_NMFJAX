@@ -113,7 +113,7 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
         dataset: an instance of CHARISData
         pixel_weights: pixel weights for dataset.output, same shape as dataset.output
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
-        time_collapse: method for time collapse. Support: 'median', 'mean', 'weighted-mean'
+        time_collapse: method for time collapse. Support: 'median', 'mean', 'weighted-mean', 'weighted-median'
         wv_collapse: method for wavelength collapse. Supports: 'median', 'mean', 'weighted-mean', 'trimmed-mean'
         num_wvs: number of wavelength slices
         spectrum: refer to klip_dataset() docstring
@@ -513,7 +513,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
                                     psflib_good=None, psflib_corr=None,
                                     spectrum=None, lite=False, dtype=None, algo='klip'):
     """
-    Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection
+    Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection and runs KLIP.
 
     Args:
         img_num: file index for the science image to process
@@ -691,7 +691,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
 
 
-
+    # output_images has shape (N, y*x, b) and not (N, y, x, b) as normal
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]),dtype=dtype)
 
     # run KLIP
@@ -709,7 +709,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         print(err.args)
         return False
 
-    # write to output
+    # write to output 
     output_imgs[img_num, section_ind[0], :] = klipped
 
     return True
@@ -1086,7 +1086,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
                       save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False):
     """
-    multithreaded KLIP PSF Subtraction
+    Multitprocessed KLIP PSF Subtraction
 
     Args:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
@@ -1423,7 +1423,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
-        time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median'
+        time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median', "weighted-median"
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
 
     Returns
