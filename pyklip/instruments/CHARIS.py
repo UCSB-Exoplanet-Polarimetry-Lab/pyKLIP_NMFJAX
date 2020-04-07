@@ -718,95 +718,102 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     if cube.shape != ivar.shape:
         raise ValueError("cube and ivar must be ndarrays of the same shape")
 
-    cube_smooth = np.copy(cube)
-    ivar_smooth = np.copy(ivar)
     cube_cal = np.copy(cube)
     ivar_cal = np.copy(ivar)
     # make a mask for pixel locations that receive no light in all wavelengths
     mask = np.any(cube, axis=0) != 0
-    # get indices to perform interpolation on
-    # this is to reduce the number of calculations by a factor of ~2 as there are more than half pixels around the image
-    # that receive no light, this doesn't treat the bad pixels inside the image as it doesn't treat the mapping between
-    # the original integer coordinates and the interpolating coordinates.
-    yind, xind = np.nonzero(mask)
 
     # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
-
     if smooth:
-        # make 1D kernels of size 5, and perform convolution along x and y separately
-        gain = np.mean(cube_smooth)
-        sigma = 0.5
-        xdel = 1. * np.arange(5) - 2.
-        gx = np.exp(- (xdel ** 2) / (2 * sigma ** 2))
-        gx /= np.sum(gx) + 1e-35
-
-        def _high_res_1dspline(x, a=-0.5):
+        gain = np.mean(cube)
+        def _make_spline_mesh(y, x, a=-0.5):
             '''
-            Function that returns a 4*4 spline interpolating kernel, evalutated at the given coordinates x
-            The input coordinates x must range from -2 to 2.
-            Since the high resolution spline function is a piecewise function, the first and last element of x must be in
-            range (1, 2) and the 2nd and 3rd element be in range (0, 1).
+            Calculate the values of the high resolution cubic spline interpolating function, evaluated at dy
+            x values not explicitly evaluated since we are scaling yscale to xscale, therefore, all x separations are
+            integers and evaluates to 0, except at 0 separation where it evaluates to 1.
 
             Args:
-                x: coordinates at which to evaluate the high resolution spline function
-                a: the constant that defines the spline function
+                y: a grid of y values
+                a: free parameter for high resolution cubic spline
 
             Returns:
-                a kernal with the same shape as x, with its elements evaluated at x
-
+                spline_mesh: a grid of spline interpolating function values
             '''
-            x = np.abs(x)
+            y = np.abs(y)
+            spline_mesh = np.zeros(y.shape)
+            spline_mesh[y == 0.] = 1.
+            spline_mesh[y < 1] = (a + 2) * y[y < 1] ** 3 - (a + 3) * y[y < 1] ** 2 + 1
+            spline_mesh[(y > 1) & (y < 2)] = a * y[(y > 1) & (y < 2)] ** 3 - 5 * a * y[(y > 1) & (y < 2)] ** 2 \
+                                             + 8 * a * y[(y > 1) & (y < 2)] - 4 * a
+            spline_mesh[x != 0.] = 0. #TODO: this essentially eliminates smoothing in x direction,
+                                      #      figure out how to correct this, perhaps f and g should not be multiplicative?
 
-            # These constraints costs time to check since this function is in nested for loops
-            # Therefore, use these checks only for debug purposes, comment them out in final working code
-            if max(x) > 2:
-                raise ValueError('high resolution spline interpolating function does not support window size > 5')
-            if len(x.shape) != 1 or len(x) != 4:
-                raise ValueError('high resolution spline kernel must be 1d array of 4 elements')
-            if x[0] < 1 or x[0] > 2 or x[3] < 1 or x[3] > 2 or x[1] > 1 or x[2] > 1:
-                raise ValueError('coordinates must satisfy 2 in range (1,2) and 2 in range(0,1)')
+            return spline_mesh
 
-            kernel = np.zeros(x.shape)
-            kernel[1:3] = (a + 2) * x[1:3] ** 3 - (a + 3) * x[1:3] ** 2 + 1
-            kernel[0] = a * x[0] ** 3 - 5 * a * x[0] ** 2 + 8 * a * x[0] - 4 * a
-            kernel[3] = a * x[3] ** 3 - 5 * a * x[3] ** 2 + 8 * a * x[3] - 4 * a
+        def _make_gaussian_mesh(y, x, sigma=0.5):
+            '''
+            Calculate the values of a 2d gaussian, evaluated at [y, x]
 
-            return kernel
+            Args:
+                dy: a grid of y
+                dx: a grid of x
+                sigma: standard deviation for gaussian function
 
-        for wv in range(cube.shape[0]):
-            # convolve every row (along x-axis with fixed y index: i)
-            for i in range(cube.shape[1]):
-                imrow = cube[wv, i]
-                ivarrow = ivar[wv, i]
-                imrow_smooth = signal.convolve(imrow * ivarrow, gx, mode='same')
-                ivarrow_smooth = signal.convolve(ivarrow, gx, mode='same')
-                imrow_smooth /= ivarrow_smooth + 1e-35 # to avoid division by 0
-                cube_smooth[wv, i] = imrow_smooth
-                ivar_smooth[wv, i] = ivarrow_smooth
+            Returns:
+                gaussian_mesh: a grid of gaussian function values
+            '''
 
-            # set up coordinates to interpolate
-            x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
-            x, y = np.meshgrid(x, x)
-            x_scaling = lenslet_scale / xscale # by default is 1
-            y_scaling = lenslet_scale / yscale
-            x = x * x_scaling + cube.shape[1] // 2
-            y = y * y_scaling + cube.shape[1] // 2
-            # interpolate + smooth simultaneously along y-axis
-            for i,j in zip(yind, xind):
-                # high resolution cubic spline function
-                m = int(x[i, j]) # x index on the original frame
-                n = int(y[i, j]) # y index on the original frame
-                d = np.modf(y[i, j])[0] # distance from interpolated point to n
-                if n < 2: # symmetric rescaling around geometric center, therefore, no need to check other side
-                    raise ValueError('not enough rows skipped in order to interpolate inside original FOV')
-                ydel = 1. * np.arange(4) - 1. - d
-                fy = _high_res_1dspline(ydel)
-                gy = np.exp(- (ydel ** 2) / (2 * sigma ** 2))
-                ivar_seg = ivar_smooth[wv, n-1:n+3, m]
-                combined_kernel = ivar_seg * gy * fy
-                combined_kernel /= np.sum(combined_kernel) + 1e-35
-                cube_cal[wv, i, j] = np.sum(cube_smooth[wv, n-1:n+3, m] * combined_kernel)
-                ivar_cal[wv, i, j] = np.sum(ivar_smooth[wv, n-1:n+3, m] * gy * fy / np.sum(gy * fy))
+            gaussian_mesh = np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
+
+            return gaussian_mesh
+
+        x = np.arange(cube.shape[1]) - cube.shape[1] // 2
+        x, y = np.meshgrid(x, x) # meshgrid of integers
+        # crop out a smaller square to interpolate, since the outer edge pixels receive no photons
+        x = x[10:-10, 10:-10]
+        y = y[10:-10, 10:-10]
+        # x = x[98:103, 98:103]
+        # y = y[98:103, 98:103]
+        x_scaling = 1. # rescale y axis to xscale
+        y_scaling = 1. * lenslet_scale / yscale # lenslet_scale defined to be xscale
+        x_interp = x * x_scaling + cube.shape[1] // 2 # meshgrid of floats
+        y_interp = y * y_scaling + cube.shape[1] // 2 # meshgrid of floats
+        x += cube.shape[1] // 2
+        y += cube.shape[1] // 2
+        dx = x_interp - x
+        dy = y_interp - y
+        if np.any(dx != 0): #testing
+            print('dx is not all 0')
+            import pdb
+            pdb.set_trace()
+        if np.any(dy > 1): #testing
+            print('dy has elements > 1')
+            import pdb
+            pdb.set_trace()
+        # for each element in a 5*5 filter, calculate a meshgrid of filtered values for all data points corresponding
+        # to that filter element. Summing these 25 meshgrids and normalizing is the convolution.
+        D_interp = np.zeros((cube.shape[0], x.shape[0], x.shape[1])) # interpolated and smoothed data
+        W_interp = np.zeros(D_interp.shape) # interpolated and smoothed inverse variance frames
+        Norm = np.zeros(D_interp.shape)
+        sigma = 0.5
+        for i in range(-2, 3): # rows
+            for j in range(-2, 3): # columns
+                Fij = _make_spline_mesh(dy + i, dx + j)
+                Fij = np.tile(Fij, (cube.shape[0], 1, 1))
+                Gij = _make_gaussian_mesh(dy + i, dx + j, sigma)
+                Gij = np.tile(Gij, (cube.shape[0], 1, 1))
+                Nij = Fij * Gij
+                Wij = ivar[:, y + i, x + j] * Nij
+                Dij = cube[:, y + i, x + j] * Wij
+                D_interp += Dij
+                W_interp += Wij
+                Norm += Nij
+        D_interp /= W_interp + 1e-35
+        W_interp /= Norm + 1e-35
+        cube_cal[:, 10:-10, 10:-10] = D_interp
+        ivar_cal[:, 10:-10, 10:-10] = W_interp
+        # cube_cal[:, 98:103, 98:103] = D_interp
+        # ivar_cal[:, 98:103, 98:103] = W_interp
         cube_cal *= mask
         ivar_cal *= mask
         print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
@@ -1058,3 +1065,4 @@ def generate_psf(frame, locations, boxrad=5):
     genpsf = np.mean(genpsf, axis=0) #average the different psfs together
 
     return genpsf
+
