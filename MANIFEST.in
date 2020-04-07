@@ -1,0 +1,10 @@
+include pyklip/instruments/*.ini
+include pyklip/instruments/P1640_support/WavelengthSol-KappaAndB0816.dat
+include pyklip/pickles/*
+include pyklip/spectra/*
+include pyklip/spectra/cloudy/*
+include pyklip/spectra/g18ncflx/*
+include pyklip/spectra/g32ncflx/*
+include pyklip/spectra/g56ncflx/*
+include pyklip/spectra/g100ncflx/*
+include pyklip/spectra/g178ncflx/*

@@ -36,7 +36,7 @@ def collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
         data: (multi-dimension)arrays of 2D images or 3D cubes.
         pixel_weights: ones if collapse method is not weighted collapse
         axis: axis index along which to collapse
-        collapse_method: currently support 'median', 'mean', 'weighted-mean', 'trimmed-mean'
+        collapse_method: currently support 'median', 'mean', 'weighted-mean', 'trimmed-mean', 'weighted-median'
 
     Returns:
         Collapsed data
@@ -64,6 +64,14 @@ def collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
         collapsed = np.nanmean(collapsed, axis=axis)
 
         return collapsed
+
+    elif ('weighted' in collapse_method.lower()) and ('median' in collapse_method.lower()):
+        if pixel_weights is None:
+            pixel_weights = np.ones(data.shape)
+        collapsed_data = np.nanmedian(pixel_weights * data, axis=axis)
+        collapsed_data /= np.nanmedian(pixel_weights, axis=axis)
+
+        return collapsed_data
 
     else:
         # default to mean collapse if input does not match any supported pattern
