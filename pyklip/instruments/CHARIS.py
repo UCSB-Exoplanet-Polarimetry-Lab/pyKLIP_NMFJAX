@@ -798,9 +798,9 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         sigma = 0.5
         for i in range(-2, 3): # rows
             for j in range(-2, 3): # columns
-                Fij = _make_spline_mesh(dy + i, dx + j)
+                Fij = _make_spline_mesh(-dy + i, -dx + j)
                 Fij = np.tile(Fij, (cube.shape[0], 1, 1))
-                Gij = _make_gaussian_mesh(dy + i, dx + j, sigma)
+                Gij = _make_gaussian_mesh(-dy + i, -dx + j, sigma)
                 Gij = np.tile(Gij, (cube.shape[0], 1, 1))
                 Nij = Fij * Gij
                 Wij = ivar[:, y + i, x + j] * Nij
