@@ -726,14 +726,38 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
     if smooth:
         gain = np.mean(cube)
-        def _make_spline_mesh(y, x, a=-0.5):
+        def _make_Bspline_mesh(y, x):
             '''
-            Calculate the values of the high resolution cubic spline interpolating function, evaluated at dy
-            x values not explicitly evaluated since we are scaling yscale to xscale, therefore, all x separations are
-            integers and evaluates to 0, except at 0 separation where it evaluates to 1.
+            Calculate the values of the cubic B-spline interpolating function (How&Andrews 1978), evaluated at (y, x)
+            Args:
+                y: a grid of y indices
+                x: a grid of x indices
+
+            Returns:
+                spline_mesh: a grid of spline interpolating function values
+            '''
+
+            y = np.abs(y)
+            x = np.abs(x)
+            spline_mesh = np.zeros(y.shape)
+            spline_mesh[y < 1] = 0.5 * y[y < 1] ** 3 - y[y < 1] ** 2 + 4. / 6.
+            spline_mesh[(y > 1) & (y < 2)] = - y[(y > 1) & (y < 2)] ** 3 / 6. + y[(y > 1) & (y < 2)] ** 2 \
+                                             - 2. * y[(y > 1) & (y < 2)] + 8. / 6.
+            spline_mesh[x < 1] *= 0.5 * x[x < 1] ** 3 - x[x < 1] ** 2 + 4. / 6.
+            spline_mesh[(x > 1) & (x < 2)] *= - x[(x > 1) & (x < 2)] ** 3 / 6. + x[(x > 1) & (x < 2)] ** 2 \
+                                              - 2. * x[(x > 1) & (x < 2)] + 8. / 6.
+
+            return  spline_mesh
+
+        def _make_highres_spline_mesh(y, x, a=-0.5):
+            '''
+            Calculate the values of the high resolution cubic spline interpolating function, evaluated at y,x
+            All coordinates where x!=0 are set to 0, since we are scaling yscale to xscale, therefore, all x separations
+            are integers and evaluates to 0, except at 0 separation where it evaluates to 1.
 
             Args:
-                y: a grid of y values
+                y: a grid of y indices
+                x: a grid of x indices
                 a: free parameter for high resolution cubic spline
 
             Returns:
@@ -798,7 +822,7 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         sigma = 0.5
         for i in range(-2, 3): # rows
             for j in range(-2, 3): # columns
-                Fij = _make_spline_mesh(-dy + i, -dx + j)
+                Fij = _make_Bspline_mesh(-dy + i, -dx + j)
                 Fij = np.tile(Fij, (cube.shape[0], 1, 1))
                 Gij = _make_gaussian_mesh(-dy + i, -dx + j, sigma)
                 Gij = np.tile(Gij, (cube.shape[0], 1, 1))
