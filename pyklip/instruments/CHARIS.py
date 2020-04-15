@@ -1,4 +1,5 @@
 import os
+import sys
 import copy
 import re
 import numpy as np
@@ -7,6 +8,7 @@ import astropy.io.fits as fits
 import datetime
 from astropy import wcs
 import astropy.time as time
+import time as systime
 import astropy.coordinates as coord
 import astropy.units as u
 import pyklip.klip as klip
@@ -229,11 +231,16 @@ class CHARISData(Data):
             self.psfs = PSF_cube
 
         # flag to see if we modified any headers or data cubes
-        # new cubes will be saved separately only when distortion correction is carried out (modified data), and in this
-        # case, modified headers will be updated in the new files not the original ones. However, if only headers are
-        # modified but not the data, then headers will be updated in the original files and no new files will be saved.
+
+        # If distortion correction is carried out (modified data=True) modified headers and data will be saved to new
+        # files without any changes to the original files
+
+        # If only headers are modified but not the data (no distortion correction), then headers will be updated in the
+        # original files and no new files will be saved.
+
         modified_hdrs = False
         modified_data = np.zeros(len(filepaths)) # zero == False
+        astrogrid_status = None
 
         # read and organize data
         for index, filepath in enumerate(filepaths):
@@ -287,24 +294,28 @@ class CHARISData(Data):
 
         # rescale all data to a uniform lenslet scale
         # TODO: distortion correction in parallel?
+        tot_time = 0
         for index, filepath in enumerate(filepaths):
             try:
                 if exthdrs[index]['PLATECAL'].lower() == 'true':
                     continue
             except:
                 pass
-            import time
-            stime = time.time()
+
+            stime = systime.time()
             filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
                                                                   CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
                                                                   CHARISData.lenslet_scale_y, smooth=True)
-            print('cube {} distortion correction: {} seconds'.format(index, time.time() - stime))
+            tot_time += systime.time() - stime
+            sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: {:.3f} seconds'.format(index, tot_time / (index + 1)))
+            sys.stdout.flush()
             data[index] = cube
             ivars[index] = ivar
             exthdrs[index] = exthdr
             filenames[index] = [filename for i in range(cube.shape[0])]
             modified_data[index] = 1
         modified_data = modified_data.astype(bool)
+        sys.stdout.write('\n')
         # measure and update headers in the next two segments
 
         # fit for satellite spots globally if enabled
@@ -363,9 +374,9 @@ class CHARISData(Data):
                 modified_hdrs = True # we need to update input cube headers
             else:
                 if update_hdrs == False:
-                    print('no satellite spots found in current headers and no satellite spots measurement requested')
                     # this case could happen for data taken without turning on the astrogrid
                     # set default value for the sake of data class structure, but has no physical meaning
+                    astrogrid_status = 'OFF'
                     spot_loc = np.full((len(cube_wv_indices), 4, 2), cube.shape[1] // 2)
                     spot_flux = np.zeros(len(cube_wv_indices))
                 else:
@@ -378,6 +389,8 @@ class CHARISData(Data):
             spot_fluxes.append(spot_flux)
             spot_locs.append(spot_loc)
 
+        if astrogrid_status == 'OFF' and update_hdrs == False:
+            print('no satellite spots found in current headers and no satellite spots measurement requested')
         # convert everything into numpy arrays
         # reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
         # wv_indices are never referenced from this point on so they're commented out currently
@@ -840,7 +853,8 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
         # ivar_cal[:, 98:103, 98:103] = W_interp
         cube_cal *= mask
         ivar_cal *= mask
-        print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
+        # print the signal gain for debug purposes
+        # print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
 
     else:
         x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
@@ -862,6 +876,8 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
     exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
+    exthdr['XPIXSCAL'] = lenslet_scale / (3.6e6)
+    exthdr['YPIXSCAL'] = lenslet_scale / (3.6e6)
     filename = re.sub('.fits', '_platecal.fits', filename)
 
     return filename, cube_cal, ivar_cal, exthdr
