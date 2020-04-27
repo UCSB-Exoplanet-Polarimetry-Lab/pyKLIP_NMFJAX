@@ -11,14 +11,14 @@ import pyklip.fm as fm
 from scipy import interpolate
 from copy import copy
 
-debug = False
+debug = True
 
 
 class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, field_dependent_correction=None, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False):
         """
         Defining the planet to characterizae
 
@@ -37,11 +37,6 @@ class FMPlanetPSF(NoFM):
             spectrallib_units: can be either "flux"" or "contrast". Flux units requires dividing by the flux of the star to get contrast 
             star_spt: star spectral type, if None default to some random one
             refine_fit: (NOT implemented) refine the separation and pa supplied
-            field_dependent_correction: a function of the form ``output_stamp = correction(input_stamp, input_dx, input_dy)
-                                    where, input_stamp is a 2-D image of shape (y_stamp, x_stamp). input_dx and input_dy have
-                                    the same shape and represent the offset of each pixel from the star (in pixel units). The 
-                                    function returns an output_stamp of the same shape, but corrected for any field dependent
-                                    throughputs or distortions.
         """
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
@@ -51,6 +46,7 @@ class FMPlanetPSF(NoFM):
         self.sep = sep
         self.pa = pa
         self.dflux = dflux
+        self.field_dependent_correction = field_dependent_correction
 
         if spectrallib_units.lower() != "flux" and spectrallib_units.lower() != "contrast":
             raise ValueError("spectrallib_units needs to be either 'flux' or 'contrast', not {0}".format(spectrallib_units))
@@ -115,8 +111,6 @@ class FMPlanetPSF(NoFM):
 
         self.psfs_func_list = psfs_func_list
 
-        ### TODO: some initalization of field dependent correction
-
 
     def alloc_fmout(self, output_img_shape):
         """Allocates shared memory for the output of the shared memory
@@ -180,17 +174,23 @@ class FMPlanetPSF(NoFM):
         # create some parameters for a blank canvas to draw psfs on
         nx = input_img_shape[1]
         ny = input_img_shape[0]
+
+        ## Tells distance from center of psf
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
+        #Shape of star psf
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
         # create bounds for PSF stamp size
-        row_m = int(np.floor(ny_psf/2.0))    # row_minus
-        row_p = int(np.ceil(ny_psf/2.0))     # row_plus
-        col_m = int(np.floor(nx_psf/2.0))   # col_minus
-        col_p = int(np.ceil(nx_psf/2.0))    # col_plus
 
-        # a blank img array of write model PSFs into
+        ## how many rows from the center pixel is this.
+        #rename these more descriptively
+        row_m = int(np.floor(ny_psf/2.0))    # lower bound
+        row_p = int(np.ceil(ny_psf/2.0))     # upper bound
+        col_m = int(np.floor(nx_psf/2.0))   # left bound
+        col_p = int(np.ceil(nx_psf/2.0))    # right bound
+
+        # a blank img array to write model PSFs into
         whiteboard = np.zeros((ny,nx))
         if debug:
             canvases = []
@@ -215,14 +215,13 @@ class FMPlanetPSF(NoFM):
             psf_centx = (ref_wv/wv) * self.psf_centx_notscaled[pa]
             psf_centy = (ref_wv/wv) * self.psf_centy_notscaled[pa]
 
-            # TODO: after initally getting it working, we need to account for the fact that PSFs at different wavelengths got moved, so the 
-            # field dependent correction needs to be done in the reference frame where the planet did not get magnified. 
-
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
             l = int(round(psf_centx + ref_center[0]))
             k = int(round(psf_centy + ref_center[1]))
+            
             # recenter coordinate system about the location of the planet
+            
             x_vec_stamp_centered = np.copy(x_grid[0, (l-col_m):(l+col_p)]) - psf_centx
             y_vec_stamp_centered = np.copy(y_grid[(k-row_m):(k+row_p), 0]) - psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
@@ -230,22 +229,30 @@ class FMPlanetPSF(NoFM):
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
-            # use intepolation spline to generate a model PSF and write to temp img
+            #make variable about the part of the image we care about
+            #stamp_something = (k-row_m):(k+row_p), (l-col_m):(l+col_p)
+
+            # use intepolation spline to generate a model PSF of planet and write to temp img
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
                     self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
-            # TODO: apply field dependent correction
-            ## calculate for each pixel, the distance from the star (use x_grid, and y_grid)
-            ## apply throuhgput for each pixel based on function that takes input PSF, dx, dy from star. 
-
+            
+            ##Index into x grid and y y gird the same way whiteborad is indexed 
+            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+                    self.field_dependent_correction(whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)], x_grid[(k-row_m):(k+row_p),(l-col_m):(l+col_p)], y_grid[(k-row_m):(k+row_p),(l-col_m):(l+col_p)])
+    
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
             segment_with_model = copy(whiteboard[section_ind])
             whiteboard.shape = [input_img_shape[0],input_img_shape[1]]
 
+           
+
             models.append(segment_with_model)
 
             # clean whiteboard
             whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0
+
+        
 
 
         return np.array(models)
