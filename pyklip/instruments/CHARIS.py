@@ -63,11 +63,11 @@ class CHARISData(Data):
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
     # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
-    lenslet_scale_x = 0.01617 # lenslet scale, calibrated against HST images of M5
+    lenslet_scale = 0.01617 # CHARIS data will be re-scaled to this uniform lenslet scale
+    lenslet_scale_x = - lenslet_scale # lenslet scale, calibrated against HST images of M5
     lenslet_scale_y = 0.01604 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_x_err = 0.00005
     lenslet_scale_y_err = 0.00007
-    lenslet_scale = lenslet_scale_x # CHARIS data will be re-scaled to this uniform lenslet scale
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
@@ -259,7 +259,9 @@ class CHARISData(Data):
 
             # recalculate parang if necessary
             try:
-                parang = prihdr['PARANG'] + 113.5
+                # based astrometric calibration using HST images:
+                # parang + 114 degrees with an uncertainty of 0.2 degrees points the image's yaxis north
+                parang = prihdr['PARANG'] + 114.
             except:
                 parang = 0.
 
@@ -303,14 +305,18 @@ class CHARISData(Data):
                 pass
 
             stime = systime.time()
-            filename, cube, ivar, exthdr = _distortion_correction(filepath, data[index], ivars[index], exthdrs[index],
-                                                                  CHARISData.lenslet_scale, CHARISData.lenslet_scale_x,
-                                                                  CHARISData.lenslet_scale_y, smooth=True)
+            filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
+                                                                          prihdrs[index], exthdrs[index],
+                                                                          rot_angles[index][0],
+                                                                          CHARISData.lenslet_scale,
+                                                                          CHARISData.lenslet_scale_x,
+                                                                          CHARISData.lenslet_scale_y, smooth=True)
             tot_time += systime.time() - stime
             sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: {:.3f} seconds'.format(index, tot_time / (index + 1)))
             sys.stdout.flush()
             data[index] = cube
             ivars[index] = ivar
+            prihdrs[index] = prihdr
             exthdrs[index] = exthdr
             filenames[index] = [filename for i in range(cube.shape[0])]
             modified_data[index] = 1
@@ -699,23 +705,25 @@ class CHARISData(Data):
         self.psfs = np.mean(self.psfs, axis=0)
 
 
-def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, yscale, smooth=True):
+def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lenslet_scale, xscale, yscale, smooth=True):
     # TODO: how to modify rotation matrix coefficient?
     # TODO: any other header info needs to be modified?
     '''
     Rescale cube and ivar to a uniform lenslet scale, update extension header indicating distortion correction status,
     return a new filename along with distortion corrected cube, ivar, and updated extension header.
-    This function currently rescales y-axis to match x, i.e., lenslet_scale = xscale, which is reflected in the static
-    variables of the data class as well. If changing this default, the implementation of distortion must also be modified
-    accordingly.
+    This function currently rescales y-axis to match x, i.e., abs(lenslet_scale) = abs(xscale), which is reflected in
+    the static variables of the data class as well. If changing this default, the implementation of distortion must also
+    be modified accordingly.
     All proceeding operations will be done on the distortion corrected data, which will be saved to the new filenames.
 
     Args:
         filename: filename for the cube
         cube: data cube, should not have any nan pixels at this point
         ivar: inverse variance cube for the corresponding data cube
-        exthdr: extension header for the data cube
-        lenslet_scale: uniform scale the data will be correct to (by default is equal to xscale)
+        prihdr: primary header of the data cube
+        exthdr: extension header of the data cube
+        rotation: angle between yaxis and celestial north, in degrees
+        lenslet_scale: uniform scale the data will be correct to (by default is equal to abs(xscale))
         xscale: measured x-axis lenslet scale for uncorrected CHARIS data
         yscale: measured y-axis lenslet scale for uncorrected CHARIS data
 
@@ -859,7 +867,7 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
     else:
         x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
         x, y = np.meshgrid(x, x)
-        x_scaling = lenslet_scale / xscale
+        x_scaling = 1.
         y_scaling = lenslet_scale / yscale
         x = x * x_scaling + cube.shape[1] // 2
         y = y * y_scaling + cube.shape[1] // 2
@@ -873,14 +881,30 @@ def _distortion_correction(filename, cube, ivar, exthdr, lenslet_scale, xscale, 
             ivar_cal[i] = _smooth(ivar_cal[i], np.ones(ivar_cal[i].shape), 0.5, spline_filter=False)
             ivar_cal[i] *= mask
 
+    # update all relevant header information
+    yscale = np.sign(yscale) * np.abs(lenslet_scale)
+    tot_rot = np.radians(-rotation)
     plate_cal_key = 'PLATECAL'
     plate_cal_str = 'True'
+    prihdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
     exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
-    exthdr['XPIXSCAL'] = lenslet_scale / (3.6e6)
-    exthdr['YPIXSCAL'] = lenslet_scale / (3.6e6)
+    prihdr['CD1_1'] = xscale / (3.6e3) * np.cos(tot_rot)
+    prihdr['CD2_1'] = xscale / (3.6e3) * np.sin(tot_rot)
+    prihdr['CD1_2'] = yscale / (3.6e3) * (- np.sin(tot_rot))
+    prihdr['CD2_2'] = yscale / (3.6e3) * np.cos(tot_rot)
+    exthdr['CD1_1'] = xscale / (3.6e3) * np.cos(tot_rot)
+    exthdr['CD2_1'] = xscale / (3.6e3) * np.sin(tot_rot)
+    exthdr['CD1_2'] = yscale / (3.6e3) * (- np.sin(tot_rot))
+    exthdr['CD2_2'] = yscale / (3.6e3) * np.cos(tot_rot)
+    prihdr['XPIXSCAL'] = xscale / (3.6e3)
+    prihdr['YPIXSCAL'] = yscale / (3.6e3)
+    exthdr['XPIXSCAL'] = xscale / (3.6e3)
+    exthdr['YPIXSCAL'] = yscale / (3.6e3)
+    prihdr['TOT_ROT'] = np.degrees(tot_rot)
+    exthdr['TOT_ROT'] = np.degrees(tot_rot)
     filename = re.sub('.fits', '_platecal.fits', filename)
 
-    return filename, cube_cal, ivar_cal, exthdr
+    return filename, cube_cal, ivar_cal, prihdr, exthdr
 
 
 def _read_sat_spots_from_hdr(hdr, wv_indices):
