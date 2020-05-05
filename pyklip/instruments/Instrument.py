@@ -291,7 +291,11 @@ class Data(object):
                 # these variables are all the same for a single cube, so we can just select one
                 wcs_collapsed.append(self.wcs.reshape([Ncubes, self.numwvs])[:,i_start]) 
                 filenums_collapsed.append(self.filenums.reshape([Ncubes, self.numwvs])[:,i_start]) 
-                filenames_collapsed.append(self.filenames.reshape([Ncubes, self.numwvs])[:,i_start])
+                
+                if hasattr(self, 'irdis_rdp'):
+                    filenames_collapsed = self.filenames
+                else:
+                    filenames_collapsed.append(self.filenames.reshape([Ncubes, self.numwvs])[:,i_start])
 
                 if additional_params is not None:
                     for param_collapsed, param_field in zip(additional_collapsed, additional_params):
