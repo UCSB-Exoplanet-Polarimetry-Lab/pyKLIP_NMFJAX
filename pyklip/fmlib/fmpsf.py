@@ -237,11 +237,14 @@ class FMPlanetPSF(NoFM):
             whiteboard[stamp_len, stamp_width] = \
                     self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
             
-            ##Index into x grid and y y gird the same way whiteborad is indexed 
-            whiteboard[stamp_len, stamp_width] = \
-                    self.field_dependent_correction(whiteboard[stamp_len, stamp_width], 
-                                                    x_grid[stamp_len, stamp_width], 
-                                                    y_grid[stamp_len, stamp_width])
+            # if specified, make field dependent PSF correction
+            if self.field_dependent_correction is not None:
+
+                # find distance from center in x and y dimensions
+                dx = x_grid[stamp_len, stamp_width]
+                dy = y_grid[stamp_len, stamp_width]
+                whiteboard[stamp_len, stamp_width] = \
+                        self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy)
     
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
