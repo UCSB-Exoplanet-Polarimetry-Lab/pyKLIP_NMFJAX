@@ -18,7 +18,7 @@ class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, field_dependent_correction=None, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None):
         """
         Defining the planet to characterizae
 
@@ -171,24 +171,19 @@ class FMPlanetPSF(NoFM):
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
         """
-        # create some parameters for a blank canvas to draw psfs on
-        nx = input_img_shape[1]
-        ny = input_img_shape[0]
-
-        ## Tells distance from center of psf
+        # create a blank canvas the same size as the input image centered at the psf center
+        nx = input_img_shape[1] # x dimension of input image
+        ny = input_img_shape[0] # y dimension of input image
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
-        #Shape of star psf
+        # retrieve wavelength, x and y dimensions of input psf
         numwv, ny_psf, nx_psf =  self.input_psfs.shape
 
-        # create bounds for PSF stamp size
-
-        ## how many rows from the center pixel is this.
-        #rename these more descriptively
-        row_m = int(np.floor(ny_psf/2.0))    # lower bound
-        row_p = int(np.ceil(ny_psf/2.0))     # upper bound
-        col_m = int(np.floor(nx_psf/2.0))   # left bound
-        col_p = int(np.ceil(nx_psf/2.0))    # right bound
+        # create stamp for instrumental psf
+        psf_lower = int(np.floor(ny_psf/2.0))    # lower bound
+        psf_upper = int(np.ceil(ny_psf/2.0))     # upper bound
+        psf_left = int(np.floor(nx_psf/2.0))   # left bound
+        psf_right = int(np.ceil(nx_psf/2.0))    # right bound
 
         # a blank img array to write model PSFs into
         whiteboard = np.zeros((ny,nx))
@@ -217,28 +212,36 @@ class FMPlanetPSF(NoFM):
 
             # create a coordinate system for the image that is with respect to the model PSF
             # round to nearest pixel and add offset for center
-            l = int(round(psf_centx + ref_center[0]))
-            k = int(round(psf_centy + ref_center[1]))
+            planet_centx = int(round(psf_centx + ref_center[0]))
+            planet_centy = int(round(psf_centy + ref_center[1]))
             
-            # recenter coordinate system about the location of the planet
-            
-            x_vec_stamp_centered = np.copy(x_grid[0, (l-col_m):(l+col_p)]) - psf_centx
-            y_vec_stamp_centered = np.copy(y_grid[(k-row_m):(k+row_p), 0]) - psf_centy
+            # recenter stamp coordinate system about the location of the planet
+            stamp_left = planet_centx-psf_left
+            stamp_right = planet_centx+psf_right
+            stamp_lower = planet_centy-psf_lower
+            stamp_upper = planet_centy+psf_upper
+
+            # Save the stamp length and width as variables for slicing the image
+            stamp_len = slice(stamp_lower, stamp_upper)
+            stamp_width = slice(stamp_left,stamp_right)
+
+            x_vec_stamp_centered = np.copy(x_grid[0, stamp_width]) - psf_centx
+            y_vec_stamp_centered = np.copy(y_grid[stamp_len, 0]) - psf_centy
             # rescale to account for the align and scaling of the refernce PSFs
             # e.g. for longer wvs, the PSF has shrunk, so we need to shrink the coordinate system
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
-            #make variable about the part of the image we care about
-            #stamp_something = (k-row_m):(k+row_p), (l-col_m):(l+col_p)
 
             # use intepolation spline to generate a model PSF of planet and write to temp img
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
+            whiteboard[stamp_len, stamp_width] = \
                     self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
             
             ##Index into x grid and y y gird the same way whiteborad is indexed 
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = \
-                    self.field_dependent_correction(whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)], x_grid[(k-row_m):(k+row_p),(l-col_m):(l+col_p)], y_grid[(k-row_m):(k+row_p),(l-col_m):(l+col_p)])
+            whiteboard[stamp_len, stamp_width] = \
+                    self.field_dependent_correction(whiteboard[stamp_len, stamp_width], 
+                                                    x_grid[stamp_len, stamp_width], 
+                                                    y_grid[stamp_len, stamp_width])
     
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
@@ -250,7 +253,7 @@ class FMPlanetPSF(NoFM):
             models.append(segment_with_model)
 
             # clean whiteboard
-            whiteboard[(k-row_m):(k+row_p), (l-col_m):(l+col_p)] = 0
+            whiteboard[stamp_len, stamp_width] = 0
 
         
 
