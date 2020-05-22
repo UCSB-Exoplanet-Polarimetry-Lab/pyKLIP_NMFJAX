@@ -18,8 +18,6 @@ import pyklip.fm as fm
 os.environ["OMP_NUM_THREADS"] = "1"
 
 ########################################################
-########################################################
-
 TESTDIR = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
 
@@ -103,7 +101,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
             numbasis,
             dataset,
             model_convolved,
-            basis_filename=os.path.join(diskfm_dir,
+            basis_filename=os.path.join(diskfm_dir, 
                                         fileprefix + "_KLbasis" + ext),
             save_basis=True,
             aligned_center=[xcen, ycen],
@@ -135,11 +133,19 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
                 diskfm_dir,
                 fileprefix + "-fmpsf-KL{0}-speccube.fits".format(numbasis[0])))
 
-    
+    if not just_loading:
+        dataset_input_shape_here = dataset.input.shape
+        numbasis_here = numbasis
+        dataset_here =dataset
+    else:
+         dataset_input_shape_here =[1,2,3]
+         numbasis_here = [0]
+         dataset_here = None
+
     diskobj = DiskFM(
-        dataset.input.shape,
-        numbasis,
-        dataset,
+        dataset_input_shape_here,
+        numbasis_here,
+        dataset_here,
         model_convolved,
         basis_filename=os.path.join(diskfm_dir, fileprefix + "_KLbasis" + ext),
         load_from_basis=True,
@@ -155,19 +161,19 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         return_klip_dataset = fmout_klip_dataset[0]  # first KL
         return_by_fm_parallelized = modelfm_here[0][0]  # first KL, first WL
 
-    # fits.writeto(
-    #     diskfm_dir + fileprefix + "_fm_parallelized-fmpsf.fits",
-    #     return_by_fm_parallelized,
-    #     overwrite=True,
-    # )
+    fits.writeto( os.path.join(
+        diskfm_dir, fileprefix + "_fm_parallelized-fmpsf.fits"),
+        return_by_fm_parallelized,
+        overwrite=True,
+    )
 
-    # # print(fmout_klip_dataset[0].shape)
-    # # print(modelfm_here[0][0].shape)
-    # fits.writeto(
-    #     diskfm_dir + fileprefix + "_res.fits",
-    #     return_klip_dataset - return_by_fm_parallelized,
-    #     overwrite=True
-    # )
+    # print(fmout_klip_dataset[0].shape)
+    # print(modelfm_here[0][0].shape)
+    fits.writeto( os.path.join(
+        diskfm_dir, fileprefix + "_res.fits"),
+        return_klip_dataset - return_by_fm_parallelized,
+        overwrite=True
+    )
 
     # test that the FM models are not zero everywhere
     assert np.nanmax(np.abs(return_klip_dataset)) > 0.0
@@ -181,12 +187,12 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
 
 
 def test_disk_helper():
-    run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1)
-    # run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=1)
-    # run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=2)
-    # run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=2)
+    run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=2)
+    run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=2)
+    # run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=1)
+    # run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=1)
 
-    run_test_diskFM(just_loading=False, ext=".pkl", nwls=1, annulitest=1)
+    # run_test_diskFM(just_loading=False, ext=".pkl", nwls=1, annulitest=1)
     # run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
 
     # # remove the files created by my disk FM test

@@ -9,6 +9,7 @@ import pickle
 import h5py
 
 import numpy as np
+import scipy.ndimage as ndimage
 
 from pyklip.fmlib.nofm import NoFM
 import pyklip.fm as fm
@@ -45,8 +46,6 @@ class DiskFM(NoFM):
             save_basis: if True, save the KL basis at basis_filename. If load_from_basis
                             is True, save_basis is automatically set to False, it is
                             useless to load and save the matrix at the same time.
-            numthreads: number of threads to use. If none, defaults to using all
-                        the cores of the cpu.
             aligned_center: array of 2 elements [x,y] that all the model will be
                             centered on for image registration.
                             FIXME: This is the most problematic thing currently, the
@@ -62,6 +61,7 @@ class DiskFM(NoFM):
             annuli: deprecated parameter, ignored here and defined in fm.klip_dataset
             subsections: deprecated parameter, ignored here and defined
                          in fm.klip_dataset
+            numthreads: deprecated parameter. All centering are done in fm.klip_dataset 
 
         Returns:
             A DiskFM Object
@@ -76,19 +76,22 @@ class DiskFM(NoFM):
                  load_from_basis=False,
                  save_basis=False,
                  aligned_center=None,
-                 numthreads=None,
+                 psf_library=None,
                  mode=None,
                  annuli=None,
                  subsections=None,
-                 psf_library=None
-                 ):
+                 numthreads=None):
         """
 
             Initilaizes the DiskFM class
 
         """
 
-        
+        if load_from_basis:
+            numbasis = 1
+            inputs_shape = 1
+            dataset = None
+
         # make sure the dimensions have the good shape
         # and that they are numpy arrays to access their shape
         if hasattr(numbasis, "__len__"):
@@ -100,13 +103,18 @@ class DiskFM(NoFM):
             inputs_shape = np.array(inputs_shape)
         else:
             inputs_shape = np.array([inputs_shape])
-        
+
         if mode is not None:
             print(mode)
             print("Warning: Argument 'mode' in pyklip.fmlib.diskfm.DiskFM class definition "\
                 "is deprecated (not used and will be removed in a future version). " \
                 "KLIP reduction parameters (mode, annuli and subsections) "\
                 "are only defined once in klip_dataset [pyklip.parallelized]. ")
+
+        if numthreads is not None:
+            print("Warning: Argument 'numthreads' in pyklip.fmlib.diskfm.DiskFM class definition "\
+                "is deprecated (not used and will be removed in a future version). " \
+                "All centering are done in fm.klip_dataset ")
 
         if annuli is not None:
             print("Warning: Argument 'annuli' in pyklip.fmlib.diskfm.DiskFM class definition "\
@@ -122,20 +130,9 @@ class DiskFM(NoFM):
 
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
-        # Attributes of input
-        self.inputs_shape = inputs_shape
-
-        self.numbasis = numbasis
-
-        # Outputs attributes
-        output_imgs_shape = inputs_shape + self.numbasis.shape
-        self.output_imgs_shape = output_imgs_shape
-        self.outputs_shape = output_imgs_shape
-
-        self.data_type = ctypes.c_float
+        self.data_type = ctypes.c_double
 
         self.basis_filename = basis_filename
-
         self.save_basis = save_basis
         self.load_from_basis = load_from_basis
 
@@ -144,13 +141,8 @@ class DiskFM(NoFM):
             self.save_basis = False
             save_basis = False
 
-        if numthreads is None:
-            self.numthreads = mp.cpu_count()
-        else:
-            self.numthreads = numthreads
-
         # Set up global multi-processing dictionaries for saving FM basis
-        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict
+        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, aligned_images_dict
         global section_ind_dict, radstart_dict, radend_dict, phistart_dict
         global phiend_dict, input_img_num_dict, klparam_dict
 
@@ -158,6 +150,7 @@ class DiskFM(NoFM):
         klmodes_dict = manager.dict()
         evecs_dict = manager.dict()
         evals_dict = manager.dict()
+        aligned_images_dict = manager.dict()
         ref_psfs_indicies_dict = manager.dict()
         section_ind_dict = manager.dict()
 
@@ -170,67 +163,46 @@ class DiskFM(NoFM):
         klparam_dict = manager.dict()
         # Coords where align_and_scale places model center
 
-        if aligned_center is None:
-            aligned_center = [
-                int(inputs_shape[2] // 2),
-                int(inputs_shape[1] // 2),
-            ]
-            # FIXME I put the one that was by defaut in previous DiskFM version for
-            # continuity. But this is not the one set by default in fm.klip_dataset
-            # so I need to change it to have the same defaut
-
         if self.load_from_basis is True:  # We want to load the FM basis
 
             # We load the FM basis files, before preparing the model to
             # be sure that the aligned_center is identical to the one used
             # when measuring the KL
-            self.load_basis_files(dataset, psf_library= psf_library)
-
-            # we test that the PAs and wls identical to the ones that
-            # were previously used when we measured the kl_basis. This is
-            # a proxy to avoid saving the whole dataset but still testing
-            # it's identical.
-            if np.size(self.PAs) != np.size(dataset.PAs):
-                raise ValueError('''The # of PAs in the dataset loaded is not
-                                identical to the # of PAs in the dataset used to
-                                measure the KL basis. Some images were maybe r
-                                emoved''')
-            else:
-                if any(self.PAs != dataset.PAs):
-                    raise ValueError('''The PAs in the dataset loaded are not
-                                identical to the PAs in the dataset used to measure
-                                the KL basis. Some images were maybe permutated'''
-                                     )
-
-            if np.size(self.wvs) != np.size(dataset.wvs):
-                raise ValueError(
-                    '''The # of Wavelengths in the dataset loaded is not
-                            identical to the # of Wavelengths in the dataset used to
-                            measure the KL basis. Pb in the collapse?''')
-            else:
-                if any(self.wvs != dataset.wvs):
-                    raise ValueError(
-                        '''The Wavelengths in the dataset loaded are not
-                                identical to the Wavelengths in the dataset used to
-                                measure the KL basis.''')
-            
+            self.load_basis_files(psf_library=psf_library)
 
         else:  # We want to save the basis or just a single disk FM
 
+            # Attributes of input
+            self.inputs_shape = inputs_shape
+
+            self.numbasis = numbasis
+
+            # Outputs attributes
+            output_imgs_shape = inputs_shape + self.numbasis.shape
+            self.output_imgs_shape = output_imgs_shape
+
             self.PAs = dataset.PAs
+            print('fromdataset', self.PAs)
             self.wvs = dataset.wvs
-            
+
+            self.nwvs = int(np.size(np.unique(
+                self.wvs)))  # Get the number of wvls
+            self.nfiles = int(self.inputs_shape[0] /
+                              self.nwvs)  # Get the number of files
+
+            # default aligned_center if none (same default as fm.parallelized):
+            if aligned_center is None:
+                centers = dataset.centers
+                aligned_center = [
+                    np.mean(centers[:, 0]),
+                    np.mean(centers[:, 1])
+                ]
+
             # define the center
             self.aligned_center = aligned_center
 
-        self.nfiles = int(np.nanmax(
-            dataset.filenums)) + 1  # Get the number of files
-        self.nwvs = int(np.size(np.unique(self.wvs)))
-        # Get the number of wvls
-
         # Prepare the first disk for FM
         self.update_disk(model_disk)
-
 
     def update_disk(self, model_disk):
         """
@@ -327,6 +299,7 @@ class DiskFM(NoFM):
                       evals=None,
                       evecs=None,
                       input_img_shape=None,
+                      output_img_shape=None,
                       input_img_num=None,
                       ref_psfs_indicies=None,
                       section_ind=None,
@@ -398,44 +371,41 @@ class DiskFM(NoFM):
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
 
-
         # use the disk model stored
         model_sci = self.model_disks[input_img_num, section_ind[0]]
         model_sci[np.where(np.isnan(model_sci))] = 0
         model_ref = self.model_disks[ref_psfs_indicies, :]
         model_ref = model_ref[:, section_ind[0]]
         model_ref[np.where(np.isnan(model_ref))] = 0
-
-
-        
         if mode == 'RDI':
             #if only RDI we skip the deltaKL calculation since we do only over-subctraction
-            delta_KL = klmodes*0.
+            delta_KL = klmodes * 0.
         else:
             # using original Kl modes and reference models, compute the perturbed KL modes
             # (spectra is already in models)
-            delta_KL = fm.perturb_specIncluded(evals,
-                                                evecs,
-                                                klmodes,
-                                                refs,
-                                                model_ref,
-                                                return_perturb_covar=False,
-                                                )
+            delta_KL = fm.perturb_specIncluded(
+                evals,
+                evecs,
+                klmodes,
+                refs,
+                model_ref,
+                return_perturb_covar=False,
+            )
 
         # calculate postklip_psf using delta_KL
         postklip_psf, _, _ = fm.calculate_fm(delta_KL,
-                                            klmodes,
-                                            numbasis,
-                                            sci,
-                                            model_sci,
-                                            inputflux=None)
-
+                                             klmodes,
+                                             numbasis,
+                                             sci,
+                                             model_sci,
+                                             inputflux=None)
 
         # write forward modelled disk to fmout (as output)
         # need to derotate the image in this step
         for thisnumbasisindex in range(np.size(numbasis)):
-            fm._save_rotated_section(
+            _save_rotated_section(
                 input_img_shape,
+                output_img_shape,
                 postklip_psf[thisnumbasisindex],
                 section_ind,
                 fmout[input_img_num, :, :, thisnumbasisindex],
@@ -460,23 +430,31 @@ class DiskFM(NoFM):
                 klparam_dict['isRDI'] = np.float64(1.)
             else:
                 klparam_dict['isRDI'] = np.float64(0.)
-            
 
             [IWA, OWA] = IOWA
             klparam_dict['IWA'] = np.float64(IWA)
             klparam_dict['OWA'] = np.float64(OWA)
+
+            klparam_dict['input_img_shape'] = np.float64(input_img_shape)
+            klparam_dict['numbasis'] = np.float64(numbasis)
+            klparam_dict['output_imgs_shape'] = np.float64(output_img_shape)
+
+            # To have a single identifier for each set of aligned images,
+            # we save the wavelenght in nm
+            wlstrkey = 'wl' + str(int(self.wvs[input_img_num] * 1000)).zfill(4)
+            aligned_images_dict[wlstrkey] = aligned_imgs
 
             # save the center for aligning the image in KLIP-FM. In practice, this
             # center will be used for all the models after we load.
             klparam_dict['aligned_center_x'] = np.float64(ref_center[0])
             klparam_dict['aligned_center_y'] = np.float64(ref_center[1])
 
-            # Those are saved only to be used as a test when we load that
-            # the dataset is identical to the one that was use to
-            # produce the kl basis
+            # We save information about the dataset that will be used when we load the KL basis
             klparam_dict['PAs'] = np.float64(self.PAs)
             klparam_dict['wvs'] = np.float64(self.wvs)
-            
+
+            klparam_dict['nwvs'] = np.float64(self.nwvs)
+            klparam_dict['nfiles'] = np.float64(self.nfiles)
 
             # To have a single identifier for each set of section/image for the
             # dictionnaries key, we use section first pixel and image number
@@ -508,7 +486,7 @@ class DiskFM(NoFM):
         Returns:
             Same but cleaned up if necessary
         """
-        
+
         # save the KL basis.
         if self.save_basis:
             self.save_kl_basis()
@@ -634,6 +612,9 @@ class DiskFM(NoFM):
         if file_extension == ".pkl":
             # transform mp dicts to normal dicts
             pkl_file = open(self.basis_filename, "wb")
+
+            pickle.dump(dict(aligned_images_dict), pkl_file, protocol=2)
+
             pickle.dump(dict(klmodes_dict), pkl_file, protocol=2)
             pickle.dump(dict(evecs_dict), pkl_file, protocol=2)
             pickle.dump(dict(evals_dict), pkl_file, protocol=2)
@@ -653,6 +634,7 @@ class DiskFM(NoFM):
             # make a single dictionnary and save in h5
 
             saving_in_h5_dict = {
+                'aligned_images_dict': dict(aligned_images_dict),
                 'klmodes_dict': dict(klmodes_dict),
                 'evecs_dict': dict(evecs_dict),
                 'evals_dict': dict(evals_dict),
@@ -675,7 +657,7 @@ class DiskFM(NoFM):
                              """ is not a possible extension. Filenames can
                 haves 2 recognizable extension2: .h5 and .pkl""")
 
-    def load_basis_files(self, dataset, psf_library = None):
+    def load_basis_files(self, psf_library=None):
         """
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
@@ -696,6 +678,9 @@ class DiskFM(NoFM):
             if version_info.major == 3:
                 # Using encoding='latin1' is required for unpickling NumPy arrays
                 # and instances of datetime, date and time pickled by Python 2.
+                self.aligned_images_dict = pickle.load(pkl_file,
+                                                       encoding="latin1")
+
                 self.klmodes_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evecs_dict = pickle.load(pkl_file, encoding="latin1")
                 self.evals_dict = pickle.load(pkl_file, encoding="latin1")
@@ -714,6 +699,8 @@ class DiskFM(NoFM):
                 self.klparam_dict = pickle.load(pkl_file, encoding="latin1")
 
             else:
+                self.aligned_images_dict = pickle.load(pkl_file)
+
                 self.klmodes_dict = pickle.load(pkl_file)
                 self.evecs_dict = pickle.load(pkl_file)
                 self.evals_dict = pickle.load(pkl_file)
@@ -732,6 +719,8 @@ class DiskFM(NoFM):
             # saving_in_h5_dict = ddh5.load(self.basis_filename)
             # path_basish5, name_basish5 = path.split(self.basis_filename)
             saving_in_h5_dict = _load_dict_from_hdf5(self.basis_filename)
+
+            self.aligned_images_dict = saving_in_h5_dict['aligned_images_dict']
 
             self.klmodes_dict = saving_in_h5_dict['klmodes_dict']
             self.evecs_dict = saving_in_h5_dict['evecs_dict']
@@ -760,155 +749,35 @@ class DiskFM(NoFM):
         self.IWA = self.klparam_dict['IWA']
         self.OWA = self.klparam_dict['OWA']
 
+        numbasis = self.klparam_dict['numbasis'].astype(int)
+        if hasattr(numbasis, "__len__"):
+            numbasis = np.array(numbasis)
+        else:
+            numbasis = np.array([numbasis])
+
+        self.numbasis = numbasis
+
         self.aligned_center = [
             self.klparam_dict['aligned_center_x'],
             self.klparam_dict['aligned_center_y'],
         ]
 
-        # Those are loaded only to be used as a test that
-        # the dataset is identical to the one that was use initially to
-        # produce the kl basis
+        output_imgs_shape = tuple(
+            self.klparam_dict['output_imgs_shape'].astype(int))
+
+        self.output_imgs_shape = output_imgs_shape
+
+        # Those are loaded to avoid depending at all on the dataset when we load the KL basis
         self.PAs = self.klparam_dict['PAs']
         self.wvs = self.klparam_dict['wvs']
 
-        numthreads = self.numthreads
+        self.nwvs = int(self.klparam_dict['nwvs'])  # Get the number of wvls
+        self.nfiles = int(
+            self.klparam_dict['nfiles'])  # Get the number of wvls
 
-        # implement the thread pool
-        # # make a bunch of shared memory arrays to transfer data between threads
-        # # make the array for the original images and initalize it
-        original_imgs = mp.Array(self.data_type, np.size(dataset.input))
-        original_imgs_shape = dataset.input.shape
-        original_imgs_np = fm._arraytonumpy(original_imgs,
-                                            original_imgs_shape,
-                                            dtype=self.data_type)
-        original_imgs_np[:] = dataset.input
-        # make array for recentered/rescaled image for each wavelength
-        unique_wvs = np.unique(self.wvs)
-        recentered_imgs = mp.Array(
-            self.data_type,
-            np.size(dataset.input) * np.size(unique_wvs))
-        recentered_imgs_shape = (np.size(unique_wvs), ) + dataset.input.shape
-
-        # remake the PA, wv, and center arrays as shared arrays
-        pa_imgs = mp.Array(self.data_type, np.size(self.PAs))
-        pa_imgs_np = fm._arraytonumpy(pa_imgs, dtype=self.data_type)
-        pa_imgs_np[:] = self.PAs
-        wvs_imgs = mp.Array(self.data_type, np.size(self.wvs))
-        wvs_imgs_np = fm._arraytonumpy(wvs_imgs, dtype=self.data_type)
-        wvs_imgs_np[:] = self.wvs
-        centers_imgs = mp.Array(self.data_type, np.size(dataset.centers))
-        centers_imgs_np = fm._arraytonumpy(centers_imgs,
-                                           dataset.centers.shape,
-                                           dtype=self.data_type)
-        centers_imgs_np[:] = dataset.centers
-
-        # we will not save the fits fm_in parallelize, so we don't need those
-        output_imgs = None
-        output_imgs_numstacked = None
-
-        output_imgs_shape = dataset.input.shape + self.numbasis.shape
-        self.output_imgs_shape = output_imgs_shape
-        self.outputs_shape = output_imgs_shape
-
-        # Create Custom Shared Memory array fmout to save output of forward modelling
-        fmout_data, fmout_shape = self.alloc_fmout(self.output_imgs_shape)
-
-        # We will not keep track of validity of perturbation so we don't need those
-        perturbmag = None
-        perturbmag_shape = None
-        
-       
-        if psf_library is not None:
-            psf_lib = mp.Array(self.data_type, np.size(psf_library))
-            psf_lib_np = fm._arraytonumpy(psf_lib, psf_library.shape, dtype=self.data_type)
-            psf_lib_np[:] = psf_library
-            psf_lib_shape = psf_library.shape
-        else:
-            psf_lib = None
-            psf_lib_shape = None
-        
-        # align and scale the images for each image. Use map to do this asynchronously
-        # I need to run this code at least once in non-parallel mode to initialize the
-        # global variable outputs_shape in fm.py. This is a short stuff and we do it only once.
-
-        fm._tpool_init(
-            original_imgs,
-            original_imgs_shape,
-            recentered_imgs,
-            recentered_imgs_shape,
-            output_imgs,
-            self.output_imgs_shape,
-            output_imgs_numstacked,
-            pa_imgs,
-            wvs_imgs,
-            centers_imgs,
-            None,
-            None,
-            fmout_data,
-            fmout_shape,
-            perturbmag,
-            perturbmag_shape, 
-            psf_lib, 
-            psf_lib_shape
-        )
-
-        fmout_data = None
-        fmout_shape = None
-
-        tpool = mp.Pool(
-            processes=numthreads,
-            initializer=fm._tpool_init,
-            initargs=(
-                original_imgs,
-                original_imgs_shape,
-                recentered_imgs,
-                recentered_imgs_shape,
-                output_imgs,
-                self.output_imgs_shape,
-                output_imgs_numstacked,
-                pa_imgs,
-                wvs_imgs,
-                centers_imgs,
-                None,
-                None,
-                fmout_data,
-                fmout_shape,
-                perturbmag,
-                perturbmag_shape, 
-                psf_lib, 
-                psf_lib_shape
-            ),
-            maxtasksperchild=50,
-        )
-
-        # print("Begin align and scale images for each wavelength")
-        aligned_outputs = []
-        for threadnum in range(self.numthreads):
-            aligned_outputs += [
-                tpool.apply_async(
-                    fm._align_and_scale_subset,
-                    args=(
-                        threadnum,
-                        self.aligned_center,
-                        self.numthreads,
-                        self.data_type,
-                    ),
-                )
-            ]
-            # save it to shared memory
-        for aligned_output in aligned_outputs:
-            aligned_output.wait()
-
-        self.aligned_imgs_np = fm._arraytonumpy(
-            recentered_imgs,
-            shape=(
-                recentered_imgs_shape[0],
-                recentered_imgs_shape[1],
-                recentered_imgs_shape[2] * recentered_imgs_shape[3],
-            ),
-        )
-        self.wvs_imgs_np = wvs_imgs_np
-        self.pa_imgs_np = pa_imgs_np
+        dim_frame = self.klparam_dict['input_img_shape']
+        self.inputs_shape = np.array(
+            (self.nfiles * self.nwvs, int(dim_frame[0]), int(dim_frame[1])))
 
         # After loading it, we stop saving the KL basis to avoid saving it every time
         # we run self.fm_parallelize.
@@ -936,17 +805,15 @@ class DiskFM(NoFM):
                                     dtype=self.data_type)
 
         wvs = self.wvs
-        unique_wvs = np.unique(wvs)
         original_imgs_shape = self.inputs_shape
 
         if self.isRDI:
             mode = 'RDI'
         else:
-            mode = None 
-            # We are only interested in the RDI mode 
-            # we don't care since it does not have an 
+            mode = None
+            # We are only interested in the RDI mode
+            # if not we don't care since it does not have an
             # impact at this point
-
 
         for key in self.dict_keys:  # loop pver the sections/images
             # load KL from the dictionnaries
@@ -963,52 +830,37 @@ class DiskFM(NoFM):
             phiend = self.phiend_dict[key]
             img_num = self.input_img_num_dict[key]
 
-            # # We can also re-measure the section at every run of fm_parallelized.
-            # # This is the only "dictionnary array" that is big and fast to measure at
-            # # the same time so it can be done if RAM is a pb (the dict variables
-            # # are going to put in global in the MCMC). I put the code here if wanted:
-
-            # section_ind = fm._get_section_indicies(
-            #     self.inputs_shape[1:],
-            #     self.aligned_center,
-            #     radstart,
-            #     radend,
-            #     phistart,
-            #     phiend,
-            #     0.0,
-            #     self.pa_imgs_np[img_num],
-            #     (self.IWA, self.OWA),
-            #     flatten=True,
-            #     flipx=False,
-            # )
-
+            # To have a single identifier for each set of aligned images,
+            # we save the wavelenght in nm
             wl_here = wvs[img_num]
-            wv_index = (np.where(unique_wvs == wl_here))[0][0]
-            aligned_imgs_for_this_wl = self.aligned_imgs_np[wv_index]
+            wlstr = 'wl' + str(int(wl_here * 1000)).zfill(4)
+            aligned_imgs_for_this_wl = self.aligned_images_dict[wlstr]
 
-            self.fm_from_eigen(
-                klmodes=original_KL,
-                evals=evals,
-                evecs=evecs,
-                input_img_shape=[
-                    original_imgs_shape[1], original_imgs_shape[2]
-                ],
-                input_img_num=img_num,
-                ref_psfs_indicies=ref_psfs_indicies,
-                section_ind=section_ind,
-                aligned_imgs=aligned_imgs_for_this_wl,
-                radstart=radstart,
-                radend=radend,
-                phistart=phistart,
-                phiend=phiend,
-                padding=0.0,
-                IOWA=(self.IWA, self.OWA),
-                ref_center=self.aligned_center,
-                parang=self.pa_imgs_np[img_num],
-                numbasis=self.numbasis,
-                fmout=fmout_np,
-                mode = mode
-            )
+            parang = self.PAs[img_num]
+
+            self.fm_from_eigen(klmodes=original_KL,
+                               evals=evals,
+                               evecs=evecs,
+                               input_img_shape=[
+                                   original_imgs_shape[1],
+                                   original_imgs_shape[2]
+                               ],
+                               output_img_shape=self.output_imgs_shape,
+                               input_img_num=img_num,
+                               ref_psfs_indicies=ref_psfs_indicies,
+                               section_ind=section_ind,
+                               aligned_imgs=aligned_imgs_for_this_wl,
+                               radstart=radstart,
+                               radend=radend,
+                               phistart=phistart,
+                               phiend=phiend,
+                               padding=0.0,
+                               IOWA=(self.IWA, self.OWA),
+                               ref_center=self.aligned_center,
+                               parang=parang,
+                               numbasis=self.numbasis,
+                               fmout=fmout_np,
+                               mode=mode)
 
         # put any finishing touches on the FM Output
         fmout_np = fm._arraytonumpy(fmout_data,
@@ -1042,7 +894,6 @@ class DiskFM(NoFM):
             fmout_return = np.nanmean(fmout_np, axis=1)
 
         return fmout_return
-    
 
 
 ##############################################################################
@@ -1129,3 +980,147 @@ def _recursively_load_dict_contents_from_group(h5file, path):
     return ans
 
 
+def _save_rotated_section(input_shape,
+                          outputs_shape,
+                          sector,
+                          sector_ind,
+                          output_img,
+                          output_img_numstacked,
+                          angle,
+                          radstart,
+                          radend,
+                          phistart,
+                          phiend,
+                          padding,
+                          IOWA,
+                          img_center,
+                          flipx=True,
+                          new_center=None):
+    """
+    Rotate and save sector in output image at desired ranges
+
+    Args:
+        input_shape: shape of input_image
+        sector: data in the sector to save to output_img
+        sector_ind: index into input img (corresponding to input_shape) for the original sector
+        output_img: the array to save the data to
+        output_img_numstacked: array to increment region where we saved output to to bookkeep stacking. None for
+                               skipping bookkeeping
+        angle: angle that the sector needs to rotate (I forget the convention right now)
+
+        The next 6 parameters define the sector geometry in input image coordinates
+        radstart: radius from img_center of start of sector
+        radend: radius from img_center of end of sector
+        phistart: azimuthal start of sector
+        phiend: azimuthal end of sector
+        padding: amount of padding around each sector
+        IOWA: tuple (IWA,OWA) where IWA = Inner working angle and OWA = Outer working angle both in pixels.
+                It defines the separation interva in which klip will be run.
+        img_center: center of image in input image coordinate
+
+        flipx: if true, flip the x coordinate to switch coordinate handiness
+        new_center: if not none, center of output_img. If none, center stays the same
+    """
+    # convert angle to radians
+    angle_rad = np.radians(angle)
+
+    #wrap phi
+    phistart %= 2 * np.pi
+    phiend %= 2 * np.pi
+
+    # create the coordinate system of the image to manipulate for the transform
+    dims = input_shape
+    x, y = np.meshgrid(np.arange(dims[1], dtype=np.float32),
+                       np.arange(dims[0], dtype=np.float32))
+
+    # if necessary, move coordinates to new center
+    if new_center is not None:
+        dx = new_center[0] - img_center[0]
+        dy = new_center[1] - img_center[1]
+        x -= dx
+        y -= dy
+
+    # flip x if needed to get East left of North
+    if flipx is True:
+        x = img_center[0] - (x - img_center[0])
+
+    # do rotation. CW rotation formula to get a CCW of the image
+    xp = (x - img_center[0]) * np.cos(angle_rad) + (
+        y - img_center[1]) * np.sin(angle_rad) + img_center[0]
+    yp = -(x - img_center[0]) * np.sin(angle_rad) + (
+        y - img_center[1]) * np.cos(angle_rad) + img_center[1]
+
+    if new_center is None:
+        new_center = img_center
+
+    rot_sector_pix = fm._get_section_indicies(input_shape,
+                                              new_center,
+                                              radstart,
+                                              radend,
+                                              phistart,
+                                              phiend,
+                                              padding,
+                                              0,
+                                              IOWA,
+                                              flatten=False,
+                                              flipx=flipx)
+
+    # do NaN detection by defining any pixel in the new coordiante system (xp, yp) as a nan
+    # if any one of the neighboring pixels in the original image is a nan
+    # e.g. (xp, yp) = (120.1, 200.1) is nan if either (120, 200), (121, 200), (120, 201), (121, 201)
+    # is a nan
+    dims = input_shape
+    blank_input = np.zeros(dims[1] * dims[0])
+    blank_input[sector_ind] = sector
+    blank_input.shape = [dims[0], dims[1]]
+
+    xp_floor = np.clip(np.floor(xp).astype(int), 0,
+                       xp.shape[1] - 1)[rot_sector_pix]
+    xp_ceil = np.clip(np.ceil(xp).astype(int), 0,
+                      xp.shape[1] - 1)[rot_sector_pix]
+    yp_floor = np.clip(np.floor(yp).astype(int), 0,
+                       yp.shape[0] - 1)[rot_sector_pix]
+    yp_ceil = np.clip(np.ceil(yp).astype(int), 0,
+                      yp.shape[0] - 1)[rot_sector_pix]
+    rotnans = np.where(
+        np.isnan(blank_input[yp_floor.ravel(),
+                             xp_floor.ravel()])
+        | np.isnan(blank_input[yp_floor.ravel(),
+                               xp_ceil.ravel()])
+        | np.isnan(blank_input[yp_ceil.ravel(),
+                               xp_floor.ravel()])
+        | np.isnan(blank_input[yp_ceil.ravel(),
+                               xp_ceil.ravel()]))
+
+    # resample image based on new coordinates, set nan values as median
+    nanpix = np.where(np.isnan(blank_input))
+    medval = np.median(blank_input[np.where(~np.isnan(blank_input))])
+    input_copy = np.copy(blank_input)
+    input_copy[nanpix] = medval
+    rot_sector = ndimage.map_coordinates(
+        input_copy, [yp[rot_sector_pix], xp[rot_sector_pix]], cval=np.nan)
+
+    # mask nans
+    rot_sector[rotnans] = np.nan
+    sector_validpix = np.where(~np.isnan(rot_sector))
+
+    # need to define only where the non nan pixels are, so we can store those in the output image
+    blank_output = np.zeros([dims[0], dims[1]]) * np.nan
+    blank_output[rot_sector_pix] = rot_sector
+    blank_output.shape = (dims[0], dims[1])
+    rot_sector_validpix_2d = np.where(~np.isnan(blank_output))
+
+    # save output sector. We need to reshape the array into 2d arrays to save it
+    output_img.shape = [outputs_shape[1], outputs_shape[2]]
+    output_img[rot_sector_validpix_2d] = np.nansum([
+        output_img[rot_sector_pix][sector_validpix],
+        rot_sector[sector_validpix]
+    ],
+                                                   axis=0)
+    output_img.shape = [outputs_shape[1] * outputs_shape[2]]
+
+    # Increment the numstack counter if it is not None
+    if output_img_numstacked is not None:
+        output_img_numstacked.shape = [outputs_shape[1], outputs_shape[2]]
+        output_img_numstacked[rot_sector_validpix_2d] += 1
+        output_img_numstacked.shape = [outputs_shape[1] * outputs_shape[2]]
