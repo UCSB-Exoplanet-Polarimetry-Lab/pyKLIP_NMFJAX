@@ -83,8 +83,22 @@ def test_throughput():
         fm_centy = fm_hdu[1].header['PSFCENTY']
 
     print("{0} seconds to run".format(time.time()-t1))
-    # Check that flux is 0 at center
+
+    # Find the distance from the center of the frame to the planet psf
+    planet_dx = guesssep*np.cos((guesspa+90))
+    planet_dy = guesssep*np.sin((guesspa+90))
+
+    # Calculate planet psf coordinates wrt image
+    planet_x_pos = fm_centx + planet_dx
+    planet_y_pos = fm_centy + planet_dy
+
+    # Find the flux 5 pixels inside and outside of planet radius
+    planet_flux_inner = fm_frame[int(planet_y_pos-5)][int(planet_x_pos-5)]
+    planet_flux_outer = fm_frame[int(planet_y_pos+5)][int(planet_x_pos+5)]
+
+    # Check that the flux within the planet distance is less than the flux outside
     assert(abs(fm_frame[int(fm_centx)][int(fm_centx)+20]) > 10)
+    assert(abs(planet_flux_inner)>abs(planet_flux_outer))
 
 if __name__ == "__main__":
     test_throughput()
