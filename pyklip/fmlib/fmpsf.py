@@ -190,13 +190,11 @@ class FMPlanetPSF(NoFM):
         if debug:
             canvases = []
         models = []
-        #print(self.input_psfs.shape)
+
         for pa, wv in zip(pas, wvs):
-            #print(self.pa,self.sep)
-            #print(pa,wv)
+
             # grab PSF given wavelength
             wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
-            #model_psf = self.input_psfs[wv_index[0], :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
 
             # find center of psf
             # to reduce calculation of sin and cos, see if it has already been calculated before
