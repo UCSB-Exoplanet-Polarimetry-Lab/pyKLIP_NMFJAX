@@ -12,7 +12,7 @@ import pyklip.klip
 import pyklip.fakes as fakes
 import pyklip.fm as fm
 import pyklip.instruments.GPI as GPI
-import pyklip.fmlib.old_fmpsf as fmpsf
+import pyklip.fmlib.fmpsf as fmpsf
 import pyklip.fitpsf as fitpsf
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
@@ -30,6 +30,7 @@ def test_throughput():
 
     numwvs = np.size(np.unique(dataset.wvs))
     print(numwvs)
+    
     # generate PSF
     dataset.generate_psfs(boxrad=25//2)
     dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] // numwvs, numwvs]), axis=0)[:, None, None])
@@ -50,7 +51,7 @@ def test_throughput():
 
     #Specify transmission correction parameters
     trans = np.ones(100)
-    trans[0:30]=1000
+    trans[0:30]=10000
     rad = np.arange(start = 0, stop =100, step = 1)
 
     def transmission_corrected(input_stamp, input_dx, input_dy):
@@ -68,7 +69,7 @@ def test_throughput():
                                     np.unique(dataset.wvs), dataset.dn_per_contrast, star_spt='A6',
                                     spectrallib=[inputspec], field_dependent_correction=transmission_corrected)
 
-        # run KLIP-FM
+    # run KLIP-FM
     prefix = "betpic-131210-j-fmpsf"
     fm.klip_dataset(dataset, fm_class, outputdir=testdir, fileprefix=prefix, numbasis=numbasis,
                     annuli=[[guesssep-15, guesssep+15]], subsections=1, padding=0, movement=2, 
@@ -85,20 +86,19 @@ def test_throughput():
     print("{0} seconds to run".format(time.time()-t1))
 
     # Find the distance from the center of the frame to the planet psf
-    planet_dx = guesssep*np.cos((guesspa+90))
-    planet_dy = guesssep*np.sin((guesspa+90))
+    planet_dy = guesssep*np.cos((guesspa+90))
+    planet_dx = guesssep*np.sin((guesspa+90))
 
     # Calculate planet psf coordinates wrt image
-    planet_x_pos = fm_centx + planet_dx
-    planet_y_pos = fm_centy + planet_dy
+    planet_x_pos = int(fm_centx + planet_dx)
+    planet_y_pos = int(fm_centy - planet_dy)
 
-    # Find the flux 5 pixels inside and outside of planet radius
-    planet_flux_inner = fm_frame[int(planet_y_pos-5)][int(planet_x_pos-5)]
-    planet_flux_outer = fm_frame[int(planet_y_pos+5)][int(planet_x_pos+5)]
+    # Find the flux within 5 pixels inside and outside of transmission boundary
+    inner_range = fm_frame[(planet_y_pos):(planet_y_pos+5), (planet_x_pos-5):planet_x_pos]
+    outer_range = fm_frame[(planet_y_pos-5):(planet_y_pos), planet_x_pos:(planet_x_pos+5)]
 
     # Check that the flux within the planet distance is less than the flux outside
-    assert(abs(fm_frame[int(fm_centx)][int(fm_centx)+20]) > 10)
-    assert(abs(planet_flux_inner)>abs(planet_flux_outer))
+    assert(abs(np.median(inner_range))/abs(np.median(outer_range))>10)
 
 if __name__ == "__main__":
     test_throughput()
