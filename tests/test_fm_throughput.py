@@ -20,6 +20,11 @@ testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 def test_throughput():
     """
     Tests FM coronagraphic throughput correction
+
+    This function assigns a throughput of 10,000 for pixel positions within the planet radius,
+    and a throughput of 0 outside the planet radius. It then tests that this field dependent
+    correction was made by checking that the median flux within the planet radius is greater 
+    than the flux outside the radius post-KLIPfm.  
     """
     t1 = time.time()
 
@@ -30,7 +35,7 @@ def test_throughput():
 
     numwvs = np.size(np.unique(dataset.wvs))
     print(numwvs)
-    
+
     # generate PSF
     dataset.generate_psfs(boxrad=25//2)
     dataset.psfs /= (np.mean(dataset.spot_flux.reshape([dataset.spot_flux.shape[0] // numwvs, numwvs]), axis=0)[:, None, None])
@@ -54,16 +59,35 @@ def test_throughput():
     trans[0:30]=10000
     rad = np.arange(start = 0, stop =100, step = 1)
 
-    def transmission_corrected(input_stamp, input_dx, input_dy):
+   def transmission_correction(input_stamp, input_dx, input_dy):
         """
-        input_dx: should be 2d 
-        input_dy: should be 2d
+        Args:
+            input_stamp (array): 2D array of the region surrounding the fake planet injection site
+            input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
+            input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
+        
+        Returns:
+            output_stamp (array): 2D array of the throughput corrected planet injection site.
         """
+        # Calculate the distance of each pixel in the input stamp from the center
         distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
-        trans_at_dist = np.interp(distance_from_center, rad, trans)
-        transmission_stamp = trans_at_dist.reshape(input_stamp.shape)
-        output_stamp = transmission_stamp*input_stamp
+
+        # Read in the relevant coronagraph's transmission profile (typically provided by telescope website)
+        transmission_prof = pd.read_csv('telescope_coronagraph_values.csv')
+        transmission =  transmission_prof['throughput']
+        radius = transmission_prof['distance']
+
+        # Interpolate to find the transmission value for each pixel in the input stamp
+        transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
+
+        # Reshape the interpolated array to have the same dimensions as the input stamp
+        transmission_of_stamp = transmission_of_stamp.reshape(input_stamp.shape)
+
+        # Make the throughput correction
+        output_stamp = transmission_of_stamp*input_stamp
+
         return output_stamp
+
 
     fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
                                     np.unique(dataset.wvs), dataset.dn_per_contrast, star_spt='A6',
@@ -85,11 +109,11 @@ def test_throughput():
 
     print("{0} seconds to run".format(time.time()-t1))
 
-    # Find the distance from the center of the frame to the planet psf
+    # Find the distance from the center of the frame to the planet psf (notice that the axes are flipped by 90 degrees)
     planet_dy = guesssep*np.cos((guesspa+90))
     planet_dx = guesssep*np.sin((guesspa+90))
 
-    # Calculate planet psf coordinates wrt image
+    # Calculate planet psf coordinates wrt image (subtract from y b/c planet is below the center)
     planet_x_pos = int(fm_centx + planet_dx)
     planet_y_pos = int(fm_centy - planet_dy)
 
