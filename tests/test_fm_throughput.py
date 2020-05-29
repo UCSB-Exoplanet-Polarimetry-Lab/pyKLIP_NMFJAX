@@ -59,9 +59,11 @@ def test_throughput():
     trans[0:30]=10000
     rad = np.arange(start = 0, stop =100, step = 1)
 
-   def transmission_correction(input_stamp, input_dx, input_dy):
+
+
+    def transmission_corrected(input_stamp, input_dx, input_dy):
         """
-        Args:
+         Args:
             input_stamp (array): 2D array of the region surrounding the fake planet injection site
             input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
             input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
@@ -69,22 +71,17 @@ def test_throughput():
         Returns:
             output_stamp (array): 2D array of the throughput corrected planet injection site.
         """
-        # Calculate the distance of each pixel in the input stamp from the center
+         # Calculate the distance of each pixel in the input stamp from the center
         distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
 
-        # Read in the relevant coronagraph's transmission profile (typically provided by telescope website)
-        transmission_prof = pd.read_csv('telescope_coronagraph_values.csv')
-        transmission =  transmission_prof['throughput']
-        radius = transmission_prof['distance']
-
-        # Interpolate to find the transmission value for each pixel in the input stamp
-        transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
+         # Interpolate to find the transmission value for each pixel in the input stamp
+        trans_at_dist = np.interp(distance_from_center, rad, trans)
 
         # Reshape the interpolated array to have the same dimensions as the input stamp
-        transmission_of_stamp = transmission_of_stamp.reshape(input_stamp.shape)
+        transmission_stamp = trans_at_dist.reshape(input_stamp.shape)
 
-        # Make the throughput correction
-        output_stamp = transmission_of_stamp*input_stamp
+         # Make the throughput correction
+        output_stamp = transmission_stamp*input_stamp
 
         return output_stamp
 
@@ -113,7 +110,7 @@ def test_throughput():
     planet_dy = guesssep*np.cos((guesspa+90))
     planet_dx = guesssep*np.sin((guesspa+90))
 
-    # Calculate planet psf coordinates wrt image (subtract from y b/c planet is below the center)
+    # Calculate planet psf coordinates wrt image (subtract from y b/c planet is at the bottom of the image)
     planet_x_pos = int(fm_centx + planet_dx)
     planet_y_pos = int(fm_centy - planet_dy)
 
