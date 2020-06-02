@@ -312,10 +312,10 @@ def nan_map_coordinates_2d(img, yp, xp, mc_kwargs=None):
         mc_kwargs["cval"] = np.nan
 
     # check all four pixels around each pixel and see whether they are nans
-    xp_floor = np.clip(np.floor(xp).astype(int), 0, xp.shape[1]-1)
-    xp_ceil = np.clip(np.ceil(xp).astype(int), 0, xp.shape[1]-1)
-    yp_floor = np.clip(np.floor(yp).astype(int), 0, yp.shape[0]-1)
-    yp_ceil = np.clip(np.ceil(yp).astype(int), 0, yp.shape[0]-1)
+    xp_floor = np.clip(np.floor(xp).astype(int), 0, img.shape[1]-1)
+    xp_ceil = np.clip(np.ceil(xp).astype(int), 0, img.shape[1]-1)
+    yp_floor = np.clip(np.floor(yp).astype(int), 0, img.shape[0]-1)
+    yp_ceil = np.clip(np.ceil(yp).astype(int), 0, img.shape[0]-1)
     rotnans = np.where(np.isnan(img[yp_floor.ravel(), xp_floor.ravel()]) | 
                        np.isnan(img[yp_floor.ravel(), xp_ceil.ravel()]) |
                        np.isnan(img[yp_ceil.ravel(), xp_floor.ravel()]) |
