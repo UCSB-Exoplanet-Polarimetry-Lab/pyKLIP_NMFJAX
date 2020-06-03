@@ -43,7 +43,7 @@ guessflux = 5e-5
 
 #Specify transmission correction parameters
 trans = np.ones(100)
-trans[0:30]=10000
+trans[0:31]=10000
 rad = np.arange(start = 0, stop =100, step = 1)
 
 def transmission_corrected(input_stamp, input_dx, input_dy):
@@ -75,10 +75,21 @@ with fits.open(output_prefix + "-fmpsf-KLmodes-all.fits") as fm_hdu:
     fm_centx = fm_hdu[1].header['PSFCENTX']
     fm_centy = fm_hdu[1].header['PSFCENTY']
 
-planet_x_pos = guesssep*np.cos((guesspa+90))
-planet_y_pos = guesssep*np.sin((guesspa+90))
-planet_flux_inner = fm_frame[int(planet_y_pos-4)][int(planet_x_pos-4)]
-planet_flux_outer = fm_frame[int(planet_y_pos+4)][int(planet_x_pos+4)]
+ # Find the distance from the center of the frame to the planet psf
+    planet_dx = guesssep*np.cos((np.radians(guesspa+90)))
+    planet_dy = guesssep*np.sin((np.radians(guesspa+90)))
+
+    # Calculate planet psf coordinates wrt image
+    planet_x_pos = int(fm_centx + planet_dx)
+    planet_y_pos = int(fm_centy + planet_dy)
+
+
+    inner_range = fm_frame[(planet_y_pos):(planet_y_pos+5), (planet_x_pos-5):planet_x_pos]
+    outer_range = fm_frame[(planet_y_pos-5):(planet_y_pos), planet_x_pos:(planet_x_pos+5)]
+
+    median_inner = abs(np.median(inner_range))
+    median_outer = abs(np.median(outer_range))
+
 
 
 # Check that flux is 0 at center

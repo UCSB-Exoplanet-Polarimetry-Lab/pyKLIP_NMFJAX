@@ -107,12 +107,12 @@ def test_throughput():
     print("{0} seconds to run".format(time.time()-t1))
 
     # Find the distance from the center of the frame to the planet psf (notice that the axes are flipped by 90 degrees)
-    planet_dy = guesssep*np.cos((guesspa+90))
-    planet_dx = guesssep*np.sin((guesspa+90))
+    planet_dx = guesssep*np.cos((np.radians(guesspa+90)))
+    planet_dy = guesssep*np.sin((np.radians(guesspa+90)))
 
     # Calculate planet psf coordinates wrt image (subtract from y b/c planet is at the bottom of the image)
     planet_x_pos = int(fm_centx + planet_dx)
-    planet_y_pos = int(fm_centy - planet_dy)
+    planet_y_pos = int(fm_centy + planet_dy)
 
     # Find the flux within 5 pixels inside and outside of transmission boundary
     inner_range = fm_frame[(planet_y_pos):(planet_y_pos+5), (planet_x_pos-5):planet_x_pos]
