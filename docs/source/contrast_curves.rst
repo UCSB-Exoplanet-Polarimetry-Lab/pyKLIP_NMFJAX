@@ -173,7 +173,14 @@ Finally, we get a calibrated contrast curve!
 Coronagraphic Throughput
 ------------------------
 
-If a coronagraph was used in data collection, we can account for its effect on light transmission as we inject fake planets.
+If a coronagraph was used in data collection, it can have a measurable effect on the planet fluxes that we're able to detect. Closer to the star, 
+we might expect a coronograph to cause major dimming of observed planets, while planets at further separations from the star will likely be unaffected.
+Each coronagraph will typically have its own transmission profile, a measure of how its throughput changes as a function of distance from the center.
+It is quite useful for us to incorporate this into our contrast measurements in order to get a more accurate estimation of how bright planets must be in order for us
+to find them. Luckily, we can account for this coronagraphic effect on light transmission while estimating pyKLIP's equivalent effect on planet flux,
+thereby jointly calibrating both coronagraphic and algorithmic throughput. The following will explain how we integrate the coronagraphic throughput correction 
+by making a small modification to our fake planet injection function.
+
 The :py:meth:`pyklip.fakes.inject_planet` function has an optional argument ``field_dependent_correction``, which accepts 
 a user provided function that corrects for coronagraphic throughput. The provided function should accept three arguments: the region or 'stamp' of your fake planet, 
 the physical 'x' separation of each pixel in the stamp from the center, and the physical 'y' separation of each pixel in the stamp from the center. 
