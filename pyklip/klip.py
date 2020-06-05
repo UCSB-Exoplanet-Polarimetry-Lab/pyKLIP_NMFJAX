@@ -4,6 +4,7 @@ import scipy.linalg as la
 import scipy.ndimage as ndimage
 import scipy.interpolate as sinterp
 from scipy.stats import t
+import warnings
 
 def make_polar_coordinates(x, y, center=[0,0]):
     '''
@@ -37,43 +38,47 @@ def collapse_data(data, pixel_weights=None, axis=1, collapse_method='mean'):
     Returns:
         Collapsed data
     """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
 
-    if collapse_method.lower() == 'median':
+        if collapse_method.lower() == 'median':
 
-        return np.nanmedian(data, axis=axis)
+            return np.nanmedian(data, axis=axis)
 
-    elif collapse_method.lower() == 'mean':
+        elif collapse_method.lower() == 'mean':
 
-        return np.nanmean(data, axis=axis)
+            return np.nanmean(data, axis=axis)
 
-    elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        if pixel_weights is None:
-            pixel_weights = np.ones(data.shape)
-        collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
-        collapsed_data /= np.nanmean(pixel_weights, axis=axis)
 
-        return collapsed_data
 
-    elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
-        collapsed = np.sort(data, axis=axis)
-        collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
-        collapsed = np.nanmean(collapsed, axis=axis)
+        elif ('weighted' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+            if pixel_weights is None:
+                pixel_weights = np.ones(data.shape)
+            collapsed_data = np.nanmean(pixel_weights * data, axis=axis)
+            collapsed_data /= np.nanmean(pixel_weights, axis=axis)
 
-        return collapsed
+            return collapsed_data
 
-    elif ('weighted' in collapse_method.lower()) and ('median' in collapse_method.lower()):
-        if pixel_weights is None:
-            pixel_weights = np.ones(data.shape)
-        collapsed_data = np.nanmedian(pixel_weights * data, axis=axis)
-        collapsed_data /= np.nanmedian(pixel_weights, axis=axis)
+        elif ('trimmed' in collapse_method.lower()) and ('mean' in collapse_method.lower()):
+            collapsed = np.sort(data, axis=axis)
+            collapsed = np.take(collapsed, range(2, collapsed.shape[axis] - 2), axis=axis)
+            collapsed = np.nanmean(collapsed, axis=axis)
 
-        return collapsed_data
+            return collapsed
 
-    else:
-        # default to mean collapse if input does not match any supported pattern
-        print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
+        elif ('weighted' in collapse_method.lower()) and ('median' in collapse_method.lower()):
+            if pixel_weights is None:
+                pixel_weights = np.ones(data.shape)
+            collapsed_data = np.nanmedian(pixel_weights * data, axis=axis)
+            collapsed_data /= np.nanmedian(pixel_weights, axis=axis)
 
-        return np.nanmean(data, axis=axis)
+            return collapsed_data
+
+        else:
+            # default to mean collapse if input does not match any supported pattern
+            print('{} collapse not supported, using mean collapse instead...'.format(collapse_method))
+
+            return np.nanmean(data, axis=axis)
 
 
 def klip_math(sci, ref_psfs, numbasis, covar_psfs=None, return_basis=False, return_basis_and_eig=False):
