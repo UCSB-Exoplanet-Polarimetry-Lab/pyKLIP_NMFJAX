@@ -11,7 +11,7 @@ import pyklip.fm as fm
 from scipy import interpolate
 from copy import copy
 
-debug = True
+debug = False
 
 
 class FMPlanetPSF(NoFM):
