@@ -25,7 +25,7 @@ except ImportError:
     mkl_exists = False
 
 # for debugging purposes
-parallel = False
+parallel = True
 
 def find_id_nearest(array, value):
     """
