@@ -184,9 +184,12 @@ by making a small modification to our fake planet injection function.
 The :py:meth:`pyklip.fakes.inject_planet` function has an optional argument ``field_dependent_correction``, which accepts 
 a user provided function that corrects for coronagraphic throughput. The provided function should accept three arguments: the region or 'stamp' of your fake planet, 
 the physical 'x' separation of each pixel in the stamp from the center, and the physical 'y' separation of each pixel in the stamp from the center. 
-Provided with the transmission profile of the relevant coronagraph, this function should then scale the input stamp by the necessary amount, then output the throughput corrected stamp. An example of such a function is shown below:
+Provided with the transmission profile of the relevant coronagraph, this function should then scale the input stamp by the necessary amount, then output the throughput corrected stamp. 
+Prior to creating the function, be sure to read in your coronagraphic transmission profile. This should include columns for the transmission and distance from the star (in pixels).
 
 .. code-block:: python
+
+    # Read in transmission profile first
 
     def transmission_correction(input_stamp, input_dx, input_dy):
         """
@@ -201,10 +204,9 @@ Provided with the transmission profile of the relevant coronagraph, this functio
         # Calculate the distance of each pixel in the input stamp from the center
         distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
 
-        # Read in the relevant coronagraph's transmission profile (typically provided by telescope website)
-        transmission_prof = pd.read_csv('telescope_coronagraph_values.csv')
-        transmission =  transmission_prof['throughput']
-        radius = transmission_prof['distance']
+        # Select the relevant columns from the coronagraph's transmission profile
+        transmission =  transmission_profile['throughput']
+        radius = transmission_profile['distance']
 
         # Interpolate to find the transmission value for each pixel in the input stamp
         transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
