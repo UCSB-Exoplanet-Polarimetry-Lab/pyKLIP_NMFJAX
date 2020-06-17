@@ -25,7 +25,7 @@ except ImportError:
 
 # can turn off for debugging purposes
 global parallel
-parallel = True
+debug = False
 
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
@@ -982,7 +982,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
     # SINGLE THREAD DEBUG PURPOSES ONLY
-    if not parallel:
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None)
 
@@ -1020,7 +1020,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
 
-        if parallel:
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile,
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
                                                 maxnumbasis,
@@ -1040,7 +1040,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #harness the data!
         #check make sure we are completely unblocked before outputting the data
-        if parallel:
+        if not debug:
             for out in outputs:
                 out.wait()
                 if (jobs_complete + 1) % 10 == 0:
@@ -1280,7 +1280,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                     maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
-    if not parallel:
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape)
 
@@ -1314,7 +1314,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
-        if parallel:
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile, (scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
                                                                         radstart, radend, phistart, phiend, movement,
@@ -1337,7 +1337,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
-    if parallel:
+    if not debug:
         if verbose is True:
             print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
         for index, out in enumerate(outputs):
