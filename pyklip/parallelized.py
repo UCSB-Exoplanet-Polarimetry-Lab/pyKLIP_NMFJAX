@@ -23,7 +23,7 @@ try:
 except ImportError:
     mkl_exists = False
 
-# can turn off for debugging purposes
+# Turns parallelism off for debugging purposes
 global parallel
 debug = False
 
