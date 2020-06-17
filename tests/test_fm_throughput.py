@@ -17,6 +17,36 @@ import pyklip.fitpsf as fitpsf
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
+#Specify transmission correction parameters
+trans = np.ones(100)
+trans[0:30]=10000
+rad = np.arange(start = 0, stop =100, step = 1)
+
+def transmission_corrected(input_stamp, input_dx, input_dy):
+    """
+        Args:
+        input_stamp (array): 2D array of the region surrounding the fake planet injection site
+        input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
+        input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
+    
+    Returns:
+        output_stamp (array): 2D array of the throughput corrected planet injection site.
+    """
+        # Calculate the distance of each pixel in the input stamp from the center
+    distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
+    
+    
+    # Interpolate to find the transmission value for each pixel in the input stamp
+    trans_at_dist = np.interp(distance_from_center, rad, trans)
+
+    # Reshape the interpolated array to have the same dimensions as the input stamp
+    transmission_stamp = trans_at_dist.reshape(input_stamp.shape)
+
+        # Make the throughput correction
+    output_stamp = transmission_stamp*input_stamp
+
+    return output_stamp
+
 def test_throughput():
     """
     Tests FM coronagraphic throughput correction
@@ -53,38 +83,6 @@ def test_throughput():
     guesssep = 0.4267 / GPI.GPIData.lenslet_scale
     guesspa = 212.15
     guessflux = 5e-5
-
-    #Specify transmission correction parameters
-    trans = np.ones(100)
-    trans[0:30]=10000
-    rad = np.arange(start = 0, stop =100, step = 1)
-
-
-
-    def transmission_corrected(input_stamp, input_dx, input_dy):
-        """
-         Args:
-            input_stamp (array): 2D array of the region surrounding the fake planet injection site
-            input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
-            input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
-        
-        Returns:
-            output_stamp (array): 2D array of the throughput corrected planet injection site.
-        """
-         # Calculate the distance of each pixel in the input stamp from the center
-        distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
-
-         # Interpolate to find the transmission value for each pixel in the input stamp
-        trans_at_dist = np.interp(distance_from_center, rad, trans)
-
-        # Reshape the interpolated array to have the same dimensions as the input stamp
-        transmission_stamp = trans_at_dist.reshape(input_stamp.shape)
-
-         # Make the throughput correction
-        output_stamp = transmission_stamp*input_stamp
-
-        return output_stamp
-
 
     fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
                                     np.unique(dataset.wvs), dataset.dn_per_contrast, star_spt='A6',
