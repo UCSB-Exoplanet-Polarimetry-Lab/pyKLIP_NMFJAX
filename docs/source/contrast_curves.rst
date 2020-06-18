@@ -145,7 +145,7 @@ We will measure the flux of each fake in the reduced image using :py:meth:`pykli
 
     for input_planet_flux, sep in zip(input_planet_fluxes, seps):
         fake_planet_fluxes = []
-        for pa in [0, 90, 270, 360]:
+        for pa in [0, 90, 180, 270]:
             fake_flux = fakes.retrieve_planet_flux(dat_with_fakes, dat_with_fakes_centers, dataset.output_wcs[0], sep, pa, searchrad=7)
             fake_planet_fluxes.append(fake_flux)
         retrieved_fluxes.append(np.mean(fake_planet_fluxes))
