@@ -17,13 +17,13 @@ import pyklip.fitpsf as fitpsf
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
-#Specify transmission correction parameters
-trans = np.ones(100)
-trans[0:30]=10000
-rad = np.arange(start = 0, stop =100, step = 1)
 
 def transmission_corrected(input_stamp, input_dx, input_dy):
     """
+    This function assigns a throughput of 10,000 for pixel positions within the planet radius,
+    and a throughput of 0 outside the planet radius. Must be defined at top level and not within the 
+    test function code so it can be identified by other processes.
+
         Args:
         input_stamp (array): 2D array of the region surrounding the fake planet injection site
         input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
@@ -32,7 +32,13 @@ def transmission_corrected(input_stamp, input_dx, input_dy):
     Returns:
         output_stamp (array): 2D array of the throughput corrected planet injection site.
     """
-        # Calculate the distance of each pixel in the input stamp from the center
+
+    #Specify transmission correction parameters
+    trans = np.ones(100)
+    trans[0:30]=10000
+    rad = np.arange(start = 0, stop =100, step = 1)
+
+    # Calculate the distance of each pixel in the input stamp from the center
     distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
     
     
@@ -51,8 +57,7 @@ def test_throughput():
     """
     Tests FM coronagraphic throughput correction
 
-    This function assigns a throughput of 10,000 for pixel positions within the planet radius,
-    and a throughput of 0 outside the planet radius. It then tests that this field dependent
+    It then tests that this field dependent
     correction was made by checking that the median flux within the planet radius is greater 
     than the flux outside the radius post-KLIPfm.  
     """
