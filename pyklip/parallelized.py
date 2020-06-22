@@ -23,9 +23,9 @@ try:
 except ImportError:
     mkl_exists = False
 
-# can turn off for debugging purposes
+# Turns parallelism off for debugging purposes
 global parallel
-parallel = True
+debug = False
 
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
@@ -104,7 +104,7 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
 
 
 def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs,
-                              spectrum, spectra_template, flux_cal, outputdirpath, fileprefix):
+                              spectrum, spectra_template, flux_cal, outputdirpath, fileprefix, verbose = True):
     """
     Saves KLmode cube, shape (b, y, x), each slice is a 2D image collapsed along both time and
     wavelength dimension for a specific numbasis
@@ -125,8 +125,8 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
     Returns:
         saves wavelength collapsed images to output
     """
-
-    print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
+    if verbose is True:
+        print('wavelength collapsing reduced data of shape (b, N, wv, y, x):{}'.format(dataset.output.shape))
 
     spectral_cubes = klip.collapse_data(dataset.output, pixel_weights, axis=1, collapse_method=time_collapse) # spectral_cubes shape (b, wv, y, x)
 
@@ -982,7 +982,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
     # SINGLE THREAD DEBUG PURPOSES ONLY
-    if not parallel:
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None)
 
@@ -1020,7 +1020,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
 
-        if parallel:
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile,
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
                                                 maxnumbasis,
@@ -1040,7 +1040,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #harness the data!
         #check make sure we are completely unblocked before outputting the data
-        if parallel:
+        if not debug:
             for out in outputs:
                 out.wait()
                 if (jobs_complete + 1) % 10 == 0:
@@ -1084,7 +1084,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
                       annuli_spacing="constant", maxnumbasis=None, corr_smooth=1,
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
-                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False):
+                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False, verbose = True):
     """
     Multitprocessed KLIP PSF Subtraction
 
@@ -1139,7 +1139,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         totalimgs = imgs.shape[0]
         maxbasis = np.min([totalimgs, 100]) #only going up to 100 KL modes by default
         numbasis = np.arange(1, maxbasis + 5, 10)
-        print("KL basis not specified. Using default.", numbasis)
+        if verbose is True:
+            print("KL basis not specified. Using default.", numbasis)
     else:
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
@@ -1279,14 +1280,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                     maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
-    if not parallel:
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape)
 
 
     if restored_aligned is None:
         #align and scale the images for each image. Use map to do this asynchronously
-        print("Begin align and scale images for each wavelength")
+        if verbose is True:
+            print("Begin align and scale images for each wavelength")
         realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center),itertools.repeat(dtype)))
     else:
         #align and scale the images for each image. Use map to do this asynchronously
@@ -1296,7 +1298,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
     outputs = []
     #as each is finishing, queue up the aligned data to be processed with KLIP
     for wv_index, wv_value in realigned_index:
-        print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
+        if verbose is True:
+            print("Wavelength {1:.4} with index {0} has finished align and scale. Queuing for KLIP".format(wv_index, wv_value))
 
         #pick out the science images that need PSF subtraction for this wavelength
         scidata_indices = np.where(wvs == wv_value)[0]
@@ -1311,7 +1314,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
-        if parallel:
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile, (scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
                                                                         radstart, radend, phistart, phiend, movement,
@@ -1334,8 +1337,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
-    if parallel:
-        print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
+    if not debug:
+        if verbose is True:
+            print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
         for index, out in enumerate(outputs):
             out.wait()
             if (index + 1) % 10 == 0:
@@ -1343,7 +1347,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
-    print("Closing threadpool")
+    if verbose is True:
+        print("Closing threadpool")
     tpool.close()
     tpool.join()
 
@@ -1381,7 +1386,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
                  highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
-                 time_collapse="mean", wv_collapse='mean'):
+                 time_collapse="mean", wv_collapse='mean', verbose = True):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
 
@@ -1418,13 +1423,14 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
         lite:           if True, run a low memory version of the alogirhtm
 
-        save_aligned	Save the aligned and scaled images (as well as various wcs information), True/False
-        restore_aligned The aligned and scaled images from a previous run of klip_dataset
+        save_aligned:	Save the aligned and scaled images (as well as various wcs information), True/False
+        restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median', "weighted-median"
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
+        verbose (bool): if True, print KLIP processes. 
 
     Returns
         Saved files in the output directory
@@ -1449,7 +1455,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         totalimgs = dataset.input.shape[0]
         maxbasis = np.min([totalimgs, 100]) # only going up to 100 KL modes by default
         numbasis = np.arange(1, maxbasis + 5, 10)
-        print("KL basis not specified. Using default.", numbasis)
+        if verbose is True:
+            print("KL basis not specified. Using default.", numbasis)
     else:
         if hasattr(numbasis, "__len__"):
             numbasis = np.array(numbasis)
@@ -1497,7 +1504,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if lite:
         klip_function = klip_parallelized_lite
         if (save_aligned is True) or (restored_aligned is True):
-            print('save_aligned and restored_aligned are not compatible with lite mode')
             raise ValueError('save_aligned and restored_aligned are not compatible with lite mode')
         # save_aligned = False
         # restored_aligned = None
@@ -1568,7 +1574,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                     'spectrum':spectra_template, 'psf_library':master_library,
                     'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
                     'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
-                    'algo':algo, 'compute_noise_cube':weighted}
+                    'algo':algo, 'compute_noise_cube':weighted, 'verbose':verbose}
 
     #Set MLK parameters
     if mkl_exists:
@@ -1584,7 +1590,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # run KLIP
     # For SDI(+ADI)(+RDI) reductions
     if "SDI" in mode:
-        print("Beginning {0} KLIP".format(mode))
+        if verbose is True:
+            print("Beginning {0} KLIP".format(mode))
 
         # Actually run the PSF Subtraction with all the arguments
         klip_outputs = klip_function(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.filenums,
@@ -1618,7 +1625,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             dataset.aligned_and_scaled = []
 
         for wvindex,unique_wv in enumerate(unique_wvs):
-            if num_wvs > 1:
+            if (num_wvs > 1) and (verbose is True):
                 print("Running KLIP ADI on slice {0}/{1}: {2:.3f} um".format(wvindex+1, num_wvs, unique_wv))
             thiswv = np.where(dataset.wvs == unique_wv)
 
@@ -1688,7 +1695,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         aligned_center = [int(dataset.input.shape[2]//2), int(dataset.input.shape[1]//2)]
 
     # parallelized rotate images
-    print("Derotating Images...")
+    if verbose is True:
+        print("Derotating Images...")
     rot_imgs = rotate_imgs(dataset.output, flattend_parangs, flattened_centers, numthreads=numthreads, flipx=dataset.flipx,
                            hdrs=dataset.output_wcs, new_center=aligned_center)
     # re-expand the images in num cubes/num wvs (num KLmode cutoffs, num cubes, num wvs, y, x)
@@ -1707,7 +1715,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
    
     # valid output path and write iamges
     outputdirpath = os.path.realpath(outputdir)
-    print("Writing Images to directory {0}".format(outputdirpath))
+    if verbose is True:
+        print("Writing Images to directory {0}".format(outputdirpath))
 
     # create weights for each pixel. If we aren't doing weighted mean, weights are just ones
     pixel_weights = 1./stddev_frames**2
@@ -1716,7 +1725,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, calibrate_flux, outputdirpath, fileprefix)
 
     _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, wv_collapse, num_wvs, spectrum,
-                              spectra_template, calibrate_flux, outputdirpath, fileprefix)
+                              spectra_template, calibrate_flux, outputdirpath, fileprefix, verbose)
 
     # Restore old setting
     if mkl_exists:
