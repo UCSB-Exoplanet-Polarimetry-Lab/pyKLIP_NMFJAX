@@ -1503,8 +1503,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     # If lite, we are not running iwth save_aligned and restore_aligned keywords. Throw error if this happens
     if lite:
         klip_function = klip_parallelized_lite
-        if (save_aligned is True) or (restored_aligned is True) and (verbose is True):
-            print('save_aligned and restored_aligned are not compatible with lite mode')
+        if (save_aligned is True) or (restored_aligned is True):
             raise ValueError('save_aligned and restored_aligned are not compatible with lite mode')
         # save_aligned = False
         # restored_aligned = None
