@@ -383,3 +383,62 @@ calibration uncertainities in, so it will need to be done by hand.
     print("Planet PA at {0} with a 1-sigma uncertainity of {1}".format(fit.PA.bestfit, fit.PA.error))
 
 
+Correcting for Coronagraphic Throughput
+------------
+Coronagraphs have measurable effects on the planet fluxes that we’re able to detect. Typically, 
+we can expect them to diminish the overall image flux at separations closer to host star, while 
+larger separations remain relatively unaffected. In order to improve the accuracy of our forward model, 
+pyKLIP allows users to account for this coronahgraphic effect on light transmission when initializing 
+the `fmpsf.FMPlanetPSF` class. This feature can be accessed by providing the optional argument 'field_dependent_correction', 
+which accepts a user provided function to correct for coronagraphic throughput. Each coronagraph has its own transmission profile, 
+a measure of how its throughput changes as a function of distance from the center. As an example of how this would be incoporated, 
+we'll use the transmission profile of the JWST/NIRCAM MASK210 coronagraph (obtained from the Occulting Masks section of this NIRCAM 
+webpage: https://jwst-docs.stsci.edu/near-infrared-camera/nircam-instrumentation/nircam-coronagraphic-occulting-mas
+
+First, we'll create a function that performs the coronagraphic throughput correction. It should accept three arguments: 
+the region or ‘stamp’ of your fake planet, the physical ‘x’ separation of each pixel in the stamp from the center, and the physical ‘y’ 
+separation of each pixel in the stamp from the center. It should then use the transmission profile of the relevant coronagraph to scale
+the input stamp by the necessary amount, then output the throughput corrected stamp. Be sure to read in your coronagraphic transmission 
+profile with columns for 'transmission' and 'distance from the star (in pixels)' prior to creating the function.
+
+.. code-block:: python
+
+    # Read in transmission profile first
+
+    def transmission_correction(input_stamp, input_dx, input_dy):
+        """
+        Args:
+            input_stamp (array): 2D array of the region surrounding the fake planet injection site
+            input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
+            input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
+        
+        Returns:
+            output_stamp (array): 2D array of the throughput corrected planet injection site.
+        """
+        # Calculate the distance of each pixel in the input stamp from the center
+        distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
+
+        # Select the relevant columns from the coronagraph's transmission profile
+        transmission =  transmission_profile['throughput']
+        radius = transmission_profile['distance']
+
+        # Interpolate to find the transmission value for each pixel in the input stamp
+        transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
+
+        # Reshape the interpolated array to have the same dimensions as the input stamp
+        transmission_of_stamp = transmission_of_stamp.reshape(input_stamp.shape)
+
+        # Make the throughput correction
+        output_stamp = transmission_of_stamp*input_stamp
+
+        return output_stamp
+
+Now we can include the function as an optional argument in the `fmpsf.FMPlanetPSF` class.
+
+.. code-block:: python
+
+    import pyklip.fmlib.fmpsf as fmpsf
+    fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
+                                    np.unique(dataset.wvs), dn_per_contrast, star_spt='A6',
+                                    spectrallib=[guessspec], field_dependent_correction = transmission_correction)
+
