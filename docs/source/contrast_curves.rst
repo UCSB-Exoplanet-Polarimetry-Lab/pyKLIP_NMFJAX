@@ -94,7 +94,10 @@ First, let's read in the data again. This is the same dataset as you read in to 
     filelist = glob.glob("path/to/dataset/*.fits")
     dataset = GPI.GPIData(filelist, highpass=True)
 
+
 Now we'll inject 12 fake planets in each cube. We'll do this one fake planet at a time using :py:meth:`pyklip.fakes.inject_planet`. As we get further out in the image, we will inject fainter planets, since the throughput does vary with planet flux, so we want the fake planets to be just around the detection threshold (slightly above is preferably to reduce noise). Since we specify a fake planet's location by it's separation and position angle, we need to know the orientation of the sky on the image using the frames' WCS headers. The planets also are injected in raw data units, we need to convert the planet flux from contrast to DN for GPI. For other instruments, each should have its flux calibration and thus own method to convert between data units and contrast.
+
+
 
 .. code-block:: python
 
@@ -145,7 +148,7 @@ We will measure the flux of each fake in the reduced image using :py:meth:`pykli
 
     for input_planet_flux, sep in zip(input_planet_fluxes, seps):
         fake_planet_fluxes = []
-        for pa in [0, 90, 270, 360]:
+        for pa in [0, 90, 180, 270]:
             fake_flux = fakes.retrieve_planet_flux(dat_with_fakes, dat_with_fakes_centers, dataset.output_wcs[0], sep, pa, searchrad=7)
             fake_planet_fluxes.append(fake_flux)
         retrieved_fluxes.append(np.mean(fake_planet_fluxes))
@@ -166,3 +169,79 @@ Finally, we get a calibrated contrast curve!
 
 .. image:: imgs/contrast_calibrated.png
     :scale: 70 %
+
+Coronagraphic Throughput
+------------------------
+
+If a coronagraph was used in data collection, it can have a measurable effect on the planet fluxes that we're able to detect. Closer to the star, 
+we might expect a coronograph to cause major dimming of observed planets, while planets at further separations from the star will likely be unaffected.
+Each coronagraph will typically have its own transmission profile, a measure of how its throughput changes as a function of distance from the center.
+It is quite useful for us to incorporate this into our contrast measurements in order to get a more accurate estimation of how bright planets must be in order for us
+to find them. Luckily, we can account for this coronagraphic effect on light transmission while estimating pyKLIP's equivalent effect on planet flux,
+thereby jointly calibrating both coronagraphic and algorithmic throughput. The following will explain how we integrate the coronagraphic throughput correction 
+by making a small modification to our fake planet injection function.
+
+The :py:meth:`pyklip.fakes.inject_planet` function has an optional argument ``field_dependent_correction``, which accepts 
+a user provided function that corrects for coronagraphic throughput. The provided function should accept three arguments: the region or 'stamp' of your fake planet, 
+the physical 'x' separation of each pixel in the stamp from the center, and the physical 'y' separation of each pixel in the stamp from the center. 
+Provided with the transmission profile of the relevant coronagraph, this function should then scale the input stamp by the necessary amount, then output the throughput corrected stamp. 
+Prior to creating the function, be sure to read in your coronagraphic transmission profile. This should include columns for the transmission and distance from the star (in pixels).
+
+.. code-block:: python
+
+    # Read in transmission profile first
+
+    def transmission_correction(input_stamp, input_dx, input_dy):
+        """
+        Args:
+            input_stamp (array): 2D array of the region surrounding the fake planet injection site
+            input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
+            input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
+        
+        Returns:
+            output_stamp (array): 2D array of the throughput corrected planet injection site.
+        """
+        # Calculate the distance of each pixel in the input stamp from the center
+        distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
+
+        # Select the relevant columns from the coronagraph's transmission profile
+        transmission =  transmission_profile['throughput']
+        radius = transmission_profile['distance']
+
+        # Interpolate to find the transmission value for each pixel in the input stamp
+        transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
+
+        # Reshape the interpolated array to have the same dimensions as the input stamp
+        transmission_of_stamp = transmission_of_stamp.reshape(input_stamp.shape)
+
+        # Make the throughput correction
+        output_stamp = transmission_of_stamp*input_stamp
+
+        return output_stamp
+
+    
+Now, we can include the function as an optional argument in :py:meth:`pyklip.fakes.inject_planet`:
+
+.. code-block:: python
+
+    import pyklip.fakes as fakes
+
+    # three sets, planets get fainter as contrast gets better further out
+    input_planet_fluxes = [1e-4, 1e-5, 5e-6]
+    seps = [20, 40, 60]
+    fwhm = 3.5 # pixels, approximate for GPI
+
+    for input_planet_flux, sep in zip(input_planet_fluxes, seps):
+        # inject 4 planets at that separation to improve noise
+        # fake planets are injected in data number, not contrast units, so we need to convert the flux
+        # for GPI, a convenient field dn_per_contrast can be used to convert the planet flux to raw data numbers
+        injected_flux = input_planet_flux * dataset.dn_per_contrast
+        for pa in [0, 90, 180, 270]:
+            fakes.inject_planet(dataset.input, 
+                                dataset.centers,
+                                injected_flux, 
+                                dataset.wcs, 
+                                sep, 
+                                pa, 
+                                fwhm=fwhm,
+                                field_dependent_correction = transmission_correction)

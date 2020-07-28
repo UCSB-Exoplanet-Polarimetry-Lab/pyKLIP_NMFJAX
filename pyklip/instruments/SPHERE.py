@@ -54,16 +54,16 @@ class Ifs(Data):
             self._input = hdulist[0].data # If 4D cube, Nfiles, Nwvs, Ny, Nx for vigan and Nwvs, Nfiles, Nx, Ny for sphere-dc
             # Read headers to be saved when using savedata. Vigan's or SPHERE-DC code don't include headers but pyklip does it
             # parameters or for the the location of injected planets.
-            self.prihdr = hdulist[0].header
+            self.prihdrs = hdulist[0].header
             if np.size(self.input.shape) == 4:
                 try:
-                    self.prihdr['HIERARCH ESO PRO REC1 ID'] # The SPHERE DC has headers with details of the reduction. We can use that information to differentiate between the two types of reduction
+                    self.prihdrs['HIERARCH ESO PRO REC1 ID'] # The SPHERE DC has headers with details of the reduction. We can use that information to differentiate between the two types of reduction
                 except KeyError:
-                    self.prihdr['HIERARCH ESO PRO REC1 ID'] = False # If the keyword is missing, then we know it is data from Arthur Vigan's reduction
-                if self.prihdr['HIERARCH ESO PRO REC1 ID'] == 'sph_ifs_science_dr':
+                    self.prihdrs['HIERARCH ESO PRO REC1 ID'] = False # If the keyword is missing, then we know it is data from Arthur Vigan's reduction
+                if self.prihdrs['HIERARCH ESO PRO REC1 ID'] == 'sph_ifs_science_dr':
                     ifs_rdp = "sphere-dc" # Set the reduction process
                     self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
-                elif self.prihdr['HIERARCH ESO PRO REC1 ID'] == False or self.prihdr['HIERARCH ESO PRO REC1 ID'] == "F":
+                elif self.prihdrs['HIERARCH ESO PRO REC1 ID'] == False or self.prihdrs['HIERARCH ESO PRO REC1 ID'] == "F":
                     # determine which version of vigan pipeline it is, based on the info_fits file
                     # info_fits is a table for the old IDL pipeline, but a simple vector in the new Python pipeline
                     with fits.open(info_fits) as hdulist:
@@ -317,7 +317,7 @@ class Ifs(Data):
 
         """
         hdulist = fits.HDUList()
-        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdr))
+        hdulist.append(fits.PrimaryHDU(data=data,header=self.prihdrs))
 
         # save all the files we used in the reduction
         # we'll assume you used all the input files
@@ -453,6 +453,7 @@ class Irdis(Data):
         psf_center: [x, y] location of the center of the PSF for a frame in self.psfs
         flipx: True by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
         nfiles: number of datacubes
+        prihdrs: SPHERE headers if reduced by Sphere data center
         nwvs: number of wavelengths (i.e. 2 for dual band imaging)
     """
     # class initialization
@@ -468,7 +469,7 @@ class Irdis(Data):
                    "B_Ks": (2.182, 2.182)}
 
     # Coonstructor
-    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.2, OWA=None,
+    def __init__(self, data_cube, psf_cube, info_fits, wavelength_str, psf_cube_size=21, IWA=0.08, OWA=None,
                  keepslices=None):
         super(Irdis, self).__init__()
 
@@ -478,9 +479,9 @@ class Irdis(Data):
             # Read headers to be saved when using savedata. Vigan's code doesn't include headers but pyklip does it
             # parameters or for the the location of injected planets.
             self._filenames = [data_cube]
-            self.prihdr = hdulist[0].header
+            self.prihdrs = hdulist[0].header
             if np.size(self.input.shape) == 4: # If 4D
-                if ('PIXSCAL' in self.prihdr) & ('HIERARCH ESO PRO REC1 ID' in self.prihdr):
+                if ('PIXSCAL' in self.prihdrs):
                     irdis_rdp = "sphere-dc" # Set the reduction process
                     self.input = np.swapaxes(self.input,0,1) # Swap the axes between the wavelengths and rotations for sphere-dc
                 else:

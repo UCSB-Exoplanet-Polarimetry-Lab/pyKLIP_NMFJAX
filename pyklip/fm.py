@@ -25,8 +25,8 @@ try:
 except ImportError:
     mkl_exists = False
 
-# for debugging purposes
-parallel = True
+# Turns parallelism off for debugging purposes
+debug = False
 
 def find_id_nearest(array, value):
     """
@@ -1237,7 +1237,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                               fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape), maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
-    if not parallel:
+    if debug :
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                     output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
                     fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape)
@@ -1300,7 +1300,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
             # perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
             sector_job_queued[sector_index] += scidata_indicies.shape[0]
-            if parallel: 
+            if not debug: 
                 tpool_outputs += [tpool.apply_async(_klip_section_multifile_perfile,
                                                     args=(file_index, sector_index, radstart, radend, phistart, phiend,
                                                           parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
@@ -1310,7 +1310,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
                                   for file_index,parang in zip(scidata_indicies, pa_imgs_np[scidata_indicies])]
 
             # # SINGLE THREAD DEBUG PURPOSES ONLY
-            if not parallel:
+            if debug:
                 tpool_outputs += [_klip_section_multifile_perfile(file_index, sector_index, radstart, radend, phistart, phiend,
                                                                   parang, wv_value, wv_index, (radstart + radend) / 2., padding,(IWA,OWA),
                                                                   numbasis,maxnumbasis,
@@ -1322,7 +1322,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         # Can be multithreaded code using the threadpool defined above
         # Check tpool job outputs. It there is stuff, go do things with it
         N_it_perSector = 0
-        if parallel:
+        if not debug:
             while len(tpool_outputs) > 0:
                 tpool_outputs.pop(0).wait()
                 N_it = N_it+1
@@ -1751,7 +1751,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                            pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
                            radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, 
                            ref_center=ref_center, parang=parang, ref_wv=wavelength, numbasis=numbasis,
-                           maxnumbasis=maxnumbasis, fmout=fmout_np,perturbmag = perturbmag_np,klipped=klipped, 
+                           maxnumbasis=maxnumbasis, fmout=fmout_np, output_img_shape = outputs_shape, perturbmag = perturbmag_np,klipped=klipped, 
                            covar_files=covar_files, flipx=flipx, mode=mode)
 
     return sector_index
