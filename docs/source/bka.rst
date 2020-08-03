@@ -337,7 +337,8 @@ Here are some fields to access the fit. Each field is a
 * ``fit.raw_flux``: Multiplicative factor to scale the model flux to match the data
 * ``fit.covar_params``: hyperparameters on the Gaussian process. This is a list with length equal to the number of hyperparameters.
 
-Note that since fit.covar_params is a list dependent on user input, you need to index that list in order to see the bestfit values for each element. For example, fit.covar_params[0].bestfit will output the bestfit for the 1st element in the list. 
+Note that since fit.covar_params is a list dependent on user input, you need to index that list in order to see the bestfit values for each element. For example, fit.covar_params[0].bestfit will output the bestfit for the first element in the list. 
+
 Generally, it is good to look at the fit visually, and examine the residual plot for structure that might be indicative of a bad fit or systematics in either the data or the model. 
 
 .. code-block:: python
@@ -434,7 +435,7 @@ profile with columns for 'transmission' and 'distance from the star (in pixels)'
 
         return output_stamp
 
-Now we can include the function as an optional argument in the `fmpsf.FMPlanetPSF` class.
+Now we can include the function as an optional argument in the :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` class.
 
 .. code-block:: python
 
