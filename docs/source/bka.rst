@@ -162,7 +162,7 @@ KL mode cubes, and select the KL mode cutoff we want to use. For the example, we
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
 
-We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that we handle all of the fitting processes.
+We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that will handle all of the fitting processes.
 The first thing we will do is create this object, and feed it in the data and forward model. It will use them to
 generate stamps of the data and forward model which can be accessed using ``fit.data_stmap`` and ``fit.fm_stamp``
 respectively. When reading in the data, it will also generate a noise map for the data stamp by computing the standard
@@ -187,7 +187,7 @@ or ``method="maxl"``.
     # exclusion_radius excludes all pixels less than that distance from the estimated location of the planet
     fit.generate_data_stamp(data_frame, [data_centx, data_centy], dr=4, exclusion_radius=10)
 
-Next we need to choose the Gaussian process kernel. We currently only support the Matern (ν=3/2)
+Next we need to choose a Gaussian process kernel to model the correlated noise in our data. We currently only support the Matern (ν=3/2)
 and square exponential kernel, so we will pick the Matern kernel here. Note that there is the option
 to add a diagonal (i.e. read/photon noise) term to the kernel, but we have chosen not to use it in this
 example. If you are not dominated by speckle noise (i.e. around fainter stars or further out from the star),
@@ -200,15 +200,17 @@ you should enable the read noies term.
     corr_len_label = r"$l$"
     fit.set_kernel("matern32", [corr_len_guess], [corr_len_label])
 
-Priors are required for a Bayesian analysis, so if you are prefering the MCMC method, you will need to define
-them. We will use uniform priors, so all we will specify are the bounds to the uniform prior. This same code
+MCMC takes a Bayesian approach to estimating our parameters of interest by approximating their posterior distributions i.e. their best fit values given the data.
+In order to perform this type of Bayesian analysis you will need to define priors, which are your own estimations of what these parameter values might be. 
+Since we usually don't know much about the data, we will use uniform priors, essentially estimating the same probability for each value. 
+All we will need to specify in this case are the bounds/range of values to the uniform prior. This same code
 can also be used to specify parameter bounds for the maximum likelihood approach, but setting bounds is not 
 required for that technique. 
-The priors in the x/y posible will be flat in linear space, and the priors on the flux scaling and kernel parameters
-will be flat in log space, since they are scale paramters. In the following function below, we will set the boundaries
+The priors in the x/y possible will be flat in linear space, and the priors on the flux scaling and kernel parameters
+will be flat in log space, since they are scale parameters. In the function below, we will set the boundaries
 of the priors. The first two values are for x/y and they basically say how far away (in pixels) from the
-guessed position of the planet can the chains wander. For the rest of the parameters, the values say how many ordres
-of magnitude can the chains go from the guessed value (e.g. a value of 1 means we allow a factor of 10 variation
+guessed position of the planet can the chains wander. For the rest of the parameters, the values specify how many orders
+of magnitude the chains can go from the guessed value (e.g. a value of 1 means we allow a factor of 10 variation
 in the value).
 
 .. code-block:: python
@@ -232,8 +234,8 @@ As the analysis diverges, we will discuss `Maximum Likelihood`_ and `Bayesian MC
 Bayesian MCMC Analysis
 ^^^^^^^^^^^^^^^^^^^^^^
 
-To run the MCMC sampler (using the emcee package), we want to specify the number of walkers, number of steps each walker takes,
-and the number of production steps the walkers take. We also can specify the number of threads to use.
+To run the MCMC sampler (using the emcee package), we need to specify the number of walkers (the number of Markov chains that explore your parameter space), number of steps each walker takes (how many new values of your parameter each chain should explore),
+and the number of production steps the walkers take (the number of steps we let each chain take to burn-in). We also can specify the number of threads to use.
 If you have not turned BLAS and MKL off, you probably only want one or a few threads, as MKL/BLAS automatically
 parallelizes the likelihood calculation, and trying to parallelize on top of that just creates extra overhead.
 
@@ -245,8 +247,7 @@ parallelizes the likelihood calculation, and trying to parallelize on top of tha
 ``fit.sampler`` stores the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information. 
 
 For MCMC,
-we want to check to make sure all of our chains have converged by plotting them. As long as they have
-settled down (no large scale movements), then the chains have probably converged.
+we want to check to make sure all of our chains have converged by plotting them. That is, we need to ensure that there are no large scale movements, and that the entire parameter space is being sampled evenly.
 The maximum likelihood technique skips this step. 
 
 .. code-block:: python
@@ -286,6 +287,7 @@ Here is an example using three cubes of public GPI data on beta Pic.
 .. image:: imgs/betpic_j_bka_chains.png
 
 For MCMC, we can also plot the corner plot to look at our posterior distribution and correlation between parameters.
+We can use the peak of each posterior distribution to estimate the best fit value of each parameter.
 
 .. code-block:: python
 
