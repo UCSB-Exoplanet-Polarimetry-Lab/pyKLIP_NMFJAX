@@ -206,7 +206,7 @@ Since we usually don't know much about the data, we will use uniform priors, ess
 All we will need to specify in this case are the bounds/range of values to the uniform prior. This same code
 can also be used to specify parameter bounds for the maximum likelihood approach, but setting bounds is not 
 required for that technique. 
-The priors in the x/y possible will be flat in linear space, and the priors on the flux scaling and kernel parameters
+The priors in the x/y position will be flat in linear space, and the priors on the flux scaling and kernel parameters
 will be flat in log space, since they are scale parameters. In the function below, we will set the boundaries
 of the priors. The first two values are for x/y and they basically say how far away (in pixels) from the
 guessed position of the planet can the chains wander. For the rest of the parameters, the values specify how many orders
