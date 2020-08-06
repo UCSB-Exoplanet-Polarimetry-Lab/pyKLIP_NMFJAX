@@ -658,8 +658,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
         w.start()
 
     # TODO: test if fids = np.arange(len(cubes)) work identically, if so, get rid of infiles variable
-    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile)))
-            for infile in infiles]
+    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile))) for infile in infiles]
 
     lamlist = []
     grid_on = np.zeros(len(cubes), np.int32)

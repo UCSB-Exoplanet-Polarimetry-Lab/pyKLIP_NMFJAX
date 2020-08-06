@@ -337,6 +337,8 @@ class CHARISData(Data):
             # not using copy here to utilize mutable numpy arrays
             # because modifications on an individual cube are intended to be applied to data as well
             cube = data[index]
+            prihdr = prihdrs[index]
+            exthdr = exthdrs[index]
             thiswvs = wvs[index]
             cube_wv_indices = wv_indices[index]
 
@@ -365,7 +367,7 @@ class CHARISData(Data):
                         fity = spot_loc[wv_ind, spot_num, 1]
                         fitflux = spot_flux[wv_ind, spot_num]
                         if np.isnan(fitflux):
-                            fitflux = 'nan'
+                            fitflux = 0.
                         _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
                 spot_flux = np.nanmean(spot_flux, axis=1)
                 modified_hdrs = True
