@@ -78,7 +78,7 @@ class CHARISData(Data):
     ####################
 
     def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', platecal=True, IWA=None, OWA=None):
         """
         Initialization code for CHARISData
 
@@ -90,7 +90,7 @@ class CHARISData(Data):
         self.flipx = False
         self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_locs=guess_spot_locs,
                       guess_center_loc=guess_center_loc, skipslices=skipslices, PSF_cube=PSF_cube,
-                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, IWA=IWA, OWA=OWA)
+                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, platecal=platecal, IWA=IWA, OWA=OWA)
 
     ################################
     ### Instance Required Fields ###
@@ -177,7 +177,7 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=True, sat_fit_method='global', IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=True, sat_fit_method='global', platecal=True, IWA=None, OWA=None):
         """
         Method to open and read a list of CHARIS data
 
@@ -296,32 +296,33 @@ class CHARISData(Data):
 
         # rescale all data to a uniform lenslet scale
         # TODO: distortion correction in parallel?
-        tot_time = 0
-        for index, filepath in enumerate(filepaths):
-            try:
-                if exthdrs[index]['PLATECAL'].lower() == 'true':
-                    continue
-            except:
-                pass
+        if platecal:
+            tot_time = 0
+            for index, filepath in enumerate(filepaths):
+                try:
+                    if exthdrs[index]['PLATECAL'].lower() == 'true':
+                        continue
+                except:
+                    pass
 
-            stime = systime.time()
-            filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
-                                                                          prihdrs[index], exthdrs[index],
-                                                                          rot_angles[index][0],
-                                                                          CHARISData.lenslet_scale,
-                                                                          CHARISData.lenslet_scale_x,
-                                                                          CHARISData.lenslet_scale_y, smooth=True)
-            tot_time += systime.time() - stime
-            sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: {:.3f} seconds'.format(index, tot_time / (index + 1)))
-            sys.stdout.flush()
-            data[index] = cube
-            ivars[index] = ivar
-            prihdrs[index] = prihdr
-            exthdrs[index] = exthdr
-            filenames[index] = [filename for i in range(cube.shape[0])]
-            modified_data[index] = 1
-        modified_data = modified_data.astype(bool)
-        sys.stdout.write('\n')
+                stime = systime.time()
+                filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
+                                                                              prihdrs[index], exthdrs[index],
+                                                                              rot_angles[index][0],
+                                                                              CHARISData.lenslet_scale,
+                                                                              CHARISData.lenslet_scale_x,
+                                                                              CHARISData.lenslet_scale_y, smooth=True)
+                tot_time += systime.time() - stime
+                sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: {:.3f} seconds'.format(index, tot_time / (index + 1)))
+                sys.stdout.flush()
+                data[index] = cube
+                ivars[index] = ivar
+                prihdrs[index] = prihdr
+                exthdrs[index] = exthdr
+                filenames[index] = [filename for i in range(cube.shape[0])]
+                modified_data[index] = 1
+            modified_data = modified_data.astype(bool)
+            sys.stdout.write('\n')
         # measure and update headers in the next two segments
 
         # fit for satellite spots globally if enabled
