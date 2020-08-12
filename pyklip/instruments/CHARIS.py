@@ -243,6 +243,8 @@ class CHARISData(Data):
         astrogrid_status = None
 
         # read and organize data
+        # sort filepaths to ensure np.unique(filenames) correspond to the same order as cubes in the dataset
+        filepaths = sorted(filepaths)
         for index, filepath in enumerate(filepaths):
             with fits.open(filepath, lazy_load_hdus=False) as hdulist:
                 cube = copy.copy(hdulist[1].data)
@@ -313,7 +315,8 @@ class CHARISData(Data):
                                                                               CHARISData.lenslet_scale_x,
                                                                               CHARISData.lenslet_scale_y, smooth=True)
                 tot_time += systime.time() - stime
-                sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: {:.3f} seconds'.format(index, tot_time / (index + 1)))
+                sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: '
+                                 '{:.3f} seconds'.format(index, tot_time / (index + 1)))
                 sys.stdout.flush()
                 data[index] = cube
                 ivars[index] = ivar
@@ -329,7 +332,9 @@ class CHARISData(Data):
         spot_fit_coeffs = None
         if update_hdrs == True and sat_fit_method.lower() == 'global':
             print('fitting satellite spots globally')
-            spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs, guess_center_loc=guess_center_loc)
+            spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs,
+                                                                 guess_center_loc=guess_center_loc,
+                                                                 smooth_cubes=(not platecal))
 
         # fit for satellite spots locally if enabled
         # read satellite spots info or update measured info depending on user input
@@ -1028,7 +1033,8 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     return np.array(locs), np.array(fluxes), np.array(fwhms)
 
 
-def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, guess_center_loc=None):
+def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, guess_center_loc=None,
+                              smooth_cubes=True):
     '''
     Main function of this module to fit for the locations of the four satellite spots
 
@@ -1050,8 +1056,9 @@ def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, 
 
     filepaths = np.unique(filenames)
     centroid_params, x, y, mask = global_centroid.fitcen_parallel(filepaths, cubes, ivars, prihdrs, smooth_coef=True,
-                                                                  guess_center_loc=guess_center_loc)
-    xsol, ysol = global_centroid.fitallrelcen(cubes, ivars, r1=15, r2=45)
+                                                                  guess_center_loc=guess_center_loc,
+                                                                  smooth_cubes=smooth_cubes)
+    xsol, ysol = global_centroid.fitallrelcen(cubes, ivars, r1=15, r2=45, smooth=smooth_cubes)
 
     p = centroid_params.copy()
     if mask is not None:

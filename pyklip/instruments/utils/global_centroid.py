@@ -448,7 +448,8 @@ def fitrelcen(image1, image2, x, y, method='Powell'):
     return [xc, yc]
 
 
-def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4, astrogrid='XYdiag'):
+def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1=15, r2=35, spot_dx=4,
+           astrogrid='XYdiag', smooth=True):
     '''
     Function fitcen.  Fit for the center of a CHARIS data cube using
     the satellite spots by maximizing the agreement between scaled
@@ -493,8 +494,9 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     for i in range(cube.shape[0]):
         # the following two lines commented out, has been moved to CHARIS.py._distortion_correction()
         # TODO: remove the following two lines when things finalize
-        # cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
-        # cubesmooth[i] *= mask
+        if smooth:
+            cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
+            cubesmooth[i] *= mask
         cubesmooth[i] = ndimage.spline_filter(cubesmooth[i])
 
     if spotsep is not None:
@@ -590,7 +592,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
 
 
 def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astrogrid_sep=None, smooth_coef=True,
-                    guess_center_loc=None, maxcpus=multiprocessing.cpu_count() // 2):
+                    guess_center_loc=None, maxcpus=multiprocessing.cpu_count() // 2, smooth_cubes=True):
     '''
     Function fitcen_parallel.  Centroid a series of CHARIS data cubes
     in parallel using fitcen.  By default, get the wavelengths and
@@ -635,19 +637,22 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
     if astrogrid_status is None:
         astrogrid_status = []
         astrogrid_sep = []
-        for head in prihdrs:
+        for i, head in enumerate(prihdrs):
             try:
                 if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag':
-                    print('{}: cannot parse astrogrid information from header, default to XYdiag at 15.5 lambda/D spot '
-                          'separation...'.format(os.path.basename(ifile)))
-                    astrogrid_status += [None]
+                    print('{}: cannot parse astrogrid status from header, default to XYdiag at 15.5 lambda/D spot '
+                          'separation...'.format(os.path.basename(infiles[i])))
+                    astrogrid_status += ['XYdiag']
+                    astrogrid_sep += [15.5]
                 else:
                     astrogrid_status += [head['X_GRDST']]
+                    astrogrid_sep += [head['X_GRDSEP']]
 
-                astrogrid_sep += [head['X_GRDSEP']]
             except:
-                astrogrid_status += [None]
-                astrogrid_sep += [None]
+                print('{}: cannot parse astrogrid status from header, default to XYdiag at 15.5 lambda/D spot '
+                      'separation...'.format(os.path.basename(infiles[i])))
+                astrogrid_status += ['XYdiag']
+                astrogrid_sep += [15.5]
 
     tasks = multiprocessing.Queue()
     results = multiprocessing.Queue()
@@ -680,9 +685,13 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
             spotsep = 15.5
         else:
             spotsep = astrogrid_sep[i]
+            if not np.isscalar(spotsep):
+                print('astrogrid information: header[X_GRDSEP] is not a scalar, default to using 15.5 lambda/D...')
+                spotsep = 15.5
             grid_on[i] = 1
 
-        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, guess_center_loc, 1, -1, 15, 35, 4, astrogrid_status[i])))
+        tasks.put(Task(i, fitcen, (cube, ivar, lam, spotsep, guess_center_loc, 1, -1, 15, 35, 4, astrogrid_status[i],
+                                   smooth_cubes)))
 
     for i in range(ncpus):
         tasks.put(None)
@@ -713,7 +722,6 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
 
     if smooth_coef:
 
-        # TODO: what purpose does fids do here in polyfit?
         x1 = polyfit(fids, centroid_params[:, 3], mask=mask, return_y=False)
         x2 = polyfit(fids, centroid_params[:, 4], mask=mask, return_y=False)
         y1 = polyfit(fids, centroid_params[:, 6], mask=mask, return_y=False)
@@ -743,7 +751,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
     return [centroid_params, x, y, mask]
 
 
-def fitallrelcen(cubes, ivars, r1=15, r2=50, maxcpus=multiprocessing.cpu_count() // 2):
+def fitallrelcen(cubes, ivars, r1=15, r2=50, smooth=True, maxcpus=multiprocessing.cpu_count() // 2):
     '''
     Function fitallrelcen.  Fit for the relative centroids between all
     pairs of frames at the central wavelength using the PSF in an
@@ -784,8 +792,10 @@ def fitallrelcen(cubes, ivars, r1=15, r2=50, maxcpus=multiprocessing.cpu_count()
         im = cubes[i, iref]
         ivar = ivars[i, iref]
         # TODO: smoothing has been moved to CHARIS.py._distortion_correction(), remove next line when things finalize
-        # allims[i] = _smooth(im, ivar, 0.5, True)
-        allims[i] = ndimage.spline_filter(allims[i])
+        if smooth:
+            allims[i] = _smooth(im, ivar, 0.5, True)
+        else:
+            allims[i] = ndimage.spline_filter(allims[i])
 
     tasks = multiprocessing.Queue()
     results = multiprocessing.Queue()
