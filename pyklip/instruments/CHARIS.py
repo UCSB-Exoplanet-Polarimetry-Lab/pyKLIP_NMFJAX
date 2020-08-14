@@ -192,6 +192,9 @@ class CHARISData(Data):
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
             update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
             sat_fit_method: 'global' or 'local'
+            platecal: bool, whether to calibrate the plate scales of the data,
+                      should always be True because the pipeline will automatically skip already calibrated cubes
+                      only set to False if running on non-calibrated data and don't want them calibrated
             IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
             OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
@@ -482,6 +485,8 @@ class CHARISData(Data):
 
         modified_indices = np.argwhere(modified_data == True)
         save_data = np.reshape(self._input, dims)
+        # restore nan as 0s to be consistent with non-calibrated data and global centroid also cannot treat nans
+        save_data[np.isnan(save_data)] = 0.
         save_ivars = self.ivars.reshape(dims)
         save_filenames = np.unique(self.filenames)
         for index in modified_indices:
@@ -491,7 +496,6 @@ class CHARISData(Data):
             hdulist.append(fits.PrimaryHDU(data=save_ivars[index[0]]))
             hdulist.writeto(save_filenames[index[0]], overwrite=True)
 
-    # TODO: is this savedata function still needed for CHARIS.py?
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
                  extra_exthdr_keywords = None, extra_prihdr_keywords = None):

@@ -474,6 +474,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
         spot_dx: float, radius around spot location to cut out in order to match the
                  spot location as a function of wavelength.  Default 4
         astrogrid: astrogrid status read from the header, determines the pattern of the diffraction spots
+        smooth: whether to smooth image before fitting
 
     Returns:
         p : list of floats
@@ -487,15 +488,13 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     # Lightly smooth the cube before starting.
     ####################################################################
 
-    cubesmooth = cube.copy()
+    cubesmooth = np.copy(cube)
     mask = np.any(cubesmooth, axis=0) != 0
     iref = i1 + len(lam[i1:i2]) // 2
 
-    for i in range(cube.shape[0]):
-        # the following two lines commented out, has been moved to CHARIS.py._distortion_correction()
-        # TODO: remove the following two lines when things finalize
+    for i in range(cubesmooth.shape[0]):
         if smooth:
-            cubesmooth[i] = _smooth(cube[i], ivar[i], lam[i] / 3., spline_filter=False)
+            cubesmooth[i] = _smooth(cubesmooth[i], ivar[i], lam[i] / 3., spline_filter=False)
             cubesmooth[i] *= mask
         cubesmooth[i] = ndimage.spline_filter(cubesmooth[i])
 
@@ -592,7 +591,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
 
 
 def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astrogrid_sep=None, smooth_coef=True,
-                    guess_center_loc=None, maxcpus=multiprocessing.cpu_count() // 2, smooth_cubes=True):
+                    guess_center_loc=None, smooth_cubes=True, maxcpus=multiprocessing.cpu_count() // 2):
     '''
     Function fitcen_parallel.  Centroid a series of CHARIS data cubes
     in parallel using fitcen.  By default, get the wavelengths and
@@ -616,6 +615,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
                      proportional to lambda and lambda^2) over the sequence of cubes?
                      Default True.
         guess_center_loc: manually specify initial location of image center if necessary, in [x, y] format
+        smooth_cubes: whether to smooth the data before fitting
         maxcpus: int, maximum number of CPUs to use in parallelization
 
     Returns:
@@ -762,6 +762,7 @@ def fitallrelcen(cubes, ivars, r1=15, r2=50, smooth=True, maxcpus=multiprocessin
         ivars: inverse variance frames corresponding to cubes
         r1: int, minimum separation in lenslets from the image center for annular reference region.  Default 15.
         r2: int, maximum separation in lenslets from the image center for annular reference region.  Default 50.
+        smooth: whether to smooth the reference image before fitting
         maxcpus: int, maximum number of CPUs to allocate for parallelization. Default 1/2 of the available CPUs.
 
     Returns:
@@ -795,7 +796,7 @@ def fitallrelcen(cubes, ivars, r1=15, r2=50, smooth=True, maxcpus=multiprocessin
         if smooth:
             allims[i] = _smooth(im, ivar, 0.5, True)
         else:
-            allims[i] = ndimage.spline_filter(allims[i])
+            allims[i] = ndimage.spline_filter(im)
 
     tasks = multiprocessing.Queue()
     results = multiprocessing.Queue()
