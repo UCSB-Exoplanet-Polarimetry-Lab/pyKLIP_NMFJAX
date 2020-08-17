@@ -97,7 +97,7 @@ and should not actually be passed into the function.
 .. note::
    When executing the initializing of FMPlanetPSF, you will get a warning along the lines of
    "The coefficients of the spline returned have been computed as the minimal norm least-squares solution of a
-   (numerically) rank deficient system." This is completeness normal and expected, and should not be an issue.
+   (numerically) rank deficient system." This is completely normal and expected, and should not be an issue.
 
 Next we will run KLIP-FM with the :py:mod:`pyklip.fm` module. Before we run it, we will need to pick our
 PSF subtraction parameters (see the :ref:`basic-tutorial-label` for more details on picking KLIP parameters).
@@ -389,10 +389,10 @@ calibration uncertainities in, so it will need to be done by hand.
 
 Correcting for Coronagraphic Throughput
 ------------
-Coronagraphs have measurable effects on the planet fluxes that we’re able to detect. Typically, 
+Coronagraphs have measurable effects on the planet fluxes that we measure. Typically, 
 we can expect them to diminish the overall image flux at separations closer to host star, while 
 larger separations remain relatively unaffected. In order to improve the accuracy of our forward model, 
-pyKLIP allows users to account for this coronahgraphic effect on light transmission when initializing 
+pyKLIP allows users to account for this coronahgraphic effect on planet light transmission when initializing 
 the `fmpsf.FMPlanetPSF` class. This feature can be accessed by providing the optional argument 'field_dependent_correction', 
 which accepts a user provided function to correct for coronagraphic throughput. Each coronagraph has its own transmission profile, 
 a measure of how its throughput changes as a function of distance from the center. As an example of how this would be incoporated, 
@@ -400,8 +400,8 @@ we'll use the transmission profile of the JWST/NIRCAM MASK210 coronagraph (obtai
 webpage: https://jwst-docs.stsci.edu/near-infrared-camera/nircam-instrumentation/nircam-coronagraphic-occulting-mas
 
 First, we'll create a function that performs the coronagraphic throughput correction. It should accept three arguments: 
-the region or ‘stamp’ of your fake planet, the physical ‘x’ separation of each pixel in the stamp from the center, and the physical ‘y’ 
-separation of each pixel in the stamp from the center. It should then use the transmission profile of the relevant coronagraph to scale
+the region or ‘stamp’ of your fake planet, the physical ‘x’ separation of each pixel in the stamp from the coronagraph center, and the physical ‘y’ 
+separation of each pixel in the stamp from the coronagraph center. It should then use the transmission profile of the relevant coronagraph to scale
 the input stamp by the necessary amount, then output the throughput corrected stamp. Be sure to read in your coronagraphic transmission 
 profile with columns for 'transmission' and 'distance from the star (in pixels)' prior to creating the function.
 
@@ -437,7 +437,8 @@ profile with columns for 'transmission' and 'distance from the star (in pixels)'
 
         return output_stamp
 
-Now we can include the function as an optional argument in the :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` class.
+Now we can include the function as an optional argument in the :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` class. 
+The rest of the procedure can proceed unchanged. 
 
 .. code-block:: python
 
