@@ -96,7 +96,7 @@ found this to be pretty good for GPI data.
 By default we break the image up into equal sized annuli or concentric rings, with the exception of the last annulus which emcompasses the rest of the image.
 Each annulus will undergo its own KL mode calculation. Sometimes we want smaller annuli closer in since the stellar PSF changes rapidly there. 
 In that case, we suggest setting ``annuli_spacing="log"`` so the widths of the annuli increases logarithmatically. Note that when annuli are further split into 
-subsections, this is factored into the KL mode calculation.
+subsections, each sector does its own KL mode calculation. 
 
 "Aggressiveness"
 ^^^^^^^^^^^^^^^^
@@ -127,12 +127,14 @@ of searching to find the optimal configuration.
 
 ``mode``
 """"""""
-The ``mode`` keyword specifies whether we'd like to use Angular Differential Imaging (ADI), Spectral Differential Imaging (SDI), or both to perform your starlight subtraction. 
+The ``mode`` keyword specifies whether we'd like to use Angular Differential Imaging (ADI), Spectral Differential Imaging (SDI), Reference Differential Imaging (RDI),
+or any combination of the three to perform starlight subtraction. 
 ADI creates its principal components by comparing the stillness of a star's PSF across images taken at different angles to a planet's apparent rotation in those same images.
 SDI makes use of images taken at a wavelength where we expect planets to peak, as well as images taken a nearby continuum wavelength where we expect stars to remain bright
 and planets to become dim. By comparing images at the two wavelengths, KLIP is better able to distinguish the star from the planet, and thus better model and subtract starlight.
-More recently, we've included the ability to perfom Reference Differential Imaging (RDI) by providing KLIP with an additional ``psf_library`` parameter. When RDI is specified, pyKLIP will construct its model 
-of the starlight using a reference library of stellar PSF's. In order to generate this reference library, see the `RDI with a PSF Library <https://pyklip.readthedocs.io/en/latest/rdi.html>`_ documentation.
+RDI uses a library of PSFs taken from other stars to model this star. 
+When RDI is specified, pyKLIP will construct its model of the starlight using a reference library of stellar PSF's (passed in by the ``psf_library`` parameter). 
+In order to generate this reference library, see the `RDI with a PSF Library <https://pyklip.readthedocs.io/en/latest/rdi.html>`_ documentation.
 
 ``spectrum``
 """"""""""""
