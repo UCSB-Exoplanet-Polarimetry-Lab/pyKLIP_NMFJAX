@@ -52,8 +52,8 @@ Please read the docstring for :py:class:`pyklip.instruments.GPI.GPIData` for mor
 Running KLIP
 -------------
 
-Next, we will perform the actual KLIP subtraction using Angular Differential Imaging and Simultaneous Differential Imaging (ADI + SDI). To take advantage of the easily parallelizable computation, we will use the
-:mod:`pyklip.parallelized` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code i.e. split the work up across multiple processes on your device.
+Next, we will perform the actual KLIP subtraction using Angular Differential Imaging and Spectral Differential Imaging (ADI + SDI). To take advantage of the easily parallelizable computation, we will use the
+:mod:`pyklip.parallelized` module to perform the KLIP subtraction, which uses the python ``multiprocessing`` library to parallelize the code (i.e. split the work up across multiple processes on your device).
 
 .. code-block:: python
 
@@ -127,7 +127,7 @@ of searching to find the optimal configuration.
 
 ``mode``
 """"""""
-The ``mode`` keyword specifies whether we'd like to use Angular Differential Imaging (ADI), Simultaneous Differential Imaging (SDI), or both to perform your starlight subtraction. 
+The ``mode`` keyword specifies whether we'd like to use Angular Differential Imaging (ADI), Spectral Differential Imaging (SDI), or both to perform your starlight subtraction. 
 ADI creates its principal components by comparing the stillness of a star's PSF across images taken at different angles to a planet's apparent rotation in those same images.
 SDI makes use of images taken at a wavelength where we expect planets to peak, as well as images taken a nearby continuum wavelength where we expect stars to remain bright
 and planets to become dim. By comparing images at the two wavelengths, KLIP is better able to distinguish the star from the planet, and thus better model and subtract starlight.
