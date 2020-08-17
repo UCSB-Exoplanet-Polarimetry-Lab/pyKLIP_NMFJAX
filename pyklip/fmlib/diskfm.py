@@ -16,9 +16,6 @@ import pyklip.fm as fm
 from pyklip.klip import rotate
 
 # define the global variables for that code
-parallel = True
-
-
 class DiskFM(NoFM):
     """Defining a model disk to which we apply the Forward Modelling. There are 3 ways:
 
