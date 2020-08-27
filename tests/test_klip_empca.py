@@ -6,7 +6,6 @@ import warnings
 import numpy as np
 import astropy.io.fits as fits
 import pyklip
-import pyklip.instruments.CHARIS as CHARIS
 import pyklip.klip as klip
 import pyklip.empca as empca
 import pytest

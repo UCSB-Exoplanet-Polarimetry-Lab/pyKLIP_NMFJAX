@@ -1,7 +1,7 @@
 import os
 import sys
-import copy
 import re
+import warnings
 import numpy as np
 from scipy import ndimage, signal
 import astropy.io.fits as fits
@@ -177,7 +177,7 @@ class CHARISData(Data):
     ###############
 
     def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=True, sat_fit_method='global', platecal=True, IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', platecal=True, IWA=None, OWA=None):
         """
         Method to open and read a list of CHARIS data
 
@@ -190,7 +190,12 @@ class CHARISData(Data):
             guess_center_loc: initial guess of the primary star center in [x, y] format
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
-            update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
+            update_hrs: If True, update input file headers with new sat spot measurements.
+                        If False, no measuremnets will be carried out and headers remain the same as original
+                        If None and sat_fit_method=='global', all cubes will be updated with new global measurement as
+                            long as there is a single cube without sat spot measurements.
+                        If None and sat_fit_method=='local', only cubes without existing sat spot measurements will be
+                            updated with new measurements.
             sat_fit_method: 'global' or 'local'
             platecal: bool, whether to calibrate the plate scales of the data,
                       should always be True because the pipeline will automatically skip already calibrated cubes
@@ -241,19 +246,21 @@ class CHARISData(Data):
         # If only headers are modified but not the data (no distortion correction), then headers will be updated in the
         # original files and no new files will be saved.
 
+        sat_fit_method = sat_fit_method.lower()
         modified_hdrs = False
         modified_data = np.zeros(len(filepaths)) # zero == False
         astrogrid_status = None
+        missing_sats_measurement = False
 
         # read and organize data
         # sort filepaths to ensure np.unique(filenames) correspond to the same order as cubes in the dataset
         filepaths = sorted(filepaths)
         for index, filepath in enumerate(filepaths):
             with fits.open(filepath, lazy_load_hdus=False) as hdulist:
-                cube = copy.copy(hdulist[1].data)
-                ivar = copy.copy(hdulist[2].data)
-                prihdr = copy.copy(hdulist[0].header)
-                exthdr = copy.copy(hdulist[1].header)
+                cube = hdulist[1].data
+                ivar = hdulist[2].data
+                prihdr = hdulist[0].header
+                exthdr = hdulist[1].header
                 w = wcs.WCS(header=prihdr, naxis=[1, 2])
                 astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] # repeat astrom header for each wavelength slice
 
@@ -274,6 +281,10 @@ class CHARISData(Data):
             cube_wv_indices = np.arange(cube.shape[0])
             thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM'])  # nm
             thiswvs /= 1e3  # now in microns
+
+            # check if there exist any cube that doesn't have existing satellite spot measurements
+            if 'SATS0_0' not in exthdr:
+                missing_sats_measurement = True
 
             # remove undesirable slices of the datacube if necessary
             if skipslices is not None:
@@ -300,12 +311,12 @@ class CHARISData(Data):
             filenames.append([filepath for i in range(cube.shape[0])])
 
         # rescale all data to a uniform lenslet scale
-        # TODO: distortion correction in parallel?
         if platecal:
             tot_time = 0
             for index, filepath in enumerate(filepaths):
                 try:
                     if exthdrs[index]['PLATECAL'].lower() == 'true':
+                        print('already distortion corrected, skipping cube {}'.format(os.path.basename(filepath)))
                         continue
                 except:
                     pass
@@ -318,14 +329,14 @@ class CHARISData(Data):
                                                                               CHARISData.lenslet_scale_x,
                                                                               CHARISData.lenslet_scale_y, smooth=True)
                 tot_time += systime.time() - stime
-                sys.stdout.write('\r distortion correction on cube {}... Avg time per cube: '
-                                 '{:.3f} seconds'.format(index, tot_time / (index + 1)))
+                sys.stdout.write('\r distortion correcting {}... Avg time per cube: '
+                                 '{:.3f} seconds'.format(os.path.basename(filepath), tot_time / (index + 1)))
                 sys.stdout.flush()
                 data[index] = cube
                 ivars[index] = ivar
                 prihdrs[index] = prihdr
                 exthdrs[index] = exthdr
-                filenames[index] = [filename for i in range(cube.shape[0])]
+                filenames[index] = [filename for _ in range(cube.shape[0])]
                 modified_data[index] = 1
             modified_data = modified_data.astype(bool)
             sys.stdout.write('\n')
@@ -333,11 +344,14 @@ class CHARISData(Data):
 
         # fit for satellite spots globally if enabled
         spot_fit_coeffs = None
-        if update_hdrs == True and sat_fit_method.lower() == 'global':
-            print('fitting satellite spots globally')
-            spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs,
-                                                                 guess_center_loc=guess_center_loc,
-                                                                 smooth_cubes=(not platecal))
+        new_global_fit = False
+        if sat_fit_method == 'global':
+            if update_hdrs or (update_hdrs is None and missing_sats_measurement):
+                print('fitting satellite spots globally')
+                new_global_fit = True
+                spot_fit_coeffs, photcal = _measure_sat_spots_global(filenames, data, ivars, prihdrs,
+                                                                     guess_center_loc=guess_center_loc,
+                                                                     smooth_cubes=(not platecal))
 
         # fit for satellite spots locally if enabled
         # read satellite spots info or update measured info depending on user input
@@ -359,13 +373,13 @@ class CHARISData(Data):
                 if index == '0':
                     print('using existing satellite spots in the headers')
                 spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
-            elif sat_fit_method.lower() == 'global' and update_hdrs == True:
+            elif new_global_fit:
                 try:
                     astrogrid_status = prihdr['X_GRDST']
                 except:
                     astrogrid_status = None
 
-                # TODO: decide whether to smooth, and whether to photocalibrate images here
+                # TODO: photocalibrate images here?
                 # TODO: spot_flux use peak flux or aperture flux?
                 spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], cube, thiswvs,
                                                                     astrogrid=astrogrid_status)
@@ -380,7 +394,7 @@ class CHARISData(Data):
                         _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
                 spot_flux = np.nanmean(spot_flux, axis=1)
                 modified_hdrs = True
-            elif sat_fit_method.lower() == 'local' and update_hdrs == True:
+            elif sat_fit_method == 'local' and (update_hdrs or (update_hdrs is None and 'SATS0_0' not in exthdr)):
                 print("Finding satellite spots for cube {0}".format(index))
                 try:
                     spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_locs,
@@ -463,7 +477,7 @@ class CHARISData(Data):
 
         # if cube has been distortion corrected, save to new file
         if np.any(modified_data == True):
-            self.save_plate_cal_cubes(modified_data, dims)
+            self.save_platecal_cubes(modified_data, dims)
 
         if update_hdrs or (update_hdrs is None and modified_hdrs):
             print("Updating original headers with sat spot measurements.")
@@ -481,7 +495,7 @@ class CHARISData(Data):
                 hdulist.flush()
 
 
-    def save_plate_cal_cubes(self, modified_data, dims):
+    def save_platecal_cubes(self, modified_data, dims):
 
         modified_indices = np.argwhere(modified_data == True)
         save_data = np.reshape(self._input, dims)
@@ -495,6 +509,8 @@ class CHARISData(Data):
             hdulist.append(fits.PrimaryHDU(header=self.exthdrs[index[0]], data=save_data[index[0]]))
             hdulist.append(fits.PrimaryHDU(data=save_ivars[index[0]]))
             hdulist.writeto(save_filenames[index[0]], overwrite=True)
+            hdulist.close()
+
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
@@ -718,8 +734,6 @@ class CHARISData(Data):
 
 
 def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lenslet_scale, xscale, yscale, smooth=True):
-    # TODO: how to modify rotation matrix coefficient?
-    # TODO: any other header info needs to be modified?
     '''
     Rescale cube and ivar to a uniform lenslet scale, update extension header indicating distortion correction status,
     return a new filename along with distortion corrected cube, ivar, and updated extension header.
@@ -758,7 +772,7 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
 
     # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
     if smooth:
-        gain = np.mean(cube)
+        # gain = np.mean(cube)
         def _make_Bspline_mesh(y, x):
             '''
             Calculate the values of the cubic B-spline interpolating function (How&Andrews 1978), evaluated at (y, x)
@@ -829,8 +843,6 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
         # crop out a smaller square to interpolate, since the outer edge pixels receive no photons
         x = x[10:-10, 10:-10]
         y = y[10:-10, 10:-10]
-        # x = x[98:103, 98:103]
-        # y = y[98:103, 98:103]
         x_scaling = 1. # rescale y axis to xscale
         y_scaling = 1. * lenslet_scale / yscale # lenslet_scale defined to be xscale
         x_interp = x * x_scaling + cube.shape[1] // 2 # meshgrid of floats
@@ -839,14 +851,8 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
         y += cube.shape[1] // 2
         dx = x_interp - x
         dy = y_interp - y
-        if np.any(dx != 0): #testing
-            print('dx is not all 0')
-            import pdb
-            pdb.set_trace()
-        if np.any(dy > 1): #testing
-            print('dy has elements > 1')
-            import pdb
-            pdb.set_trace()
+        if np.any(dy > 1):
+            warning.warn('There exist shifts larger than 1 pixel, interpolation may be suboptimal...')
         # for each element in a 5*5 filter, calculate a meshgrid of filtered values for all data points corresponding
         # to that filter element. Summing these 25 meshgrids and normalizing is the convolution.
         D_interp = np.zeros((cube.shape[0], x.shape[0], x.shape[1])) # interpolated and smoothed data
@@ -873,7 +879,7 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
         # ivar_cal[:, 98:103, 98:103] = W_interp
         cube_cal *= mask
         ivar_cal *= mask
-        # print the signal gain for debug purposes
+        # print the signal gain
         # print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
 
     else:
@@ -886,12 +892,6 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
         for i in range(cube.shape[0]):
             cube_cal[i] = ndimage.map_coordinates(cube[i], [y, x])
             ivar_cal[i] = ndimage.map_coordinates(ivar[i], [y, x])
-
-        for i in range(cube.shape[0]):
-            cube_cal[i] = _smooth(cube_cal[i], ivar_cal[i], 0.5, spline_filter=False)
-            cube_cal[i] *= mask
-            ivar_cal[i] = _smooth(ivar_cal[i], np.ones(ivar_cal[i].shape), 0.5, spline_filter=False)
-            ivar_cal[i] *= mask
 
     # update all relevant header information
     yscale = np.sign(yscale) * np.abs(lenslet_scale)
