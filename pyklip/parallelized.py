@@ -1472,6 +1472,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
 
     # RDI Sanity Checks to make sure PSF Library is properly configured
     if "RDI" in mode:
+        if lite:
+            raise ValueError("RDI is currently not supported in memory lite mode.")
         if psf_library is None:
             raise ValueError("You need to pass in a psf_library if you want to run RDI")
         if psf_library.dataset is dataset:
