@@ -68,6 +68,28 @@ def test_gpi_dataset():
     
     assert error_raised
 
+def test_gpi_throughput():
+    """
+    Tests the GPI coronagraphic throughput correction
+    """
+
+    # grab the files
+    filelist = glob.glob(testdir + os.path.join("data", "S20131210*distorcorr.fits"))
+
+    # create the dataset object
+    dataset = GPI.GPIData(filelist, highpass=False, recalc_centers=False, recalc_wvs=False)
+
+    # fake the output centers post KLIP
+    dataset.output_centers = dataset.centers
+    
+    # make a fake output spec cube
+    ref_frame = np.ones([37, dataset.input.shape[-2], dataset.input.shape[-1]]) 
+    # throughput correct it
+    corr_frame = dataset.calibrate_output(ref_frame, spectral=True)
+
+    # after throughput correction, all numbers should only get bigger.
+    assert np.mean(corr_frame/ref_frame) > 1
+    assert np.size(np.where(corr_frame < ref_frame)) == 0
 
 def test_spectral_collapse():
     """
@@ -123,4 +145,4 @@ def test_spectral_collapse():
 
 
 if __name__ == "__main__":
-    test_generic_dataset()
+    test_gpi_throughput()

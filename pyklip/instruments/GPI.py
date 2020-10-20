@@ -111,7 +111,7 @@ class GPIData(Data):
 
     ## read in GPI configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
-    configfile = package_directory + "/" + "GPI.ini"
+    configfile = os.path.join(package_directory, "GPI.ini")
     config = ConfigParser.ConfigParser()
     try:
         config.read(configfile)
@@ -141,6 +141,23 @@ class GPIData(Data):
         print("Error reading GPI configuration file: {0}".format(e.message))
         raise e
 
+    # read in GPI coronagraphic throughput profiles
+    profile_dir = os.path.join(package_directory, "GPI_profiles")
+    bands = ['Y', 'J', 'H', 'K1', 'K2']
+    coronagraph_throughputs = {} # dictionary of tuple of arrays (separations [arcsec], throughputs)
+    for band in bands:
+        profile_filename = os.path.join(profile_dir, "gpi_offaxis_throughput_{0}.fits".format(band))
+
+        if os.path.exists(profile_filename):
+            with fits.open(profile_filename) as hdulist:
+                seps = hdulist[1].data['Radius']
+                throughputs = hdulist[1].data['Throughput']
+                coronagraph_throughputs[band] = (seps, throughputs)
+        else:
+            # just set it all equal to 1
+            print("Couldn't find {0}. Skipping...".format(profile_filename))
+            coronagraph_throughputs[band] = (np.array([0, 0.5]), np.array([1, 1]))
+
 
     ####################
     ### Constructors ###
@@ -159,6 +176,8 @@ class GPIData(Data):
 
         # GPI cubes are in a right handed coordinate system. Need to flip to left handed
         self.flipx = True
+
+        self.output_centers = None
         
         if filepaths is None:
             print("Creating a blank GPI data instance with all fields set to None. Did you want to do this?")
@@ -439,6 +458,7 @@ class GPIData(Data):
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
+        self.coronagraph_throughput = GPIData.coronagraph_throughputs[fpm_band]
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = self.prihdrs[0]["OBJECT"]
@@ -647,6 +667,17 @@ class GPIData(Data):
                 # broadband image
                 img /= np.nanmean(self.dn_per_contrast)
             self.flux_units = "contrast"
+
+        # assume the image is centered on the output_centers attribute
+        if self.output_centers is not None:
+            img_center = self.output_centers[0]
+            th_seps, coron_th = self.coronagraph_throughput
+            th_seps_pix = th_seps/GPIData.lenslet_scale
+            y, x = np.indices(img.shape[-2:])
+            r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
+
+            throughput_img = np.interp(r.ravel(), th_seps_pix, coron_th, right=1).reshape(img.shape[-2:])
+            img = img / throughput_img
 
         return img
 
