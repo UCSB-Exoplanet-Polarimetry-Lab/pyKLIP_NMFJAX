@@ -1067,8 +1067,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = exthdr['AVPARANG']
         # new IFSROTAT keyword. fall back to default if needed
-        if 'IFSROTAT' in exthdr:
-            this_ifs_rot = exthdr['IFSROTAT']
+        if 'IFSROTAT' in prihdr:
+            this_ifs_rot = prihdr['IFSROTAT']
         else:
             this_ifs_rot = GPIData.ifs_rotation
         vert_angle = -(360-parang) + this_ifs_rot - 90
