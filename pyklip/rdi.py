@@ -277,7 +277,7 @@ class PSFLibrary(object):
 
         #Run the correlation
         for i in np.arange(self.nfiles+n_newfiles-1,self.nfiles-1,-1):
-            self.master_correlation[i,i]
+            self.master_correlation[i,i]=1.
 
             #TODO: PARALLELIZE THIS STEP
 
