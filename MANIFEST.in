@@ -8,3 +8,4 @@ include pyklip/spectra/g32ncflx/*
 include pyklip/spectra/g56ncflx/*
 include pyklip/spectra/g100ncflx/*
 include pyklip/spectra/g178ncflx/*
+include pyklip/instruments/GPI_profiles/*

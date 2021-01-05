@@ -37,3 +37,5 @@ Alan Rainot: Added support for SPHERE DC data to the SPHERE interface
 Arthur Vigan: Added support for the VLTPF pipeline to the SPHERE interface
 
 Graça Rocha and Jacob Golomb: wrote the PlanetEvidence code 
+
+Jea Adams: Added field dependent correction to fmpsf.py, wrote tests for coronagrpahic throughput, and improved documentation throughout
