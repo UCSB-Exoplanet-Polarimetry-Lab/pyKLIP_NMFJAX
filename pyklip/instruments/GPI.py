@@ -1351,6 +1351,7 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     butterfly_phase = get_butterfly_phase(img,center,IWA,w_coef = 0.05)
     NKL_butter,ny,nx = KLs_butterfly.shape
     NKL_corona = KLs_corona.shape[0]
+    x_grid, y_grid = np.meshgrid(np.arange(0,img.shape[1],1)-center[0],np.arange(0,img.shape[0],1)-center[1])
 
     KLs_butterfly_rot = np.array([klip.rotate(_img, butterfly_phase, [140,140], center, False, None) for _img in KLs_butterfly])
     KLs_corona_centered = np.array([klip.rotate(_img, 0, [140,140], center, False, None) for _img in KLs_corona])
@@ -1369,18 +1370,21 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     # plt.imshow(KLs_corona_centered[0,:,:])
     # plt.show()
     im_vec = np.ravel(img)
-    where_im = np.where(np.isfinite(im_vec))
+    where_im = np.where(np.isfinite(im_vec)*(im_vec!=0))
     im_vec = im_vec[where_im]
     KLs_butterfly_rot = np.reshape(KLs_butterfly_rot,(NKL_butter,ny*nx))
     KLs_corona_centered = np.reshape(KLs_corona_centered,(NKL_corona,ny*nx))
+    x_grid_vec = np.ravel(x_grid)[where_im]
+    y_grid_vec = np.ravel(y_grid)[where_im]
     tmp_model = np.concatenate([KLs_butterfly_rot[:,where_im[0]],
                                 KLs_corona_centered[:,where_im[0]],
-                                np.ones((1,np.size(where_im[0])))],axis=0)
+                                np.ones((1,np.size(where_im[0]))),
+                                x_grid_vec[None,:],y_grid_vec[None,:]],axis=0)
     coefs,chi2,rank,s  = np.linalg.lstsq(tmp_model.T,im_vec,rcond=None)
     canvas_model = np.zeros((ny*nx))
     canvas_model[where_im] = np.dot(tmp_model.T,coefs)
     canvas_model = np.reshape(canvas_model,(ny,nx))
-    return img-canvas_model
+    return img-canvas_model,canvas_model
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
