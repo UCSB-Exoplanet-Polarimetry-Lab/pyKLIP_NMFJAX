@@ -1384,7 +1384,7 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     canvas_model = np.zeros((ny*nx))
     canvas_model[where_im] = np.dot(tmp_model.T,coefs)
     canvas_model = np.reshape(canvas_model,(ny,nx))
-    return img-canvas_model,canvas_model
+    return img-canvas_model
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
