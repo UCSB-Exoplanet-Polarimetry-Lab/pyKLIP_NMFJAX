@@ -5,7 +5,7 @@ from pyklip.kpp.stat.stat_utils import *
 from pyklip.kpp.utils.oi import *
 
 
-def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,maskout_edge=False,IWA=None, OWA=None):
+def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,maskout_edge=False,maskout_inner_edge=False,IWA=None, OWA=None):
         """
         Find the brightest blobs in the image/cube.
 
@@ -66,6 +66,11 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
             IWA,OWA,inner_mask,outer_mask = get_occ(image_cpy, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
             conv_kernel = np.ones((maskout_edge,maskout_edge))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
+            image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
+        if maskout_inner_edge is not None:
+            IWA,OWA,inner_mask,outer_mask = get_occ(image_cpy, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
+            conv_kernel = np.ones((maskout_inner_edge,maskout_inner_edge))
+            flat_cube_wider_mask = convolve2d(inner_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
 
 
