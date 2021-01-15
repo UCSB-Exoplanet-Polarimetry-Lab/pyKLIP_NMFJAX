@@ -179,7 +179,6 @@ class DiskFM(NoFM):
             self.output_imgs_shape = output_imgs_shape
 
             self.PAs = dataset.PAs
-            print('fromdataset', self.PAs)
             self.wvs = dataset.wvs
 
             self.nwvs = int(np.size(np.unique(
