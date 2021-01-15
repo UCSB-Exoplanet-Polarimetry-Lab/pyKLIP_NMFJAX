@@ -1233,6 +1233,30 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
 
 
 def subtract_satspots(slice, slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list):
+    """
+    Subtract the satellite spots in a GPI image.
+
+    Inputs:
+        slice: 2d image
+        slice_id: index of the image from the GPI cube. Used to select the correct PSF from psfs_func_list.
+        spots_xloc_thisslice: list of x position of the sat spots
+        spots_yloc_thisslice: list of y position of the sat spots
+        center_thisslice: (x0,y0) image center
+        psfs_func_list: List of spline fit function for the PSF_cube.
+            Can be computed as follow:
+                numwv,ny_psf,nx_psf =  PSF_cube.shape
+                x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
+                psfs_func_list = []
+                from scipy import interpolate
+                for wv_index in range(numwv):
+                    model_psf = PSF_cube[wv_index, :, :]
+                    psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),
+                                                                        x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+
+    Output: sat spot subtracted image.
+
+    """
+
     for loc_id, (spotx,spoty) in enumerate(zip(spots_xloc_thisslice,spots_yloc_thisslice)):
         searchrad=10
         from pyklip.fitpsf import quick_psf_fit
@@ -1287,8 +1311,8 @@ def butterfly_rdi_imgs(imgs,KLs_butterfly,KLs_corona,centers,wvs_indices,IWA, nu
             These modes will be centered (NOT rotated)
         centers: [(x0,y0),(x1,y1),..] list of image centers
         wvs_indices: index of wavelengths to know which element from KLs_butterfly,KLs_corona to use
-        IWA
-        new_center
+        IWA: inner working angle in pixels
+        new_center: new (x0,y0) image center
         numthreads: number of threads to be used
         pool: multiprocessing thread pool (optional). To avoid repeatedly creating one when processing a list of images.
 
@@ -1316,6 +1340,19 @@ def butterfly_rdi_imgs(imgs,KLs_butterfly,KLs_corona,centers,wvs_indices,IWA, nu
     return out
 
 def get_butterfly_phase(im,center,IWA,w_coef = 0.05):
+    """
+    Estimate the position angle of the axis of the butterly in an image from the butterfly azimuthal profile.
+
+    Args:
+        im: 2d image
+        center: (x0,y0) image center
+        IWA: Inner working angle in pixels. Only the region between IWA and 50 pixels in separation are used.
+        w_coef: weight to be used in the spline interpolation of the azimuthal profile of the butterfly.
+            In splrep, the parameter w is set to: w=1/(w_coef*azimuthal_intensity)
+
+    Output:
+        butterfly_phase: Position angle of axis of the butterfly
+    """
     im_cp = copy(im)
     ny,nx = im.shape
     x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-center[0], np.arange(ny * 1.)-center[1])
@@ -1338,13 +1375,13 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     Return a butterfly model to be subtracted
 
     Args:
-        img: image
+        img: 2d image
         KLs_butterfly: butterfly KL basis (NKL1,ny,nx). These modes will be centered and rotated based on butterfly direction.
         KLs_corona: coronagraph KL basis (NKL2,ny,nx). These modes will be centered (NOT rotated)
         center: (x0,y0) image center
 
     Returns:
-        model: Array of same size as img
+        model: butterfly-subtracted image.
     """
 
     # Calculate the butterfly angle
@@ -1362,44 +1399,10 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     KLs_corona_centered = np.array([klip.rotate(_img, 0, [140,140], center, False, None) for _img in KLs_corona])
     KLs_butterfly_rot *= mask[None,:,:]
 
-    # KLs_butterfly_rot = rotate_imgs(KLs_butterfly, [butterfly_phase,]*NKL_butter, [,]*NKL_butter, new_center=center,flipx=False,pool=None)
     wherenan_butter = np.where(np.isnan(KLs_butterfly_rot))
     KLs_butterfly_rot[wherenan_butter] = 0
-    # KLs_corona_centered = rotate_imgs(KLs_corona, [0,]*NKL_corona, [[140,140],]*NKL_corona, new_center=center,flipx=False,pool=None)
     wherenan_corona = np.where(np.isnan(KLs_corona_centered))
     KLs_corona_centered[wherenan_corona] = 0
-
-    # edge_butter = np.zeros((ny*nx))
-    # edge_x_butter = np.zeros((ny*nx))
-    # edge_y_butter = np.zeros((ny*nx))
-    # wherenan_ravelbutter = np.where(np.ravel(KLs_butterfly_rot[0,:,:])==0)
-    # edge_butter[wherenan_ravelbutter] = 1
-    # edge_x_butter[wherenan_ravelbutter] = x_grid_ravel[wherenan_ravelbutter]
-    # edge_y_butter[wherenan_ravelbutter] = y_grid_ravel[wherenan_ravelbutter]
-
-    # import matplotlib.pyplot as plt
-    # plt.subplot(2,3,1)
-    # plt.imshow(img)
-    # plt.subplot(2,3,2)
-    # plt.imshow(KLs_butterfly_rot[0,:,:])
-    # plt.clim([-0.02,0.02])
-    # plt.subplot(2,3,3)
-    # plt.imshow(KLs_butterfly_rot[1,:,:])
-    # plt.clim([-0.02,0.02])
-    # # plt.imshow(KLs_corona_centered[10,:,:])
-    # plt.subplot(2,3,4)
-    # plt.imshow(mask)
-
-    # edge_butter = np.reshape(edge_butter,(ny,nx))
-    # plt.imshow(edge_butter)
-    # plt.subplot(2,3,5)
-    # edge_x_butter = np.reshape(edge_x_butter,(ny,nx))
-    # plt.imshow(edge_x_butter)
-    # plt.subplot(2,3,6)
-    # edge_y_butter = np.reshape(edge_y_butter,(ny,nx))
-    # plt.imshow(edge_y_butter)
-    # plt.show()
-
 
     im_vec = np.ravel(img)
     where_im = np.where(np.isfinite(im_vec)*(im_vec!=0))
@@ -1412,14 +1415,12 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
                                 np.ones((1,np.size(where_im[0]))),
                                 x_grid_ravel[where_im][None,:],
                                 y_grid_ravel[where_im][None,:]],axis=0)
-                                # edge_butter[where_im][None,:],
-                                # edge_x_butter[where_im][None,:],
-                                # edge_y_butter[where_im][None,:]],axis=0)
     coefs,chi2,rank,s  = np.linalg.lstsq(tmp_model.T,im_vec,rcond=None)
     canvas_model = np.zeros((ny*nx))
     canvas_model[where_im] = np.dot(tmp_model.T,coefs)
     canvas_model = np.reshape(canvas_model,(ny,nx))
-    return img-canvas_model#,canvas_model
+
+    return img-canvas_model
 
 
 def measure_sat_spot_fluxes(img, spots_x, spots_y,psfs_func_list=None,wave_index=None, residuals = False):
