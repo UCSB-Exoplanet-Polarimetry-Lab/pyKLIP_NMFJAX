@@ -1354,8 +1354,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     print("Closing threadpool")
-    # tpool.close()
-    # tpool.join()
+    tpool.close()
+    tpool.join()
 
     # finished!
     # Mean the output images if save_klipped is True
