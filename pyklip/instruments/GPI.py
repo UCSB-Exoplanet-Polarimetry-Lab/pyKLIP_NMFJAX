@@ -1390,28 +1390,34 @@ def butterfly_rdi_img(img,KLs_butterfly,KLs_corona,center,IWA):
     NKL_corona = KLs_corona.shape[0]
     x_grid, y_grid = np.meshgrid(np.arange(0,img.shape[1],1)-center[0],np.arange(0,img.shape[0],1)-center[1])
     r_grid = np.sqrt(x_grid**2+y_grid**2)
-    mask = (np.pi/2+ np.arctan(-(r_grid-75)/10))/(np.pi)
+    mask = (np.pi/2+ np.arctan(-(r_grid-50)/10))/(np.pi)
+    imask = 1-mask
 
     x_grid_ravel = np.ravel(x_grid)
     y_grid_ravel = np.ravel(y_grid)
 
     KLs_butterfly_rot = np.array([klip.rotate(_img, butterfly_phase, [140,140], center, False, None) for _img in KLs_butterfly])
-    KLs_corona_centered = np.array([klip.rotate(_img, 0, [140,140], center, False, None) for _img in KLs_corona])
     KLs_butterfly_rot *= mask[None,:,:]
+    KLs_corona_centered = np.array([klip.rotate(_img, 0, [140,140], center, False, None) for _img in KLs_corona])
+    KLs_corona_centered_in = KLs_corona_centered*mask[None,:,:]
+    KLs_corona_centered_out = KLs_corona_centered*imask[None,:,:]
 
     wherenan_butter = np.where(np.isnan(KLs_butterfly_rot))
     KLs_butterfly_rot[wherenan_butter] = 0
     wherenan_corona = np.where(np.isnan(KLs_corona_centered))
-    KLs_corona_centered[wherenan_corona] = 0
+    KLs_corona_centered_in[wherenan_corona] = 0
+    KLs_corona_centered_out[wherenan_corona] = 0
 
     im_vec = np.ravel(img)
     where_im = np.where(np.isfinite(im_vec)*(im_vec!=0))
     im_vec = im_vec[where_im]
     KLs_butterfly_rot = np.reshape(KLs_butterfly_rot,(NKL_butter,ny*nx))
-    KLs_corona_centered = np.reshape(KLs_corona_centered,(NKL_corona,ny*nx))
+    KLs_corona_centered_in = np.reshape(KLs_corona_centered_in,(NKL_corona,ny*nx))
+    KLs_corona_centered_out = np.reshape(KLs_corona_centered_out,(NKL_corona,ny*nx))
 
     tmp_model = np.concatenate([KLs_butterfly_rot[:,where_im[0]],
-                                KLs_corona_centered[:,where_im[0]],
+                                KLs_corona_centered_in[:,where_im[0]],
+                                KLs_corona_centered_out[:,where_im[0]],
                                 np.ones((1,np.size(where_im[0]))),
                                 x_grid_ravel[where_im][None,:],
                                 y_grid_ravel[where_im][None,:]],axis=0)
