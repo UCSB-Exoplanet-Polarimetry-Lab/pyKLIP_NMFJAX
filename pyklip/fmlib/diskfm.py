@@ -16,9 +16,6 @@ import pyklip.fm as fm
 from pyklip.klip import rotate
 
 # define the global variables for that code
-parallel = True
-
-
 class DiskFM(NoFM):
     """Defining a model disk to which we apply the Forward Modelling. There are 3 ways:
 
@@ -182,7 +179,6 @@ class DiskFM(NoFM):
             self.output_imgs_shape = output_imgs_shape
 
             self.PAs = dataset.PAs
-            print('fromdataset', self.PAs)
             self.wvs = dataset.wvs
 
             self.nwvs = int(np.size(np.unique(

@@ -97,7 +97,7 @@ and should not actually be passed into the function.
 .. note::
    When executing the initializing of FMPlanetPSF, you will get a warning along the lines of
    "The coefficients of the spline returned have been computed as the minimal norm least-squares solution of a
-   (numerically) rank deficient system." This is completeness normal and expected, and should not be an issue.
+   (numerically) rank deficient system." This is completely normal and expected, and should not be an issue.
 
 Next we will run KLIP-FM with the :py:mod:`pyklip.fm` module. Before we run it, we will need to pick our
 PSF subtraction parameters (see the :ref:`basic-tutorial-label` for more details on picking KLIP parameters).
@@ -162,7 +162,7 @@ KL mode cubes, and select the KL mode cutoff we want to use. For the example, we
     guesssep = fm_hdu[0].header['FM_SEP']
     guesspa = fm_hdu[0].header['FM_PA']
 
-We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that we handle all of the fitting processes.
+We will generate a :py:class:`pyklip.fitpsf.FMAstrometry` object that will handle all of the fitting processes.
 The first thing we will do is create this object, and feed it in the data and forward model. It will use them to
 generate stamps of the data and forward model which can be accessed using ``fit.data_stmap`` and ``fit.fm_stamp``
 respectively. When reading in the data, it will also generate a noise map for the data stamp by computing the standard
@@ -187,7 +187,7 @@ or ``method="maxl"``.
     # exclusion_radius excludes all pixels less than that distance from the estimated location of the planet
     fit.generate_data_stamp(data_frame, [data_centx, data_centy], dr=4, exclusion_radius=10)
 
-Next we need to choose the Gaussian process kernel. We currently only support the Matern (ν=3/2)
+Next we need to choose a Gaussian process kernel to model the correlated noise in our data. We currently only support the Matern (ν=3/2)
 and square exponential kernel, so we will pick the Matern kernel here. Note that there is the option
 to add a diagonal (i.e. read/photon noise) term to the kernel, but we have chosen not to use it in this
 example. If you are not dominated by speckle noise (i.e. around fainter stars or further out from the star),
@@ -200,15 +200,17 @@ you should enable the read noies term.
     corr_len_label = r"$l$"
     fit.set_kernel("matern32", [corr_len_guess], [corr_len_label])
 
-Priors are required for a Bayesian analysis, so if you are prefering the MCMC method, you will need to define
-them. We will use uniform priors, so all we will specify are the bounds to the uniform prior. This same code
+MCMC takes a Bayesian approach to estimating our parameters of interest by approximating their posterior distributions i.e. their best fit values given the data.
+In order to perform this type of Bayesian analysis you will need to define priors, which are your own estimations of what these parameter values might be. 
+Since we usually don't know much about the data, we will use uniform priors, essentially estimating the same probability for each value. 
+All we will need to specify in this case are the bounds/range of values to the uniform prior. This same code
 can also be used to specify parameter bounds for the maximum likelihood approach, but setting bounds is not 
 required for that technique. 
-The priors in the x/y posible will be flat in linear space, and the priors on the flux scaling and kernel parameters
-will be flat in log space, since they are scale paramters. In the following function below, we will set the boundaries
+The priors in the x/y position will be flat in linear space, and the priors on the flux scaling and kernel parameters
+will be flat in log space, since they are scale parameters. In the function below, we will set the boundaries
 of the priors. The first two values are for x/y and they basically say how far away (in pixels) from the
-guessed position of the planet can the chains wander. For the rest of the parameters, the values say how many ordres
-of magnitude can the chains go from the guessed value (e.g. a value of 1 means we allow a factor of 10 variation
+guessed position of the planet can the chains wander. For the rest of the parameters, the values specify how many orders
+of magnitude the chains can go from the guessed value (e.g. a value of 1 means we allow a factor of 10 variation
 in the value).
 
 .. code-block:: python
@@ -232,8 +234,8 @@ As the analysis diverges, we will discuss `Maximum Likelihood`_ and `Bayesian MC
 Bayesian MCMC Analysis
 ^^^^^^^^^^^^^^^^^^^^^^
 
-To run the MCMC sampler (using the emcee package), we want to specify the number of walkers, number of steps each walker takes,
-and the number of production steps the walkers take. We also can specify the number of threads to use.
+To run the MCMC sampler (using the emcee package), we need to specify the number of walkers (the number of Markov chains that explore your parameter space), number of steps each walker takes (how many new values of your parameter each chain should explore),
+and the number of production steps the walkers take (the number of steps we let each chain take to burn-in). We also can specify the number of threads to use.
 If you have not turned BLAS and MKL off, you probably only want one or a few threads, as MKL/BLAS automatically
 parallelizes the likelihood calculation, and trying to parallelize on top of that just creates extra overhead.
 
@@ -245,8 +247,7 @@ parallelizes the likelihood calculation, and trying to parallelize on top of tha
 ``fit.sampler`` stores the ``emcee.EnsembleSampler`` object which contains the full chains and other MCMC fitting information. 
 
 For MCMC,
-we want to check to make sure all of our chains have converged by plotting them. As long as they have
-settled down (no large scale movements), then the chains have probably converged.
+we want to check to make sure all of our chains have converged by plotting them. That is, we need to ensure that there are no large scale movements, and that the entire parameter space is being sampled evenly.
 The maximum likelihood technique skips this step. 
 
 .. code-block:: python
@@ -286,6 +287,7 @@ Here is an example using three cubes of public GPI data on beta Pic.
 .. image:: imgs/betpic_j_bka_chains.png
 
 For MCMC, we can also plot the corner plot to look at our posterior distribution and correlation between parameters.
+We can use the peak of each posterior distribution to estimate the best fit value of each parameter.
 
 .. code-block:: python
 
@@ -337,6 +339,8 @@ Here are some fields to access the fit. Each field is a
 * ``fit.raw_flux``: Multiplicative factor to scale the model flux to match the data
 * ``fit.covar_params``: hyperparameters on the Gaussian process. This is a list with length equal to the number of hyperparameters.
 
+Note that since fit.covar_params is a list dependent on user input, you need to index that list in order to see the bestfit values for each element. For example, fit.covar_params[0].bestfit will output the bestfit for the first element in the list. 
+
 Generally, it is good to look at the fit visually, and examine the residual plot for structure that might be indicative of a bad fit or systematics in either the data or the model. 
 
 .. code-block:: python
@@ -382,4 +386,64 @@ calibration uncertainities in, so it will need to be done by hand.
     print("Planet separation is at {0} with a 1-sigma uncertainity of {1}".format(fit.sep.bestfit, fit.sep.error))
     print("Planet PA at {0} with a 1-sigma uncertainity of {1}".format(fit.PA.bestfit, fit.PA.error))
 
+
+Correcting for Coronagraphic Throughput
+------------
+Coronagraphs have measurable effects on the planet fluxes that we measure. Typically, 
+we can expect them to diminish the overall image flux at separations closer to host star, while 
+larger separations remain relatively unaffected. In order to improve the accuracy of our forward model, 
+pyKLIP allows users to account for this coronahgraphic effect on planet light transmission when initializing 
+the `fmpsf.FMPlanetPSF` class. This feature can be accessed by providing the optional argument 'field_dependent_correction', 
+which accepts a user provided function to correct for coronagraphic throughput. Each coronagraph has its own transmission profile, 
+a measure of how its throughput changes as a function of distance from the center. As an example of how this would be incoporated, 
+we'll use the transmission profile of the JWST/NIRCAM MASK210 coronagraph (obtained from the Occulting Masks section of this NIRCAM 
+webpage: https://jwst-docs.stsci.edu/near-infrared-camera/nircam-instrumentation/nircam-coronagraphic-occulting-mas
+
+First, we'll create a function that performs the coronagraphic throughput correction. It should accept three arguments: 
+the region or ‘stamp’ of your fake planet, the physical ‘x’ separation of each pixel in the stamp from the coronagraph center, and the physical ‘y’ 
+separation of each pixel in the stamp from the coronagraph center. It should then use the transmission profile of the relevant coronagraph to scale
+the input stamp by the necessary amount, then output the throughput corrected stamp. Be sure to read in your coronagraphic transmission 
+profile with columns for 'transmission' and 'distance from the star (in pixels)' prior to creating the function.
+
+.. code-block:: python
+
+    # Read in transmission profile first
+
+    def transmission_correction(input_stamp, input_dx, input_dy):
+        """
+        Args:
+            input_stamp (array): 2D array of the region surrounding the fake planet injection site
+            input_dx (array): 2D array specifying the x distance of each stamp pixel from the center
+            input_dy (array): 2D array specifying the y distance of each stamp pixel from the center
+        
+        Returns:
+            output_stamp (array): 2D array of the throughput corrected planet injection site.
+        """
+        # Calculate the distance of each pixel in the input stamp from the center
+        distance_from_center = np.sqrt((input_dx)**2+(input_dy)**2)
+
+        # Select the relevant columns from the coronagraph's transmission profile
+        transmission =  transmission_profile['throughput']
+        radius = transmission_profile['distance']
+
+        # Interpolate to find the transmission value for each pixel in the input stamp
+        transmission_of_stamp = np.interp(distance_from_center, radius, transmission)
+
+        # Reshape the interpolated array to have the same dimensions as the input stamp
+        transmission_of_stamp = transmission_of_stamp.reshape(input_stamp.shape)
+
+        # Make the throughput correction
+        output_stamp = transmission_of_stamp*input_stamp
+
+        return output_stamp
+
+Now we can include the function as an optional argument in the :py:class:`pyklip.fmlib.fmpsf.FMPlanetPSF` class. 
+The rest of the procedure can proceed unchanged. 
+
+.. code-block:: python
+
+    import pyklip.fmlib.fmpsf as fmpsf
+    fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
+                                    np.unique(dataset.wvs), dn_per_contrast, star_spt='A6',
+                                    spectrallib=[guessspec], field_dependent_correction = transmission_correction)
 

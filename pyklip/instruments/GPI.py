@@ -104,7 +104,7 @@ class GPIData(Data):
 
     ## read in GPI configuration file and set these static variables
     package_directory = os.path.dirname(os.path.abspath(__file__))
-    configfile = package_directory + "/" + "GPI.ini"
+    configfile = os.path.join(package_directory, "GPI.ini")
     config = ConfigParser.ConfigParser()
     try:
         config.read(configfile)
@@ -134,6 +134,23 @@ class GPIData(Data):
         print("Error reading GPI configuration file: {0}".format(e.message))
         raise e
 
+    # read in GPI coronagraphic throughput profiles
+    profile_dir = os.path.join(package_directory, "GPI_profiles")
+    bands = ['Y', 'J', 'H', 'K1', 'K2']
+    coronagraph_throughputs = {} # dictionary of tuple of arrays (separations [arcsec], throughputs)
+    for band in bands:
+        profile_filename = os.path.join(profile_dir, "gpi_offaxis_throughput_{0}.fits".format(band))
+
+        if os.path.exists(profile_filename):
+            with fits.open(profile_filename) as hdulist:
+                seps = hdulist[1].data['Radius']
+                throughputs = hdulist[1].data['Throughput']
+                coronagraph_throughputs[band] = (seps, throughputs)
+        else:
+            # just set it all equal to 1
+            print("Couldn't find {0}. Skipping...".format(profile_filename))
+            coronagraph_throughputs[band] = (np.array([0, 0.5]), np.array([1, 1]))
+
 
     ####################
     ### Constructors ###
@@ -152,6 +169,8 @@ class GPIData(Data):
 
         # GPI cubes are in a right handed coordinate system. Need to flip to left handed
         self.flipx = True
+
+        self.output_centers = None
         
         if filepaths is None:
             print("Creating a blank GPI data instance with all fields set to None. Did you want to do this?")
@@ -322,7 +341,7 @@ class GPIData(Data):
 
         #extract data from each file
         for index, filepath in enumerate(filepaths):
-            cube, center, pa, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr, spot_order = \
+            cube, center, rotang, wv, cube_wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_flux, inttime, prihdr, exthdr, spot_order = \
                 _gpi_process_file(filepath, skipslices=skipslices, highpass=highpass,
                                   meas_satspot_flux=meas_satspot_flux, numthreads=numthreads,
                                   psfs_func_list=psfs_func_list, bad_sat_spots=bad_sat_spots, quiet=quiet, pool = pool)
@@ -336,10 +355,10 @@ class GPIData(Data):
             centers.append(center)
             spot_fluxes.append(spot_flux)
             spot_orders.append(spot_order)
-            rot_angles.append(pa)
+            rot_angles.append(rotang)
             wvs.append(wv)
             wv_indices.append(cube_wv_indices)
-            filenums.append(np.ones(pa.shape[0], dtype=int) * index)
+            filenums.append(np.ones(rotang.shape[0], dtype=int) * index)
             wcs_hdrs.append(astr_hdrs)
             inttimes.append(inttime)
             prihdrs.append(prihdr)
@@ -347,7 +366,7 @@ class GPIData(Data):
 
             #filename = np.chararray(pa.shape[0])
             #filename[:] = filepath
-            filenames.append([filepath for i in range(pa.shape[0])])
+            filenames.append([filepath for i in range(rotang.shape[0])])
 
         #Close threadpool
         pool.close()
@@ -363,7 +382,7 @@ class GPIData(Data):
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
-        rot_angles = -(np.array(rot_angles).reshape([dims[0] * dims[1]])) + (90 - self.ifs_rotation)  # want North Up
+        rot_angles = np.array(rot_angles).reshape([dims[0] * dims[1]])
         wvs = np.array(wvs).reshape([dims[0] * dims[1]])
         wv_indices = np.array(wv_indices).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
@@ -426,6 +445,7 @@ class GPIData(Data):
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
+        self.coronagraph_throughput = GPIData.coronagraph_throughputs[fpm_band]
 
         # Required for automatically querying Simbad for the spectral type of the star.
         self.object_name = self.prihdrs[0]["OBJECT"]
@@ -634,6 +654,17 @@ class GPIData(Data):
                 # broadband image
                 img /= np.nanmean(self.dn_per_contrast)
             self.flux_units = "contrast"
+
+        # assume the image is centered on the output_centers attribute
+        if self.output_centers is not None:
+            img_center = self.output_centers[0]
+            th_seps, coron_th = self.coronagraph_throughput
+            th_seps_pix = th_seps/GPIData.lenslet_scale
+            y, x = np.indices(img.shape[-2:])
+            r = np.sqrt((x - img_center[0])**2 + (y - img_center[1])**2)
+
+            throughput_img = np.interp(r.ravel(), th_seps_pix, coron_th, right=1).reshape(img.shape[-2:])
+            img = img / throughput_img
 
         return img
 
@@ -1016,7 +1047,12 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         w = wcs.WCS(header=exthdr, naxis=[1,2])
         #turns out WCS data can be wrong. Let's recalculate it using avparang
         parang = exthdr['AVPARANG']
-        vert_angle = -(360-parang) + GPIData.ifs_rotation - 90
+        # new IFSROTAT keyword. fall back to default if needed
+        if 'IFSROTAT' in prihdr:
+            this_ifs_rot = prihdr['IFSROTAT']
+        else:
+            this_ifs_rot = GPIData.ifs_rotation
+        vert_angle = -(360-parang) + this_ifs_rot - 90
         vert_angle = np.radians(vert_angle)
         pc = np.array([[np.cos(vert_angle), np.sin(vert_angle)],[-np.sin(vert_angle), np.cos(vert_angle)]])
         cdmatrix = pc * GPIData.lenslet_scale /3600.
@@ -1025,6 +1061,9 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         w.wcs.cd[1,0] = cdmatrix[1,0]
         w.wcs.cd[1,1] = cdmatrix[1,1]
         
+        # rotation angle for pyklip
+        pyklip_rotang = -(parang) + (90 - this_ifs_rot)  # pretty sure just the negative of vert_angle, but need to check
+
         # get number of co-adds
         coadds = exthdr['COADDS0']
 
@@ -1109,7 +1148,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
                     center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']],]*len(center)
 
 
-            parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+            rotang = np.repeat(pyklip_rotang, channels) #populate PA for each wavelength slice (the same)
             inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
             astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
         #for pol mode, we consider only total intensity but want to keep the same array shape to make processing easier
@@ -1119,7 +1158,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
             cube = np.sum(cube, axis=0)  #sum to total intensity
             cube = cube.reshape([1, cube.shape[0], cube.shape[1]])  #maintain 3d-ness
             center = [[exthdr['PSFCENTX'], exthdr['PSFCENTY']]]
-            parang = exthdr['AVPARANG']*np.ones(1)
+            rotang = pyklip_rotang*np.ones(1)
             inttime = np.repeat(exthdr['ITIME0'] / 1.e6, 1)
             astr_hdrs = np.repeat(w, 1)
             try:
@@ -1149,7 +1188,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
                 spots_xloc = [0,]*channels
                 spots_yloc = [0,]*channels
 
-                parang = np.repeat(exthdr['AVPARANG'], channels) #populate PA for each wavelength slice (the same)
+                rotang = np.repeat(pyklip_rotang, channels) #populate PA for each wavelength slice (the same)
                 inttime = np.repeat(exthdr['ITIME0'] / 1.e6, channels)
                 astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
             except:
@@ -1169,7 +1208,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
     if skipslices is not None:
         cube = np.delete(cube, skipslices, axis=0)
         center = np.delete(center, skipslices, axis=0)
-        parang = np.delete(parang, skipslices)
+        rotang = np.delete(rotang, skipslices)
         wvs = np.delete(wvs, skipslices)
         wv_indices = np.delete(wv_indices, skipslices)
         astr_hdrs = np.delete(astr_hdrs, skipslices)
@@ -1229,7 +1268,7 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
                     tpool.close()
         #print(spot_fluxes)
 
-    return cube, center, parang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr, spot_order
+    return cube, center, rotang, wvs, wv_indices, astr_hdrs, filt_band, fpm_band, ppm_band, spot_fluxes, inttime, prihdr, exthdr, spot_order
 
 
 def subtract_satspots(slice, slice_id, spots_xloc_thisslice, spots_yloc_thisslice, center_thisslice,psfs_func_list):

@@ -3,9 +3,15 @@
 Release Notes
 ==============
 
+Version 2.2
+ * Field dependent throughput to account for changes in the off-axis PSF due to e.g., coronagraphic throughput (Jea Adams)
+ * Added `verbose` flag that can be used to turn off print statements within pyklip (Jea Adams)
+ * Various bug fixes (Jason Wang, Johan Mazoyer)
+ * Added for explanatory material to docs so that they are more accessible (Jea Adams)
+
 Version 2.1
- * RDI support in forward modeling framework (currently works for DiskFM, support for other FM modules coming)
- * GenericData is more feature rich (better saving, automatic wcs generation)
+ * RDI support in forward modeling framework (currently works for DiskFM, support for other FM modules coming) (Johan Mazoyer)
+ * GenericData is more feature rich (better saving, automatic wcs generation) (Jason Wang)
  * Minor bug fixes and documentation updates
 
 Version 2.0.1

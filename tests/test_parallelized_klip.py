@@ -25,7 +25,7 @@ import pytest
 
 testdir = os.path.dirname(os.path.abspath(__file__)) + os.path.sep
 
-def test_exmaple_gpi_klip_dataset():
+def test_example_gpi_klip_dataset():
     """
     Tests standard pykip.parallelized.klip_dataset() with GPI data from the tutorial. Uses no spectral template
 
@@ -214,5 +214,5 @@ def test_mock_SDI(mock_klip_parallelized):
 
 
 if __name__ == "__main__":
-    test_exmaple_gpi_klip_dataset()
+    test_example_gpi_klip_dataset()
     #test_adi_gpi_klip_dataset_with_fakes_twice()

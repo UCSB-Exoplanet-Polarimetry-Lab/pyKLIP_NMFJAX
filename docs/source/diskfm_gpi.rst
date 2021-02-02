@@ -76,9 +76,9 @@ To run the forward modelling, just run:
 
 .. code-block:: python
 
-    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
-                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
-                    mode='ADI', annuli=2, subsections=1, minrot=3)
+    fm.klip_dataset(dataset, diskobj, outputdir="output_path/", fileprefix="my_favorite_disk",
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center,
+                    mode='ADI', annuli=1, subsections=1, movement=1)
 
 
 the code will save two fits files in `outputdir`, containing the klipped data and the
@@ -113,9 +113,9 @@ ave the forward model KL basis and parameters:
                     basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
 
 
-    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
-                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
-                    mode='ADI', annuli=2, subsections=1, minrot=3)
+    fm.klip_dataset(dataset, diskobj, outputdir="output_path/", fileprefix="my_favorite_disk",
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center,
+                    mode='ADI', annuli=1, subsections=1, movement=1)
 
 
 Then, in any python session you can create a disk object and you can forward model disks
@@ -147,11 +147,11 @@ Note that even if you have already created a `DiskFM` object to save the FM
 you still need to re-create the `DiskFM` object and load it (*ie*, you still
 need `diskFM` with `load_from_basis = True`).
 
-Finally, the dataset itself (input images) is not saved in the KL basis file. This means
-that if you load the KL basis, you still need to define dataset the exact same way you
-did to measure the KL basis. An error will raise if the dataset is very different
-(not the same PAs, number of images, Wls) but if you use very similar but different
-datasets the code will run but provide wrong forward models.
+In previous version, the dataset itself (input images) were not saved in the .h5 files, only the KL 
+coeficients. This caused problems because you could run the same KL coefficients with slightly different
+datasets (for example the order of the frames were not identical) the code would run but provide wrong forward models.
+This has now beed solved and all the information necessary is saved inside the .h5 file, including
+intial frames and reduction paramters.
 
 
 Speeding up DiskFM
