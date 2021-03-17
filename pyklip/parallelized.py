@@ -475,6 +475,10 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
             ref_psfs_smoothed.append(smoothed_section)
     
         corr_psfs = np.corrcoef(ref_psfs_smoothed)
+        if ref_psfs_mean_sub.shape[0] == 1:
+            # EDGE CASE: if there's only 1 image, we need to reshape the correlation matrix into a 2D matrix
+            corr_psfs = corr_psfs.reshape((1,1))
+            
         # smoothing could have caused some ref images to have all 0s
         # which would give them correlation matrix entries of NaN
         # 0 them out for now.
