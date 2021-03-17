@@ -441,7 +441,10 @@ class GPIData(Data):
             if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio_h[filt_band]
             if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio_h2[filt_band]    
         else:
-            raise AssertionError("Unsupported filt_band/ppm_band combination")
+            if spot_orders[0] == 1: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio[ppm_band]
+            if spot_orders[0] == 2: self.dn_per_contrast = np.tile(np.nanmean(spot_fluxes.reshape(dims[0], dims[1]), axis=0), dims[0]) / GPIData.spot_ratio2[ppm_band]
+
+            print("Warning: Unsupported filt_band/ppm_band combination: {0}/{1}".format(filt_band, ppm_band))
         # self.contrast_scaling = np.tile(contrast_scaling, dims[0])
         self.prihdrs = prihdrs
         self.exthdrs = exthdrs
@@ -1026,8 +1029,8 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
     """
     if not quiet:
         print("Reading File: {0}".format(filepath))
-    hdulist = fits.open(filepath)
-    try:
+
+    with fits.open(filepath) as hdulist:
         #grab the data and headers
         cube = hdulist[1].data
         exthdr = hdulist[1].header
@@ -1036,7 +1039,10 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
         #get some instrument configuration from the primary header
         filt_band = prihdr['IFSFILT'].split('_')[1]
         fpm_band = prihdr['OCCULTER'].split('_')[1]
-        ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+        try:
+            ppm_band = prihdr['APODIZER'].split('_')[1] #to determine sat spot ratios
+        except IndexError:
+            ppm_band = filt_band # not found. defualt to filter
 
         if 'SATSORDR' in exthdr:
             spot_order = int(exthdr['SATSORDR'])
@@ -1086,14 +1092,18 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
                         elif ppm_band == "H":
                             spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio_h[filt_band])
                         else:
-                            raise AssertionError("Unsupported filt_band/ppm_band combination")
+                            # guess that sat spots roughly independent of wavelength
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                            print("Warning: Unsupported filt_band/ppm_band combination: {0}/{1}".format(filt_band, ppm_band))
                     elif spot_order == 2: # Use second order spot ratios
                         if ppm_band == filt_band:
                             spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio2[ppm_band])
                         elif ppm_band == "H":
                             spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio_h2[filt_band])
                         else:
-                            raise AssertionError("Unsupported filt_band/ppm_band combination")
+                            # guess that sat spots roughly independent of wavelength
+                            spot_fluxes.append(float(exthdr['DN2CON{0}'.format(i)])*GPIData.spot_ratio[ppm_band])
+                            print("Warning: Unsupported filt_band/ppm_band combination: {0}/{1}".format(filt_band, ppm_band))
             else:
                 for i in range(channels):
                     #grab sat spot fluxes if they're there
@@ -1193,8 +1203,6 @@ def _gpi_process_file(filepath, skipslices=None, highpass=False,
                 astr_hdrs = [w.deepcopy() for i in range(channels)] #repeat astrom header for each wavelength slice
             except:
                 raise AttributeError("Unrecognized GPI Mode: %{mode}".format(mode=exthdr['CTYPE3']))
-    finally:
-        hdulist.close()
 
     # normalize data to be for a single co-add (e.g. add co-adds together)
     if coadds > 1:
