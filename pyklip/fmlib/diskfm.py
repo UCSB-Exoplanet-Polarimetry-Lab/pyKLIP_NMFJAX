@@ -69,7 +69,8 @@ class DiskFM(NoFM):
                  numbasis,
                  dataset,
                  model_disk,
-                 basis_filename="klip-basis.pkl",
+                 basis_filename="",
+                 kl_basis_file = None,
                  load_from_basis=False,
                  save_basis=False,
                  aligned_center=None,
@@ -138,26 +139,27 @@ class DiskFM(NoFM):
             self.save_basis = False
             save_basis = False
 
-        # Set up global multi-processing dictionaries for saving FM basis
-        global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, aligned_images_dict
-        global section_ind_dict, radstart_dict, radend_dict, phistart_dict
-        global phiend_dict, input_img_num_dict, klparam_dict
+        if self.save_basis is True:  
+            # Set up global multi-processing dictionaries for saving FM basis
+            global klmodes_dict, evecs_dict, evals_dict, ref_psfs_indicies_dict, aligned_images_dict
+            global section_ind_dict, radstart_dict, radend_dict, phistart_dict
+            global phiend_dict, input_img_num_dict, klparam_dict
 
-        manager = mp.Manager()
-        klmodes_dict = manager.dict()
-        evecs_dict = manager.dict()
-        evals_dict = manager.dict()
-        aligned_images_dict = manager.dict()
-        ref_psfs_indicies_dict = manager.dict()
-        section_ind_dict = manager.dict()
+            manager = mp.Manager()
+            klmodes_dict = manager.dict()
+            evecs_dict = manager.dict()
+            evals_dict = manager.dict()
+            aligned_images_dict = manager.dict()
+            ref_psfs_indicies_dict = manager.dict()
+            section_ind_dict = manager.dict()
 
-        radstart_dict = manager.dict()
-        radend_dict = manager.dict()
-        phistart_dict = manager.dict()
-        phiend_dict = manager.dict()
-        input_img_num_dict = manager.dict()
+            radstart_dict = manager.dict()
+            radend_dict = manager.dict()
+            phistart_dict = manager.dict()
+            phiend_dict = manager.dict()
+            input_img_num_dict = manager.dict()
 
-        klparam_dict = manager.dict()
+            klparam_dict = manager.dict()
         # Coords where align_and_scale places model center
 
         if self.load_from_basis is True:  # We want to load the FM basis
@@ -165,7 +167,7 @@ class DiskFM(NoFM):
             # We load the FM basis files, before preparing the model to
             # be sure that the aligned_center is identical to the one used
             # when measuring the KL
-            self.load_basis_files(psf_library=psf_library)
+            self.load_basis_files(psf_library=psf_library, kl_basis_file = kl_basis_file)
 
         else:  # We want to save the basis or just a single disk FM
 
@@ -359,10 +361,8 @@ class DiskFM(NoFM):
                                                        ref_center)
 
             print(err_string)
-            raise ValueError(err_string)
-            # FIXME I cannot raised that error because multiproc
-            # or use in different class so I just print it in case it happens
-
+            raise Exception(err_string)
+        
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
@@ -653,7 +653,7 @@ class DiskFM(NoFM):
                              """ is not a possible extension. Filenames can
                 haves 2 recognizable extension2: .h5 and .pkl""")
 
-    def load_basis_files(self, psf_library=None):
+    def load_basis_files(self, psf_library=None, kl_basis_file =None):
         """
         Loads in previously saved basis files and sets variables for fm_from_eigen
 
@@ -666,7 +666,10 @@ class DiskFM(NoFM):
         Returns:
             None
         """
-        _, file_extension = path.splitext(self.basis_filename)
+        if kl_basis_file is not None:
+            file_extension = ""
+        else:
+            _, file_extension = path.splitext(self.basis_filename)
 
         # Load in file
         if file_extension == ".pkl":
@@ -711,29 +714,31 @@ class DiskFM(NoFM):
 
                 self.klparam_dict = pickle.load(pkl_file)
 
-        if file_extension == ".h5":
-            # saving_in_h5_dict = ddh5.load(self.basis_filename)
-            # path_basish5, name_basish5 = path.split(self.basis_filename)
-            saving_in_h5_dict = _load_dict_from_hdf5(self.basis_filename)
+        else: 
 
-            self.aligned_images_dict = saving_in_h5_dict['aligned_images_dict']
+            if file_extension == ".h5":
+                kl_basis_file = _load_dict_from_hdf5(self.basis_filename)
+            elif file_extension == "":
+                saving_in_h5_dict = kl_basis_file
 
-            self.klmodes_dict = saving_in_h5_dict['klmodes_dict']
-            self.evecs_dict = saving_in_h5_dict['evecs_dict']
-            self.evals_dict = saving_in_h5_dict['evals_dict']
-            self.ref_psfs_indicies_dict = saving_in_h5_dict[
+            self.aligned_images_dict = kl_basis_file['aligned_images_dict']
+
+            self.klmodes_dict = kl_basis_file['klmodes_dict']
+            self.evecs_dict = kl_basis_file['evecs_dict']
+            self.evals_dict = kl_basis_file['evals_dict']
+            self.ref_psfs_indicies_dict = kl_basis_file[
                 'ref_psfs_indicies_dict']
-            self.section_ind_dict = saving_in_h5_dict['section_ind_dict']
+            self.section_ind_dict = kl_basis_file['section_ind_dict']
 
-            self.radstart_dict = saving_in_h5_dict['radstart_dict']
-            self.radend_dict = saving_in_h5_dict['radend_dict']
-            self.phistart_dict = saving_in_h5_dict['phistart_dict']
-            self.phiend_dict = saving_in_h5_dict['phiend_dict']
-            self.input_img_num_dict = saving_in_h5_dict['input_img_num_dict']
+            self.radstart_dict = kl_basis_file['radstart_dict']
+            self.radend_dict = kl_basis_file['radend_dict']
+            self.phistart_dict = kl_basis_file['phistart_dict']
+            self.phiend_dict = kl_basis_file['phiend_dict']
+            self.input_img_num_dict = kl_basis_file['input_img_num_dict']
 
-            self.klparam_dict = saving_in_h5_dict['klparam_dict']
+            self.klparam_dict = kl_basis_file['klparam_dict']
 
-            del saving_in_h5_dict
+            del kl_basis_file
 
         # read key name for each section and image
         self.dict_keys = sorted(self.klmodes_dict.keys())
@@ -801,7 +806,6 @@ class DiskFM(NoFM):
                                     dtype=self.data_type)
 
         wvs = self.wvs
-        original_imgs_shape = self.inputs_shape
 
         if self.isRDI:
             mode = 'RDI'
@@ -812,48 +816,36 @@ class DiskFM(NoFM):
             # impact at this point
 
         for key in self.dict_keys:  # loop pver the sections/images
-            # load KL from the dictionnaries
-            original_KL = self.klmodes_dict[key]
-            evals = self.evals_dict[key]
-            evecs = self.evecs_dict[key]
-            ref_psfs_indicies = self.ref_psfs_indicies_dict[key]
-            section_ind = self.section_ind_dict[key]
 
-            # load zone information from the KL
-            radstart = self.radstart_dict[key]
-            radend = self.radend_dict[key]
-            phistart = self.phistart_dict[key]
-            phiend = self.phiend_dict[key]
             img_num = self.input_img_num_dict[key]
 
             # To have a single identifier for each set of aligned images,
             # we save the wavelenght in nm
             wl_here = wvs[img_num]
             wlstr = 'wl' + str(int(wl_here * 1000)).zfill(4)
-            aligned_imgs_for_this_wl = self.aligned_images_dict[wlstr]
 
-            parang = self.PAs[img_num]
 
-            self.fm_from_eigen(klmodes=original_KL,
-                               evals=evals,
-                               evecs=evecs,
+
+            self.fm_from_eigen(klmodes=self.klmodes_dict[key],
+                               evals=self.evals_dict[key],
+                               evecs=self.evecs_dict[key],
                                input_img_shape=[
-                                   original_imgs_shape[1],
-                                   original_imgs_shape[2]
+                                   self.inputs_shape[1],
+                                   self.inputs_shape[2]
                                ],
                                output_img_shape=self.output_imgs_shape,
                                input_img_num=img_num,
-                               ref_psfs_indicies=ref_psfs_indicies,
-                               section_ind=section_ind,
-                               aligned_imgs=aligned_imgs_for_this_wl,
-                               radstart=radstart,
-                               radend=radend,
-                               phistart=phistart,
-                               phiend=phiend,
+                               ref_psfs_indicies=self.ref_psfs_indicies_dict[key],
+                               section_ind=self.section_ind_dict[key],
+                               aligned_imgs=self.aligned_images_dict[wlstr],
+                               radstart=self.radstart_dict[key],
+                               radend=self.radend_dict[key],
+                               phistart=self.phistart_dict[key],
+                               phiend=self.phiend_dict[key],
                                padding=0.0,
                                IOWA=(self.IWA, self.OWA),
                                ref_center=self.aligned_center,
-                               parang=parang,
+                               parang=self.PAs[img_num],
                                numbasis=self.numbasis,
                                fmout=fmout_np,
                                mode=mode)
