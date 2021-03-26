@@ -27,6 +27,9 @@ except ImportError:
 global parallel
 debug = False
 
+if debug is True:
+    print("You turned on debug mode, so parallelism is off. Code may be slower.")
+
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_library, psf_library_shape):
