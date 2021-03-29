@@ -36,8 +36,8 @@ def make_phony_disk(dim):
     phony_disk = np.zeros((dim, dim))
     PA_rad = 0.4712388980  # 27 deg
 
-    x = np.arange(dim, dtype=np.float)[None, :] - dim // 2
-    y = np.arange(dim, dtype=np.float)[:, None] - dim // 2
+    x = np.arange(dim, dtype=np.float64)[None, :] - dim // 2
+    y = np.arange(dim, dtype=np.float64)[:, None] - dim // 2
 
     x1 = x * np.cos(PA_rad) + y * np.sin(PA_rad)
     y1 = -x * np.sin(PA_rad) + y * np.cos(PA_rad)
@@ -51,7 +51,7 @@ def make_phony_disk(dim):
     return phony_disk
 
 
-def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
+def run_test_diskFM(just_loading=False, nwls=1, annulitest=1):
     """
     Test DiskFM package. Creata Model disk. Create a disk model class.
     Measure and save the KL basis + measure a FM. Load the KL basis.
@@ -61,7 +61,6 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
     Args:
         just_loading: if True we are not measuring the KL basis, just
                         loading it from file
-        ext: type of saving (h5 or pickle)
         nwls: number of wavelength when we collaps the data
 
     Returns:
@@ -102,7 +101,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
             dataset,
             model_convolved,
             basis_filename=os.path.join(diskfm_dir, 
-                                        fileprefix + "_KLbasis" + ext),
+                                        fileprefix + "_KLbasis.h5"),
             save_basis=True,
             aligned_center=[xcen, ycen],
         )
@@ -138,8 +137,8 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         numbasis_here = numbasis
         dataset_here =dataset
     else:
-         dataset_input_shape_here =[1,2,3]
-         numbasis_here = [0]
+         dataset_input_shape_here = None
+         numbasis_here = None
          dataset_here = None
 
     diskobj = DiskFM(
@@ -147,7 +146,7 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
         numbasis_here,
         dataset_here,
         model_convolved,
-        basis_filename=os.path.join(diskfm_dir, fileprefix + "_KLbasis" + ext),
+        basis_filename=os.path.join(diskfm_dir, fileprefix + "_KLbasis.h5"),
         load_from_basis=True,
     )
 
@@ -187,18 +186,16 @@ def run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=1):
 
 
 def test_disk_helper():
-    run_test_diskFM(just_loading=False, ext=".h5", nwls=1, annulitest=2)
-    run_test_diskFM(just_loading=True, ext=".h5", nwls=1, annulitest=2)
-    # run_test_diskFM(just_loading=False, ext=".h5", nwls=2, annulitest=1)
-    # run_test_diskFM(just_loading=True, ext=".h5", nwls=2, annulitest=1)
+    run_test_diskFM(just_loading=False, nwls=1, annulitest=2)
 
-    # run_test_diskFM(just_loading=False, ext=".pkl", nwls=1, annulitest=1)
-    # run_test_diskFM(just_loading=True, ext=".pkl", nwls=1, annulitest=1)
+    run_test_diskFM(just_loading=True, nwls=1, annulitest=2)
+    # run_test_diskFM(just_loading=False,  nwls=2, annulitest=1)
+    # run_test_diskFM(just_loading=True,  nwls=2, annulitest=1)
 
     # # remove the files created by my disk FM test
-    # dirpath = os.path.join(TESTDIR, 'diskfm_dir')
-    # if os.path.exists(dirpath) and os.path.isdir(dirpath):
-    #     shutil.rmtree(dirpath)
+    dirpath = os.path.join(TESTDIR, 'diskfm_dir')
+    if os.path.exists(dirpath) and os.path.isdir(dirpath):
+        shutil.rmtree(dirpath)
 
 
 if __name__ == "__main__":

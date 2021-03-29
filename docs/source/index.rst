@@ -45,7 +45,7 @@ Attribution
 The development of pyKLIP is led by Jason Wang with contributions made by Jonathan Aguilar, JB Ruffio, Rob de Rosa, 
 Schuyler Wolff, Abhijith Rajan, Zack Briesemeister, Kate Follette, Maxwell Millar-Blanchaer, Alexandra Greenbaum, 
 Simon Ko, Tom Esposito, Elijah Spiro, Pauline Arriaga, Bin Ren, Alan Rainot, Arthur Vigan, Johan Mazoyer, Graça Rocha, Jacob Golomb, 
-Jea Adams, and Laurent Pueyo. 
+Jea Adams, Aarynn Carter, and Laurent Pueyo. 
 If you use this code, please cite the Astrophysical Source Code Library record of it (`ASCL <http://ascl.net/1506.001>`_ or
 `ADS <http://adsabs.harvard.edu/abs/2015ascl.soft06001W>`_)
 
@@ -64,18 +64,34 @@ Contents
    
 .. toctree::
    :maxdepth: 2
-   :caption: Tutorials
+   :caption: The Basics
 
    klip_gpi
    instruments/index
    contrast_curves
-   bka
-   planetevidence
-   fm_spect
-   fmmf
-   kpop_gpi
-   diskfm_gpi
    rdi
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Planet Detection
+
+   kpop_gpi
+   fmmf
+   planetevidence
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Characterization
+
+   bka
+   fm_spect
+   diskfm_gpi
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API
+
    developing/index
    pyklip
 

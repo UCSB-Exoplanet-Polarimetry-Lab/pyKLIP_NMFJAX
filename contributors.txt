@@ -38,4 +38,6 @@ Arthur Vigan: Added support for the VLTPF pipeline to the SPHERE interface
 
 Graça Rocha and Jacob Golomb: wrote the PlanetEvidence code 
 
-Jea Adams: Added field dependent correction to fmpsf.py, wrote tests for coronagrpahic throughput, and improved documentation throughout
+Jea Adams: Added field dependent correction to fmpsf.py, wrote tests for coronagrpahic throughput, general improvements and improved documentation throughout
+
+Aarynn Carter: Fixed bugs with running a single science image through RDI.
