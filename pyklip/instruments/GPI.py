@@ -822,8 +822,8 @@ class GPIData(Data):
                     # In order to do so we fit a 2D plane to the stamp after having masked the sat spot (centered disk)
                     stamp_r = np.sqrt((stamp_x-dx-boxw//2)**2+(stamp_y-dy-boxw//2)**2)
                     stamp_masked = copy(stamp)
-                    stamp_x_masked = stamp_x-dx
-                    stamp_y_masked = stamp_y-dy
+                    stamp_x_masked = stamp_x-dx-boxw//2
+                    stamp_y_masked = stamp_y-dy-boxw//2
                     stamp_center = np.where(stamp_r<7)
                     stamp_masked[stamp_center] = np.nan
                     stamp_x_masked[stamp_center] = np.nan
@@ -839,7 +839,7 @@ class GPIData(Data):
                     #Cramer's rule
                     a = (xz*yy-yz*xy)/(xx*yy-xy*xy)
                     b = (xx*yz-xy*xz)/(xx*yy-xy*xy)
-                    stamp = stamp - (a*(stamp_x-dx)+b*(stamp_y-dy) + background_med)
+                    stamp = stamp - (a*(stamp_x-dx-boxw//2)+b*(stamp_y-dy-boxw//2) + background_med)
 
                     if not same_wv_only:
                         # The next section rescale the grid to take into account wavelength widening
