@@ -1,6 +1,6 @@
 
 import os
-import glob # TEMPORARY
+import glob
 import astropy.io.fits as fits
 import astropy
 import scipy
@@ -8,7 +8,7 @@ import numpy as np
 from astropy import wcs
 import math
 from astropy.nddata import Cutout2D
-import matplotlib.pyplot as plt # This can be done here only if you're not using parallelized, which pyklip does use
+#import matplotlib.pyplot as plt # This can be done here only if you're not using parallelized, which pyklip does use
 import timeit
 import pyklip.klip as klip
 import pyklip.parallelized as parallelized
@@ -54,10 +54,7 @@ EXPTIME_RATIO     = 1.3 # PROD. "o6bx32010" FITS file's EXPTIME of 756 divided b
 
 
 
-
-
-
-def GetFileMaskSize ( maskFilename, VL ) :
+def get_file_mask ( maskFilename, VL ) :
     """
         Gets the shape of the mask in the incoming file, according to the FITS file, no processing applied.
         Args             :
@@ -65,32 +62,17 @@ def GetFileMaskSize ( maskFilename, VL ) :
             udh          : Int.    User Determined Height
             udw          : Int.    User Determined Weight
         Returns          : Int, Int. Height and width of the mask
-        GetFileMaskSize() is called from the polling section of GetDataCenterPasFilename()
+        get_file_mask() is called from the polling section of primary_function()
         This is diagnostic for now since there will be a variety of shapes and sizes of masks.
-        Eventually this is folded into the GetMaskFunction()... 
+        Eventually this is folded into the get_mask_function()... 
     """
     filename2       = os.path.basename ( maskFilename )
     directoryPath2  = os.path.dirname  ( maskFilename )
     split2          = os.path.splitext ( os.path.basename ( maskFilename ) )
     maskRootname    = split2[0]
-    #DIAGNOSTICONLY maskFitsPackageData = get_pkg_data_filename ( maskFilename ) # filename is still filelist[0]
-    #DIAGNOSTICONLY fits.info ( maskFitsPackageData )
     maskInput_hdu_0 = fits.open        ( maskFilename )
-    file_Mask    = maskInput_hdu_0[0].data
-#    plt.figure      ( )
-#    plt.imshow      ( file_Mask )
-#    plt.xlim        ( [ 0, maskInput_hdu_0[0].data.shape[1] ] ) 
-#    plt.ylim        ( [ 0, maskInput_hdu_0[0].data.shape[0] ] ) # 109?
-#    plt.title       (
-#                     "TTUSMS 50 file_Mask " +
-#                     maskRootname +
-#                     " native height " + 
-#                     str(maskInput_hdu_0[0].data.shape[0]) + 
-#                     ", width " + str(maskInput_hdu_0[0].data.shape[1]) 
-#                     )
-#                     # plt.colorbar ( )
-                     
-    if VL >= 3 : prntf("stis",20,"TTUSMS file_Mask.shape            : ", file_Mask.shape)
+    file_Mask       = maskInput_hdu_0[0].data
+
     return file_Mask.shape[0], file_Mask.shape[1] # height is 0, width is 1
 
 
@@ -98,12 +80,7 @@ def GetFileMaskSize ( maskFilename, VL ) :
 
 
 
-
-
-
-
-
-def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided ) :
+def get_mask_function ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided ) :
     """
         Counts the effective aperture rows of the incoming mask, which may have dead rows above and below.
         Makes an array of only the effective aperture rows, which form the actual usable mask.
@@ -114,13 +91,10 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
             maskFilename : String. The FITS file name that contains the mask
             dynMask4ple  : ( dynamicMaskOverrideFileMask , maskWidthAtPSFPoint , userAddWidthToWedge , userAddWidthToSpiderLegs )
         Return           : numpy array, of the mask
-        GetMaskFunction() is called from the polling section of GetDataCenterPasFilename()
+        get_mask_function() is called from the polling section of primary_function()
     """
     if VL >= 3 : prntf("stis",20,"GMF dynMask4ple                       : ", dynMask4ple)
     if dynMask4ple [ 0 ] :
-    #    largestWedgeThickInArcseconds = 0.6             # arcseconds
-    #    largestWedgeThickInArcseconds = 1.0             # arcseconds
-#        largestWedgeThickInArcseconds = 2.0             # arcseconds
 
         largestWedgeThickInArcseconds = dynMask4ple [ 1 ]
         largestWedgeThickInPixels     = largestWedgeThickInArcseconds / PLATESCALE
@@ -129,19 +103,8 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
         verticalCenter                    = int ( hch / 2 )
         horizontalCenter                  = int ( wcw / 2 )
         spiderLegWidth                    = 20
-#        spiderLegWidth                    = 2 # If you need reticle-thin spider legs for diag
         spiderLegStartX                   = horizontalCenter -  int ( spiderLegWidth / 2 )
         spiderLegStartY                   = verticalCenter
-#        prntf("stis",20,"GMF hch                           : ", hch)
-#        prntf("stis",20,"GMF wcw                           : ", wcw)
-#        prntf("stis",20,"GMF largestWedgeThickInArcseconds : ", largestWedgeThickInArcseconds)
-#        prntf("stis",20,"GMF largestWedgeThickInPixels     : ", largestWedgeThickInPixels)
-#        prntf("stis",20,"GMF halfLargestWedgeThickInPixels : ", halfLargestWedgeThickInPixels)
-#        prntf("stis",20,"GMF halfLargestWedgeThickAfterMod : ", halfLargestWedgeThickAfterMod)
-#        prntf("stis",20,"GMF verticalCenter                : ", verticalCenter)
-#        prntf("stis",20,"GMF horizontalCenter              : ", horizontalCenter)
-#        prntf("stis",20,"GMF spiderLegStartX               : ", spiderLegStartX)
-#        prntf("stis",20,"GMF runWedgeDecided               : ", runWedgeDecided)
 
         dynamicMask = np.ones ( ( hch, wcw ) )
         dynamicMask [ spiderLegStartY ] [ spiderLegStartX ] = 0
@@ -153,8 +116,6 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
             verticalLimitOfSpiderLegs = math.ceil ( hch / 2 )
         if runWedgeDecided == 'B' :
             verticalLimitOfSpiderLegs = math.ceil ( min ( hch, wcw ) / 2 )
-            #verticalLimitOfSpiderLegs = int ( min ( hch, wcw ) / 2 ) - 10
-#            verticalLimitOfSpiderLegs = int ( min ( hch, wcw ) / 2 )
             prntf("stis",20,"GMF verticalLimitOfSpiderLegs         : ", verticalLimitOfSpiderLegs)
         for row in range ( verticalLimitOfSpiderLegs ) :
             for col in range ( spiderLegWidth + dynMask4ple [ 3 ] ) :
@@ -164,45 +125,27 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
                 dynamicMask [ - spiderLegY - 1 ] [   spiderLegX + col ] = 0        
             spiderLegY = spiderLegY + 1
             spiderLegX = spiderLegX + 1
-       
-#        plt.imshow      ( dynamicMask )
-#        plt.xlim        ( [ 0, dynamicMask.shape[1] ] ) 
-#        plt.ylim        ( [ 0, dynamicMask.shape[0] ] )
-#        plt.title       ("DynamicMask Spider Legs")        
+
         AWEDGESLOPE       = .05 # nominal; has to be tested
 
         # Wedge A
         if runWedgeDecided == 'A' :
             spiderLegX = horizontalCenter
             spiderLegY = spiderLegStartY
-#            prntf("stis",20,"GMF math.ceil ( hch / 2 )           : ", math.ceil ( hch / 2 ))
             for row in range ( math.ceil ( hch / 2 ) ) :
                 wedgeHalfWidthTop = halfLargestWedgeThickInPixels + ( ( spiderLegY + row ) * BWEDGESLOPE ) + dynMask4ple [ 2 ]
-#                prntf("stis",20,"GMF       wedgeHalfWidthTop         : ", wedgeHalfWidthTop)
-#                prntf("stis",20,"GMF int ( wedgeHalfWidthTop )       : ", int ( wedgeHalfWidthTop ))
+
                 for col in range ( int ( wedgeHalfWidthTop ) ) :
-#                    prntf("stis",20,"GMF       spiderLegY + row         : ", spiderLegY + row)
-#                    prntf("stis",20,"GMF       spiderLegX + col         : ", spiderLegX + col)
-#                    prntf("stis",20,"GMF       spiderLegX - col         : ", spiderLegX - col)
-#                    if spiderLegX + col < wcw / 2 :
+
                     dynamicMask [ spiderLegY + row ] [ spiderLegX + col ] = 0
-#                    if spiderLegX - col > 0 :
                     dynamicMask [ spiderLegY + row ] [ spiderLegX - col ] = 0
                 wedgeHalfWidthBottom = halfLargestWedgeThickInPixels + ( ( spiderLegY - row ) * BWEDGESLOPE ) + dynMask4ple [ 2 ]
-#                prntf("stis",20,"GMF       wedgeHalfWidthBottom      : ", wedgeHalfWidthBottom)
-#                prntf("stis",20,"GMF int ( wedgeHalfWidthBottom )    : ", int ( wedgeHalfWidthBottom ))
+
                 for col in range ( int ( wedgeHalfWidthBottom ) ) :
-#                    prntf("stis",20,"GMF       spiderLegY - row         : ", spiderLegY - row)
-#                    prntf("stis",20,"GMF       spiderLegX + col         : ", spiderLegX + col)
-#                    prntf("stis",20,"GMF       spiderLegX - col         : ", spiderLegX - col)
-#                    if spiderLegX + col < wcw / 2 :                    
+                  
                     dynamicMask [ spiderLegY - row ] [ spiderLegX + col ] = 0
-#                    if spiderLegX - col > 0 :
                     dynamicMask [ spiderLegY - row ] [ spiderLegX - col ] = 0
-#            plt.imshow      ( dynamicMask )
-#            plt.xlim        ( [ 0, dynamicMask.shape[1] ] ) 
-#            plt.ylim        ( [ 0, dynamicMask.shape[0] ] )
-#            plt.title       ("Wedge A dynamicMask")    
+  
 
         # Wedge B
         elif runWedgeDecided == 'B' :
@@ -210,26 +153,13 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
             spiderLegY = spiderLegStartY
             for col in range ( math.ceil ( wcw / 2 ) ) :
                 wedgeHalfHeightLeft = halfLargestWedgeThickInPixels + ( ( spiderLegX - col ) * BWEDGESLOPE ) + dynMask4ple [ 2 ]
-#                wedgeHalfHeightLeft = halfLargestWedgeThickInPixels + ( ( spiderLegX - col ) * BWEDGESLOPE )
-#                prntf("stis",20,"GMF       wedgeHalfHeightLeft         : ",       wedgeHalfHeightLeft )
-#                prntf("stis",20,"GMF int ( wedgeHalfHeightLeft  )      : ", int ( wedgeHalfHeightLeft ) )
                 for row in range ( int ( wedgeHalfHeightLeft ) ) : 
                     dynamicMask [ spiderLegY + row ] [ spiderLegX - col ] = 0
                     dynamicMask [ spiderLegY - row ] [ spiderLegX - col ] = 0
                 wedgeHalfHeightRight = halfLargestWedgeThickInPixels + ( ( spiderLegX + col ) * BWEDGESLOPE ) + dynMask4ple [ 2 ]
-#                wedgeHalfHeightRight = halfLargestWedgeThickInPixels + ( ( spiderLegX + col ) * BWEDGESLOPE )
-#                prntf("stis",20,"GMF       wedgeHalfHeightRight        : ",       wedgeHalfHeightRight )
-#                prntf("stis",20,"GMF int ( wedgeHalfHeightRight )      : ", int ( wedgeHalfHeightRight ) , "\n")
                 for row in range ( int ( wedgeHalfHeightRight ) ) : 
                     dynamicMask [ spiderLegY + row ] [ spiderLegX + col ] = 0
                     dynamicMask [ spiderLegY - row ] [ spiderLegX + col ] = 0
-                
-#            plt.imshow      ( dynamicMask )
-#            plt.xlim        ( [ 0, dynamicMask.shape[1] ] ) 
-#            plt.ylim        ( [ 0, dynamicMask.shape[0] ] )
-#            plt.title       ("Wedge B dynamicMask")
-    
-    
     
     if VL >= 3 : prntf("stis",20,"GMF hch                             : ", hch)
     if VL >= 3 : prntf("stis",20,"GMF wcw                             : ", wcw)
@@ -237,22 +167,8 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
     directoryPath2  = os.path.dirname  ( maskFilename )
     split2          = os.path.splitext ( os.path.basename ( maskFilename ) )
     maskRootname    = split2[0]
-    #DIAGNOSTICONLY maskFitsPackageData = get_pkg_data_filename ( maskFilename ) # filename is still filelist[0]
-    #DIAGNOSTICONLY fits.info ( maskFitsPackageData )
     maskInput_hdu_0 = fits.open        ( maskFilename )
     file_Mask    = maskInput_hdu_0[0].data
-#    plt.figure      ( )
-#    plt.imshow      ( file_Mask )
-#    plt.xlim        ( [ 0, maskInput_hdu_0[0].data.shape[1] ] ) 
-#    plt.ylim        ( [ 0, maskInput_hdu_0[0].data.shape[0] ] ) # 109?
-#    plt.title       (
-#                      "GMF 80 file_Mask " +
-#                      maskRootname +
-#                      " native height " + 
-#                      str(maskInput_hdu_0[0].data.shape[0]) + 
-#                      ", width " + str(maskInput_hdu_0[0].data.shape[1]) 
-#                      )
-#    plt.colorbar ( )
 
     if VL >= 3 : prntf("stis",20,"GMF file_Mask.shape                  : ", file_Mask.shape)
     file_MaskEffectiveApertureHeight = 0
@@ -272,14 +188,6 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
     
     if VL >= 3 : prntf("stis",20,"GMF file_MaskEffectiveApertureHeight : ", file_MaskEffectiveApertureHeight)
     
-    # I STILL DO NOT HAVE ANY EVALUATION FOR EFFECTIVE APERTURE WIDTH, WHICH OBTAINS FOR NARROW MEDIUM WIDE.
-    # I STILL DO NOT HAVE ANY EVALUATION FOR EFFECTIVE APERTURE WIDTH, WHICH OBTAINS FOR NARROW MEDIUM WIDE.
-    # IT CANNOT NECESSARILY BE THE CASE THAT THE USER WILL ALWAYS DETERMINE A WIDTH THAT IS LESS THAN THE MASK.
-    # IT MUST BE THE CASE THAT A USER MIGHT DETERMINE A WIDTH GREATER THAN THE MASK WILL ALLOW THROUGH
-    # IN WHICH SCENARIO THE WORST CASE IS A LOSS OF EFFICIENCY BUT NOT AN ABORT.
-    # YOU WOULD LOSE PIXELS OFF THE SIDES AND THEY WOULD GO TO NANs.
-    
-    # DUBIOUS OVERRIDABLE STARTS HERE
     if runWedgeDecided == "A" :
         if maskInput_hdu_0[0].data.shape[0] > hch:
             if VL >= 3 : prntf("stis",20,"GMF if maskInput_hdu_0[0].data.shape[0] > hch:")
@@ -292,9 +200,6 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
             hch                    = maskInput_hdu_0[0].data.shape[0] # Keep this uncommented as the starter default value
             if VL >= 3 : prntf("stis",20,"GMF finalMaskHch                    : ", finalMaskHch)
             if VL >= 3 : prntf("stis",20,"GMF hch                             : ", hch)
-            # Do I NOT need to add x in here?
-            # vvv candidate for LCSize
-    #        size = ( hch, wcw ) # E.g., 110 rows high by 200 columns wide
 
         # This is relevant to mask 401, but not to narrow, median or wide.
         if hch > file_MaskEffectiveApertureHeight : 
@@ -324,17 +229,6 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
     file_Mask                             = maskCutout.data    
     maskInput_hdu_0.close()
 
-#    plt.figure   ( )
-#    plt.imshow   ( file_Mask )
-#    plt.xlim     ( [ 0, wcw ] ) 
-#    plt.ylim     ( [ 0, hch ] ) # 109?
-#    plt.title    ( "GMF 262, maskH " + str(finalMaskSize[0]) + ", maskW " + str(finalMaskSize[1]) + ", " + maskRootname )
-    
-#    plt.figure   ( )
-#    plt.imshow   ( dynamicMask )
-#    plt.xlim     ( [ 0, wcw ] ) 
-#    plt.ylim     ( [ 0, hch ] )
-#    plt.title    ( "GMF 268 dynamicMask" )
     
     if VL >= 3 : prntf("stis",20,"GMF done with GMF")
     if VL >= 3 : print()
@@ -350,23 +244,7 @@ def GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def parallelPollingFrameFunction ( 
+def parallel_polling ( 
                                   frame               ,
                                   iiiIndexPoll        ,
                                   rcImport            ,                                  
@@ -389,29 +267,21 @@ def parallelPollingFrameFunction (
     if VL >= 3 : print()
 #    processID = os.getpid()
     VL = 0 # Default
-    
-#    VL = 3 # Diag ; plus below is diag
-#    time.sleep(iiiIndexPoll * 0.02) # Disable when not testing, else increasing frames means increasingly long wait times...
 
     startCoreCall = time.time()
+
     
-#    # XPR XPR XPR STARTING
-#    import tracemalloc
-#    tracemalloc.start()
-#    # XPR XPR XPR STARTED
-    
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," filename                         : ", filename)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," iiiIndexPoll                     : ", iiiIndexPoll)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," frame[0][0]                      : ", frame[0][0])
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," frame.shape[0]                   : ", frame.shape[0])
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," frame.shape[1]                   : ", frame.shape[1])
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," rcImport                         : ", rcImport)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," approvedFlag                     : ", approvedFlag)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," tvr                              : ", tvr)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," approvedFrameList                : ", approvedFrameList)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," radonFlag                        : ", radonFlag)
-#    prntf("poll",20,iiiIndexPoll," totalApproved     : ", totalApproved)
-#    prntf("poll",20,iiiIndexPoll," totalRejected     : ", totalRejected)
+    if VL >= 3 : 
+        prntf("poll",20,iiiIndexPoll," filename                         : ", filename)
+        prntf("poll",20,iiiIndexPoll," iiiIndexPoll                     : ", iiiIndexPoll)
+        prntf("poll",20,iiiIndexPoll," frame[0][0]                      : ", frame[0][0])
+        prntf("poll",20,iiiIndexPoll," frame.shape[0]                   : ", frame.shape[0])
+        prntf("poll",20,iiiIndexPoll," frame.shape[1]                   : ", frame.shape[1])
+        prntf("poll",20,iiiIndexPoll," rcImport                         : ", rcImport)
+        prntf("poll",20,iiiIndexPoll," approvedFlag                     : ", approvedFlag)
+        prntf("poll",20,iiiIndexPoll," tvr                              : ", tvr)
+        prntf("poll",20,iiiIndexPoll," approvedFrameList                : ", approvedFrameList)
+        prntf("poll",20,iiiIndexPoll," radonFlag                        : ", radonFlag)
 
     if approvedFlag == True and tvr == 0 : # Do NOT add a radonFlag condition here, because approved frames have to operate regardless of whether User wants radonCenter...
         tupleOfFilenameAndIndex = ( filename , iiiIndexPoll )
@@ -433,59 +303,33 @@ def parallelPollingFrameFunction (
     #if HDUList[iiiIndexPoll].header['EXTNAME'] == 'SCI' :
 #    if frame.header['EXTNAME'] == 'SCI' : # I already stripped header info by dropping all SCI frames into an np array.
     # So there is no header to speak of at this level, in this function.
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," udw                              : ", udw)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," udh                              : ", udh)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," wcw                              : ", wcw)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," hch                              : ", hch)
-    
-    # RADON POLLING ON NATIVE UNCROPPED STIS FRAME
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," SIZAXIS1 (Width)                 : ", SIZAXIS1)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," SIZAXIS2 (Height)                : ", SIZAXIS2)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," xStellarPoint                    : ", xStellarPoint)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," yStellarPoint                    : ", yStellarPoint)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," xStellarPoint-(wcw/2)            : ", xStellarPoint-(wcw/2))
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," xStellarPoint+(wcw/2)            : ", xStellarPoint+(wcw/2))
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," yStellarPoint-hch/2              : ", yStellarPoint-hch/2)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," yStellarPoint+hch/2              : ", yStellarPoint+hch/2)
+    if VL >= 3 : 
+        prntf("poll",20,iiiIndexPoll," udw                              : ", udw)
+        prntf("poll",20,iiiIndexPoll," udh                              : ", udh)
+        prntf("poll",20,iiiIndexPoll," wcw                              : ", wcw)
+        prntf("poll",20,iiiIndexPoll," hch                              : ", hch)
+        prntf("poll",20,iiiIndexPoll," SIZAXIS1 (Width)                 : ", SIZAXIS1)
+        prntf("poll",20,iiiIndexPoll," SIZAXIS2 (Height)                : ", SIZAXIS2)
+        prntf("poll",20,iiiIndexPoll," xStellarPoint                    : ", xStellarPoint)
+        prntf("poll",20,iiiIndexPoll," yStellarPoint                    : ", yStellarPoint)
+        prntf("poll",20,iiiIndexPoll," xStellarPoint-(wcw/2)            : ", xStellarPoint-(wcw/2))
+        prntf("poll",20,iiiIndexPoll," xStellarPoint+(wcw/2)            : ", xStellarPoint+(wcw/2))
+        prntf("poll",20,iiiIndexPoll," yStellarPoint-hch/2              : ", yStellarPoint-hch/2)
+        prntf("poll",20,iiiIndexPoll," yStellarPoint+hch/2              : ", yStellarPoint+hch/2)
     
     radon_wdw = SIZAXIS2 / 2 # radon_window ; Recommended approach per specs.
     if VL >= 3 : prntf("poll",20,iiiIndexPoll," radon_wdw                        : ", radon_wdw)
-    # Don't bother with the below approach. IT runs to completion but the asymmetry is worse than with the regular magnitude of this value (one half height)
-#    radon_wdw = ( SIZAXIS2 / 2 ) * pow ( 2.0 , 0.5 ) # radon_window ; Recommended approach per specs.
-#    if VL >= 3 : prntf("poll",20,iiiIndexPoll," radon_wdw                        : ", radon_wdw)
     
     smooth       = 1
     stisPosition = ( xStellarPoint , yStellarPoint )    
     rcPosition   = ( xStellarPoint , yStellarPoint ) # Leave as default in background.
-#    rcPosition   = rcImport # We are testing this <<<
-    if VL >= 0 : prntf("poll",20,iiiIndexPoll," rcPosition                       : ", rcPosition)
+    if VL >= 3 : prntf("poll",20,iiiIndexPoll," rcPosition                       : ", rcPosition)
     if radonFlag :
         if VL >= 3 : 
             for i in range(5) : prntf("poll",20,iiiIndexPoll," tvr ", tvr, "RC DETERMINATION")
         
-#                        radon_wdw    = wcw / 2
-#                        if VL >= 3 : prntf("poll",20,iiiIndexPoll," radon_wdw : ", radon_wdw)  
-#                        smooth       = 1
         if VL >= 3 : prntf("poll",20,iiiIndexPoll," APPROVED tupleOfFilenameAndIndex : ", tupleOfFilenameAndIndex)
-#        import matplotlib.pyplot as plt # BEWARE OF PROBLEMS WITH PARALLELIZED
-#        plt.figure   ( )
-#        plt.imshow   ( frame.data )
-        #                        plt.xlim     ( [ 0, wcw*2 ] ) 
-        #                        plt.ylim     ( [ 0, hch*2 ] )
-#        plt.xlim     ( [ xStellarPoint-(wcw/2), xStellarPoint+(wcw/2)] ) 
-#        plt.ylim     ( [ yStellarPoint-hch/2, yStellarPoint+hch/2 ] )
-#        import radonCenter
-#        (x_cen, y_cen) = radonCenter.searchCenter(image, x_ctr_assign, y_ctr_assign, size_window = image.shape[0]/2)        
-# sketch up a modified frame to send to radonCenter
-# Every pixel needs to be amplified as a function of distance from the point (xSTellarPoint, yStellarPoint)
-# The amp is the function of radius ^ somePower
-# somePower will be empirical XPR.
-# Start honking obvious to know you have something
-# Then back it down to somePower = 1.05 and start up from there
-# Can this be done without a loop?
-# I think not. Frame.data does not know individual positions inside itself, and so has not way to think in terms of pythagorean theorem inside itself.
-# So new frame of zeros at same size as frame
-# plframe = powerlawframe
+
         somePower = 1.1
         plframe = np.zeros(frame.shape)
         rowIndex = 0
@@ -505,10 +349,10 @@ def parallelPollingFrameFunction (
         if VL >= 5 : prntf("poll",20,iiiIndexPoll," frame : ", frame)
         if VL >= 5 : prntf("poll",20,iiiIndexPoll," plframe : ", plframe)
 #        if VL >= 0 : prntf("poll",20,iiiIndexPoll," USING FRAME")
-        if VL >= 0 : prntf("poll",20,iiiIndexPoll," USING PLFRAME and somePower = ", somePower)
+        if VL >= 3 : prntf("poll",20,iiiIndexPoll," USING PLFRAME and somePower = ", somePower)
         rcPosition = radonCenter.searchCenter ( 
-#                                           frame.data                            , # watch out for this.
-                                           plframe.data                               ,
+                                           frame.data                            , # watch out for this.
+#                                           plframe.data                               ,
                                            xStellarPoint                         , # x
                                            yStellarPoint                         , # y
                                            size_window            = radon_wdw    , #,
@@ -517,18 +361,19 @@ def parallelPollingFrameFunction (
                                            M                      = 0.8          , 
                                            smooth                 = smooth
                                            )
-        if VL >= 0 : prntf("poll",20,iiiIndexPoll," rcPosition       after radCent   : ", rcPosition)
+        if VL >= 3 : prntf("poll",20,iiiIndexPoll," rcPosition       after radCent   : ", rcPosition)
         
     difference = rcPosition[1] - SIZAXIS2 / 2
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," difference       after radCent   : ", difference)
     doubleDifference = difference * 2
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," doubleDifference after radCent   : ", doubleDifference)
     doubleDiffInt = int(doubleDifference)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," doubleDiffInt    after radCent   : ", doubleDiffInt)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," wcw                              : ", wcw)
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," hch                              : ", hch)
+    if VL >= 3 : 
+        prntf("poll",20,iiiIndexPoll," difference       after radCent   : ", difference)
+        prntf("poll",20,iiiIndexPoll," doubleDifference after radCent   : ", doubleDifference)
+        prntf("poll",20,iiiIndexPoll," doubleDiffInt    after radCent   : ", doubleDiffInt)
+        prntf("poll",20,iiiIndexPoll," wcw                              : ", wcw)
+        prntf("poll",20,iiiIndexPoll," hch                              : ", hch)
+        prntf("poll",20,iiiIndexPoll," int ( rcPosition [0] ) * 2 : ", int ( rcPosition [0] ) * 2)
 
-    if VL >= 3 : prntf("poll",20,iiiIndexPoll," int ( rcPosition [0] ) * 2 : ", int ( rcPosition [0] ) * 2)
     if rcPosition [0] < SIZAXIS1 / 2 :
         if wcw > int ( rcPosition [0] ) * 2 : # At present, this assumes left side of CCD
             wcw = int ( rcPosition [0] ) * 2
@@ -551,8 +396,6 @@ def parallelPollingFrameFunction (
 
     if VL >= 3 : prntf("poll",20,iiiIndexPoll," wcw              after radCent   : ", wcw)
     if VL >= 3 : prntf("poll",20,iiiIndexPoll," hch              after radCent   : ", hch)
-
-    # I can have it send back frameTuple asynchronously and sort it later.
     
     filenameIndexTuple = ( filename , iiiIndexPoll )  
     frameTuple         = (filenameIndexTuple , stisPosition , rcPosition)
@@ -564,22 +407,8 @@ def parallelPollingFrameFunction (
 
     if VL >= 3 : print()
 
-#    current = 0.0
-#    peak = 0.0
-#    # XPR XPR XPR CONCLUDING
-#    current, peak = tracemalloc.get_traced_memory()
-#    tracemalloc.stop()
-#    # XPR XPR XPR CONCLUDED
-    
     endCoreCall = time.time()
-    
-    # YES BYTES
-#    stringToPrint = str ( iiiIndexPoll ) + " " + filename + " " + str ( iiiIndexPoll ) + " " + str ( '%.8f'% ( startCoreCall % 100 ) ) + " " + str ( '%.8f'% ( endCoreCall % 100 ) ) + " " + str ( '%.8f'% ( endCoreCall - startCoreCall ) ) + " current : " + str ( current ) + " B ;  peak : " + str ( peak ) + " B"
 
-    # NO BYTES
-#    stringToPrint = str ( iiiIndexPoll ) + " " + filename + " " + str ( iiiIndexPoll ) + " " + str ( '%.8f'% ( startCoreCall % 100 ) ) + " " + str ( '%.8f'% ( endCoreCall % 100 ) ) + " " + str ( '%.8f'% ( endCoreCall - startCoreCall ) )
-#    
-#    prntf("poll",20,stringToPrint)
     return frameTuple , 1 , 0 , wcw, hch # If it got this far, it was accepted. 1, 0 means 1 accepted 0 rejected. 
 
 
@@ -587,25 +416,7 @@ def parallelPollingFrameFunction (
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-def parallelImplementationFunction (
+def parallel_implementation (
                                      timerIndex        , # distinct from the iiiIndexPoll, which is keyed off STIS ImageHDU Index 
                                      implRecord        , 
                                      VL                ,
@@ -619,49 +430,19 @@ def parallelImplementationFunction (
 #    processID = os.getpid()
     VL = 0 # Default
     
-#    VL = 3 # Diag ; plus below is diag
-#    time.sleep(timerIndex * 0.02) # Disable when not testing, else increasing frames means increasinly long wait times...
-    
-    startCoreCall = time.time()
-    
-    
-#    if VL >= 3 : prntf("imp2",20,timerIndex,"implRecord      : \n{{{", implRecord , "}}}\n")
-#    for record in implRecord : 
-#        if VL >= 3 : prntf("imp2",20,timerIndex,"record      : \n{{{", record , "}}}\n")
-    if VL >= 0 : prntf("imp2",20,timerIndex," implRecord[0]      : \n{{{", implRecord[0] , "}}}\n") # SCI
-#    if VL >= 3 : prntf("imp2",20,timerIndex," implRecord[1]      : \n{{{", implRecord[1] , "}}}\n") # ERR
-#    if VL >= 3 : prntf("imp2",20,timerIndex," implRecord[2]      : \n{{{", implRecord[2] , "}}}\n") # DQ 
-    if VL >= 0 : prntf("imp2",20,timerIndex," implRecord[3]      : ", implRecord[3]) # centers
-#    if VL >= 3 : prntf("imp2",20,timerIndex," implRecord[4]      : \n{{{", implRecord[4] , "}}}\n") # WCS
-#    if VL >= 3 : prntf("imp2",20,timerIndex," implRecord[5]      : \n{{{", implRecord[5] , "}}}\n") # CCDGAIN    
-#    if VL >= 3 : prntf("imp2",20,timerIndex," VL                : ", VL )
-#    if VL >= 3 : prntf("imp2",20,timerIndex," DQmax             : ", DQmax )
-#    if VL >= 3 : prntf("imp2",20,timerIndex," yesApplyMaskFlag  : ", yesApplyMaskFlag )
-#    if VL >= 3 : prntf("imp2",20,timerIndex," divertMaskFlag    : ", divertMaskFlag )
-#    if VL >= 3 : prntf("imp2",20,timerIndex," maskToBeUsed      : \n{{{", maskToBeUsed, "}}}\n" )
-    if VL >= 0 : prntf("imp2",20,timerIndex," Cutout2DSize      : ", Cutout2DSize )
-    if VL >= 0 : prntf("imp2",20,timerIndex," implRecord[0].shape : ", implRecord[0].shape )
-    implRecordShape = implRecord[0].shape
-    if VL >= 0 : prntf("imp2",20,timerIndex," implRecordShape : ", implRecordShape )
-    verticalOffset = implRecordShape[0] / 2 - implRecord[3][1]
-    if VL >= 0 : prntf("imp2",20,timerIndex," verticalOffset : ", verticalOffset )
+    startCoreCall    = time.time()
+    implRecordShape  = implRecord[0].shape
+    verticalOffset   = implRecordShape[0] / 2 - implRecord[3][1]
     horizontalOffset = implRecordShape[1] / 2 - implRecord[3][0]
-    if VL >= 0 : prntf("imp2",20,timerIndex," horizontalOffset : ", horizontalOffset )
-    
-#xprSCI = scipy.ndimage.shift(implRecord[0], np.array([1,2])) 
-# shifts by ONE row  to the bottom, leaving ONE row  of 0 on the top...
-# shifts by TWO cols to the right , leaving TWO cols of 0 on the left
-#    xprSCI = scipy.ndimage.shift (
-#                                  implRecord[0],
-#                                  np.array  (
-#                                             [ verticalOffset
-#                                              implRecord[0].shape[0] - implRecord[3][1],
-#                                              implRecord[3][0]
-#                                              ]
-#                                             )
-#                                 )
-                                 
-#    prntf("imp2",20,timerIndex," xprSCI      : \n{{{", xprSCI , "}}}\n") # SCI
+
+    if VL >= 3 : 
+        prntf("imp2",20,timerIndex," implRecord[0]       : \n{{{", implRecord[0] , "}}}\n") # SCI
+        prntf("imp2",20,timerIndex," implRecord[3]       : ", implRecord[3]) # centers
+        prntf("imp2",20,timerIndex," Cutout2DSize        : ", Cutout2DSize )
+        prntf("imp2",20,timerIndex," implRecord[0].shape : ", implRecord[0].shape )
+        prntf("imp2",20,timerIndex," implRecordShape     : ", implRecordShape )
+        prntf("imp2",20,timerIndex," verticalOffset      : ", verticalOffset )
+        prntf("imp2",20,timerIndex," horizontalOffset    : ", horizontalOffset )
     
     SCIcutout           = Cutout2D     ( 
                                         implRecord[0]            , # SCI
@@ -687,54 +468,20 @@ def parallelImplementationFunction (
             if DQcutout.data [jjjRowIndex][iiiColIndex] > DQmax:
                 SCIcutout.data [jjjRowIndex][iiiColIndex] = np.nan
                 ERRcutout.data [jjjRowIndex][iiiColIndex] = np.nan
-#                continue # Not certain why this is here
 
-#    for jjjRowIndex in range ( len ( SCIcutout.data ) ) :
-#        for iiiColIndex in range ( len ( SCIcutout.data [ jjjRowIndex ] ) ) :
-            
-#            if   math.isnan ( SCIcutout.data[jjjRowIndex][iiiColIndex] ) == True: 
-#                continue
-#            
-#            el
-#            if   implRecord[5] == 4 and SCIcutout.data [jjjRowIndex][iiiColIndex] >  130000:
             if   implRecord[5] == 4 and SCIcutout.data [jjjRowIndex][iiiColIndex] >  130000 / 4 :
                 SCIcutout.data [jjjRowIndex][iiiColIndex] = np.nan
                 ERRcutout.data [jjjRowIndex][iiiColIndex] = np.nan
-                    
-#            elif CCDGAIN == 4 and HDUList[iiiIndex].data [jjjRowIndex][iiiColIndex] <= 130000 / 4:
-#                SCIcutout.data [jjjRowIndex][iiiColIndex] = SCIcutout.data [jjjRowIndex][iiiColIndex]
                     
             elif implRecord[5] == 1 and SCIcutout.data [jjjRowIndex][iiiColIndex] >   33000:
                 SCIcutout.data [jjjRowIndex][iiiColIndex] = np.nan
                 ERRcutout.data [jjjRowIndex][iiiColIndex] = np.nan
             
-#            elif implRecord[5] == 1 and SCIcutout.data [jjjRowIndex][iiiColIndex] <=  33000:
-#            #SCIcutout.data [jjjRowIndex][iiiColIndex] = SCIcutout.data [jjjRowIndex][iiiColIndex] / 4
-#                SCIcutout.data [jjjRowIndex][iiiColIndex] = SCIcutout.data [jjjRowIndex][iiiColIndex] / 4
-
-
-    
-#    for jjjRowIndex in range ( len ( SCIcutout.data ) ) :            
-#        for iiiColIndex in range ( len ( SCIcutout.data [ jjjRowIndex ] ) ) :
             if yesApplyMaskFlag == True and  divertMaskFlag == False :
-
-#                if    math.isnan ( SCIcutout.data[jjjRowIndex][iiiColIndex] ) == True: 
-#                    continue
-#                
-#                el
+                
                 if  maskToBeUsed[jjjRowIndex][iiiColIndex] == 0 :
                     SCIcutout.data [jjjRowIndex][iiiColIndex] = np.nan
                     ERRcutout.data [jjjRowIndex][iiiColIndex] = np.nan
-                
-#                elif  maskToBeUsed[jjjRowIndex][iiiColIndex] == 1 :
-#                    SCIcutout.data [jjjRowIndex][iiiColIndex] = SCIcutout.data [jjjRowIndex][iiiColIndex] # commentable
-#                    continue                                                                                      # commentable
-
-    
-    
-    #app_SCI_img = implRecord [ 0 ]
-    #app_ERR_img = implRecord [ 1 ]
-    #center      = implRecord [ 3 ]
     
     app_SCI_img = SCIcutout.data
     app_ERR_img = ERRcutout.data
@@ -746,36 +493,7 @@ def parallelImplementationFunction (
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# xpr_input_SCI, xpr_centers       = GetDataCenterPasFilename ( trgListRefList ) # Kind of what I'm after...?
-    #def GetDataCenterPasFilename ( trgListRefList ):
-# AKA 'main' or 'input' function
-def GetDataCenterPasFilename ( 
+def primary_function ( 
                                 config                                  ,
                                 udw                                     , # x dimension listed first
                                 udh                                     , # y 
@@ -834,63 +552,41 @@ def GetDataCenterPasFilename (
                                             Each tuple holding string filename, int ImageHDU index, float stddev
     """
     tvr = -1
-    if VL >= 3 : prntf("stis",20," ",tvr," ","VL                               : ", VL)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple                      : ", dynMask4ple)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","fileMaskWedgeCode                : ", fileMaskWedgeCode)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","runWedgeDecided                  : ", runWedgeDecided)
-    
-    
-#    approvedpath = config.get ("paths", "approvedpath")
-    
-    
-    if VL >= 3 : prntf("stis",20," ",tvr," ","outputFolder                     : ", outputFolder)
-    approvedpath = outputFolder
-    
-    if VL >= 3 : prntf("stis",20," ",tvr," ","yesApplyMaskFlag                 : ", yesApplyMaskFlag)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","divertMaskFlag                   : ", divertMaskFlag)
+    if VL >= 3 : 
+        prntf("stis",20," ",tvr," ","VL                               : ", VL)
+        prntf("stis",20," ",tvr," ","dynMask4ple                      : ", dynMask4ple)
+        prntf("stis",20," ",tvr," ","fileMaskWedgeCode                : ", fileMaskWedgeCode)
+        prntf("stis",20," ",tvr," ","runWedgeDecided                  : ", runWedgeDecided)
+        prntf("stis",20," ",tvr," ","outputFolder                     : ", outputFolder)
+        prntf("stis",20," ",tvr," ","yesApplyMaskFlag                 : ", yesApplyMaskFlag)
+        prntf("stis",20," ",tvr," ","divertMaskFlag                   : ", divertMaskFlag)
     #   G E T   L I S T   O F   P R E - A P P R O V E D   F R A M E S
     #   G E T   L I S T   O F   P R E - A P P R O V E D   F R A M E S
-    incomingApprovedFrameList                   = [] # this is where I want to go. More optimized.   
-    approvedFrameList                           = []
-#    home                       = os.path.expanduser ( "~" )
-#    approvedpath               = home + "/Hubble/STIS/approvedFrameFolder/"
-    approvedFrameFilename      = "*"
-    approvedFrameFile          = glob.glob ( approvedpath + approvedFrameFilename )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","len(approvedFrameFile)           : ", len(approvedFrameFile))
-    if VL >= 3 : prntf("stis",20," ",tvr," ","approvedFrameFile                : ", approvedFrameFile)
-    for eachFile in approvedFrameFile:
-        if "__atf__" in eachFile:
-            approvedTargetFrameFile = eachFile 
-
-    
-    # This deletes a file I want after it is created, rather than, 
-    # delete a file I do not want to prepare the folder for the file I want    
-#    if approvedFlag == False :
-#        if len ( approvedFrameFile ) > 0 :
-#            if VL >= 1 : prntf("stis",20," ",tvr," ","A pre-existing file in /Hubble/STIS/approvedFrameFolder/ is being deleted")
-#            os.remove ( approvedFrameFile[0] )
+    incomingApprovedFrameList  = []   
+    approvedFrameList          = []
+    globFilesname              = "*"
+    globFilesList              = glob.glob ( outputFolder + globFilesname )
+    if VL >= 3 : prntf("stis",20," ",tvr," ","len(globFilesList)           : ", len(globFilesList))
+    if VL >= 3 : prntf("stis",20," ",tvr," ","globFilesList                : ", globFilesList)
+    for globbedFile in globFilesList:
+        if "__atf__" in globbedFile:
+            approvedTargetFrameFile = globbedFile 
     
     if approvedFlag == True : # change this to " if (passed in parameter filename) not None : "         
-#        if len ( approvedFrameFile ) == 0 :
         if len ( approvedTargetFrameFile ) == 0 :            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","Make sure there is a file with approved frames in /Hubble/STIS/approvedFrameFolder/ ")
-        #raise ValueError("len ( approvedFrameFile ) == 0")
+            if VL >= 3 : prntf("stis",20," ",tvr," ","Make sure there is a file with approved frames")
             raise ValueError("len ( approvedTargetFrameFile ) == 0")
-#        if approvedFrameFile is None :
         if approvedTargetFrameFile is None :            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","Make sure there is a file with approved frames in /Hubble/STIS/approvedFrameFolder/ ")            
-            raise ValueError("if approvedFrameFile is None")
+            if VL >= 3 : prntf("stis",20," ",tvr," ","Make sure there is a file with approved frames")            
+            raise ValueError("if globFilesList is None")
 
-        if VL >= 3 : prntf("stis",20," ",tvr," ","approvedFrameFile[0] : ", approvedFrameFile[0])
+        if VL >= 3 : prntf("stis",20," ",tvr," ","globFilesList[0] : ", globFilesList[0])
         if VL >= 3 : prntf("stis",20," ",tvr," ","approvedTargetFrameFile : ", approvedTargetFrameFile)
         justFilenamesList          = []
-#        with open ( approvedFrameFile[0] ) as openApprovedFrameFile :
         with open ( approvedTargetFrameFile ) as openApprovedFrameFile :            
             for record in openApprovedFrameFile  :
-                if record == "\n" : continue # the User should be allowed to separate groups of tuples with spaces
-                #prntf("stis",20," ",tvr," ","record: ", record) # still has newline at end
+                if record == "\n" : continue # you can separate groups of tuples with spaces
                 record             = record.strip() #remove newline at the end
-                #prntf("stis",20," ",tvr," ","record: ", record) # no longer has newline at end
                 record             = record.replace("'","")
                 record             = record.replace("[","")
                 record             = record.replace("]","")
@@ -899,12 +595,8 @@ def GetDataCenterPasFilename (
                 tupleOfFilenameAndIndex             = ( tokenizeAtComma[0], int ( tokenizeAtComma[1] ) )
                 incomingApprovedFrameList.append ( tupleOfFilenameAndIndex )        
 
-                # OPTIONALLY REMOVE THIS: IF A FILE HAS SO FEW FRAMES THAT IT IS AT RISK OF NOT BEING INCLUDED IN THE TOP STDDEV SORT,
-                # THEN, LOGICALLY, IT HAS SO FEW FRAMES THAT THIS LEVEL OF PROCESSING IS NOT JUSTIFIED
-                # JUST RUN THE FEW FRAMES, EVEN IF ULTIMATELY THE FILE ITSELF IS NOT GOING TO BE APPROVED FOR REAL PROCESSING
-                # AND ON THE OTHER HAND, IF YOU END UP INTAKING HUNDREDS OF FILES, THEN YES, THE CHANCE EXISTS THAT YOU'LL DROP ENTIRE FILES
                 justFilenamesList.append ( tokenizeAtComma[0] )
-        uniqueFilenamesList             = list ( set ( justFilenamesList ) ) # Boil duplicate filenames down to unique filenames
+        uniqueFilenamesList             = list ( set ( justFilenamesList ) ) # reduce to  unique filenames
         justFilenamesList.clear()
         uniqueFilenamesList.sort()
         if VL >= 1 : prntf("stis",20," ",tvr," ","uniqueFilenamesList            : ", uniqueFilenamesList)
@@ -919,23 +611,15 @@ def GetDataCenterPasFilename (
     if VL >= 3 : 
         prntf("stis",20," ",tvr," ","END OF if approvedFlag == True :")
     
-
-    # The idea behind the hch and wcw assignment here is that :
-    # 1. IF the User wants a large amount of data that will prove to be more than can be acquired
-    #    because of one of the component frames limiting the data,
-    #    THEN that User is going to get only as much as the highest common height and widest common width (largest common size) are going to allow
-    # 2. ELSE IF User wants a smaller amount of data than the available data could support, 
-    #    because the User wants fewer rows than the highest common height or wants fewer columns than the widest column width, 
-    #    THEN that User is going to get only as much as they asked for, even though they could have asked for more
-    # "hch" originated as "cdoh" 'Cutout2D (determined) Obligated Height', to complement the 'User Determined (optional) Height'; "cdow", etc.
     hch = udh 
     wcw = udw
-    if VL >= 3 : prntf("stis",20," ",tvr," ","udh                              : ", udh)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","udw                              : ", udw)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","hch                              : ", hch)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                              : ", wcw) # for now, until we see what the highest height is
-    if VL >= 3 : prntf("stis",20," ",tvr," ","sizeMax                          : ", sizeMax)    
-    if VL >= 3 : prntf("stis",20," ",tvr," ","DQmax                            : ", DQmax)
+    if VL >= 3 : 
+        prntf("stis",20," ",tvr," ","udh                              : ", udh)
+        prntf("stis",20," ",tvr," ","udw                              : ", udw)
+        prntf("stis",20," ",tvr," ","hch                              : ", hch)
+        prntf("stis",20," ",tvr," ","wcw                              : ", wcw)
+        prntf("stis",20," ",tvr," ","sizeMax                          : ", sizeMax)    
+        prntf("stis",20," ",tvr," ","DQmax                            : ", DQmax)
     
     radCentTotalTimeCost     = 0    
     input_numExposures       = 0 
@@ -948,7 +632,7 @@ def GetDataCenterPasFilename (
     if yesApplyMaskFlag == True :
         
         # This is obviated by the newer code below. It harms nothing hanging out for now. 
-        udh, udw = GetFileMaskSize ( maskFilename, VL )
+        udh, udw = get_file_mask ( maskFilename, VL )
         if VL >= 3 : prntf("stis",20," ",tvr," ","udh                              : ", udh)
         if VL >= 3 : prntf("stis",20," ",tvr," ","udw                              : ", udw)
         # If radonCenter is involved, remove the choice from the User to determine limiting size
@@ -959,7 +643,7 @@ def GetDataCenterPasFilename (
         
         
         # NEW CODE BELOW
-        maskHeight, maskWidth = GetFileMaskSize ( maskFilename, VL )
+        maskHeight, maskWidth = get_file_mask ( maskFilename, VL )
         if VL >= 3 : prntf("stis",20," ",tvr," ","maskHeight                       : ", maskHeight)
         if VL >= 3 : prntf("stis",20," ",tvr," ","maskWidth                        : ", maskWidth )
         # If radonCenter is involved, remove the choice from the User to determine limiting size
@@ -969,27 +653,17 @@ def GetDataCenterPasFilename (
                 udh = hch = maskHeight
             if wcw < maskWidth :
                 udw = wcw = maskWidth       
-        
-##            hch = udh
-##            wcw = udw
-#        if radonFlag and not divertMaskFlag :
-#            if hch < maskHeight :
-#                udh = hch = maskHeight
-#            if wcw < maskWidth :
-#                udw = wcw = maskWidth   
 
-    if VL >= 3 : prntf("stis",20," ",tvr," ","maskHeight                       : ", maskHeight)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","maskWidth                        : ", maskWidth )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","udh                              : ", udh)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","udw                              : ", udw       )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","hch                              : ", hch)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                              : ", wcw       ) # for now, until we see what the highest height is
+    if VL >= 3 : 
+        prntf("stis",20," ",tvr," ","maskHeight                       : ", maskHeight)
+        prntf("stis",20," ",tvr," ","maskWidth                        : ", maskWidth )
+        prntf("stis",20," ",tvr," ","udh                              : ", udh)
+        prntf("stis",20," ",tvr," ","udw                              : ", udw       )
+        prntf("stis",20," ",tvr," ","hch                              : ", hch)
+        prntf("stis",20," ",tvr," ","wcw                              : ", wcw       )
     
     if VL >= 1 : 
         for i in range(2) : 
-            prntf("stis",20," ",tvr," ","P O L L   F O R   H C H   A N D   W C W")
-    if VL >= 3 : 
-        for i in range(10) : 
             prntf("stis",20," ",tvr," ","P O L L   F O R   H C H   A N D   W C W")
         
     input_centers_trgref2        = [[],[]] # empty list    
@@ -1000,8 +674,6 @@ def GetDataCenterPasFilename (
     filenameList                 = []
     frameTupleList_trgref[0].clear() # The LIST that holds TARGET    frame records 
     frameTupleList_trgref[1].clear() # The LIST that holds REFERENCE frame records
-
-    # frameTupleList_trgref
 
     tvr                                = 0
     runTrgHalfWedgePixels              = 0
@@ -1029,12 +701,8 @@ def GetDataCenterPasFilename (
     for filelist in userTrgListRefList :
         if useRefandTrgFlag == False and filelist == userTrgListRefList[1] : # For when pyklip requires ONLY target frames
             continue
-#        if VL >= 3 : print()
-#        if VL >= 3 : print()
         if VL >= 1 : 
             for i in range(2) : prntf("stis",20," ",tvr," ","tvr polling loop tvr polling loop tvr polling loop tvr polling loop : ", tvr)
-        if VL >= 3 : 
-            for i in range(8) : prntf("stis",20," ",tvr," ","tvr polling loop tvr polling loop tvr polling loop tvr polling loop : ", tvr)
 
         totalApproved = 0 # This is on the basis of target frames approved OR reference frames approved ; it does not keep count of both (degenerate)
         totalRejected = 0 # This is on the basis of target frames rejected OR reference frames rejected ; it does not keep count of both (degenerate)
@@ -1067,25 +735,24 @@ def GetDataCenterPasFilename (
             refHalfWedgeArcsecs    = 0
             refHalfWedgePixels     = 0
             
-            if VL >= 3 : prntf("stis",20," ",tvr," ","tvr                              : ", tvr)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","dnfn                             : ", dnfn)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","fileMaskWedgeCode                : ", fileMaskWedgeCode)
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","PROPAPER                         : ", PROPAPER)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","SUBARRAY                         : ", SUBARRAY)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","POSTARG1                         : ", POSTARG1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","POSTARG2                         : ", POSTARG2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CENTERA1                         : ", CENTERA1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CENTERA2                         : ", CENTERA2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","SIZAXIS1                         : ", SIZAXIS1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","SIZAXIS2                         : ", SIZAXIS2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CRPIX1                           : ", CRPIX1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CRPIX2                           : ", CRPIX2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","LTV1                             : ", LTV1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","AWEDGESLOPE                      : ", AWEDGESLOPE)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","BWEDGESLOPE                      : ", BWEDGESLOPE)
-            if VL >= 3 : print()
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","tvr                              : ", tvr)
+                prntf("stis",20," ",tvr," ","dnfn                             : ", dnfn)
+                prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
+                prntf("stis",20," ",tvr," ","fileMaskWedgeCode                : ", fileMaskWedgeCode)
+                prntf("stis",20," ",tvr," ","PROPAPER                         : ", PROPAPER)
+                prntf("stis",20," ",tvr," ","SUBARRAY                         : ", SUBARRAY)
+                prntf("stis",20," ",tvr," ","POSTARG1                         : ", POSTARG1)
+                prntf("stis",20," ",tvr," ","POSTARG2                         : ", POSTARG2)
+                prntf("stis",20," ",tvr," ","CENTERA1                         : ", CENTERA1)
+                prntf("stis",20," ",tvr," ","CENTERA2                         : ", CENTERA2)
+                prntf("stis",20," ",tvr," ","SIZAXIS1                         : ", SIZAXIS1)
+                prntf("stis",20," ",tvr," ","SIZAXIS2                         : ", SIZAXIS2)
+                prntf("stis",20," ",tvr," ","CRPIX1                           : ", CRPIX1)
+                prntf("stis",20," ",tvr," ","CRPIX2                           : ", CRPIX2)
+                prntf("stis",20," ",tvr," ","LTV1                             : ", LTV1)
+                prntf("stis",20," ",tvr," ","AWEDGESLOPE                      : ", AWEDGESLOPE)
+                prntf("stis",20," ",tvr," ","BWEDGESLOPE                      : ", BWEDGESLOPE)
 
             PROPAPER_2 = PROPAPER.replace("WEDGE","")
             if   "A" in PROPAPER_2 : 
@@ -1098,14 +765,14 @@ def GetDataCenterPasFilename (
             headerHalfWedgeThickPixel  = headerWedgeThickPixel / 2 
             currentHeaderWedgeCode     = headerWedgeLetter + str ( int ( headerWedgeThickArcsec * 10 ) ) 
             
-            if VL >= 3 : prntf("stis",20," ",tvr," ","PROPAPER_2                       : ", PROPAPER_2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","headerWedgeLetter                : ", headerWedgeLetter)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","headerWedgeThickArcsec           : ", headerWedgeThickArcsec)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","headerWedgeThickPixel            : ", headerWedgeThickPixel)        
-            if VL >= 3 : prntf("stis",20," ",tvr," ","headerHalfWedgeThickArcsec       : ", headerHalfWedgeThickArcsec)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","headerHalfWedgeThickPixel        : ", headerHalfWedgeThickPixel)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","currentHeaderWedgeCode           : ", currentHeaderWedgeCode)
-            if VL >= 3 : print()
+            if VL >= 3 :
+                prntf("stis",20," ",tvr," ","PROPAPER_2                       : ", PROPAPER_2)
+                prntf("stis",20," ",tvr," ","headerWedgeLetter                : ", headerWedgeLetter)
+                prntf("stis",20," ",tvr," ","headerWedgeThickArcsec           : ", headerWedgeThickArcsec)
+                prntf("stis",20," ",tvr," ","headerWedgeThickPixel            : ", headerWedgeThickPixel) 
+                prntf("stis",20," ",tvr," ","headerHalfWedgeThickArcsec       : ", headerHalfWedgeThickArcsec)
+                prntf("stis",20," ",tvr," ","headerHalfWedgeThickPixel        : ", headerHalfWedgeThickPixel)
+                prntf("stis",20," ",tvr," ","currentHeaderWedgeCode           : ", currentHeaderWedgeCode)
 
             POSTARG1_pixels      = POSTARG1    / PLATESCALE
             POSTARG2_pixels      = POSTARG2    / PLATESCALE                        
@@ -1125,41 +792,27 @@ def GetDataCenterPasFilename (
             BHalfWedgeDiffX1X0Pixels = xDifference * BWEDGESLOPE
             AHalfWedgeDiffY1Y0Pixels = yDifference * AWEDGESLOPE
             
-            if VL >= 3 : prntf("stis",20," ",tvr," ","POSTARG1_pixels                  : ", POSTARG1_pixels)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","POSTARG2_pixels                  : ", POSTARG2_pixels)                
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CRPIX1mLTV1                      : ", CRPIX1mLTV1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CRPIX2mLTV2                      : ", CRPIX2mLTV2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","xActual                          : ", xActual, " = CRPIX1mLTV1 + POSTARG1_pixels")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","yActual                          : ", yActual, " = CRPIX2mLTV2 + POSTARG2_pixels")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CENTERA1mxActual                 : ", CENTERA1mxActual)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","CENTERA2myActual                 : ", CENTERA2myActual)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","xStellarPoint                    : ", xStellarPoint, " = CRPIX1")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","yStellarPoint                    : ", yStellarPoint, " = CRPIX2")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","xDifference                      : ", xDifference, " = xActual     - CRPIX1")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","dnfn                             : ", dnfn)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels      : ", runBHalfWedgeDiffX1X0Pixels)                
-            if VL >= 3 : prntf("stis",20," ",tvr," ","   BHalfWedgeDiffX1X0Pixels      : ", BHalfWedgeDiffX1X0Pixels, " = xDifference * BWEDGESLOPE")
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","POSTARG1_pixels                  : ", POSTARG1_pixels)
+                prntf("stis",20," ",tvr," ","POSTARG2_pixels                  : ", POSTARG2_pixels)   
+                prntf("stis",20," ",tvr," ","CRPIX1mLTV1                      : ", CRPIX1mLTV1)
+                prntf("stis",20," ",tvr," ","CRPIX2mLTV2                      : ", CRPIX2mLTV2)
+                prntf("stis",20," ",tvr," ","xActual                          : ", xActual, " = CRPIX1mLTV1 + POSTARG1_pixels")
+                prntf("stis",20," ",tvr," ","yActual                          : ", yActual, " = CRPIX2mLTV2 + POSTARG2_pixels")
+                prntf("stis",20," ",tvr," ","CENTERA1mxActual                 : ", CENTERA1mxActual)
+                prntf("stis",20," ",tvr," ","CENTERA2myActual                 : ", CENTERA2myActual)
+                prntf("stis",20," ",tvr," ","xStellarPoint                    : ", xStellarPoint, " = CRPIX1")
+                prntf("stis",20," ",tvr," ","yStellarPoint                    : ", yStellarPoint, " = CRPIX2")
+                prntf("stis",20," ",tvr," ","xDifference                      : ", xDifference, " = xActual     - CRPIX1")
+                prntf("stis",20," ",tvr," ","dnfn                             : ", dnfn)
+                prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels      : ", runBHalfWedgeDiffX1X0Pixels)
+                prntf("stis",20," ",tvr," ","   BHalfWedgeDiffX1X0Pixels      : ", BHalfWedgeDiffX1X0Pixels, " = xDifference * BWEDGESLOPE")
             if tvr == 0 and runBHalfWedgeDiffX1X0Pixels < BHalfWedgeDiffX1X0Pixels :
                 if VL >= 3 : prntf("stis",20," ",tvr," ","if runBHalfWedgeDiffX1X0Pixels > BHalfWedgeDiffX1X0Pixels :")
                 if VL >= 3 : prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels      : ", runBHalfWedgeDiffX1X0Pixels)
                 if VL >= 3 : prntf("stis",20," ",tvr," ","BHalfWedgeDiffX1X0Pixels         : ", BHalfWedgeDiffX1X0Pixels)
                 runBHalfWedgeDiffX1X0Pixels = BHalfWedgeDiffX1X0Pixels
                 if VL >= 3 : prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels      : ", runBHalfWedgeDiffX1X0Pixels)
-#            # VVV In absense of thicker wedge frames, the thin wedge frame sets the dynamic mask wedge thickness.
-#            if (
-#                runBHalfWedgeDiffX1X0Pixels <= 0 and
-#                   BHalfWedgeDiffX1X0Pixels <  0 and
-#                runBHalfWedgeDiffX1X0Pixels >  BHalfWedgeDiffX1X0Pixels 
-#                ) : 
-#                runBHalfWedgeDiffX1X0Pixels = BHalfWedgeDiffX1X0Pixels
-#            
-#            # vvv In presense of thicker wedge frames, thicker wedge sets the dynamic mask wedge thickness 
-#            if (
-#                runBHalfWedgeDiffX1X0Pixels >= 0 and
-#                   BHalfWedgeDiffX1X0Pixels >  0 and
-#                runBHalfWedgeDiffX1X0Pixels <  BHalfWedgeDiffX1X0Pixels 
-#                ) : 
-#                runBHalfWedgeDiffX1X0Pixels = BHalfWedgeDiffX1X0Pixels
                 
             if VL >= 3 : prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels      : ", runBHalfWedgeDiffX1X0Pixels)
             if tvr == 0 and headerWedgeLetter == "B" :
@@ -1168,24 +821,16 @@ def GetDataCenterPasFilename (
                 refModHeaderHalfWedgeThickPixel = headerHalfWedgeThickPixel + BHalfWedgeDiffX1X0Pixels
             if runTrgModHeaderHalfWedgeThickPixel < trgModHeaderHalfWedgeThickPixel :
                 runTrgModHeaderHalfWedgeThickPixel = trgModHeaderHalfWedgeThickPixel
-            if VL >= 3 : prntf("stis",20," ",tvr," ","   trgModHeaderHalfWedgeThickPixel : ", trgModHeaderHalfWedgeThickPixel)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","   refModHeaderHalfWedgeThickPixel : ", refModHeaderHalfWedgeThickPixel)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","runTrgModHeaderHalfWedgeThickPixel : ", runTrgModHeaderHalfWedgeThickPixel)
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","   trgModHeaderHalfWedgeThickPixel : ", trgModHeaderHalfWedgeThickPixel)
+                prntf("stis",20," ",tvr," ","   refModHeaderHalfWedgeThickPixel : ", refModHeaderHalfWedgeThickPixel)
+                prntf("stis",20," ",tvr," ","runTrgModHeaderHalfWedgeThickPixel : ", runTrgModHeaderHalfWedgeThickPixel)
             if refModHeaderHalfWedgeThickPixel > runTrgModHeaderHalfWedgeThickPixel : 
                 if VL >= 3 : prntf("stis",20," ",tvr," ","if refModHeaderHalfWedgeThickPixel > runTrgModHeaderHalfWedgeThickPixel :")
                 if VL >= 3 : prntf("stis",20," ",tvr," ","The file containing this reference frame should be removed because the frame has a higher final wedge thickness than the target. This frame will be rejected automatically.")
                 warnings.warn("The file containing this reference frame should be removed because the frame has a higher final wedge thickness than the target. This frame will be rejected automatically.")
                 continue
             
-
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-
-            if VL >= 3 : prntf("stis",20," ",tvr," ","   currentHeaderWedgeCode        : ", currentHeaderWedgeCode)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","   lastTrgHeaderWedgeCode        : ", lastTrgHeaderWedgeCode)
             if VL >= 3 : prntf("stis",20," ",tvr," ","currentHeaderWedgeCode           : ", currentHeaderWedgeCode)
             if VL >= 3 : prntf("stis",20," ",tvr," ","lastTrgHeaderWedgeCode           : ", lastTrgHeaderWedgeCode)
                 
@@ -1193,8 +838,7 @@ def GetDataCenterPasFilename (
                 differentTrgHeaderWedgesExist          = True
                 if VL >= 3 : prntf("stis",20," ",tvr," ","if len(lastTrgHeaderWedgeCode)>0 and dnfnSplit[0] != lastTrgHeaderWedgeCode :")
                 if VL >= 3 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
-            #if tvr == 0 and currentHeaderWedgeCode > fileMaskWedgeCode and runWedgeDecided == "A" :
-            if tvr == 0 and currentHeaderWedgeCode > fileMaskWedgeCode : # I think this is universal to A and B
+            if tvr == 0 and currentHeaderWedgeCode > fileMaskWedgeCode :
                 differentTrgHeaderWedgesExist          = True
                 if VL >= 3 : prntf("stis",20," ",tvr," ","if tvr == 0 and currentHeaderWedgeCode > fileMaskWedgeCode and runWedgeDecided == A :")
                 if VL >= 3 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
@@ -1223,26 +867,14 @@ def GetDataCenterPasFilename (
                     if VL >= 3 : prntf("stis",20," ",tvr," ","REJECTING REFERENCE frame as having too large of wedge          : ", dnfn, "\n")
                     continue
 
-            if VL >= 3 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","trgWedgeArcsecs                  : ", trgWedgeArcsecs)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","trgHalfWedgeArcsecs              : ", trgHalfWedgeArcsecs)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","trgHalfWedgePixels               : ", trgHalfWedgePixels)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","runTrgHalfWedgePixels            : ", runTrgHalfWedgePixels)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","refHalfWedgeArcsecs              : ", refHalfWedgeArcsecs)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","refHalfWedgePixels               : ", refHalfWedgePixels, "\n")
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-            
-            
-            
-            # I need a logic here where it's if tvr == 0 and current wedge size is greater than largest target wedge size, continue
-            # How do I get largest target wedge size?
-            # I need something like "stis   1001  runTrgHalfWedgePixels     :  10" but that is merely the code.
-            # Or, since the code doesn't offer itself for sorting, maybe I just have to do pixel calculations every new reference file...
-            
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist    : ", differentTrgHeaderWedgesExist)
+                prntf("stis",20," ",tvr," ","trgWedgeArcsecs                  : ", trgWedgeArcsecs)
+                prntf("stis",20," ",tvr," ","trgHalfWedgeArcsecs              : ", trgHalfWedgeArcsecs)
+                prntf("stis",20," ",tvr," ","trgHalfWedgePixels               : ", trgHalfWedgePixels)
+                prntf("stis",20," ",tvr," ","runTrgHalfWedgePixels            : ", runTrgHalfWedgePixels)
+                prntf("stis",20," ",tvr," ","refHalfWedgeArcsecs              : ", refHalfWedgeArcsecs)
+                prntf("stis",20," ",tvr," ","refHalfWedgePixels               : ", refHalfWedgePixels, "\n")
             
             filename                 = os.path.basename ( dnfn )
             if VL >= 3 : prntf("stis",20," ",tvr," ","filename                         : ", filename)
@@ -1251,22 +883,17 @@ def GetDataCenterPasFilename (
             token_                   = split[0].split('_')
             rootname                 = token_[0]
 
-            if VL >= 3 : prntf("stis",20," ",tvr," ","type ( HDUList )                 : ", type ( HDUList ) ) # <class 'astropy.io.fits.hdu.hdulist.HDUList'>
-            if VL >= 3 : prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUList )        : ", sys.getsizeof ( HDUList ) )
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList )                  : ", len ( HDUList )     , "physical elements in the list, counting from 1 to total")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList ) - 1              : ", len ( HDUList ) - 1 , "indices available, starting from index of 0")
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUList )        : ", sys.getsizeof ( HDUList ) )
+                prntf("stis",20," ",tvr," ","len ( HDUList )                  : ", len ( HDUList )     , "physical elements in the list, counting from 1 to total")
+                prntf("stis",20," ",tvr," ","len ( HDUList ) - 1              : ", len ( HDUList ) - 1 , "indices available, starting from index of 0")
             
             HDUSCIDatalist.clear()
             
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUSCIDatalist)            : ", len ( HDUSCIDatalist) )
-            if VL >= 3 : prntf("stis",20," ",tvr," ","HDUSCIDatalist                   : ", HDUSCIDatalist )
-           
-           
-            
-            
-            
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","userTestingNumberFrames          : ", userTestingNumberFrames )
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","len ( HDUSCIDatalist)            : ", len ( HDUSCIDatalist) )
+                prntf("stis",20," ",tvr," ","HDUSCIDatalist                   : ", HDUSCIDatalist )
+                prntf("stis",20," ",tvr," ","userTestingNumberFrames          : ", userTestingNumberFrames )
             
             # First, set the default
             iiiIndexMax = len ( HDUList ) - 1 # default
@@ -1307,28 +934,19 @@ def GetDataCenterPasFilename (
             
             STISx_minus_RCx_accumulator = 0
             STISy_minus_RCy_accumulator = 0
-
             
-
-            
-#            yesImportRadonCenterValuesFromHeaderFlag = False
             startAppend = time.time()
 
             for iiiIndex in range (1, iiiIndexMax + 1 ): # in range syntax will stop at one less than last value                
-                if VL >= 3 : prntf("stis",20," ",tvr," ","dnfn                                     : ", dnfn)
-                if VL >= 3 : prntf("stis",20," ",tvr," ","iiiIndex                                 : ", iiiIndex)
-                if VL >= 3 : prntf("stis",20," ",tvr," ","HDUList[iiiIndex].data[0][0]             : ", HDUList[iiiIndex].data[0][0] )
+                if VL >= 3 : 
+                    prntf("stis",20," ",tvr," ","dnfn                                     : ", dnfn)
+                    prntf("stis",20," ",tvr," ","iiiIndex                                 : ", iiiIndex)
+                    prntf("stis",20," ",tvr," ","HDUList[iiiIndex].data[0][0]             : ", HDUList[iiiIndex].data[0][0] )
+                    prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUList[iiiIndex].data ) : ", sys.getsizeof ( HDUList[iiiIndex].data ) )
                 if VL >= 4 : prntf("stis",20," ",tvr," ","HDUList[iiiIndex].data                   : \n", HDUList[iiiIndex].data )
-                if VL >= 3 : prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUList[iiiIndex].data ) : ", sys.getsizeof ( HDUList[iiiIndex].data ) )
                 
                 filenameList.append ( filename ) # We need to get a list that gives the filename for every frame in the filelist
                 
-                
-                
-                
-
-#                if ( ( HDUList[iiiIndex].header['EXTNAME'] == 'SCI' and HDUList[iiiIndex].header['EXPTIME'] == exptimeMode ) 
-#                    or ( HDUList[iiiIndex].header['EXTNAME'] == 'SCI' and HDUList[iiiIndex].header['EXPTIME'] <= ( exptimeMin * EXPTIME_RATIO ) ) ) :
                 if HDUList[iiiIndex].header['EXTNAME'] == 'SCI' : 
                     if  ( 
                             (                     HDUList[iiiIndex].header['EXPTIME'] == exptimeMode                   )
@@ -1360,25 +978,6 @@ def GetDataCenterPasFilename (
                             bypassRCFlag = False
                             allRadonCenterImports.append ( ( 0.0 , 0.0 ) ) # Without these placeholder values, polling won't run.
 
-#                        # RADON CENTER FIXER. DO NOT REMOVE.
-#                        # Keep the next four lines commented out always, 
-#                        #   unless the radonCenter values in the header need to be updated manually.
-#                        # To use this, comment out the preceding section starting with "if 'RADCENTX' in  HDUList..."
-#                        if VL >= 3 : prntf("stis",20," ",tvr," ","RADCENTX and RADCENTY are not both in header.")
-#                        if VL >= 3 : prntf("stis",20," ",tvr," ","RadonCenter must be run and both values saved to header.")
-#                        bypassRCFlag = False
-#                        #                         allRadonCenterImports.append ( ( 0.0 , 0.0 ) ) # Without these placeholder values, polling won't run.
-#                        POSTARG1_pixels   = POSTARG1 / PLATESCALE
-#                        POSTARG2_pixels   = POSTARG2 / PLATESCALE                        
-#                        CRPIX1mLTV1       = CRPIX1 - LTV1
-#                        CRPIX2mLTV2       = CRPIX2 - LTV2
-#                        xActual           = CRPIX1mLTV1 + POSTARG1_pixels
-#                        yActual           = CRPIX2mLTV2 + POSTARG2_pixels
-#                        prntf("stis",20," ",tvr," ","xActual = CRPIX1mLTV1 + POSTARG1_pixels : ", xActual)
-#                        prntf("stis",20," ",tvr," ","yActual = CRPIX2mLTV2 + POSTARG2_pixels : ", yActual)            
-#                        allRadonCenterImports.append ( ( xActual , yActual ) ) # Without these placeholder values, polling won't run.
-
-
                         RADEC_trgref[tvr].append ( ( HDUList[0].header[ 'RA_TARG'  ], HDUList[0].header[ 'DEC_TARG' ] ) )
                         if VL >= 3 : prntf("stis",20," ",tvr," ","len(RADEC_trgref[tvr])                   : ", len(RADEC_trgref[tvr]) )
                         if VL >= 5 : prntf("stis",20," ",tvr," ","RADEC_trgref                             : ", RADEC_trgref )
@@ -1390,71 +989,23 @@ def GetDataCenterPasFilename (
                         if VL >= 3 : prntf("stis",20," ",tvr," ",filename, " ", iiiIndex, "has exposure time ", HDUList[iiiIndex].header['EXPTIME'], " which is not within ", EXPTIME_RATIO, " of the minimum EXPTIME ", exptimeMin)
                         if VL >= 3 : prntf("stis",20," ",tvr," ",filename, " ", iiiIndex, "will be ignored.")
                         continue                   
-                            
-                # If there is such as a thing as a mode, and a frame does not equal that mode, then that frame is "highly likely" to be saturated and unusable
-                # The problem with this is that it is perfectly viable to have a mode, and then some other frame that has slightly different EXPTIME.
-#                elif HDUList[iiiIndex].header['EXTNAME'] == 'SCI' and exptimeMode > 0 and HDUList[iiiIndex].header['EXPTIME'] != exptimeMode :
-#                    
-#                    if VL >= 3 : prntf("stis",20," ",tvr," ",filename, " ", iiiIndex, "has exposure time ", HDUList[iiiIndex].header['EXPTIME'], " which is not mode exptime ", exptimeMode)
-#                    if HDUList[iiiIndex].header['EXPTIME'] > ( exptimeMode * EXPTIME_RATIO ) :
-#                        if VL >= 3 : prntf("stis",20," ",tvr," ",filename, " ", iiiIndex, "will be ignored.")
-#                        continue
-#                    else : 
-#                        HDUSCIDatalist.append ( HDUList[iiiIndex].data )
-                
-
-#            if len ( HDUSCIDatalist ) < 2 and len ( filelist ) == 1:
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUSCIDatalist ) < 2 for this file. If this is the ONLY file, the output will be nans.")
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","If this is the ONLY file, check that the EXPTIME_RATIO ", EXPTIME_RATIO, "is high enough to accept at least TWO frames.")
-#                raise ValueError("\nThere is only one file in this filelist, and only one frame has been approved from this file. This will result in output of nans. So, aborting now.")
-                
                     
-                    
-            if VL >= 1 : prntf("stis",20," ",tvr," ",)
-            
-            # If we got this far, we know if ANY ONE SINGLE frame -that meets EXPTIME criteria- is missing RC values.
-            # If bypassRCFlag == True, we know that EVERY FRAME has its own RC value
-            # The same math that calculates vertical PSF can possibly be done here in serial without great loss, if we're not running RC for all frames.
-            # Or there might be  way to send the imported RC values in the stead of the crpix values, with the radonCenter flag "turned off".
-            # Right - basically treat the RC values AS the new CRPIX values
-            # Then after the polling para, ensure the radonFlag is "turned on".
-            # The smartest way to do this is to send a proxy flag, "proxyRadonFlag" to polling para, and do not touch the actual "radonFlag".
-            if VL >= 3 : prntf("stis",20," ",tvr," ","radonFlag                           : ", radonFlag )
             
             proxyRadonFlag = radonFlag # For the time being while I hammer out stuff.
-            if VL >= 3 : prntf("stis",20," ",tvr," ","proxyRadonFlag                      : ", proxyRadonFlag )
-            if VL >= 3 : prntf("stis",20," ",tvr," ","bypassRCFlag                        : ", bypassRCFlag )           
             if bypassRCFlag == True :
                 if VL >= 3 : prntf("stis",20," ",tvr," ","if bypassRCFlag == True :")
                 proxyRadonFlag = False # We will still go through polling para, but the version of radonFlag sent in will be false
-            if VL >= 3 : prntf("stis",20," ",tvr," ","proxyRadonFlag                      : ", proxyRadonFlag )
 
             filenameIndexTuple = (filename,iiiIndex)
-    
 
-            stopAppend = time.time()
-            durationAppend = stopAppend - startAppend
-            if VL >= 3 : prntf("stis",20," ",tvr," ","durationAppend                      : ", durationAppend )   
-            if VL >= 3 : print()
+            stopAppend         = time.time()
 
-            
-            # vvv STILL VALID, BUT TO BE REPLACED.
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUSCIDatalist)               : ", len ( HDUSCIDatalist) )            
-            HDUSCIDataNPArray = np.array(HDUSCIDatalist)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","HDUSCIDataNPArray.shape             : ", HDUSCIDataNPArray.shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUSCIDataNPArray ) : ", sys.getsizeof ( HDUSCIDataNPArray ) )
-            if VL >= 4 : prntf("stis",20," ",tvr," ","HDUSCIDataNPArray                   : \n {{{", HDUSCIDataNPArray, "}}}\n")
-
-            
+            durationAppend     = stopAppend - startAppend
+                        
+            HDUSCIDataNPArray  = np.array(HDUSCIDatalist)
             
             if approvedFlag == True and tvr == 0 : # Presently, only have an approved filename-frame for TARGET
                 if filename not in uniqueFilenamesList : continue
-
-            if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                                 : ", wcw)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","udw                                 : ", udw)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","udh                                 : ", udh)
             
             cropToFileMaskDimensionsFlag = True
             cropToFileMaskDimensionsFlag = False
@@ -1463,14 +1014,6 @@ def GetDataCenterPasFilename (
                 if hch > udh : hch = udh # reduce the Highest Common Height
             
             if wcw > frameMaxWidth : wcw = frameMaxWidth
-
-            if VL >= 3 : prntf("stis",20," ",tvr," ","frameMaxWidth                       : ", frameMaxWidth)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                                 : ", wcw)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","udw                                 : ", udw)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","udh                                 : ", udh)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","filename, iiiIndex                  : ", filename, iiiIndex)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUSCIDatalist )              : ", len ( HDUSCIDatalist ) )
 
             hchPossible = 1044
             if   PROPAPER == 'WEDGEA0.6' and SIZAXIS2 == 256 :
@@ -1519,31 +1062,27 @@ def GetDataCenterPasFilename (
             elif PROPAPER == 'WEDGEB1.8' and SIZAXIS2 == 1044:
                 if VL >= 3 : prntf("stis",20," ",tvr," ","PROPAPER == 'WEDGEB1.8' and SIZAXIS2 == 1044")
                 xStellarPoint = xActual
-#                udh = int ( CRPIX2 * 2 )
-#                hch = int ( CRPIX2 * 2 )
             elif PROPAPER == 'WEDGEB2.0' and SIZAXIS2 == 1044:
                 if VL >= 3 : prntf("stis",20," ",tvr," ","PROPAPER == 'WEDGEB1.8' and SIZAXIS2 == 1044")
                 xStellarPoint = xActual
             
             if hch > hchPossible :
                 hch = hchPossible                    
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","udh                                 : ", udh)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","xStellarPoint                       : ", xStellarPoint)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","yStellarPoint                       : ", yStellarPoint)
-#            position = ( CRPIX1 , yStellarPoint) # TEMPORARILY USE THIS UNTIL I HAVE A BETTER PLACEHOLDER POSITION
-            position = ( xStellarPoint , yStellarPoint ) # TEMPORARILY USE THIS UNTIL I HAVE A BETTER PLACEHOLDER POSITION
 
-            # ^^^ Line 1002 will hopefully be an exact duplicate of this discovery, and can then be removed so that this is FIRST
-            if VL >= 3 : prntf("stis",20," ",tvr," ","position                            : ", position)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch, "\n")
+            position = ( xStellarPoint , yStellarPoint )
+
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","udh                                 : ", udh)
+                prntf("stis",20," ",tvr," ","hch                                 : ", hch)
+                prntf("stis",20," ",tvr," ","xStellarPoint                       : ", xStellarPoint)
+                prntf("stis",20," ",tvr," ","yStellarPoint                       : ", yStellarPoint)
+                prntf("stis",20," ",tvr," ","position                            : ", position)
+                prntf("stis",20," ",tvr," ","hch                                 : ", hch, "\n")
 
 
 
             # BUILD TUPLE BRIDGE (I assume that CRPIX1, CRPIX2 will not change over course of one file.)
             # BUILD TUPLE BRIDGE (And if they ever do, then pull that discovery under this while loop...)
-            # BUILD TUPLE BRIDGE
             if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList )                     : ", len ( HDUList ))
             if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList ) - 1                 : ", len ( HDUList ) - 1)
 
@@ -1558,51 +1097,32 @@ def GetDataCenterPasFilename (
             if iiiIndexMax > len ( HDUList ) - 1 :
                 iiiIndexMax = len ( HDUList ) - 1 # revert back to default
 
-            if VL >= 3 : prntf("stis",20," ",tvr," ","iiiIndexMax                        : ", iiiIndexMax)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","New Multiprocess Pool")            
             iterableIndicesPoll = range ( 1, iiiIndexMax, 3 ) # start, stop, stepsize ; rename iterableIndicesPoll to SCIindices eventually
-            if VL >= 3 : prntf("stis",20," ",tvr," ","iterableIndicesPoll                 : ", iterableIndicesPoll)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","len(HDUSCIDataNPArray)              : ", len(HDUSCIDataNPArray))    
+
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","iiiIndexMax                        : ", iiiIndexMax)
+                prntf("stis",20," ",tvr," ","New Multiprocess Pool")            
+                prntf("stis",20," ",tvr," ","iterableIndicesPoll                 : ", iterableIndicesPoll)
+                prntf("stis",20," ",tvr," ","len(HDUSCIDataNPArray)              : ", len(HDUSCIDataNPArray))    
+                prntf("stis",20," ",tvr," ","allRadonCenterImports               : ", allRadonCenterImports)
+                prntf("stis",20," ",tvr," ","SIZAXIS1 (Width)                    : ", SIZAXIS1)
+                prntf("stis",20," ",tvr," ","SIZAXIS2 (Height)                   : ", SIZAXIS2)
+                prntf("stis",20," ",tvr," ","hch                                 : ", hch)
+                prntf("stis",20," ",tvr," ","wcw                                 : ", wcw)
             if VL >= 4 : prntf("stis",20," ",tvr," ","HDUSCIDataNPArray                   : ", HDUSCIDataNPArray)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","allRadonCenterImports               : ", allRadonCenterImports)
-            
-            
-#            # XPR XPR XPR STARTING
-#            import tracemalloc
-#            tracemalloc.start()
-#            # XPR XPR XPR STARTED
-            
-            
-            
-#            # PROFILING SECTION (Has to be serial)
-#            import cProfile
-#            import pstats
-##            from pstats import SortKey # Cannot use SortKey on Ocelote...
-#            for SCI_img, iiiIndexPoll, rcImport in zip ( HDUSCIDataNPArray , iterableIndicesPoll, allRadonCenterImports ) :
-#                cProfile.runctx ( 'parallelPollingFrameFunction ( SCI_img, iiiIndexPoll, rcImport, approvedFlag, tvr, approvedFrameList, 0, proxyRadonFlag, filename, CRPIX1, SIZAXIS2, yStellarPoint, udw, udh, wcw, hch)', globals(), locals(), "profileFrameFolder/output.dat" )
-##                prefix = "profileFrameFolder/" + rootname + "_" + str ( iiiIndexPoll )     # Cannot use SortKey on Ocelote...
-##                with open ( prefix +  "_time.txt" , "a" ) as f:                            # Cannot use SortKey on Ocelote...
-##                    p = pstats.Stats ( "profileFrameFolder/output.dat" , stream = f )      # Cannot use SortKey on Ocelote...
-##                    p.sort_stats ( "time" ).print_stats()                                  # Cannot use SortKey on Ocelote...
-            if VL >= 3 : prntf("stis",20," ",tvr," ","SIZAXIS1 (Width)                    : ", SIZAXIS1)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","SIZAXIS2 (Height)                   : ", SIZAXIS2)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                                 : ", wcw)
 
             startPollingProcessTime = time.time()
-            if VL >= 3 : prntf("stis",20," ",tvr," ","BEFORE pollingProcessPool = Pool()")
             pollingProcessPool = Pool()
-            if VL >= 3 : prntf("stis",20," ",tvr," ","AFTER pollingProcessPool = Pool()")
             if VL >= 3 : prntf("stis",20," ",tvr," ","pollingProcessPool                  : ", pollingProcessPool)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","BEFORE tasks = [")
             VL_last = VL
-            # It is possible that allowing the polling function to speak will hang your system. Advise to set VL = 0 unless diagnosing.
-            VL = 0 # Set VL to 0 here to keep polling section from speaking. (It is garbled due to parallelization.)
+            # It is possible that allowing the polling function to log will hang your system.
+            # Advise to set VL = 0 unless diagnosing.
+            # Set VL to 0, here, to keep the polling section from logging.
+            VL = 0
 
-            # Parallel Polling (Which it seems one may not perform profiling on...?)
             tasks = [
                      pollingProcessPool.apply_async (
-                                    parallelPollingFrameFunction ,
+                                    parallel_polling ,
                                     args = (
                                                 SCI_img             ,
                                                 iiiIndexPoll        ,                                           
@@ -1613,14 +1133,10 @@ def GetDataCenterPasFilename (
                                                 0                   , # VL = 0 
                                                 proxyRadonFlag      , 
                                                 filename            , 
-#                                                CRPIX1              , # x value ; change to proxyCRPIX1 ???
-#                                                xStellarPoint,
-#                                                SIZAXIS2            , 
-#                                                yStellarPoint    , # y value ; change to proxyStisSubarrayPsfr ??? 
-                                            SIZAXIS1            , # Width
-                                            SIZAXIS2            , # Height
-                                            xStellarPoint       , # Horizontal 
-                                            yStellarPoint       , # Vertical                                            
+                                                SIZAXIS1            , # Width
+                                                SIZAXIS2            , # Height
+                                                xStellarPoint       , # Horizontal 
+                                                yStellarPoint       , # Vertical                                            
                                                 udw                 , 
                                                 udh                 , 
                                                 wcw                 , 
@@ -1629,12 +1145,6 @@ def GetDataCenterPasFilename (
                                    )
                      for SCI_img, iiiIndexPoll, rcImport in zip ( HDUSCIDataNPArray , iterableIndicesPoll, allRadonCenterImports )
                      
-                     # Get filenameList in here
-                     # Get a list of filelist frame indices (hhhIndex) that is as long as filenameList
-                     # Both hhhIndex from hhhIndexList and filename from filenameList will be passed along as front parameters
-                     # iiiIndexPoll will still be passed along because that is accurately the iiiIndex in the specific file under consideration.
-                     # HDUSCIDataNPArray has to start appending one level higher, right under filelist
-                     # allRadonCenterImports will need to start one level higher, right under filelist
                      ]
 
             pollingProcessPool.close()
@@ -1642,24 +1152,12 @@ def GetDataCenterPasFilename (
             endPollingProcessTime = time.time()
             
             allRadonCenterImports.clear()
-            
-            
-#            stringToPrint = filename + " " + str ( '%.8f'% ( startPollingProcessTime % 100 ) ) + " " + str ( '%.8f'% ( endPollingProcessTime % 100 ) ) + " " + str ( '%.8f'% ( endPollingProcessTime - startPollingProcessTime ) )
-#
-#            if VL >= 3 : prntf("stis",20," ",tvr," "," ", stringToPrint)
 
             VL = VL_last
             
-#            # XPR XPR XPR CONCLUDING
-#            current_ext, peak_ext = tracemalloc.get_traced_memory()
-#            if VL >= 3 : prntf("stis",20," ",tvr," ",filename, " ", stringToPrint, " ", current_ext, " B ", peak_ext, " B")
-#            tracemalloc.stop()
-#            # XPR XPR XPR CONCLUDED
-            
-            if VL >= 3 : print()
-            if VL >= 3 : prntf("stis",20," ",tvr," ","AFTER  tasks = [")    
-            if VL >= 3 : prntf("stis",20," ",tvr," ","tasks : ", tasks)
+
             PollParallelizedResult = [ task.get() for task in tasks ]
+            if VL >= 3 : prntf("stis",20," ",tvr," ","tasks : ", tasks)
             if VL >= 3 : prntf("stis",20," ",tvr," ","PollParallelizedResult : ", PollParallelizedResult)
             if VL >= 3 : prntf("stis",20," ",tvr," ","hch : ", hch)
     
@@ -1668,10 +1166,6 @@ def GetDataCenterPasFilename (
             for individualResult in PollParallelizedResult :
                 if VL >= 3 : print()
                 if VL >= 3 : prntf("stis",20," ",tvr," ","individualResult : ", individualResult)
-#                STISx_minus_RCx =  individualResult [ 0 ] [ 1 ] [ 0 ] - individualResult [ 0 ] [ 2 ] [ 0 ]  
-#                STISy_minus_RCy =  individualResult [ 0 ] [ 1 ] [ 1 ] - individualResult [ 0 ] [ 2 ] [ 1 ]
-#                if VL >= 0 : prntf("stis",20," ",tvr," ","STISx_minus_RCx  : ", STISx_minus_RCx)
-#                if VL >= 0 : prntf("stis",20," ",tvr," ","STISy_minus_RCy  : ", STISy_minus_RCy, "\n")
 
                 for result in individualResult:
                     if VL >= 3 : prntf("stis",20," ",tvr," ","result : ", result)                
@@ -1740,18 +1234,11 @@ def GetDataCenterPasFilename (
                     
                     # In the case of a reference frame, ignore it.
                     # Do not append this reference, as it will shrink the final result.
-                    # There is no reason for every good target frame to be truncated due to a single bad reference frame.
-                    # (((Except this goes against prior logic of allowing reference frames to dictate final output height...)))
-                    # I may yet go with completely ignoring reference frames that are smaller...
+                    # This tries to prevent every good target frame from being truncated due to a single bad reference frame.
                     if tvr == 1 and hch > individualResult [ 4 ] :
                         if VL >= 0 : prntf("stis",20," ",tvr," ","if tvr == 1 and hch > individualResult [ 4 ] :")                        
                         if VL >= 0 : prntf("stis",20," ",tvr," ","hch : ", hch, " is greater than this frame's radonCenter-driven hch ", individualResult [ 4 ])
-                        # This can be given a flag for the case where bad frames are attached to good frames...
-                        #if VL >= 0 : prntf("stis",20," ",tvr," ","This frame's radonCenter-driven hch ", individualResult [ 4 ], " means that this frame will be ignored,")
-                        #if VL >= 0 : prntf("stis",20," ",tvr," ","  since it will 'needlessly' shrink the output frame.")
-                        #if VL >= 0 : prntf("stis",20," ",tvr," ","If in doubt, check this frame and see if it is saturated or visibly unusable.")
-                        #continue 
-                        # issue warning
+
                         warnings.warn("reference frame has lower height than target. Final output will truncate to this lower height.")
                         hch = individualResult [ 4 ]
                     if VL >= 3 : prntf("stis",20," ",tvr," ","individualResult [ 0 ] : [ ", individualResult [ 0 ], "]")
@@ -1790,34 +1277,12 @@ def GetDataCenterPasFilename (
                 if VL >= 1 : prntf("stis",20," ",tvr," ","if bypassRCFlag == False : ; So we are writing to header")
                 HDUList.writeto ( dnfn , overwrite = True )
 
-            HDUList.close() # Can this be closed earlier? Does it matter if I am closing inside the parallel?
-            if VL >= 3 : prntf("stis",20," ",tvr," "," ")
-            if VL >= 3 : prntf("stis",20," ",tvr," "," ")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","///////////////////////////")
-
-            if VL >= 4 : 
-                for tvrValue in frameTupleList_trgref :
-                    prntf("stis",20," ",tvr," ","tvrValue : ", tvrValue)
-                    if VL >= 4 : 
-                        for frameTuple in tvrValue :  
-                            prntf("stis",20," ",tvr," ","frameTuple : ", frameTuple)
-                            if VL >= 4 : 
-                                for element in frameTuple : 
-                                    prntf("stis",20," ",tvr," ","element : ", element)
-            
-            
+            HDUList.close()
             
             
             if VL >= 3 : prntf("stis",20," ",tvr," ","tvr : " , tvr, ", Approved : ", totalApproved, ", Rejected : ", totalRejected)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\")
-            if VL >= 3 : prntf("stis",20," ",tvr," "," ")
-            if VL >= 3 : prntf("stis",20," ",tvr," "," ")            
         tvr = tvr + 1 # within outer loop
     tvr = -2
-    if VL >= 3 : prntf("stis",20," ",tvr," ","COMPLETED : for filelist in userTrgListRefList")
-    if VL >= 3 : print()
-    if VL >= 3 : print()
-
     
     if cropToFileMaskDimensionsFlag == True : 
         if hch > udh :
@@ -1830,12 +1295,7 @@ def GetDataCenterPasFilename (
             wcw = udw # further reduce the  Widest Common Width
     if VL >= 3 : prntf("stis",20," ",tvr," ","wcw                                 : ", wcw)
     if VL >= 3 : prntf("stis",20," ",tvr," ","hch                                 : ", hch)
-
-    
-    
-    
     if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref       ) : ", len ( frameTupleList_trgref       ) )
-
     if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref[0]    ) : ", len ( frameTupleList_trgref[0]    ) )
     if len ( frameTupleList_trgref[0]    ) == 0 :
         raise ValueError("\nIt appears that no TARGET files are making it into the class. \n Check the TARGET folder, prefix and wildcard. \n Look for spelling errors or typos.")
@@ -1871,29 +1331,19 @@ def GetDataCenterPasFilename (
     if VL >= 3 : prntf("stis",20," ",tvr," ","( dynMask4ple[1] / PLATESCALE ) / 2 : ", ( dynMask4ple[1] / PLATESCALE ) / 2)
     if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[2]                      : ", dynMask4ple[2])
 
-
-#    if dynMask4ple [ 0 ] and dynMask4ple [ 1 ] == 0 :
-#        dynMask4ple = ( dynMask4ple [ 0 ] , 1.0 , dynMask4ple [ 2 ] , dynMask4ple [ 3 ] ) # default to 1.0 arcseconds.
     IWACalculation = 11 # default for A10
     IWACalculation = math.ceil ( int ( ( dynMask4ple [ 1 ] / PLATESCALE ) / 2 ) + dynMask4ple [ 2 ] )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","IWACalculation, initial             : ", IWACalculation)
-    
-
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[0]                      : ", dynMask4ple[0])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[1]                      : ", dynMask4ple[1])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[2]                      : ", dynMask4ple[2])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[3]                      : ", dynMask4ple[3])
-
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-    if VL >= 3 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist       : ", differentTrgHeaderWedgesExist)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple                         : ", dynMask4ple)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","IWACalculation                      : ", IWACalculation)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","runTrgHalfWedgePixels               : ", runTrgHalfWedgePixels)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels         : ", runBHalfWedgeDiffX1X0Pixels)
+    if VL >= 3 : 
+        prntf("stis",20," ",tvr," ","IWACalculation, initial             : ", IWACalculation)
+        prntf("stis",20," ",tvr," ","dynMask4ple[0]                      : ", dynMask4ple[0])
+        prntf("stis",20," ",tvr," ","dynMask4ple[1]                      : ", dynMask4ple[1])
+        prntf("stis",20," ",tvr," ","dynMask4ple[2]                      : ", dynMask4ple[2])
+        prntf("stis",20," ",tvr," ","dynMask4ple[3]                      : ", dynMask4ple[3])
+        prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist       : ", differentTrgHeaderWedgesExist)
+        prntf("stis",20," ",tvr," ","dynMask4ple                         : ", dynMask4ple)
+        prntf("stis",20," ",tvr," ","IWACalculation                      : ", IWACalculation)
+        prntf("stis",20," ",tvr," ","runTrgHalfWedgePixels               : ", runTrgHalfWedgePixels)
+        prntf("stis",20," ",tvr," ","runBHalfWedgeDiffX1X0Pixels         : ", runBHalfWedgeDiffX1X0Pixels)
 
     if differentTrgHeaderWedgesExist :
         if VL >= 0 : prntf("stis",20," ",tvr," ","differentTrgHeaderWedgesExist = True")
@@ -1902,6 +1352,7 @@ def GetDataCenterPasFilename (
         if runTrgHalfWedgePixels > ( ( dynMask4ple[1] / PLATESCALE ) / 2 + dynMask4ple[2] ) :
             if VL >= 3 : prntf("stis",20," ",tvr," ","if runTrgHalfWedgePixels > ( ( dynMask4ple[1] / PLATESCALE ) / 2 + dynMask4ple[2] ) :")
             
+            # Don't remove this explainer of the dynamic mask tuple 
             # dynMask4ple = ( dynMask4ple[0], dynMask4ple[1], dynMask4ple[2], dynMask4ple[3] ) # Retain this
             # dynMask4ple[0] the flag is set to True
             # dynMask4ple[1] the wedge width in arcseconds is set to 0, because the next term will do the work...
@@ -1925,33 +1376,22 @@ def GetDataCenterPasFilename (
         differentTrgHeaderWedgesExist = False       
     if VL >= 3 : prntf("stis",20," ",tvr," ","IWACalculation                      : ", IWACalculation)            
     if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple                         : ", dynMask4ple)            
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-###############################################################################################################################
-
-
 
     IWACalculation = math.ceil ( int ( ( dynMask4ple [ 1 ] / PLATESCALE ) / 2 ) + dynMask4ple [ 2 ] )
     if VL >= 3 : prntf("stis",20," ",tvr," ","IWACalculation, subsequent          : ", IWACalculation)
-
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[0]                      : ", dynMask4ple[0])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[1]                      : ", dynMask4ple[1])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[2]                      : ", dynMask4ple[2])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","dynMask4ple[3]                      : ", dynMask4ple[3])
-
-
-    if VL >= 2 : print()
-    if VL >= 3 : prntf("stis",20," ",tvr," ","C A L L   F O R   M A S K   I F   R E Q U E S T E D")
-    if VL >= 3 : prntf("stis",20," ",tvr," ","hch : ", hch)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","wcw : ", wcw)
+    if VL >= 3 : 
+        prntf("stis",20," ",tvr," ","dynMask4ple[0]                      : ", dynMask4ple[0])
+        prntf("stis",20," ",tvr," ","dynMask4ple[1]                      : ", dynMask4ple[1])
+        prntf("stis",20," ",tvr," ","dynMask4ple[2]                      : ", dynMask4ple[2])
+        prntf("stis",20," ",tvr," ","dynMask4ple[3]                      : ", dynMask4ple[3])
+        prntf("stis",20," ",tvr," ","C A L L   F O R   M A S K   I F   R E Q U E S T E D")
+        prntf("stis",20," ",tvr," ","hch : ", hch)
+        prntf("stis",20," ",tvr," ","wcw : ", wcw)
     if runWedgeDecided == 'B' : yesApplyMaskFlag = True 
     if yesApplyMaskFlag == True:
         
-        # This function is smart enough to return the highest common height, even for mask 401.
-#        maskToBeUsed = GetMaskFunction ( hch, wcw, maskFilename, VL )
-        maskToBeUsed = GetMaskFunction ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
+        # This function returns the highest common height, even for mask 401.
+        maskToBeUsed = get_mask_function ( hch, wcw, maskFilename, VL, dynMask4ple, runWedgeDecided )
         if VL >= 3 : prntf("stis",20," ",tvr," ","maskToBeUsed.shape                      : ", maskToBeUsed.shape)
         
         
@@ -1983,20 +1423,13 @@ def GetDataCenterPasFilename (
     if VL >= 1 : 
         for i in range(2) : 
             prntf("stis",20," ",tvr," ","I M P L E M E N T   ---  H C H   A N D   W C W   M U S T    B E   F I N A L")
-    if VL >= 3 : 
-        for i in range(10) : 
-            prntf("stis",20," ",tvr," ","I M P L E M E N T   ---  H C H   A N D   W C W   M U S T    B E   F I N A L")
             
-    if VL >= 3 : print()
     if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref       ) : ", len ( frameTupleList_trgref       ) )
     if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref[0]    ) : ", len ( frameTupleList_trgref[0]    ) )
     if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref[0][0] ) : ", len ( frameTupleList_trgref[0][0] ) )
     if useRefandTrgFlag == True :
         if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref[1]    ) : ", len ( frameTupleList_trgref[1]    ) )
         if VL >= 3 : prntf("stis",20," ",tvr," ","len ( frameTupleList_trgref[1][0] ) : ", len ( frameTupleList_trgref[1][0] ) )
-    if VL >= 3 : print()
-    if VL >= 3 : print()
-    # vvv the timing belt for the tuple bridge
     if VL >= 3 : prntf("stis",20," ",tvr," ","tvr : ", tvr)
     
     tvrList = []
@@ -2013,10 +1446,6 @@ def GetDataCenterPasFilename (
     # THIS IS PROBABLY BEING ALLOCATED IN THE WRONG PLACE AND WITH THE WRONG VALUES
     implFilelistSCIFrameList = [ [None] * len ( frameTupleList_trgref[0] ) , [None] * len ( frameTupleList_trgref[1] ) ]
     implFilelistERRFrameList = [ [None] * len ( frameTupleList_trgref[0] ) , [None] * len ( frameTupleList_trgref[1] ) ]
-
-    
-
-#1__#2__#3__#4__#5__#6__#7__
                                      
     for filelist in userTrgListRefList :
         hhhIndexMax = len ( frameTupleList_trgref [ tvr ] ) - 1
@@ -2036,25 +1465,19 @@ def GetDataCenterPasFilename (
         hhhIndex        = 0
         aaaIndex = 0
 
-#        HDUSCIDatalist.clear()
-
         implRecordList = [None] * len ( frameTupleList_trgref[tvr] ) 
         if VL >= 3 : prntf("stis",20," ",tvr," ", "tvr : ",tvr, ", len ( implRecordList ) : ", len ( implRecordList ) )
 
-        
-
-#1__#2__#3__#4__#5__#6__#7__
-
         for dnfn in filelist :
-#            HDUSCIDatalist.clear()
 
-            if VL >= 1 : prntf("stis",20," ",tvr," ","dnfn : ", dnfn)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","This is the first line in the _for dnfn in filelist :_")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","What we have so far in the can :")
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_trgref[0].shape        : ", input_SCI_trgref[0].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_trgref[1].shape        : ", input_SCI_trgref[1].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_ERR_trgref[0].shape        : ", input_ERR_trgref[0].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_ERR_trgref[1].shape        : ", input_ERR_trgref[1].shape)
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","dnfn : ", dnfn)
+                prntf("stis",20," ",tvr," ","This is the first line in the _for dnfn in filelist :_")
+                prntf("stis",20," ",tvr," ","What we have so far in the can :")
+                prntf("stis",20," ",tvr," ","input_SCI_trgref[0].shape        : ", input_SCI_trgref[0].shape)
+                prntf("stis",20," ",tvr," ","input_SCI_trgref[1].shape        : ", input_SCI_trgref[1].shape)
+                prntf("stis",20," ",tvr," ","input_ERR_trgref[0].shape        : ", input_ERR_trgref[0].shape)
+                prntf("stis",20," ",tvr," ","input_ERR_trgref[1].shape        : ", input_ERR_trgref[1].shape)
             
             
             if VL >= 1 : prntf("stis",20," ",tvr," ","dnfn                             : ", dnfn)
@@ -2074,25 +1497,6 @@ def GetDataCenterPasFilename (
                 iiiIndexMax = len ( HDUList ) - 1 # revert back to default
                 if VL >= 3 : prntf("stis",20," ",tvr," ","iiiIndexMax                      : ", iiiIndexMax)
 
-            
-#            startAppend = time.time()
-#            #for iiiIndex in range (1, len ( HDUList ) - 1 ):
-#            for iiiIndex in range (1, iiiIndexMax + 1 ): # in range syntax will stop at one less than last value
-#
-#                if VL >= 4 : prntf("stis",20," ",tvr," ","dnfn : ", dnfn, ", iiiIndex : ", iiiIndex, ", HDUList[iiiIndex].data : \n", HDUList[iiiIndex].data )
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","dnfn : ", dnfn, ", iiiIndex : ", iiiIndex, ", HDUList[iiiIndex].data[0][0] : ", HDUList[iiiIndex].data[0][0] )
-#                if VL >= 4 : prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUList[iiiIndex].data ) : ", sys.getsizeof ( HDUList[iiiIndex].data ) )                    
-#                
-##                # Recall that I tried doing EXACT ALLOCATION and it was slower. So, >appending< is what I'm sticking with... 
-##                if HDUList[iiiIndex].header['EXTNAME'] == 'SCI' :
-##                    HDUSCIDatalist.append ( HDUList[iiiIndex].data )
-##                    if VL >= 3 : prntf("stis",20," ",tvr," ","sys.getsizeof ( HDUSCIDatalist )         : ", sys.getsizeof ( HDUSCIDatalist ) )
-#
-#            stopAppend = time.time()
-#            durationAppend = stopAppend - startAppend
-#            if VL >= 3 : prntf("stis",20," ",tvr," ","durationAppend                   : ", durationAppend ) 
-#            if VL >= 3 : print()
-
             filename                 = os.path.basename ( dnfn )
             if VL >= 3 : prntf("stis",20," ",tvr," ","filename : ", filename)
             if approvedFlag == True and tvr == 0 : # Presently, only have an approved filename-frame for TARGET
@@ -2108,9 +1512,7 @@ def GetDataCenterPasFilename (
                 
                 tupleFilenameIiiIndex4 = (filename,iiiIndex)
                 if VL >= 3 : prntf("stis",20," ",tvr," ","candidate tupleFilenameIiiIndex4 : ", tupleFilenameIiiIndex4)
-
                 if VL >= 4 : prntf("stis",20," ",tvr," ","iiiIndex : ", iiiIndex, ", ( iiiIndex - 1 ) % 3 : ", ( iiiIndex - 1 ) % 3)
-
                 if VL >= 4 : prntf("stis",20," ",tvr," ","iiiIndex : ", iiiIndex, ", aaaIndex : ", aaaIndex, "len(frameTupleList_trgref [ tvr ]) : ", len(frameTupleList_trgref [ tvr ])  )
                 
                 if ( iiiIndex - 1 ) % 3 == 0 and aaaIndex < len(frameTupleList_trgref[tvr]) and tupleFilenameIiiIndex4 in frameTupleList_trgref [ tvr ][ aaaIndex ] :
@@ -2152,26 +1554,11 @@ def GetDataCenterPasFilename (
                     if VL >= 3 : prntf("stis",20," ",tvr," ","uniqueFramesProcessed      : ", uniqueFramesProcessed)
                     
                     aaaIndex = aaaIndex + 1 # this is the only way to increment this index. This index lasts as long as this filelist. This index should reach the end of frameTupleList_trgref before or by the time that the end of filelist is reached.
-                    if VL >= 3 : print()
-                    if VL >= 3 : print()
-                    if VL >= 3 : print()
                 else :
                     if VL >= 3 : prntf("stis",20," ",tvr," ","REJECTED  tupleFilenameIiiIndex4 : ", tupleFilenameIiiIndex4)
 
                 
                 if VL >= 3 : prntf("stis",20," ",tvr," ","len ( implRecordList )         : ", len ( implRecordList ) )
-                if VL >= 4 : 
-                    for record in implRecordList : # THIS NEEDS TO HAVE VL PLACED OVER ALL 
-                        prntf("stis",20," ",tvr," ","record : {{{", record, "}}}" )
-                        if VL >= 4 : 
-                            if record:
-                                for element in record:
-                                    prntf("stis",20," ",tvr," ","element : {{{", element, "}}}" )
-                # This will be missing the second, third, fourth file's frames the first time this runs, etc. 
-                # Eventually this should come outside the loop it's in so that is only prints anything once.
-                # For now, try to anticipate that this will print Nones where there has been an allocation that will be filled later up to some exact list length
-                if VL >= 3 : print()
-                if VL >= 3 : print()
             
             uniqueFilesProcessed = uniqueFilesProcessed + 1
             if VL >= 3 : prntf("stis",20," ",tvr," ","uniqueFilesProcessed           : ", uniqueFilesProcessed)
@@ -2179,56 +1566,16 @@ def GetDataCenterPasFilename (
             split                    = os.path.splitext ( os.path.basename ( dnfn ) )
             token_                   = split[0].split('_')
             rootname                 = token_[0]
-            #prntf("stis",20," ",tvr," ","rootname : ", rootname)
             rootnameList.append(rootname)
-            #prntf("stis",20," ",tvr," ","rootnameList : ", rootnameList)
             HDUList                  = fits.open ( dnfn )
-            #iiiIndex                 = 0                       # formerly diagnostic
-            #outputMainHeader         = fits.getheader ( dnfn ) # formerly diagnostic
-
-            #DIAGNOSTICONLYDND fitsPackageData          = get_pkg_data_filename ( dnfn ) # NameError: name 'get_pkg_data_filename' is not defined
             sciencePixelCount        = 0
             highValuePixelCount      = 0
             
             # get gain here.
             SUBARRAY          = HDUList[0].header[ 'SUBARRAY'  ]
-#            CCDGAIN           = HDUList[0].header[ 'CCDGAIN'  ]
-#            CENTERA1          = HDUList[0].header[ 'CENTERA1' ]
-#            CENTERA2          = HDUList[0].header[ 'CENTERA2' ]
             SIZAXIS1          = HDUList[0].header[ 'SIZAXIS1' ]
-            SIZAXIS2          = HDUList[0].header[ 'SIZAXIS2' ]
-            # pixel accumulation based on STIS native header size has to be here.
-            # This is in the loop that prepares for, but has not yet reached, the Impl Para call.
-            # The record that goes into the Impl Para call has already been assembled, but we are still under loop at the individual file level.
-            # We are also behind the approved frame file wall.
-            # So we cannot simply be multiplying the file's number of frames by the file's STIS frame size.
-            # Because some of those frames may be missing.
-            # The easiest thing is to accumulate whatever frames have made it through selection.
-            
-            # Accumulate all targets going through their first run, since they begin under the assumption of being approved
-            # Accumulate all references, which are not yet under approval processes
-#            if approvedFlag == False
-#            if ( tvr == 0 and approvedFlag == False ) or ( tvr == 1 ): 
-#            uniquePixelsIngested  = uniquePixelsIngested + SIZAXIS1 * SIZAXIS2 # native width * native height
-#            if VL >= 3 : prntf("stis",20," ",tvr," ","uniquePixelsIngested              : ", uniquePixelsIngested)
-#            uniquePixelsProcessed = uniquePixelsProcessed + wcw * hch         # widest common width * highest common height
-#            if VL >= 3 : prntf("stis",20," ",tvr," ","uniquePixelsProcessed             : ", uniquePixelsProcessed)
-#            uniqueFramesProcessed = uniqueFramesProcessed + 1
-#            if VL >= 3 : prntf("stis",20," ",tvr," ","uniqueFramesProcessed             : ", uniqueFramesProcessed)
-            
-#            if tvr == 0 and approvedFlag == False : 
-#                uniquePixelsIngested  = uniquePixelsIngested + SIZAXIS1 * SIZAXIS2 # native width * native height
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","uniquePixelsIngested              : ", uniquePixelsIngested)
-#                uniquePixelsProcessed = uniquePixelsProcessed + wcw * hch         # widest common width * highest common height
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","uniquePixelsProcessed             : ", uniquePixelsProcessed)
-#                uniqueFramesProcessed = uniqueFramesProcessed + 1
-#                if VL >= 3 : prntf("stis",20," ",tvr," ","uniqueFramesProcessed             : ", uniqueFramesProcessed)            
+            SIZAXIS2          = HDUList[0].header[ 'SIZAXIS2' ]        
 
-            
-            #if CCDGAIN == 1: prntf("stis",20," ",tvr," ","\n\n\n\n")
-            if VL >= 3 : prntf("stis",20)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","starting while loop")
-            
             if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList )                : ", len ( HDUList ))
             if VL >= 3 : prntf("stis",20," ",tvr," ","len ( HDUList ) - 1            : ", len ( HDUList ) - 1)
             
@@ -2247,52 +1594,39 @@ def GetDataCenterPasFilename (
             
             iiiIndex                 = 1                
             
-            if VL >= 3 : prntf("stis",20," ",tvr," ","iiiIndex : ", iiiIndex, "iiiIndexMax : ", iiiIndexMax) # All frames on offer index
-            if VL >= 3 : prntf("stis",20," ",tvr," ","hhhIndex : ", hhhIndex, "hhhIndexMax : ", hhhIndexMax) # Approved frames index
-            if VL >= 3 : prntf("stis",20," ",tvr," ","This is the last line before the _while iiiIndex <= iiiIndexMax and hhhIndex <= hhhIndexMax :_")
-            
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","bef input_SCI_trgref [",tvr,"].shape        : ", input_SCI_trgref [tvr].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","aft input_SCI_trgref [",tvr,"].shape        : ", input_SCI_trgref [tvr].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","bef input_ERR_trgref [",tvr,"].shape        : ", input_ERR_trgref [tvr].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","aft input_ERR_trgref [",tvr,"].shape        : ", input_ERR_trgref [tvr].shape)
-
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_trgref[0].shape               : ", input_SCI_trgref[0].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_trgref[1].shape               : ", input_SCI_trgref[1].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_ERR_trgref[0].shape               : ", input_ERR_trgref[0].shape)
-            if VL >= 3 : prntf("stis",20," ",tvr," ","input_ERR_trgref[1].shape               : ", input_ERR_trgref[1].shape)
-            
-            
-            if VL >= 3 : prntf("stis",20," ",tvr," ","This is the last line in the _for dnfn in filelist :_")
+            if VL >= 3 : 
+                prntf("stis",20," ",tvr," ","iiiIndex : ", iiiIndex, "iiiIndexMax : ", iiiIndexMax) # All frames on offer index
+                prntf("stis",20," ",tvr," ","hhhIndex : ", hhhIndex, "hhhIndexMax : ", hhhIndexMax) # Approved frames index
+                prntf("stis",20," ",tvr," ","This is the last line before the _while iiiIndex <= iiiIndexMax and hhhIndex <= hhhIndexMax :_")
+                prntf("stis",20," ",tvr," ","bef input_SCI_trgref [",tvr,"].shape        : ", input_SCI_trgref [tvr].shape)
+                prntf("stis",20," ",tvr," ","aft input_SCI_trgref [",tvr,"].shape        : ", input_SCI_trgref [tvr].shape)
+                prntf("stis",20," ",tvr," ","bef input_ERR_trgref [",tvr,"].shape        : ", input_ERR_trgref [tvr].shape)
+                prntf("stis",20," ",tvr," ","aft input_ERR_trgref [",tvr,"].shape        : ", input_ERR_trgref [tvr].shape)
+                prntf("stis",20," ",tvr," ","input_SCI_trgref[0].shape               : ", input_SCI_trgref[0].shape)
+                prntf("stis",20," ",tvr," ","input_SCI_trgref[1].shape               : ", input_SCI_trgref[1].shape)
+                prntf("stis",20," ",tvr," ","input_ERR_trgref[0].shape               : ", input_ERR_trgref[0].shape)
+                prntf("stis",20," ",tvr," ","input_ERR_trgref[1].shape               : ", input_ERR_trgref[1].shape)
+                prntf("stis",20," ",tvr," ","This is the last line in the _for dnfn in filelist :_")
                 
-
-#1__#2__#3__#4__#5__#6__#7__
-# TAB 2 is the loop this is under, and this is INTENDED to treat an entire filelist, so that I am not losing overhead on shallow files.
-#   for filelist in userTrgListRefList :
-
-
-
-        if VL >= 3 : prntf("stis",20," ",tvr," ","frameTupleList_trgref    : ", frameTupleList_trgref )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len(implRecordList)      : ", len ( implRecordList ) )
-        if VL >= 4 : prntf("stis",20," ",tvr," ","implRecordList           : ", implRecordList )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","implRecordList[0][3]cent : ", implRecordList[0][3] )        
-        if VL >= 3 : prntf("stis",20," ",tvr," ","maskToBeUsed                 : \n{{{", maskToBeUsed, "}}}\n" )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","Cutout2DSize             : ", Cutout2DSize )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","VL                       : ", VL )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","DQmax                    : ", DQmax )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","yesApplyMaskFlag         : ", yesApplyMaskFlag )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","divertMaskFlag           : ", divertMaskFlag )
+        if VL >= 3 : 
+            prntf("stis",20," ",tvr," ","frameTupleList_trgref    : ", frameTupleList_trgref )
+            prntf("stis",20," ",tvr," ","len(implRecordList)      : ", len ( implRecordList ) )
+            prntf("stis",20," ",tvr," ","implRecordList[0][3]cent : ", implRecordList[0][3] )        
+            prntf("stis",20," ",tvr," ","maskToBeUsed             : \n{{{", maskToBeUsed, "}}}\n" )
+            prntf("stis",20," ",tvr," ","Cutout2DSize             : ", Cutout2DSize )
+            prntf("stis",20," ",tvr," ","VL                       : ", VL )
+            prntf("stis",20," ",tvr," ","DQmax                    : ", DQmax )
+            prntf("stis",20," ",tvr," ","yesApplyMaskFlag         : ", yesApplyMaskFlag )
+            prntf("stis",20," ",tvr," ","divertMaskFlag           : ", divertMaskFlag )
+        if VL >= 4 : prntf("stis",20," ",tvr," ","implRecordList      : ", implRecordList )
 
         implementationProcessPool = Pool ( cpuCount - 1 )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","cpuCount                 : ", cpuCount)
-        if VL >= 3 : prntf("stis",20," ",tvr," ","BEFORE tasks = [")
-#            time.sleep(2)
 
         iterableTimerIndicesImpl = range ( len ( implRecordList ) ) # first timerIndex = 0 for 0 seconds wait, then 1 sec wait, etc.
         
         tasks = [
                      implementationProcessPool.apply_async (
-                                                            parallelImplementationFunction , 
+                                                            parallel_implementation , 
                                                             args = (
                                                                     timerIndex        ,
                                                                     implRecord        , 
@@ -2306,77 +1640,34 @@ def GetDataCenterPasFilename (
                                                             )
                      for timerIndex, implRecord in zip ( iterableTimerIndicesImpl, implRecordList )
                      ]    
-        if VL >= 3 : prntf("post",20,"AFTER  tasks = [")
         implementationProcessPool.close()
         implementationProcessPool.join()
         ImplParallelizedResult = [ task.get() for task in tasks ]
         if VL >= 3 : prntf("post",20,"len(ImplParallelizedResult) : ", len(ImplParallelizedResult))
         if VL >= 4 : prntf("post",20,"ImplParallelizedResult      : ", ImplParallelizedResult)
-        if VL >= 3 : prntf("post",20,"individualResult : app_SCI_img, app_ERR_img")        
+        if VL >= 3 : prntf("post",20,"individualResult            : app_SCI_img, app_ERR_img")        
         
         returnCounter = 0
         for individualResult2 in ImplParallelizedResult :
             if VL >= 4 : prntf("post",20,returnCounter,"     individualResult2          : \n{{{",      individualResult2   ,"}}}\n")
             if VL >= 4 : prntf("post",20,returnCounter,"     individualResult2[0]       : \n{{{",      individualResult2[0],"}}}\n") # SCI
-            if VL >= 3 : prntf("post",20,returnCounter,"type(individualResult2[0])      : "     , type(individualResult2[0])       ) # SCI
-            if VL >= 3 : prntf("post",20,returnCounter,"     individualResult2[0].shape : "     ,      individualResult2[0].shape  ) # SCI            
             if VL >= 4 : prntf("post",20,returnCounter,"     individualResult2[1]       : \n{{{",      individualResult2[1],"}}}\n") # ERR
-            if VL >= 3 : prntf("post",20,returnCounter,"type(individualResult2[1])      : "     , type(individualResult2[1])       ) # ERR
-            if VL >= 3 : prntf("post",20,returnCounter,"     individualResult2[1].shape : "     ,      individualResult2[1].shape  ) # ERR            
-            # Accumulation of pixel counts happens in here??
-            
-            if VL >= 4 :
-                for element in individualResult2 :
-                    prntf("post",20,returnCounter," element        : \n{{{", element,"}}}\n") # first = SCI, second  = ERR
             returnCounter = returnCounter + 1
 
-        # This formulation could be causing the problem
-        implFilelistSCIFrameList [ tvr ] = [ col [0] for col in ImplParallelizedResult ]         
-        implFilelistERRFrameList [ tvr ] = [ col [1] for col in ImplParallelizedResult ]
-
-#        if VL >= 3 : prntf("stis",20," ",tvr," ","implFilelistSCIFrameList.shape : ", implFilelistSCIFrameList.shape )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistSCIFrameList) : ", type(implFilelistSCIFrameList) )
-
-        if VL >= 3 : prntf("stis",20," ",tvr," ","tvr  : ", tvr )
-        if VL >= 4 :     
-            for SCI_frame in implFilelistSCIFrameList [ tvr ]  :
-                prntf("stis",20," ",tvr," ","SCI_frame  : ", SCI_frame )
-            for ERR_frame in implFilelistERRFrameList [ tvr ]  :
-                prntf("stis",20," ",tvr," ","ERR_frame  : ", ERR_frame )
-
-
-        if VL >= 3 : 
-            prntf("stis",20," ",tvr," ","frameTupleList_trgref[tvr]         : ", frameTupleList_trgref[tvr] )            
-            for frameTuple in frameTupleList_trgref[tvr] :
-                prntf("stis",20," ",tvr," ","frameTuple                         : ", frameTuple )
-
-        input_filenames_trgref2 [tvr] = [ col [0][0] for col in frameTupleList_trgref[tvr] ]
-        if VL >= 3 : 
-            for filename in input_filenames_trgref2  [tvr]:
-                prntf("stis",20," ",tvr," ","filename                           : ", filename )
-
-        input_centers_trgref2  [tvr]  = [ col [2] for col in ImplParallelizedResult ]
-        if VL >= 3 : 
-            for center in input_centers_trgref2  [tvr]:
-                prntf("stis",20," ",tvr," ","center                             : ", center )
-
-
-        pas_trgref2[tvr] = [ None for col in implRecordList ]
-        if VL >= 3 : prntf("post",20,"len(pas_trgref2[tvr]) : ", len(pas_trgref2[tvr]))
-        wcsBlockList = [ col [4] for col in implRecordList ]
-        wwwIndex = 0
+        implFilelistSCIFrameList [ tvr ] = [ col [0]    for col in ImplParallelizedResult ]         
+        implFilelistERRFrameList [ tvr ] = [ col [1]    for col in ImplParallelizedResult ]
+        input_filenames_trgref2  [ tvr ] = [ col [0][0] for col in frameTupleList_trgref [ tvr ] ]
+        input_centers_trgref2    [ tvr ] = [ col [2]    for col in ImplParallelizedResult ]
+        pas_trgref2[tvr]                 =       [ None for col in implRecordList ]
+        wcsBlockList                     = [ col [4]    for col in implRecordList ]
+        wwwIndex                         = 0
         for wcsBlock in wcsBlockList :
-            if VL >= 3 : prntf("stis",20," ",tvr," ","wcsBlock              : ", wcsBlock )
-            rot_angle        = np.rad2deg ( math.atan2 ( wcsBlock.wcs.cd[1][0], wcsBlock.wcs.cd[0][0] ) )
-            wcsOrientat      = 180 * np.sign ( rot_angle ) - rot_angle
-            if VL >= 3 : prntf("stis",20," ",tvr," ","wcsOrientat           : ", wcsOrientat )
-            pas_trgref2 [ tvr ] [ wwwIndex ]      = 180 * np.sign ( rot_angle ) - rot_angle
-            wwwIndex = wwwIndex + 1
-        if VL >= 3 : 
-            for positionAngle in pas_trgref2[tvr] :
-                prntf("stis",20," ",tvr," ","positionAngle                  : ", positionAngle )
+            rot_angle                        = np.rad2deg ( math.atan2 ( wcsBlock.wcs.cd[1][0], wcsBlock.wcs.cd[0][0] ) )
+            wcsOrientat                      = 180 * np.sign ( rot_angle ) - rot_angle
+            pas_trgref2 [ tvr ] [ wwwIndex ] = 180 * np.sign ( rot_angle ) - rot_angle
+            wwwIndex                         = wwwIndex + 1
 
-        for all in frameTupleList_trgref[tvr] :
+        for all in frameTupleList_trgref [ tvr ] :
             tvrList.append ( tvr )
         tvr = tvr + 1 # within outer loop
 
@@ -2386,170 +1677,44 @@ def GetDataCenterPasFilename (
     frameTupleList_trgref.clear()
     
     if VL >= 3 : prntf("stis",20," ",tvr," ","COMPLETED : for filelist in userTrgListRefList " )
-    if VL >= 3 : print()
-    if VL >= 3 : print()
-    
+   
     
     
     # FQPN loop has concluded
-    rollAngleUniqueList = list ( set ( pas_trgref2 [ 0 ] ) ) # IS there a way to make this not print?
-    if VL >= 3 : prntf("stis",20," ",tvr," ","rollAngleUniqueList                           : ", rollAngleUniqueList)
+    rollAngleUniqueList     = list ( set ( pas_trgref2 [ 0 ] ) ) # IS there a way to make this not print?
     
-    rollAngleSum = sum ( rollAngleUniqueList, 0 )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","rollAngleSum                                  : ", rollAngleSum)
+    rollAngleSum            = sum ( rollAngleUniqueList, 0 )
     
-    rollAngleAverage = rollAngleSum / len ( rollAngleUniqueList )
-    if VL >= 3 : prntf("stis",20," ",tvr," ","rollAngleAverage                              : ", rollAngleAverage)
-    if VL >= 3 : print()
-    if VL >= 3 : print()
+    rollAngleAverage        = rollAngleSum / len ( rollAngleUniqueList )
     
-    if useRefandTrgFlag == True:
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (implFilelistSCIFrameList[0])         : ", len (implFilelistSCIFrameList[0]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistSCIFrameList[0])         : ", type(implFilelistSCIFrameList[0]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (implFilelistSCIFrameList[1])         : ", len (implFilelistSCIFrameList[1]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistSCIFrameList[1])         : ", type(implFilelistSCIFrameList[1]) )
-        if VL >= 3 : print()
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (implFilelistERRFrameList[0])         : ", len (implFilelistERRFrameList[0]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistERRFrameList[0])         : ", type(implFilelistERRFrameList[0]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (implFilelistERRFrameList[1])         : ", len (implFilelistERRFrameList[1]) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistERRFrameList[1])         : ", type(implFilelistERRFrameList[1]) )
-        if VL >= 3 : print()
-        if VL >= 3 : print()
-        if VL >= 3 : prntf("stis",20," ",tvr," ","     implFilelistSCIFrameList[0][0].shape : ",      implFilelistSCIFrameList[0][0].shape )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistSCIFrameList[0][0])      : ", type(implFilelistSCIFrameList[0][0])      )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","     implFilelistSCIFrameList[1][0].shape : ",      implFilelistSCIFrameList[1][0].shape )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistSCIFrameList[1][0])      : ", type(implFilelistSCIFrameList[1][0])      )
-        if VL >= 3 : print()
-        if VL >= 3 : prntf("stis",20," ",tvr," ","     implFilelistERRFrameList[0][0].shape : ",      implFilelistERRFrameList[0][0].shape )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistERRFrameList[0][0])      : ", type(implFilelistERRFrameList[0][0])      )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","     implFilelistERRFrameList[1][0].shape : ",      implFilelistERRFrameList[1][0].shape )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","type(implFilelistERRFrameList[1][0])      : ", type(implFilelistERRFrameList[1][0])      )
-        if VL >= 3 : print()
-        if VL >= 3 : print()
-        
-        
-        input_SCI_0_nparray = np.vstack ( implFilelistSCIFrameList [ 0 ] )
-        input_SCI_1_nparray = np.vstack ( implFilelistSCIFrameList [ 1 ] ) 
-        if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_0_nparray.shape  : ", input_SCI_0_nparray.shape ) # NO: (6630, 110)
-        if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_1_nparray.shape  : ", input_SCI_1_nparray.shape ) # NO: (3424, 110) 
-        
-        input_SCI_0_test = np.concatenate ( implFilelistSCIFrameList[0] )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_0_test.shape     : ", input_SCI_0_test.shape ) # NO: (6630, 110)
-        
-        input_SCI_tryanother = np.asarray(implFilelistSCIFrameList[0])
-        if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_tryanother.shape : ", input_SCI_tryanother.shape ) # NO: 
-        for all in input_SCI_tryanother:
-            if VL >= 3 : prntf("stis",20," ",tvr," ","type(all), all.shape       : ", type(all),all.shape)
-        
-#        input_SCI_tryanother2 = np.dstack( implFilelistSCIFrameList[0] )
-#        if VL >= 3 : prntf("stis",20," ",tvr," ","input_SCI_tryanother2.shape : ", input_SCI_tryanother2.shape ) # NO: (6630, 110)
-        
-        input_SCI = np.concatenate ( ( implFilelistSCIFrameList[0] , implFilelistSCIFrameList[1] ) )
-        input_ERR = np.concatenate ( ( implFilelistERRFrameList[0] , implFilelistERRFrameList[1] ) )
-        
-        input_centers = np.concatenate ( ( input_centers_trgref2[0] , input_centers_trgref2[1] ) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (input_centers)        : ", len (input_centers) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","input_centers              : " , input_centers)
-        
-        pas = np.concatenate ( ( pas_trgref2[0] , pas_trgref2[1] ) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","len (pas)                  : ", len (pas) )
-        if VL >= 3 : prntf("stis",20," ",tvr," ","pas                        : [\n" , pas, "]")
-        for angle in pas:
-            if VL >= 3 : prntf("stis",20," ",tvr," ","angle                      : " , angle)
-
-        input_filenames = np.concatenate ( ( input_filenames_trgref2[0] , input_filenames_trgref2[1] ) )
-
-        RADECList = np.concatenate ( ( RADEC_trgref[0], RADEC_trgref[1] ) )
+    if useRefandTrgFlag    == True:    
+        input_SCI_0_nparray = np.vstack        ( implFilelistSCIFrameList[0] )
+        input_SCI_1_nparray = np.vstack        ( implFilelistSCIFrameList[1] ) 
+        input_SCI_0_test    = np.concatenate   ( implFilelistSCIFrameList[0] )
+        input_SCI           = np.concatenate ( ( implFilelistSCIFrameList[0] , implFilelistSCIFrameList[1] ) )
+        input_ERR           = np.concatenate ( ( implFilelistERRFrameList[0] , implFilelistERRFrameList[1] ) )
+        input_centers       = np.concatenate ( ( input_centers_trgref2[0]    , input_centers_trgref2[1]    ) )
+        pas                 = np.concatenate ( ( pas_trgref2[0]              , pas_trgref2[1]              ) )
+        input_filenames     = np.concatenate ( ( input_filenames_trgref2[0]  , input_filenames_trgref2[1]  ) )
+        RADECList           = np.concatenate ( ( RADEC_trgref[0]             , RADEC_trgref[1]             ) )
     
     else:            
-        input_SCI = implFilelistSCIFrameList[0]
-        input_ERR = implFilelistERRFrameList[0]
-        input_centers = input_centers_trgref2[0]
-        
-        pas = np.array ( pas_trgref2[0] )
+        input_SCI           = implFilelistSCIFrameList[0]
+        input_ERR           = implFilelistERRFrameList[0]
+        input_centers       = input_centers_trgref2[0]
+        pas                 = np.array ( pas_trgref2[0] )
+        input_filenames     = input_filenames_trgref2[0]
+        RADECList           = RADEC_trgref[0]
 
-        input_filenames = input_filenames_trgref2[0]
-
-        RADECList = RADEC_trgref[0]
-
-
-    
-
-    rollAngleSetReturn = pas_trgref2[0]
-    if VL >= 3 : prntf("stis",20," ",tvr," ","pas_trgref2[0]     : " , pas_trgref2[0])
-    if VL >= 3 : prntf("stis",20," ",tvr," ","rollAngleSetReturn : " , rollAngleSetReturn)      
+    rollAngleSetReturn = pas_trgref2[0]      
 
     input_centers_trgref2.clear()
 
     pas_trgref2.clear()
-    if VL >= 3 : prntf("stis",20," ",tvr," ","pas_trgref2        : " , pas_trgref2)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","rollAngleSetReturn : " , rollAngleSetReturn) # Persisted. So, not a pointer?
 
     input_filenames_trgref2.clear()
 
-    if VL >= 3 : prntf("stis",20," ",tvr," ","position           :", position)
-    
-    #return input_SCI, input_centers, pas, input_filenames, rollAngleSet
-    
-    if VL >= 3 : prntf("stis",20," ",tvr," ","input_centers      :\n", input_centers)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","pas                :\n", pas)
-    if VL >= 3 : prntf("stis",20," ",tvr," ","RADECList          :\n", RADECList)
-
     return input_SCI, input_centers, pas, input_filenames, rollAngleSetReturn, rollAngleAverage, RADECList, HDUList[0].header[ 'RA_TARG'  ], HDUList[0].header[ 'DEC_TARG' ], rootnameList, sizeMax, tvrList, input_ERR, maskToBeUsed, approvedFrameList, uniquePixelsIngested, uniquePixelsProcessed, uniqueFramesProcessed, uniqueFilesProcessed, IWACalculation
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2635,10 +1800,10 @@ class STISData ( Data ):
                 
             Methods:
                 prntf("stis",20,)                           : Diagnostic prints and User reporting prints
-                GetFileMaskSize ()            : Get the native size values from the unprocessed STIS frame of the mask
-                GetMaskFunction ()              : Get the Highest Common Height values of the effective aperture of the mask
-                GetDataCenterPasFilename ()     : Get the data requested by pyklip. Also get some other data for NMF.
-                outputFramesXPR ()              : Take in the products of pyklip or NMF and perform statistics, sort it, and produce FITS.
+                get_file_mask ()            : Get the native size values from the unprocessed STIS frame of the mask
+                get_mask_function ()              : Get the Highest Common Height values of the effective aperture of the mask
+                primary_function ()     : Get the data requested by pyklip. Also get some other data for NMF.
+                get_output_framesXPR ()              : Take in the products of pyklip or NMF and perform statistics, sort it, and produce FITS.
                 savedata()                      : Pyklip uses this to save data to the .dataset member.
                 sanity()                        : Diagnostic to print plots
         """
@@ -2653,12 +1818,8 @@ class STISData ( Data ):
         except ConfigParser.Error as e :
             print("Error reading STIS configuration file: {0}".format(e.messsage))
             raise e
-            
-        
-        if VL >= 3 : prntf("stis",20,"outputFolder                     : ", outputFolder)
 
-#        input_SCI2, centers2, pas2, input_filenames2, self.rollAngleSet, self.rollAngleAverage, RADECList2, RA_TARG, DEC_TARG, rootnameList, returnSizeMax, tvrList, input_ERR2, maskToBeUsed2, approvedFrameList2, uniquePixelsIngested2, uniquePixelsProcessed2, uniqueFramesProcessed2, uniqueFilesProcessed2 = GetDataCenterPasFilename ( xExtent, yExtent, trgSCIListrefSCIList, yesApplyMaskFlag, divertMaskFlag, maskFilename, DatasetPlotFlag, useRefandTrgFlag, DQmax, sizeMax, VL, approvedFlag, radonFlag, userTestingNumberFrames )
-        input_SCI2, centers2, pas2, input_filenames2, self.rollAngleSet, self.rollAngleAverage, RADECList2, RA_TARG, DEC_TARG, rootnameList, returnSizeMax, tvrList, input_ERR2, maskToBeUsed2, approvedFrameList2, uniquePixelsIngested2, uniquePixelsProcessed2, uniqueFramesProcessed2, uniqueFilesProcessed2, runTrgHalfWedgePixels2 = GetDataCenterPasFilename ( config, xExtent, yExtent, trgSCIListrefSCIList, outputFolder, yesApplyMaskFlag, divertMaskFlag, maskFilename, fileMaskWedgeCode, DatasetPlotFlag, useRefandTrgFlag, DQmax, sizeMax, VL, approvedFlag, radonFlag, userTestingNumberFrames, dynMask4ple, runWedgeDecided )
+        input_SCI2, centers2, pas2, input_filenames2, self.rollAngleSet, self.rollAngleAverage, RADECList2, RA_TARG, DEC_TARG, rootnameList, returnSizeMax, tvrList, input_ERR2, maskToBeUsed2, approvedFrameList2, uniquePixelsIngested2, uniquePixelsProcessed2, uniqueFramesProcessed2, uniqueFilesProcessed2, runTrgHalfWedgePixels2 = primary_function ( config, xExtent, yExtent, trgSCIListrefSCIList, outputFolder, yesApplyMaskFlag, divertMaskFlag, maskFilename, fileMaskWedgeCode, DatasetPlotFlag, useRefandTrgFlag, DQmax, sizeMax, VL, approvedFlag, radonFlag, userTestingNumberFrames, dynMask4ple, runWedgeDecided )
 
 
         self.config = config
@@ -2673,13 +1834,10 @@ class STISData ( Data ):
 
         self._PAs                = pas2
         self._filenames          = input_filenames2
-        #prntf("stis",20,"STIS 307 self._filenames : ", self._filenames)
         
         unique_filenames         = np.unique ( input_filenames2 )
-        #prntf("stis",20,"STIS 309 unique_filenames : ", unique_filenames)
         
         self._filenums           = np.array ( [ np.argwhere ( filename == unique_filenames ) .ravel()[0] for filename in input_filenames2 ] )
-        #prntf("stis",20,"STIS 311 self._filenums : ", self._filenums)
         
         if wvs is not None:
             self._wvs            = wvs
@@ -2690,11 +1848,8 @@ class STISData ( Data ):
         
         self.yExtent             = yExtent
         
-        
         self.IWA                 = IWA
-        if VL >= 3 : prntf("stis",20,"self.IWA :", self.IWA)
         self.IWA                 = runTrgHalfWedgePixels2
-        if VL >= 3 : prntf("stis",20,"self.IWA :", self.IWA)
 
         self.OWA                 = OWA  # this is a private/init member of the parent class, Data.
                                     # along with creator, klipparams, flipx, output_centers, output_wcs
@@ -2702,27 +1857,12 @@ class STISData ( Data ):
         
         self.flipx               = flipx
 
-        
-        if VL >= 3 : prntf("stis",20,"self.centers :\n", self.centers)
-        if VL >= 3 : prntf("stis",20,"self._PAs    :\n", self._PAs)
-#        self._wcs                = np.array ( [ wcsgen.generate_wcs ( parang, center, flipx = flipx ) for parang, center in zip ( self._PAs, self.centers ) ] )
-#        maximumIndex = len ( self._PAs ) - 1
-#        iiiIndex = 0
         self._wcs = [ None ] * len ( self._PAs )        
         for iiiIndex in range ( len ( self._PAs ) ) :
-            if VL >= 3 : prntf("stis",20,"self.centers[iiiIndex] :\n", self.centers[iiiIndex])
-            if VL >= 3 : prntf("stis",20,"self._PAs[iiiIndex]    :\n", self._PAs[iiiIndex])
             self._wcs [iiiIndex] = wcsgen.generate_wcs ( self._PAs[iiiIndex], self.centers[iiiIndex], flipx = flipx )
-            if VL >= 3 : prntf("stis",20,"self._wcs [iiiIndex]   :\n", self._wcs [iiiIndex])
-#        for parang, center in zip ( self._PAs, self.centers ) :
-#            self._wcs.append( wcsgen.generate_wcs ( parang, center, flipx = flipx ) )
 
-        if VL >= 3 : prntf("stis",20,"RADECList2         :\n", RADECList2)
-        if VL >= 3 : prntf("stis",20,"len ( RADECList2 ) :\n", len ( RADECList2 ) )
         
         for i in range ( len ( self.wcs ) ):
-#            self.wcs[i].wcs.crval[0] = RA_TARG
-#            self.wcs[i].wcs.crval[1] = DEC_TARG
             self.wcs[i].wcs.crval[0] = RADECList2[i][0]
             self.wcs[i].wcs.crval[1] = RADECList2[i][1]
         
@@ -2808,142 +1948,23 @@ class STISData ( Data ):
     def output ( self, newval ):
         self._output = newval
     
-    def sanity(self, VL, sanityPlotFlag) :
-        if VL >= 3 : prntf("stis",20,"self._input.shape : ", self._input.shape)
-        if VL >= 3 : prntf("stis",20,"type(self._input) : ", type(self._input))
-        
-        # can plt input_SCI2 as a final check
+    def sanity(self, VL, sanityPlotFlag) :        
         selfDatasetIndex = 0
-#        logging.getLogger('matplotlib').setLevel(logging.WARNING)
         for frame in self._input :
             filename = self._filenames[selfDatasetIndex]
             rootname = filename.split('_')
-#            if VL >= 3 : prntf("stis",20,"rootname : ", rootname[0])
-            if VL >= 4 : prntf("stis",20,"frame.shape : ", frame.shape)
-            if VL >= 4 : prntf("stis",20,"type(frame) : ", type(frame))
-#            if sanityPlotFlag :
-#                import matplotlib.pyplot as plt                
-#                plt.figure      ( )
-#                plt.imshow      ( frame )
-#                plt.xlim        ( [ 0, frame.shape[1] ] ) 
-#                plt.ylim        ( [ 0, frame.shape[0] ] )
-#                plt.title       (
-#                                 "self._input " + rootname[0] + ", " + str(selfDatasetIndex)
-#                                 )
             selfDatasetIndex = selfDatasetIndex + 1
+            # prints can be added in here if necessary
 
     def __del__(self):
         prntf("stis",20,"Destructor called.")
-
-
-
-    
-    
-    
-    
-    
-    
-    
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
 
 
 
-
     
-    def outputFrames ( 
-#                         self                     ,
-#                         approvedFlag     = False , # False is conservative 
-#                         radonFlag        = False , # False is conservative 
-#                         percentThreshold = 90    ,
-#                         stddevSortFlag   = True  ,
-#                         stisSortFlag     = True  ,
-#                         OutFrPlotFlag    = False ,
-#                         blockApyUserWarn = True  ,
-#                         zeroOutputFrames_wcsOrientatFlag = False ,
-#                         incomingArray    = None  ,
-#                         VL               = 0     , # Verbosity Level 
-#                         username         = "zyx"   # default
-#                         approvedpath    = "approvedFrameFolder/"
-#                         ) :
+    def get_output_frames ( 
                         self                                                     ,
                         approvedFlag                     = False                 , # False is conservative 
                         radonFlag                        = False                 , # False is conservative 
@@ -2954,10 +1975,10 @@ class STISData ( Data ):
                         blockApyUserWarn                 = True                  ,
                         zeroOutputFrames_wcsOrientatFlag = False                 ,
                         outputFolder                     = ""                    ,
+                        runNumberString                  = ""                    ,
                         incomingArray                    = None                  ,
                         VL                               = 0                     , # Verbosity Level 
                         username                         = "zyx"                 #,  # default
-                      #approvedpath                     = "approvedFrameFolder/"
                         ) :        
         """
             Performs a variety of operations on data stored in Instrument class "dataset" member
@@ -2972,167 +1993,131 @@ class STISData ( Data ):
                 percentThreshold = 90    : Int.          User determined top percentage of frame stddev.
                 stddevSortFlag   = True  : Bool.         True means: Yes, send stddev sort to approved frames. 
                 stisSortFlag     = True  : Bool.         True means: Yes, send STIS   sort to approved frames.
-                OutFrPlotFlag         = False : Bool.         True means: Yes, plot the frame where possible. DIAG.
+                OutFrPlotFlag    = False : Bool.         True means: Yes, plot the frame where possible. DIAG.
                 blockApyUserWarn = True  : Bool.         True means: Yes, block the pink warnings.
                 VL               = 0     : Int.          Verbosity Level 
                 username         = "zyx" : String.       Username
             Return :
                 self._output             : pointer.      Placeholder return value. Same thing as what is accessed for pyklip.
                                            TODO: See if there's any rationale to keep or dispose. Leave it for now. 
-                
-                    
         """
-        if VL >= 3 : prntf("stis",20,"outputFolder : ", outputFolder)
-#        approvedpath = self.config.get ("paths", "approvedpath")
-        approvedpath = outputFolder
-        if VL >= 3 : prntf("stis",20,"VL : ", VL)
-        if VL >= 3 : prntf("stis",20,"OutFrPlotFlag : ", OutFrPlotFlag)
-        if VL >= 3 : prntf("stis",20,"All frames in this function are residual frames")        
-        if VL >= 3 : prntf("stis",20,"approvedFlag                      : ", approvedFlag)
-        if VL >= 3 : prntf("stis",20,"radonFlag                         : ", radonFlag)
-        if VL >= 3 : prntf("stis",20,"incomingArray                     : ", incomingArray)
+        if VL >= 3 : 
+            prntf("outp",20,"outputFolder                      : ", outputFolder)
+            prntf("outp",20,"VL                                : ", VL)
+            prntf("outp",20,"OutFrPlotFlag                     : ", OutFrPlotFlag)        
+            prntf("outp",20,"approvedFlag                      : ", approvedFlag)
+            prntf("outp",20,"radonFlag                         : ", radonFlag)
+            prntf("outp",20,"incomingArray                     : ", incomingArray)
+            prntf("outp",20,"runNumberString                   : ", runNumberString)
     
         if incomingArray is None :                      
-            if VL >= 3 : prntf("stis",20,"Pyklip has already updated dataset._output")
-            if VL >= 3 : prntf("stis",20,"self._output.shape  : ", self._output.shape)
+            if VL >= 3 : prntf("outp",20,"Pyklip has already updated dataset._output")
+            if VL >= 3 : prntf("outp",20,"self._output  : ", self._output)
+            if VL >= 3 : prntf("outp",20,"self._output.shape  : ", self._output.shape)
             squeeze2           = np.squeeze(self._output, axis = 2) # wvs is identical ; these have been stored North Up
-            if VL >= 3 : prntf("stis",20,"squeeze2.shape      : ", squeeze2.shape)
-            if VL >= 3 : prntf("stis",20,"Select the first mode (or only mode) for the purposes of stddev sorting.")
+            if VL >= 3 : prntf("outp",20,"squeeze2.shape      : ", squeeze2.shape)
+            if VL >= 3 : prntf("outp",20,"Select the first mode (or only mode) for the purposes of stddev sorting.")
             internalArray = squeeze2[0]
         else :                                          
-            if VL >= 3 : prntf("stis",20,"We're passing in NMF output")
-            if VL >= 3 : prntf("stis",20,"incomingArray.shape               : ", incomingArray.shape) # STIS Up.
+            if VL >= 3 : prntf("outp",20,"Output from the NMF program is being passed into get_output_frames")
+            if VL >= 3 : prntf("outp",20,"incomingArray.shape               : ", incomingArray.shape) # STIS Up.
             internalArray      = incomingArray
         
-        if VL >= 3 : prntf("stis",20,"internalArray is residual frames that have been stripped of their filename and their ImageHDU index.")
-        if VL >= 3 : prntf("stis",20,"internalArray : ", internalArray)
         lengthInternalArray       = len (internalArray)
-        if VL >= 3 : prntf("stis",20,"lengthInternalArray               : ", lengthInternalArray)
-        if VL >= 4 : 
-            for frame in internalArray:
-                for row in frame:
-                    for col in row:
-                        prntf("stis",20,col)        
-        
-        if VL >= 3 : prntf("stis",20,"STIS dataset member approvedFrameList is in tuples of filename, ImageHDU, and stddev")
-        if VL >= 3 : prntf("stis",20,"self.approvedFrameList            : ", self.approvedFrameList)
-        
-        
-        
-        
-        if VL >= 3 : prntf("stis",20,"We're going to use astropy statistics module under catch_warnings")
-        if VL >= 3 : prntf("stis",20,"in order to suppress the warning about nans (if the User sets the flag).")
+
+        if VL >= 3 : 
+            prntf("outp",20,"internalArray is residual frames that have been stripped of their filename and their ImageHDU index.")
+            prntf("outp",20,"internalArray : ", internalArray)
+            prntf("outp",20,"lengthInternalArray               : ", lengthInternalArray)
+            prntf("outp",20,"STIS dataset member approvedFrameList is in tuples of filename, ImageHDU, and stddev")
+            prntf("outp",20,"self.approvedFrameList            : ", self.approvedFrameList)
+            prntf("outp",20,"We're going to use astropy statistics module under catch_warnings")
+            prntf("outp",20,"in order to suppress the warning about nans (if the User sets the flag).")
+
         import warnings
         from astropy.utils.exceptions import AstropyUserWarning
         with warnings.catch_warnings() :
             if blockApyUserWarn : 
                 warnings.simplefilter("ignore", AstropyUserWarning)
-            sigma                  = 2
             
-            if VL >= 3 : prntf("stis",20,"Set selfDatasetIndex = 0")
-            if VL >= 3 : prntf("stis",20,"The STISData class object 'dataset' has a member '_filenames' holding all one filename for every frame.")
-            if VL >= 3 : prntf("stis",20,"The index starts at 0.")
+            sigma                  = 2
             selfDatasetIndex       = 0
-
-            if VL >= 3 : prntf("stis",20,"Get the very first filename, index = 0, in self._filenames.")
             filename               = self._filenames [ selfDatasetIndex ]
-            if VL >= 3 : prntf("stis",20,"filename                          : ", filename, "\n")
             lastFilename           = filename
-            if VL >= 3 : prntf("stis",20,"Set ImageHDUIndex = 1 because STIS ImageHDU indices begin at _1_")
-            ImageHDUIndex         = 1 
-
-            if VL >= 3 : prntf("stis",20,"unSigmaClippedFrame means frame has not yet been sigma clipped, and still has high value pixels...")
-            if VL >= 3 : prntf("stis",20,"...in the form of diffraction spikes, wedge diffraction, PSF, and disk structure.")
-            tuple7List = []
+            ImageHDUIndex          = 1 
+            tuple7List             = []
             tuple7List.clear()        
             
-            
-            
-            
-            if VL >= 3 : prntf("stis",20,"STARTTTT for unSigmaClippedFrame in internalArray :")
-            if VL >= 3 : prntf("stis",20,"len(internalArray)          : ", len(internalArray))
+            if VL >= 3 : 
+                prntf("outp",20,"Set selfDatasetIndex = 0")
+                prntf("outp",20,"The STISData class object 'dataset' has a member '_filenames' holding all one filename for every frame.")
+                prntf("outp",20,"The index starts at 0.")
+                prntf("outp",20,"Get the very first filename, index = 0, in self._filenames.")
+                prntf("outp",20,"filename                          : ", filename, "\n")
+                prntf("outp",20,"Set ImageHDUIndex = 1 because STIS ImageHDU indices begin at _1_")
+                prntf("outp",20,"unSigmaClippedFrame means frame has not yet been sigma clipped, and still has high value pixels...")
+                prntf("outp",20,"...in the form of diffraction spikes, wedge diffraction, PSF, and disk structure.")
+                        
+            if VL >= 3 : prntf("outp",20,"STARTTTT for unSigmaClippedFrame in internalArray :")
+            if VL >= 3 : prntf("outp",20,"len(internalArray)          : ", len(internalArray))
             for unSigmaClippedFrame in internalArray :
-                if VL >= 3 : prntf("stis",20,"selfDatasetIndex         : ", selfDatasetIndex)                
+                if VL >= 3 : prntf("outp",20,"selfDatasetIndex         : ", selfDatasetIndex)                
                 
                 if approvedFlag == True :
-                    if VL >= 4 : prntf("stis",20,"If we're importing approvedFrameList, get the next 3-tuple from approvedFrameList.")
+                    if VL >= 4 : prntf("outp",20,"If we're importing approvedFrameList, get the next 3-tuple from approvedFrameList.")
                     approved3Tuple = self.approvedFrameList [ selfDatasetIndex ]
-                    if VL >= 3 : prntf("stis",20,"approved3Tuple           : ", approved3Tuple)
+                    if VL >= 3 : prntf("outp",20,"approved3Tuple           : ", approved3Tuple)
 
-                if VL >= 4 : prntf("stis",20,"Get the next filename from STISData class 'dataset' member 'self._filenames'. ")
+                if VL >= 4 : prntf("outp",20,"Get the next filename from STISData class 'dataset' member 'self._filenames'. ")
                 filename       = self._filenames            [ selfDatasetIndex ]
-                if VL >= 2 : prntf("stis",20,"filename , ImageHDUIndex : ", filename, " ", ImageHDUIndex, " checking if approved...")
-                #if VL >= 3 : prntf("stis",20,"ImageHDUIndex         : ", ImageHDUIndex)
-                #if VL >= 3 : prntf("stis",20, "\t\t\t\t\t\t\t\t\t\t\t\t\t\t", filename, " ", ImageHDUIndex)
+                if VL >= 2 : prntf("outp",20,"filename , ImageHDUIndex : ", filename, " ", ImageHDUIndex, " checking if approved...")
                 
-                if VL >= 4 : prntf("stis",20,"Get the next wcs keyword set from STISData class 'dataset' member 'self._wcs'. ")
+                if VL >= 4 : prntf("outp",20,"Get the next wcs keyword set from STISData class 'dataset' member 'self._wcs'. ")
                 wcsKeywords    = self._wcs                  [ selfDatasetIndex ]
-                if VL >= 4 : prntf("stis",20,"wcsKeywords           : ", wcsKeywords)
+                if VL >= 4 : prntf("outp",20,"wcsKeywords           : ", wcsKeywords)
                 cd11           = wcsKeywords.wcs.cd[0][0]
-                if VL >= 4 : prntf("stis",20,"cd11 : ", cd11)
+                if VL >= 4 : prntf("outp",20,"cd11 : ", cd11)
                 cd21           = wcsKeywords.wcs.cd[1][0]
-                if VL >= 4 : prntf("stis",20,"cd21 : ", cd21)
+                if VL >= 4 : prntf("outp",20,"cd21 : ", cd21)
                 
                 center         = self.centers               [ selfDatasetIndex ]
                 
-                if VL >= 4 : prntf("stis",20,"Convert WCS matrix elements to orientation angle.")
+                if VL >= 4 : prntf("outp",20,"Convert WCS matrix elements to orientation angle.")
                 rho_a          = math.atan2    ( cd21, cd11 ) #  math.atan2(y, x)
                 rot_angle      = np.rad2deg    ( rho_a )
                 wcsOrientat    = 180 * np.sign ( rot_angle ) - rot_angle
-                if VL >= 3 : prntf("stis",20,"wcsOrientat             : ", wcsOrientat)
+                if VL >= 3 : prntf("outp",20,"wcsOrientat             : ", wcsOrientat)
 
-                if VL >= 4 : prntf("stis",20,"Get the next PA from STISData class 'dataset' member 'self._PAs'. Sanity check only.")
+                if VL >= 4 : prntf("outp",20,"Get the next PA from STISData class 'dataset' member 'self._PAs'. Sanity check only.")
                 sanityPA  = self._PAs                  [ selfDatasetIndex ]
-                if VL >= 3 : prntf("stis",20,"sanityPA                : ", sanityPA)
-                
-
+                if VL >= 3 : prntf("outp",20,"sanityPA                : ", sanityPA)
 
                 if approvedFlag == True :
                     if filename == approved3Tuple [ 0 ] and ImageHDUIndex != approved3Tuple [ 1 ] :
-                        if VL >= 2 : prntf("stis",20,"if filename == approved3Tuple [ 0 ] and ImageHDUIndex != approved3Tuple [ 1 ] :")
-                        if VL >= 4 : prntf("stis",20,"This means we ended a contiguous block of approved frames while advancing through this filename.") 
-                        if VL >= 4 : prntf("stis",20,"Ratchet ImageHDUIndex ahead to wherever the gap resumes with approved frames.")
+                        if VL >= 2 : prntf("outp",20,"if filename == approved3Tuple [ 0 ] and ImageHDUIndex != approved3Tuple [ 1 ] :")
+                        if VL >= 4 : prntf("outp",20,"This means we ended a contiguous block of approved frames while advancing through this filename.") 
+                        if VL >= 4 : prntf("outp",20,"Ratchet ImageHDUIndex ahead to wherever the gap resumes with approved frames.")
                         ImageHDUIndex              = approved3Tuple [ 1 ]
-                        if VL >= 4 : prntf("stis",20,"ImageHDUIndex            : ", ImageHDUIndex)
+                        if VL >= 4 : prntf("outp",20,"ImageHDUIndex            : ", ImageHDUIndex)
 
                 if filename                     != lastFilename :
-                    if VL >= 2 : prntf("stis",20,"if filename           != lastFilename")
-                    if VL >= 4 : prntf("stis",20,"This means we ended a block of approved frames belonging to one filename.")
-                    if VL >= 4 : prntf("stis",20,"Reset ImageHDUIndex bacvk to 1, because we're about to start a new filename.")
+                    if VL >= 2 : prntf("outp",20,"if filename           != lastFilename")
+                    if VL >= 4 : prntf("outp",20,"This means we ended a block of approved frames belonging to one filename.")
+                    if VL >= 4 : prntf("outp",20,"Reset ImageHDUIndex bacvk to 1, because we're about to start a new filename.")
                     ImageHDUIndex              = 1
-                    if VL >= 4 : prntf("stis",20,"ImageHDUIndex        : ", ImageHDUIndex)
-                if VL >= 2 : prntf("stis",20,"filename , ImageHDUIndex : ", filename, " ", ImageHDUIndex, " confirmed approved.")                        
+                    if VL >= 4 : prntf("outp",20,"ImageHDUIndex        : ", ImageHDUIndex)
+                if VL >= 2 : prntf("outp",20,"filename , ImageHDUIndex : ", filename, " ", ImageHDUIndex, " confirmed approved.")                        
 
-                if VL >= 4 : prntf("stis",20,"Sigma clip the frame to get ONLY the background pixels.")
-                if VL >= 4 : prntf("stis",20,"Getting ONLY the background pixels allows getting statistics on background noise level.")
+                if VL >= 4 : prntf("outp",20,"Sigma clip the frame to get ONLY the background pixels.")
+                if VL >= 4 : prntf("outp",20,"Getting ONLY the background pixels allows getting statistics on background noise level.")
                 from astropy import stats
-#                import importlib
-#                importlib.reload ( stats )
+
                 stisUpSigmaClippedFrame  = stats.sigma_clip        ( unSigmaClippedFrame, sigma = sigma, maxiters = 5 )
-                if VL >= 4 : prntf("stis",20,"type ( stisUpSigmaClippedFrame  ): ", type ( stisUpSigmaClippedFrame  ) ) # "<class 'numpy.ma.core.MaskedArray'>"
 
-                if VL >= 4 : prntf("stis",20,"Get mean, median and stddev on ONLY the background pixels.")
-#                from astropy import stats
-#                import importlib
-#                importlib.reload ( stats )                
+                if VL >= 4 : prntf("outp",20,"Get mean, median and stddev on ONLY the background pixels.")
+
+                
                 frameMeanMedStddev = stats.sigma_clipped_stats ( stisUpSigmaClippedFrame, sigma = sigma, maxiters = 5)
-                if VL >= 4 : prntf("stis",20,"type ( frameMeanMedStddev ): ", type ( frameMeanMedStddev ) ) # "<class 'tuple'>"
-
-#                if VL >= 3 : prntf("stis",20,"   STARTTTT if OutFrPlotFlag :")
-#                if OutFrPlotFlag :
-##                    logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                    import matplotlib.pyplot as plt
-#                    plt.figure      ( )
-#                    plt.imshow      (         stisUpSigmaClippedFrame            )
-#                    plt.xlim        (   [ 0 , stisUpSigmaClippedFrame.shape[1] ] )
-#                    plt.ylim        (   [ 0 , stisUpSigmaClippedFrame.shape[0] ] )
-#                    plt.title       ( 
-#                                              filename        + ", ImageHDU " + # _filename_ here can be reduced to _rootname_... 
-#                                        str ( ImageHDUIndex ) + ", stddev "   + 
-#                                        str ( "{:.2f}".format ( frameMeanMedStddev [ 2 ] ) ) 
-#                                    )
-#                    plt.show        ( )
-#                if VL >= 3 : prntf("stis",20,"   STOPPPPP if OutFrPlotFlag :\n")
                 
 
                 stisUpSigmaClippedFrameNPArray        = np.array ( stisUpSigmaClippedFrame )
@@ -3141,36 +2126,9 @@ class STISData ( Data ):
                 if zeroOutputFrames_wcsOrientatFlag == True :
                     rotationAngle = 0
                 from pyklip.klip import rotate as pyklipRotate
-                #northUpSigmaClippedFrameNPArray = pyklipRotate ( stisUpSigmaClippedFrameNPArray, wcsOrientat, rotationCenter )
                 northUpSigmaClippedFrameNPArray = pyklipRotate ( stisUpSigmaClippedFrameNPArray, rotationAngle, rotationCenter )                
-#                if incomingArray is not None : # nmf_imaging               
-#                    northUpSigmaClippedFrameNPArray = klip.rotate ( stisUpSigmaClippedFrameNPArray, wcsOrientat, rotationCenter )
-#                else : # I.E., if incomingArray is None :, so, pyklip 
-#                    northUpSigmaClippedFrameNPArray = stisUpSigmaClippedFrameNPArray
-#                    # ^^^ might need ot be some kind of deep copy?
-                
-                if VL >= 4 : prntf("stis",20,"type(northUpSigmaClippedFrameNPArray) : ", type(northUpSigmaClippedFrameNPArray))
-                if VL >= 3 : prntf("stis",20,"northUpSigmaClippedFrameNPArray.shape : ", northUpSigmaClippedFrameNPArray.shape)
-#                if VL >= 3 : prntf("stis",20,"   STARTTTT if OutFrPlotFlag :")
-#                if OutFrPlotFlag :
-##                    logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                    import matplotlib.pyplot as plt
-#                    plt.figure      ( )
-#                    plt.imshow      (         northUpSigmaClippedFrameNPArray            )
-#                    plt.xlim        (   [ 0 , northUpSigmaClippedFrameNPArray.shape[1] ] )
-#                    plt.ylim        (   [ 0 , northUpSigmaClippedFrameNPArray.shape[0] ] )
-#                    plt.title       ( 
-#                                     filename       + ", ImageHDU " + # _filename_ here can be reduced to _rootname_... 
-#                                     str ( ImageHDUIndex ) + ", NU wcsOrientat "   + 
-#                                     str ( "{:.2f}".format ( wcsOrientat ) ) 
-#                                     )                    
-#                    plt.show        ( )
-#                if VL >= 3 : prntf("stis",20,"   STOPPPPP if OutFrPlotFlag :\n")
 
-
-                
-
-                if VL >= 4 : prntf("stis",20,"tuple7List is a list of tuples and is the main variable that all following processes will access.")
+                if VL >= 4 : prntf("outp",20,"tuple7List is a list of tuples and is the main variable that all following processes will access.")
                 tuple7List . append (
                                             (
                                                  stisUpSigmaClippedFrame         , # 0 , frame
@@ -3183,79 +2141,36 @@ class STISData ( Data ):
                                                  northUpSigmaClippedFrameNPArray   # 7
                                              )
                                         )
-                if VL >= 4 : prntf("stis",20,"selfDatasetIndex = selfDatasetIndex + 1, because STIS SCI ImageHDU Index position has been stripped.")
-                if VL >= 4 : prntf("stis",20,"The frames which used to be separated by ERR and DQ now go SCI, SCI, SCI ... in STISData 'dataset'.")
                 selfDatasetIndex       = selfDatasetIndex      + 1                
-                if VL >= 4 : prntf("stis",20,"ImageHDUIndex = ImageHDUIndex + 3, because STIS exposures go SCI+ERR+DQ , SCI+ERR+DQ , SCI+ERR+DQ ...")
                 ImageHDUIndex          = ImageHDUIndex         + 3                
-                if VL >= 4 : prntf("stis",20,"lastFilename = filename is to ratchet forward the value of lastFilename...")
-                if VL >= 4 : prntf("stis",20,"...for the 'if filename != lastFilename :' comparator")               
                 lastFilename           = filename 
-                if VL >= 4 : prntf("stis",20," ")
-                if VL >= 4 : prntf("stis",20," ")
-                if VL >= 4 : prntf("stis",20," ")
-                if VL >= 4 : prntf("stis",20," ")
+                if VL >= 4 : 
+                    prntf("outp",20,"selfDatasetIndex = selfDatasetIndex + 1, because STIS SCI ImageHDU Index position has been stripped.")
+                    prntf("outp",20,"The frames which used to be separated by ERR and DQ now go SCI, SCI, SCI ... in STISData 'dataset'.")
+                    prntf("outp",20,"ImageHDUIndex = ImageHDUIndex + 3, because STIS exposures go SCI+ERR+DQ , SCI+ERR+DQ , SCI+ERR+DQ ...")
+                    prntf("outp",20,"lastFilename = filename is to ratchet forward the value of lastFilename...")
+                    prntf("outp",20,"...for the 'if filename != lastFilename :' comparator")               
                     
-            if VL >= 3 : prntf("stis",20,"STOPPPPP for unSigmaClippedFrame in internalArray :\n")
+            if VL >= 3 : prntf("outp",20,"STOPPPPP for unSigmaClippedFrame in internalArray :\n")
 
 
-            
-
-
-            if VL >= 3 : prntf("stis",20,"   I N C O M I N G  ", lengthInternalArray, "  F R A M E S")
-            if VL >= 3 : prntf("stis",20,"   S O R T E D   B Y   O R D E R")
-            if VL >= 3 : prntf("stis",20,"filename\t\t\tImageHDU\tstandard deviation\twcsOrientat")
+            if VL >= 3 : prntf("outp",20,"   I N C O M I N G  ", lengthInternalArray, "  F R A M E S")
+            if VL >= 3 : prntf("outp",20,"   S O R T E D   B Y   O R D E R")
+            if VL >= 3 : prntf("outp",20,"filename\t\t\tImageHDU\tstandard deviation\twcsOrientat")
             for record in tuple7List :
-                if VL >= 3 : prntf("stis",20,record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
-            if VL >= 3 : prntf("stis",20," ")
+                if VL >= 3 : prntf("outp",20,record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
+            if VL >= 3 : prntf("outp",20," ")
 
 
-
-            if VL >= 3 : prntf("stis",20,"Get a copy of    tuple7List that is sorted by order")
+            if VL >= 3 : prntf("outp",20,"Get a copy of    tuple7List that is sorted by order")
             from operator import itemgetter        
             tuple7ListByOrder                   = sorted ( tuple7List, key = itemgetter ( 1 ) ) # col 1 is the filename
             framesListByOrder                   = [ col[0] for col in tuple7ListByOrder ]       # col 0 is the frame
             framesArrayByOrder                  = np.array ( framesListByOrder )
-            # KEEP THIS IN CASE IT IS ASKED FOR AGAIN.
-#            if VL >= 3 : prntf("stis",20,"Make a FITS file for ALL residuals, sorted by order.\n")
-#            HeaderDataUnit                      = fits.PrimaryHDU ( framesArrayByOrder ) 
-#            HeaderDataUnitList                  = fits.HDUList    ( [ HeaderDataUnit ] )
-#            framesArrayByOrderFilename          = "allResidualsByOrder.fits"
-#            HeaderDataUnitList.writeto          ( framesArrayByOrderFilename , overwrite = True)
 
-
-
-            if VL >= 3 : prntf("stis",20,"framesArrayByOrder.shape : ", framesArrayByOrder.shape)
             stisUpNanMedianFrame = np.nanmedian ( framesArrayByOrder, axis = 0 )
-            #prntf("stis",20,"stisUpNanMedianFrame     : ", stisUpNanMedianFrame)
-#            if OutFrPlotFlag :
-##                logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                import matplotlib.pyplot as plt
-#                plt.figure      ( )
-#                plt.imshow      (         stisUpNanMedianFrame            )
-#                plt.xlim        (   [ 0 , stisUpNanMedianFrame.shape[1] ] )
-#                plt.ylim        (   [ 0 , stisUpNanMedianFrame.shape[0] ] )
-#                plt.title       ( "stisUpNanMedianFrame" )
-#                plt.show        ( )
 
             stisUpNanStdFrame = np.nanstd ( framesArrayByOrder, axis = 0 )
-            #prntf("stis",20,"stisUpNanStdFrame        : ", stisUpNanStdFrame)
-#            if OutFrPlotFlag :
-##                logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                import matplotlib.pyplot as plt
-#                plt.figure      ( )
-#                plt.imshow      (         stisUpNanStdFrame            )
-#                plt.xlim        (   [ 0 , stisUpNanStdFrame.shape[1] ] )
-#                plt.ylim        (   [ 0 , stisUpNanStdFrame.shape[0] ] )
-#                plt.title       ( "stisUpNanStdFrame" )
-#                plt.show        ( )
-
-
-            
-            
-            
-            
-            if VL >= 3 : prntf("stis",20,"Get a copy of    tuple7List that is sorted by stddev")
 
             tuple7ListByStddev                  = sorted ( tuple7List, key = itemgetter ( 3 ) )               # col 3 is the stddev
             
@@ -3264,272 +2179,152 @@ class STISData ( Data ):
             framesArrayByStddev                 = np.array ( framesListByStddev )
 
             northUpFramesListByStddev           = [ col[7] for col in tuple7ListByStddev ]                    # col 7 is the north up frame
-            if VL >= 3 : prntf("stis",20,"type(northUpFramesListByStddev)  : ", type(northUpFramesListByStddev))
-            #prntf("stis",20,"northUpFramesListByStddev.shape : ", northUpFramesListByStddev.shape)
-            northUpFramesArrayByStddev = np.array  ( northUpFramesListByStddev )  
-            if VL >= 3 : prntf("stis",20,"type(northUpFramesArrayByStddev) : ", type(northUpFramesArrayByStddev))
-            if VL >= 3 : prntf("stis",20,"northUpFramesArrayByStddev.shape : ", northUpFramesArrayByStddev.shape)
-            
-            northUpNanMedianFrame = np.nanmedian   ( northUpFramesArrayByStddev, axis = 0 )
-            if VL >= 3 : prntf("stis",20,"type(northUpNanMedianFrame)      : ", type(northUpNanMedianFrame))
-            if VL >= 3 : prntf("stis",20,"northUpNanMedianFrame.shape      : ", northUpNanMedianFrame.shape)
-#            if OutFrPlotFlag :
-##                logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                import matplotlib.pyplot as plt
-#                plt.figure      ( )
-#                plt.imshow      (         northUpNanMedianFrame            )
-#                plt.xlim        (   [ 0 , northUpNanMedianFrame.shape[1] ] )
-#                plt.ylim        (   [ 0 , northUpNanMedianFrame.shape[0] ] )
-#                plt.title       ( "northUpNanMedianFrame" )
-#                plt.show        ( )
+            northUpFramesArrayByStddev          = np.array     ( northUpFramesListByStddev )              
+            northUpNanMedianFrame               = np.nanmedian ( northUpFramesArrayByStddev, axis = 0 )
+            northUpNanStdFrame                  = np.nanstd    ( northUpFramesArrayByStddev, axis = 0 )
 
-            northUpNanStdFrame = np.nanstd         ( northUpFramesArrayByStddev, axis = 0 )
-            if VL >= 3 : prntf("stis",20,"type(northUpNanStdFrame)         : ", type(northUpNanStdFrame))
-            if VL >= 3 : prntf("stis",20,"northUpNanStdFrame.shape         : ", northUpNanStdFrame.shape)
-#            if OutFrPlotFlag :
-##                logging.getLogger('matplotlib').setLevel(logging.WARNING)
-#                import matplotlib.pyplot as plt
-#                plt.figure      ( )
-#                plt.imshow      (         northUpNanStdFrame            )
-#                plt.xlim        (   [ 0 , northUpNanStdFrame.shape[1] ] )
-#                plt.ylim        (   [ 0 , northUpNanStdFrame.shape[0] ] )
-#                plt.title       ( "northUpNanStdFrame" )
-#                plt.show        ( )
-
-            
-            
-            
-            if VL >= 3 : prntf("stis",20,"sorted list, half / median record, record element #5 = angle -->")
+            if VL >= 3 : prntf("outp",20,"sorted list, half / median record, record element #5 = angle -->")
             
             
             # ROTATION HAPPENS HERE AND REQUIRES WCS TO BE ACCESSED
-            stisUpWcsBlock                      = tuple7ListByStddev  [ 0 ] [ 5 ]
-            if VL >= 3 : prntf("stis",20,"stisUpWcsBlock                      : ", stisUpWcsBlock)
-            if VL >= 3 : print()
-            if VL >= 3 : print()
-                
-            # I DON'T KNOW WHERE THIS CENTER IS COMING FROM, BUT KEEP IT FOR NOW.
-            # THIS CENTER WILL HAVE TO BE RELIABLY SOURCED.
-            # SAME WITH CRVALS
+            stisUpWcsBlock                      = tuple7ListByStddev  [ 0 ] [ 5 ]                
+
             nrthUpWcsBlock = wcsgen.generate_wcs ( 0, center, flipx = False )
             nrthUpWcsBlock.wcs.crval[0] = stisUpWcsBlock.wcs.crval[0]
             nrthUpWcsBlock.wcs.crval[1] = stisUpWcsBlock.wcs.crval[1]
-            if VL >= 3 : prntf("stis",20,"nrthUpWcsBlock : ", nrthUpWcsBlock)
-            if VL >= 3 : print()
-            if VL >= 3 : print()
-
-            
             
             outputPath = "outputs/" + username + "/"
-            
-#            if radonFlag == False : 
-#                northUpAllFilename              = "northUpAllByStddevNORC.fits"
-#                nrthUpNanMedFilename            = "nrthUpNanMedByStddevNORC.fits"
-#                nrthUpNanStdFilename            = "nrthUpNanStdByStddevNORC.fits"
-#            else : 
-#                northUpAllFilename              = "northUpAllByStddevYESRC.fits"
-#                nrthUpNanMedFilename            = "nrthUpNanMedByStddevYESRC.fits"
-#                nrthUpNanStdFilename            = "nrthUpNanStdByStddevYESRC.fits"
+
             if radonFlag == False : 
-                northUpAllFilename              = "nuAllnrc.fits" # "northUpAllByStddevNORC.fits"
-                nrthUpNanMedFilename            = "nuMednrc.fits" # "nrthUpNanMedByStddevNORC.fits"
-                nrthUpNanStdFilename            = "nuStdnrc.fits" # "nrthUpNanStdByStddevNORC.fits"
+                northUpAllFilename              = runNumberString + "nuAllnrc.fits" # "northUpAllByStddevNORC.fits"
+                nrthUpNanMedFilename            = runNumberString + "nuMednrc.fits" # "nrthUpNanMedByStddevNORC.fits"
+                nrthUpNanStdFilename            = runNumberString + "nuStdnrc.fits" # "nrthUpNanStdByStddevNORC.fits"
             else : 
-                northUpAllFilename              = "nuAll.fits" # "northUpAllByStddevYESRC.fits"
-                nrthUpNanMedFilename            = "nuMed.fits" # "nrthUpNanMedByStddevYESRC.fits"
-                nrthUpNanStdFilename            = "nuStd.fits" # "nrthUpNanStdByStddevYESRC.fits"
+                northUpAllFilename              = runNumberString + "nuAll.fits" # "northUpAllByStddevYESRC.fits"
+                nrthUpNanMedFilename            = runNumberString + "nuMed.fits" # "nrthUpNanMedByStddevYESRC.fits"
+                nrthUpNanStdFilename            = runNumberString + "nuStd.fits" # "nrthUpNanStdByStddevYESRC.fits"
             
 
-            if VL >= 3 : prntf("stis",20,"Make a FITS file for ALL North-Up residuals, sorted by stddev")            
+            if VL >= 3 : prntf("outp",20,"Make a FITS file for ALL North-Up residuals, sorted by stddev")            
             HeaderDataUnit                      = fits.PrimaryHDU ( northUpFramesArrayByStddev    )
             HeaderDataUnitList                  = fits.HDUList    ( [ HeaderDataUnit ]            )
             try :
-#                HeaderDataUnitList.writeto          ( outputPath + northUpAllFilename , overwrite = True)
-                HeaderDataUnitList.writeto          ( approvedpath + northUpAllFilename , overwrite = True)
-            
+                HeaderDataUnitList.writeto          ( outputFolder + northUpAllFilename , overwrite = True)
             except :
-                if VL >= 3 : print()
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + northUpAllFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + northUpAllFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + northUpAllFilename , "]\n")
+                if VL >= 3 : 
+                    for i in range(2) :
+                        prntf("outp",20,"No file written yet! Please ensure that path exists for: [", outputPath + northUpAllFilename , "]")
 
-            if VL >= 3 : prntf("stis",20,"Make a FITS file for northUpNanMedianFrame.\n")
+
             HeaderDataUnit                      = fits.PrimaryHDU ( northUpNanMedianFrame         )
             HeaderDataUnitList                  = fits.HDUList    ( [ HeaderDataUnit ]            )
             HeaderDataUnit.header.update        ( nrthUpWcsBlock.to_header() )
             try : 
-#                HeaderDataUnitList.writeto          ( outputPath + nrthUpNanMedFilename , overwrite = True)
-                HeaderDataUnitList.writeto          ( approvedpath + nrthUpNanMedFilename , overwrite = True)
-            
+                HeaderDataUnitList.writeto          ( outputFolder + nrthUpNanMedFilename , overwrite = True)
             except :
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanMedFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanMedFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanMedFilename , "]\n")
+                if VL >= 3 : 
+                    for i in range(2) :
+                        prntf("outp",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanMedFilename , "]\n")
 
-            if VL >= 3 : prntf("stis",20,"Make a FITS file for northUpNanStdFrame.\n")
+
             HeaderDataUnit                      = fits.PrimaryHDU ( northUpNanStdFrame            )
             HeaderDataUnitList                  = fits.HDUList    ( [ HeaderDataUnit ]            )
             HeaderDataUnit.header.update        ( nrthUpWcsBlock.to_header() )
             try : 
-#                HeaderDataUnitList.writeto          ( outputPath + nrthUpNanStdFilename , overwrite = True)
-                HeaderDataUnitList.writeto          ( approvedpath + nrthUpNanStdFilename , overwrite = True)
+                HeaderDataUnitList.writeto          ( outputFolder + nrthUpNanStdFilename , overwrite = True)
             except : 
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanStdFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanStdFilename , "]")
-                if VL >= 3 : prntf("stis",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanStdFilename , "]\n")
+                if VL >= 3 : 
+                    for i in range(2) :
+                        prntf("outp",20,"No file written yet! Please ensure that path exists for: [", outputPath + nrthUpNanStdFilename , "]\n")
 
 
-
-
-
-
-            if VL >= 3 : prntf("stis",20,"   I N C O M I N G  ", lengthInternalArray, "  F R A M E S")
-            if VL >= 3 : prntf("stis",20,"   S O R T E D   B Y   S T D D E V")         
+            if VL >= 3 : prntf("outp",20,"   I N C O M I N G  ", lengthInternalArray, "  F R A M E S")
+            if VL >= 3 : prntf("outp",20,"   S O R T E D   B Y   S T D D E V")         
             
             lengthTuple7ListByStddev      = len ( tuple7ListByStddev ) 
-            if VL >= 3 : prntf("stis",20,"lengthTuple7ListByStddev                  : ", lengthTuple7ListByStddev)
             for record in tuple7ListByStddev :
-                if VL >= 3 : prntf("stis",20,record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
+                if VL >= 3 : prntf("outp",20,record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
             
-            if VL >= 3 : prntf("stis",20," ")
-            if VL >= 3 : prntf("stis",20,"   G E T   M E D I A N   S T D D E V")
-            #stddevTuple7List           = [ col[3] for col in tuple7List ] # col 3 is stddev
+            if VL >= 3 : prntf("outp",20,"   G E T   M E D I A N   S T D D E V")
             stddevTuple7List              = [ col[3] for col in tuple7ListByStddev ] # col 3 is stddev
             lengthStddevsList             = len ( stddevTuple7List )
-            if VL >= 3 : prntf("stis",20,"lengthStddevsList                         : ", lengthStddevsList)
+            if VL >= 3 : prntf("outp",20,"lengthStddevsList                         : ", lengthStddevsList)
             
             numpyMean      = np.mean   ( stddevTuple7List )
-            if VL >= 3 : prntf("stis",20,"numpyMean                                 : ", numpyMean)
+            if VL >= 3 : prntf("outp",20,"numpyMean                                 : ", numpyMean)
             numpyMedian    = np.median ( stddevTuple7List )
-            if VL >= 3 : prntf("stis",20,"numpyMedian                               : ", numpyMedian)
+            if VL >= 3 : prntf("outp",20,"numpyMedian                               : ", numpyMedian)
             numpyStd       = np.std    ( stddevTuple7List )
-            if VL >= 3 : prntf("stis",20,"numpyStd                                  : ", numpyStd)
+            if VL >= 3 : prntf("outp",20,"numpyStd                                  : ", numpyStd)
             
-            
-            if VL >= 3 : prntf("stis",20,"Median stddev of all ", lengthStddevsList, " frames         : ", numpyMedian, "\n" )
+            if VL >= 3 : prntf("outp",20,"Median stddev of all ", lengthStddevsList, " frames         : ", numpyMedian, "\n" )
 
-
-            if VL >= 3 : prntf("stis",20,"topTuple7List is the top percentage of tuple7List sorted by stddev.")
-            if VL >= 3 : prntf("stis",20,"The word 'top' communicates that it is sorted by stddev (not by STIS order).\n")
+            if VL >= 3 : prntf("outp",20,"topTuple7List is the top percentage of tuple7List sorted by stddev.")
+            if VL >= 3 : prntf("outp",20,"The word 'top' communicates that it is sorted by stddev (not by STIS order).\n")
             topTuple7List              = tuple7ListByStddev [ 0 : int ( len ( tuple7ListByStddev ) * percentThreshold / 100 ) ]
             lengthTopFrameList         = len ( topTuple7List )
-            if VL >= 3 : prntf("stis",20,"lengthTopFrameList                        : ", lengthTopFrameList)
+            if VL >= 3 : prntf("outp",20,"lengthTopFrameList                        : ", lengthTopFrameList)
 
-
-
-
-            if approvedFlag == False :
-
-#                home                       = os.path.expanduser ( "~" )
-#                approvedpath               = home + "/Hubble/STIS/approvedFrameFolder/"
-                if VL >= 3 : prntf("stis",20,"approvedpath                              : ", approvedpath)
-                approvedFrameFilename      = "*"
-                approvedFrameFile          = glob.glob ( approvedpath + approvedFrameFilename )
-                if VL >= 3 : prntf("stis",20,"approvedFrameFile    : ", approvedFrameFile)
-                                
-#                if len ( approvedFrameFile ) > 0 :
-#                    if VL >= 3 : prntf("stis",20,"A pre-existing file in /Hubble/STIS/approvedFrameFolder/ is being deleted")
-#                    os.remove ( approvedFrameFile[0] )
-                
-                if VL >= 3 : prntf("stis",20,"   T O P   ", percentThreshold ,"   P E R C E N T   O F   F R A M E S   ( =", lengthTopFrameList, " frames)" )
-                if VL >= 3 : prntf("stis",20,"   S O R T E D   B Y   S T D D E V")
+            
+            if approvedFlag == False :                
+                if VL >= 3 : prntf("outp",20,"   T O P   ", percentThreshold ,"   P E R C E N T   O F   F R A M E S   ( =", lengthTopFrameList, " frames)" )
+                if VL >= 3 : prntf("outp",20,"   S O R T E D   B Y   S T D D E V")
                 for record in topTuple7List :                
-                    if VL >= 3 : prntf("stis",20, "\n", record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
+                    if VL >= 3 : prntf("outp",20, "\n", record[1], "\t", record[2], "\t\t", record[3], "\t", record[4] )
 
-                if VL >= 3 : prntf("stis",20," ")
-                if VL >= 3 : prntf("stis",20,"   G E T   M E D I A N   S T D D E V") 
+                if VL >= 3 : prntf("outp",20,"   G E T   M E D I A N   S T D D E V") 
                 stddevTopTuple7List        = [ col [ 3 ]     for col in topTuple7List ] # col 3 is stddev , and topTuple7List is from tuple7ListByStddev
                 
                 tuple7List.clear()
                 
                 lengthStddevTopTuple7List  = len ( stddevTopTuple7List )
-                if VL >= 3 : prntf("stis",20,"lengthStddevTopTuple7List : ", lengthStddevTopTuple7List)
+                if VL >= 3 : prntf("outp",20,"lengthStddevTopTuple7List : ", lengthStddevTopTuple7List)
                 numpyMean      = np.mean   ( stddevTopTuple7List )
-                if VL >= 3 : prntf("stis",20,"numpyMean                                 : ", numpyMean)
+                if VL >= 3 : prntf("outp",20,"numpyMean                                 : ", numpyMean)
                 numpyMedian    = np.median ( stddevTopTuple7List )
-                if VL >= 3 : prntf("stis",20,"numpyMedian                               : ", numpyMedian)
+                if VL >= 3 : prntf("outp",20,"numpyMedian                               : ", numpyMedian)
                 numpyStd       = np.std    ( stddevTopTuple7List )
-                if VL >= 3 : prntf("stis",20,"numpyStd                                  : ", numpyStd)
+                if VL >= 3 : prntf("outp",20,"numpyStd                                  : ", numpyStd)
                 
-                if VL >= 3 : prntf("stis",20,"Median stddev of Top ", lengthTopFrameList, " frames        : ", numpyMedian )
+                if VL >= 3 : prntf("outp",20,"Median stddev of Top ", lengthTopFrameList, " frames        : ", numpyMedian )
 
                 topTuple7ListToText        = [ col [ 1 : 4 ] for col in topTuple7List ] # col 1 is filename, col2 is index, col 3 is stddev
                 lengthTopFrameListToText   = len ( topTuple7ListToText )
-                if VL >= 3 : prntf("stis",20,"lengthTopFrameListToText                  : ", lengthTopFrameListToText)
-        if VL >= 3 : prntf("stis",20," ")
+                if VL >= 3 : prntf("outp",20,"lengthTopFrameListToText                  : ", lengthTopFrameListToText)
+        if VL >= 3 : prntf("outp",20," ")
 
 
-
-         
         if stddevSortFlag == True or stisSortFlag == True :
-            if VL >= 3 : prntf("stis",20,"   S A V E   T O P   F R A M E S   T O   T E X T   F I L E")
-#            home                       = os.path.expanduser ( "~" )
-#            approvedpath               = home + "/Hubble/STIS/approvedFrameFolder/"
-            if VL >= 3 : prntf("stis",20,"approvedpath                              : ", approvedpath)
+            if VL >= 3 : prntf("outp",20,"   S A V E   T O P   F R A M E S   T O   T E X T   F I L E")
+            if VL >= 3 : prntf("outp",20,"outputFolder                              : ", outputFolder)
 
-            if VL >= 3 : prntf("stis",20,"SAVE topTuple7ListToText")
+            if VL >= 3 : prntf("outp",20,"SAVE topTuple7ListToText")
             outputFilename = '__atf__out' + str ( lengthTuple7ListByStddev ) + 'x' + str ( percentThreshold ) + 'q' + str ( lengthTopFrameListToText ) + '.txt' 
-            if VL >= 3 : prntf("stis",20,"outputFilename                            : ", outputFilename)
-            dnfn = approvedpath + outputFilename
-            if VL >= 3 : prntf("stis",20,"dnfn                                      : ", dnfn)        
+            if VL >= 3 : prntf("outp",20,"outputFilename                            : ", outputFilename)
+            dnfn = outputFolder + outputFilename
+            if VL >= 3 : prntf("outp",20,"dnfn                                      : ", dnfn)        
         
             with open ( dnfn , 'w' ) as outputFile :
                 if stddevSortFlag == True :
-                    if VL >= 3 : prntf("stis",20,"Top ", percentThreshold, "% sorted by stddev             was selected to be written to output file")
+                    if VL >= 3 : prntf("outp",20,"Top ", percentThreshold, "% sorted by stddev             was selected to be written to output file")
                     for record in topTuple7ListToText :      
                         outputFile.write ( "%s\n" % [ record[0], record[1], record[2] ] )                    
                     outputFile.write ( "\n" )
 
                 if stisSortFlag == True :
-                    if VL >= 3 : prntf("stis",20,"Top ", percentThreshold, "% sorted by STIS numeric order was selected to be written to output file")
+                    if VL >= 3 : prntf("outp",20,"Top ", percentThreshold, "% sorted by STIS numeric order was selected to be written to output file")
                     topTuple7ListToText.sort()
                     for record in topTuple7ListToText :
                         outputFile.write ( "%s\n" % [ record[0], record[1], record[2] ] )
             outputFile.close()
         else :
-            if VL >= 3 : prntf("stis",20,"   N O   F R A M E S   W E R E   S A V E D   T O   T E X T   F I L E")
-            if VL >= 3 : prntf("stis",20,"No list was selected to be written to output file")
+            if VL >= 3 : prntf("outp",20,"   N O   F R A M E S   W E R E   S A V E D   T O   T E X T   F I L E")
+            if VL >= 3 : prntf("outp",20,"No list was selected to be written to output file")
                             
-                
 
         return self._output
-            
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
     
     
 
@@ -3542,7 +2337,6 @@ class STISData ( Data ):
                   zaxis         = None,
                   more_keywords = None
                   ):
-#        if VL >= 1 : prntf("stis",20,"STISData 188 filepath : ", filepath)
         hdulist                       = fits.HDUList()
         hdulist.append ( fits.PrimaryHDU ( data = data ) )
 
