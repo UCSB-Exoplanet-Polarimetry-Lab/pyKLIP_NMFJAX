@@ -14,6 +14,7 @@ import pyklip.klip as klip
 import pyklip.parallelized as parallelized
 import pyklip.instruments.utils.radonCenter as radonCenter
 import pyklip.instruments.utils.wcsgen as wcsgen
+from pyklip.instruments.utils.prntfFunction import prntf
 
 import sys
 if sys.version_info < (3,0):
@@ -26,7 +27,6 @@ else:
     from pyklip.instruments.Instrument import Data
     from pyklip.instruments.utils.nair import nMathar
 
-from prntfFunction import prntf
 from multiprocessing import Pool
 from multiprocessing import cpu_count
 from itertools import product
