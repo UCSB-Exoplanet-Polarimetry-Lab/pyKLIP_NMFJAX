@@ -19,7 +19,7 @@ def prntf(sender, incomingLevel = 20, message1 = "", message2 = "", message3 = "
     """
     
     lineNumberString = str(sys._getframe().f_back.f_lineno).rjust(4) + " "
-    print (sender, " ", lineNumberString, message1, message2, message3, message4, message5, message6, message7, message8, message9, message10, message11, message12, message13, message14)
+    print(sender, " ", lineNumberString, message1, message2, message3, message4, message5, message6, message7, message8, message9, message10, message11, message12, message13, message14)
     printString1 = sender + " " + str(lineNumberString) + str(message1) + str(message2) + str(message3) + str(message4) + str(message5) + str(message6) + str(message7) + str(message8) + str(message9) + str(message10) + str(message11) + str(message12) + str(message13) + str(message14)
 
     
