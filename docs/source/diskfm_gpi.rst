@@ -76,9 +76,9 @@ To run the forward modelling, just run:
 
 .. code-block:: python
 
-    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
-                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
-                    mode='ADI', annuli=2, subsections=1, minrot=3)
+    fm.klip_dataset(dataset, diskobj, outputdir="output_path/", fileprefix="my_favorite_disk",
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center,
+                    mode='ADI', annuli=1, subsections=1, movement=1)
 
 
 the code will save two fits files in `outputdir`, containing the klipped data and the
@@ -113,9 +113,9 @@ ave the forward model KL basis and parameters:
                     basis_filename = 'path/to/dir/klip-basis.h5', save_basis = True)
 
 
-    fm.klip_dataset(dataset, diskobj, outputdir="path/", fileprefix="my_favorite_disk"
-                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center
-                    mode='ADI', annuli=2, subsections=1, minrot=3)
+    fm.klip_dataset(dataset, diskobj, outputdir="output_path/", fileprefix="my_favorite_disk",
+                    numbasis=numbasis, maxnumbasis=100, aligned_center=aligned_center,
+                    mode='ADI', annuli=1, subsections=1, movement=1)
 
 
 Then, in any python session you can create a disk object and you can forward model disks

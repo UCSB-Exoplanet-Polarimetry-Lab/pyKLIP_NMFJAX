@@ -244,7 +244,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
 
 def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spectrum = None, PSF_cube = None, PSF_cube_wvs = None,
                                 star_type = None, mute = False, SpT_file_csv = None, real_planets_pos = None, sep_skip_real_pl = None,
-                                pa_skip_real_pl = None,dn_per_contrast=None):
+                                pa_skip_real_pl = None,dn_per_contrast=None,star_spec = None):
     '''
     Generate spectral datacubes with fake planets.
     It will do a copy of the cubes read in GPIData after having injected fake planets in them.
@@ -303,6 +303,8 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
         pa_skip_real_pl: Limit in position angle  of how close a fake can be injected of a known GOI.
         dn_per_contrast: array of the same size as spectrum giving the conversion between the peak flux of a planet in
                         data number and its contrast.
+        star_spec: 1D array stellar spectrum sampling dataset.wvs. Otherwise uses a pickles spectrum in which the
+                   temperature in interpolated from the spectral type.
 
     '''
 
@@ -346,10 +348,13 @@ def generate_dataset_with_fakes(dataset, fake_position_dict, fake_flux_dict, spe
     if np.size(np.unique(dataset.wvs)) == 1:
         star_sp = np.ones(dn_per_contrast.shape)
     else:
-        if star_type is None:
-            star_type = spec.get_specType(star_name,SpT_file_csv)
-        # Interpolate a spectrum of the star based on its spectral type/temperature
-        wv,star_sp = spec.get_star_spectrum(dataset.wvs,star_type)
+        if star_spec is None:
+            if star_type is None:
+                star_type = spec.get_specType(star_name,SpT_file_csv)
+            # Interpolate a spectrum of the star based on its spectral type/temperature
+            wv,star_sp = spec.get_star_spectrum(dataset.wvs,star_type)
+        else:
+            star_sp = star_spec
 
     # Define the output Foldername
     if isinstance(spectrum, str):

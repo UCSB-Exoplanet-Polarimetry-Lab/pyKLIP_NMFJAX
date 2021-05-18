@@ -306,7 +306,7 @@ class PSFLibrary(object):
 
                 self.master_correlation[i,j]=corr_psfs[0,1]
                 self.master_correlation[j,i]=corr_psfs[0,1]
-
+        self.nfiles = self.nfiles+n_newfiles
         if verbose:
             print("\nDone updating correlation matrix")
 

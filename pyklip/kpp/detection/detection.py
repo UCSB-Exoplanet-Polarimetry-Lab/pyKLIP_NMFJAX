@@ -5,7 +5,7 @@ from pyklip.kpp.stat.stat_utils import *
 from pyklip.kpp.utils.oi import *
 
 
-def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,maskout_edge=False,IWA=None, OWA=None):
+def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,maskout_edge=None,maskout_inner_edge=None,IWA=None, OWA=None):
         """
         Find the brightest blobs in the image/cube.
 
@@ -16,7 +16,8 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
             pix2as: Platescale (arcsec per pixel).
             mask_radius: Radius of the mask used for masking point sources or the surroundings of the current pixel out
                         of the data. Default value is 4 pixels.
-            maskout_edge: mask a maskout_edge pixels border around each NaN pixel.
+            maskout_edge: mask a maskout_edge (int) pixels around the outer edge of the FOV containing NaNs.
+            maskout_inner_edge: mask a maskout_inner_edge (int) pixels border around the center nan disk.
             IWA: inner working angle in pixels.
             OWA: outer working angle in pixels.
 
@@ -61,11 +62,16 @@ def point_source_detection(image, center,threshold,pix2as=None,mask_radius = 4,m
         r_stamp = abs((stamp_x_grid) +(stamp_y_grid)*1j)
         stamp_mask[np.where(r_stamp < mask_radius)] = np.nan
 
-        # Mask out a band of 10 pixels around the edges of the finite pixels of the image.
+        # Mask out a band of maskout_edge pixels around the edges of the finite pixels of the image.
         if maskout_edge is not None:
             IWA,OWA,inner_mask,outer_mask = get_occ(image_cpy, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
             conv_kernel = np.ones((maskout_edge,maskout_edge))
             flat_cube_wider_mask = convolve2d(outer_mask,conv_kernel,mode="same")
+            image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
+        if maskout_inner_edge is not None:
+            IWA,OWA,inner_mask,outer_mask = get_occ(image_cpy, centroid = (center[0][0]+stamp_size//2,center[0][1]+stamp_size//2))
+            conv_kernel = np.ones((maskout_inner_edge,maskout_inner_edge))
+            flat_cube_wider_mask = convolve2d(inner_mask,conv_kernel,mode="same")
             image_cpy[np.where(np.isnan(flat_cube_wider_mask))] = np.nan
 
 
