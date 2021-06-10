@@ -446,6 +446,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #we have to correct for that in the klip.klip_math routine when consturcting the KL
     #vectors since that's not part of the equation in the KLIP paper
     covar_psfs = np.cov(ref_psfs_mean_sub)
+        
     if ref_psfs_mean_sub.shape[0] == 1:
         # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
         covar_psfs = covar_psfs.reshape((1,1))
@@ -678,6 +679,10 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
         # compute covariances. I could just grab these from ~20 lines above, but too lazy
         rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
+        # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
+        if not rdi_covar.shape:
+            rdi_covar = rdi_covar.reshape([1,1])
+        
         # compute cross term
         # cross term has shape N_dataset_ref x N_rdi_selected
         covar_ref_x_rdi = np.dot((ref_psfs_selected - np.nanmean(ref_psfs_selected, axis=1)[:,None]),
