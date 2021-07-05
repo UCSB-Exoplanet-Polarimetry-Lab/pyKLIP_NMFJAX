@@ -403,5 +403,22 @@ def test_wcs_generation():
         assert xmax < 50
         assert ymax > 50
 
+
+def test_nan_gaussian_filter():
+    """
+    Tests that nan gaussian filter smooths the data and that it preserves flux
+    """
+    # should reduce pixel to pixel noise
+    noise_img = np.random.random((100, 100))
+    std_before = np.std(noise_img)
+    smoothed_img = klip.nan_gaussian_filter(noise_img, 1)
+    std_after = np.std(smoothed_img)
+    assert std_before > std_after
+
+    # check flux perservation
+    const_img = np.ones((100, 100))
+    smoothed_const_img = klip.nan_gaussian_filter(const_img, 1)
+    assert np.all(smoothed_const_img == const_img)
+
 if __name__ == "__main__":
-    test_wcs_generation()
+    test_nan_gaussian_filter()
