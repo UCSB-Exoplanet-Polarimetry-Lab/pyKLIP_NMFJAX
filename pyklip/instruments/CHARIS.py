@@ -4,7 +4,7 @@ import re
 import warnings
 import subprocess
 import numpy as np
-from scipy import ndimage, signal, interpolate
+from scipy import ndimage, signal, interpolate, optimize
 import astropy.io.fits as fits
 import datetime
 from astropy import wcs
@@ -65,9 +65,9 @@ class CHARISData(Data):
     spot_ratio = {} #w.r.t. central star
     # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
     # TODO: update the new lenslet scales
-    lenslet_scale = 0.01617 # CHARIS data will be re-scaled to this uniform lenslet scale
+    lenslet_scale = 0.01615 # CHARIS data will be re-scaled to this uniform lenslet scale
     lenslet_scale_x = - lenslet_scale # lenslet scale, calibrated against HST images of M5
-    lenslet_scale_y = 0.01604 # lenslet scale, calibrated against HST images of M5
+    lenslet_scale_y = 0.01615 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_x_err = 0.00005
     lenslet_scale_y_err = 0.00007
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
@@ -576,6 +576,20 @@ class CHARISData(Data):
         measured sat spot locations to disk. 
         """
         for filename, hdr in zip(np.unique(self.filenames), self.exthdrs):
+
+            # insert a comment section for the new data saved
+            add_comment = True
+            for comment_line in hdr['comment']:
+                if 'Processed Data' in comment_line:
+                    add_comment = False
+            if add_comment:
+                try:
+                    hdr.insert('sats0_0', ('comment', '*'*60))
+                    hdr.insert('sats0_0', ('comment', '*'*22 + ' Processed Data ' + '*'*22))
+                    hdr.insert('sats0_0', ('comment', '*'*60))
+                except:
+                    pass
+
             with fits.open(filename, mode='update') as hdulist:
                 hdulist[1].header = hdr
                 hdulist.flush()
@@ -782,42 +796,109 @@ class CHARISData(Data):
         return img
 
 
-    def generate_psfs(self, boxrad=7, spots_collapse='mean'):
+    def generate_psfs(self, boxrad=7, spots_collapse='mean', mask_locs=None, mask_rad=15, mask_ref_ind=0,
+                      lyot_stop=None, fit_angle=True, use_slices=None, inspect=False):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
             spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
+            mask_locs: ndarray, array of approximate [x, y] pixel locations where bright companions are located.
+                       To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
+                       number of bright sources that needs to be masked.
+            mask_rad: scalar, radius of the mask in pixels.
+            mask_ref_ind: the cube index (range: 1-ncube) with respect to which mask_locs are specified, used to
+                          account for its movement in the FOV due to field rotation.
+            lyot_stop: bool, specifies whether the dataset was taken with the lyot stop in place for the dataset.
 
         Returns:
-            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+            saves PSFs of all frames to self.uncollapsed_psfs.
+            saves time collapsed PSFs to self.psfs as an array of size(nwv,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
+
         self.psfs = []
+        modified_hdrs = False
 
-        for i, frame in enumerate(self.input):
-            this_spot_locs = self.spot_locs[i]
+        # check mask_locs input format and convert it to shape (n, 2) as a convention
+        if mask_locs is not None:
+            mask_locs = np.array(mask_locs)
+            if len(mask_locs.shape) == 1:
+                mask_locs = np.array([mask_locs])
+            if len(mask_locs.shape) != 2 or mask_locs.shape[1] != 2:
+                raise ValueError('mask_locs must have shape (2,) or (n, 2), specifying the [x, y] pixel locations to mask')
 
-            # now grab the values from them by parsing the header
-            spot0 = this_spot_locs[0]
-            spot1 = this_spot_locs[1]
-            spot2 = this_spot_locs[2]
-            spot3 = this_spot_locs[3]
+        # for every data cube, perform background subtraction and generate psf stamps
+        numwvs = np.size(np.unique(self.wvs))
+        ncubes = self.input.shape[0] // numwvs
+        for i in range(ncubes):
+            bg_subed = False
+            # copy self.input cube by cube instead of copy entire input to save memory
+            cleaned_cube = np.copy(self.input[i * numwvs : (i+1) * numwvs])
+            cleaned_cube[np.isnan(cleaned_cube)] = 0.
+            cube_spot_locs = self.spot_locs[i * numwvs : (i+1) * numwvs] # shape (nwv, nspots, 2)
 
-            # put all the sat spot info together
-            spots = [spot0, spot1, spot2, spot3]
+            # calculate bright comopanion mask location at this cube
+            if mask_locs is not None:
+                mean_centroid = np.mean(cube_spot_locs, axis=(0, 1))
+                PA_ref = self.PAs[mask_ref_ind * numwvs]
+                PA_thiscube = self.PAs[i * numwvs]
+                # parang is measured clockwise from zenith, thus PA_diff is clockwise from PA_ref to PA_thiscube
+                PA_diff = np.radians(PA_thiscube - PA_ref)
+                mask_seps = np.sqrt((mask_locs[:, 0] - mean_centroid[0])**2 + (mask_locs[:, 1] - mean_centroid[1])**2)
+                # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
+                mask_phis = np.arctan2(mask_locs[:, 1] - mean_centroid[1], mask_locs[:, 0] - mean_centroid[0]) - PA_diff
+                mask_locs_thiscube = np.array([mask_seps * np.cos(mask_phis) + mean_centroid[0],
+                                               mask_seps * np.sin(mask_phis) + mean_centroid[1]]).transpose()
+            else:
+                mask_locs_thiscube = None
 
-            #now make a psf
-            spotpsf = generate_psf(frame, spots, boxrad=boxrad, spots_collapse=spots_collapse)
-            self.psfs.append(spotpsf)
+            # if lyot_stop is not specified by the user, try to read from the header
+            if lyot_stop is None:
+                try:
+                    # though not explicitly verified here, all cubes in the dataset should share this configuration
+                    lyot_stop = (self.prihdrs[0]['X_LYOT'] == 'Lyot coro stop')
+                except:
+                    raise ValueError('Could not parse lyot stop info from dataset headers, please manually specify'
+                                     'using keyword argument "lyot_stop". If unsure, set lyot_stop to False.')
+
+            if not lyot_stop:
+                # use small psf stamps to avoid the negative spots after background subtraction, only works for faint
+                # sources
+                boxrad = 3
+                cleaned_cube, angle, bg_subed = spot_bg_sub(self.filenames[i * numwvs], cleaned_cube, cube_spot_locs,
+                                                            fit_angle=fit_angle, use_slices=use_slices, inspect=inspect)
+                if bg_subed:
+                    self.exthdrs[i].set('sym_ang', value=np.degrees(angle),
+                                        comment="Angle (deg) that reflects the spider pattern for background subtraction")
+                    modified_hdrs = True
+
+            for j, frame in enumerate(cleaned_cube):
+                this_spot_locs = cube_spot_locs[j]
+
+                # now grab the values from them by parsing the header
+                spot0 = this_spot_locs[0]
+                spot1 = this_spot_locs[1]
+                spot2 = this_spot_locs[2]
+                spot3 = this_spot_locs[3]
+
+                # put all the sat spot info together
+                spots = [spot0, spot1, spot2, spot3]
+
+                #now make a psf
+                spotpsf = generate_psf(frame, spots, boxrad=boxrad, spots_collapse=spots_collapse,
+                                       bg_sub=(not bg_subed), mask_locs=mask_locs_thiscube, mask_rad=mask_rad)
+                self.psfs.append(spotpsf)
 
         self.psfs = np.array(self.psfs)
         self.uncollapsed_psfs = self.psfs
 
         # collapse in time dimension
-        numwvs = np.size(np.unique(self.wvs))
         self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
         self.psfs = np.mean(self.psfs, axis=0)
+
+        if modified_hdrs:
+            self.update_input_cubes()
 
 
     def generate_host_star_psfs(self, boxrad=7):
@@ -859,7 +940,7 @@ class CHARISData(Data):
         self.host_star_psfs = np.mean(self.host_star_psfs, axis=0)
 
 
-    def measure_spot_to_star_ratio(self, opaque_indices=[], boxrad=7, spots_collapse='mean'):
+    def measure_spot_over_star_ratio(self, opaque_indices=[], boxrad=7, spots_collapse='mean', lyot_stop=True):
         '''
         Obtain satellite spot flux to primary star flux ratio from unsaturated frames
 
@@ -874,7 +955,7 @@ class CHARISData(Data):
         wvs = np.unique(self.wvs)
         # generate self.psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), median/averaged over 4 spots
         # and averaged over exposures
-        self.generate_psfs(boxrad=boxrad, spots_collapse=spots_collapse)
+        self.generate_psfs(boxrad=boxrad, spots_collapse=spots_collapse, lyot_stop=lyot_stop)
         # generate self.host_star psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), averaged over exposures
         self.generate_host_star_psfs(boxrad=boxrad)
 
@@ -1011,7 +1092,7 @@ def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lensl
         dx = x_interp - x
         dy = y_interp - y
         if np.any(dy > 1):
-            warning.warn('There exist shifts larger than 1 pixel, interpolation may be suboptimal...')
+            warnings.warn('There exist shifts larger than 1 pixel, interpolation may be suboptimal...')
         # for each element in a 5*5 filter, calculate a meshgrid of filtered values for all data points corresponding
         # to that filter element. Summing these 25 meshgrids and normalizing is the convolution.
         D_interp = np.zeros((cube.shape[0], x.shape[0], x.shape[1])) # interpolated and smoothed data
@@ -1262,26 +1343,111 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     hdr.set(flux_key, value=flux, comment="Peak flux of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
 
 
-def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=True):
+def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=False, mask_locs=None, mask_rad=15):
     """
     Generates a GPI PSF for the frame based on the satellite spots
     TODO: normalize psfs? GPI module normalizes these to DN units in the generate_PSF_cube() function.
 
     Args:
         frame: 2d frame of data
-        location: array of (N,2) containing [x,y] coordinates of all N satellite spots
+        locations: array of (N,2) containing [x,y] coordinates of all N satellite spots
         boxrad: half length of box to use to pull out PSF
         spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
-        bg_sub: whether to estimate and subtract the background
+        bg_sub: bool, whether to perform background subtraction
+        mask_locs: ndarray, array of approximate [x, y] pixel locations where bright companions are located.
+                   To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
+                   number of bright sources that needs to be masked.
+        mask_rad: scalar, radius of the mask in pixels.
 
     Returns:
         genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
     """
+
     genpsf = []
+
+    # check mask_locs input format and convert it to shape (n, 2) as a convention
+    if mask_locs is not None:
+        mask_locs = np.array(mask_locs)
+        if len(mask_locs.shape) == 1:
+            mask_locs = np.array([mask_locs])
+        if len(mask_locs.shape) != 2 or mask_locs.shape[1] != 2:
+            raise ValueError('mask_locs must have shape (2,) or (n, 2), specifying the [x, y] pixel locations to mask')
+
     #mask nans
     cleaned = np.copy(frame)
-    cleaned[np.where(np.isnan(cleaned))] = 0
+    cleaned[np.isnan(cleaned)] = 0
+    locations = np.array(locations)
+    centroid = np.mean(locations, axis=0) # [x, y] centroid of host star
+    if len(locations.shape) != 2 or locations.shape[1] != 2:
+        raise ValueError('locations must be an array of shape (N, 2) indicating satellite spot locations, where N is'
+                         'the number of satellite spots')
 
+    # if bg_sub:
+    #     # centroid = np.mean(locations, axis=0) # in [x, y] format
+    #     # TODO: background subtraction will no longer be carried out frame by frame, the following segment will be
+    #     #       modified and moved to CHARISData.generate_psfs() to perform on entire cubes. Delete the segment below
+    #     #       when finished.
+    #     # angular separation range to include when calculating chi square
+    #     r_range = [15, 50]
+    #     # use non-linear optimization to find the symmetry axis that goes through the centroid
+    #     # where the coordinate of the centroid will be defined as the origin (0, 0), and the symmetry axis specified
+    #     # by an angle theta
+    #     norm_img = cleaned / np.amax(cleaned) # normalize to avoid overflow when calculating chi square
+    #     theta = find_symmetric_axis(norm_img, locations, r_range)
+    #     reflected_img = reflect_img(cleaned, centroid, theta) # not using normalized image here for residual plotting
+    #
+    #     # debugging begins
+    #     # save original image, reflected image and one of the residuals to a fits file
+    #     # import pdb
+    #     # import spectrophotometric_calibration as spec_cal
+    #     # outfile = '/home/minghan/CHARIS/charis-work/reduced_data/HR8799/centroid_spots_temp/bgsub'
+    #     # outfile = os.path.join(outfile, '{:03d}.fits'.format(frame_num))
+    #     # spec_cal.plot_spot_bgsub(cleaned, reflected_img, theta, centroid, outfile=outfile)
+    #     # print chi2 and plot residuals
+    #     # chi2 = img_reflect_resid(21. / 180. * np.pi, norm_img, locations, r_range, frame_num=frame_num)
+    #     # print('residual at 21 deg: {:.7f}'.format(chi2))
+    #     # chi2 = img_reflect_resid(theta, cleaned, locations, r_range, frame_num=frame_num, debug=True)
+    #     # print('best fit residual: {:.7f}'.format(chi2))
+    #     # plot chi2 over a grid of angles
+    #     # theta_grid = np.radians(np.linspace(18, 28, 201))
+    #     # chi2_grid = np.zeros(theta_grid.shape)
+    #     # for i, theta_trial in enumerate(theta_grid):
+    #     #     chi2 = img_reflect_resid(theta_trial, norm_img, locations, r_range)
+    #     #     chi2_grid[i] = chi2
+    #     # import matplotlib.pyplot as plt
+    #     # plt.figure('chi2 grid {}'.format(frame_num), figsize=(15, 8))
+    #     # plt.plot(np.degrees(theta_grid), chi2_grid)
+    #     # plt.vlines(np.degrees(theta), ymin=np.amin(chi2_grid) - 1e-5, ymax=np.amax(chi2_grid), colors='C1',
+    #     #            linestyles='--', label='best fit')
+    #     # plt.xlabel('degrees')
+    #     # plt.ylabel('square residual (arbitrary units)')
+    #     # plt.legend(loc='upper right')
+    #     # outfile = '/home/minghan/CHARIS/charis-work/reduced_data/HR8799/centroid_spots_temp/bgsub/resid_grid_{:03d}.png'.format(frame_num)
+    #     # plt.savefig(outfile)
+    #     # plt.close()
+    #     # debugging ends
+    #
+    #     cleaned -= reflected_img
+
+    # define an annulus to estimate background level
+    background_level = 0.
+    if bg_sub:
+        y_img, x_img = np.indices(frame.shape, dtype=float)
+        r_img = np.sqrt((x_img - centroid[0])**2 + (y_img - centroid[1])**2)
+        spot_sep_ref = np.sqrt((locations[0][0] - centroid[0])**2 + (locations[0][1] - centroid[1])**2)
+        noise_annulus = (r_img >= spot_sep_ref - 3) & (r_img <= spot_sep_ref + 3)
+        for loc in locations:
+            spotx = loc[0]
+            spoty = loc[1]
+            r_spot = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+            noise_annulus *= (r_spot > 15)
+        if mask_locs is not None:
+            for mask_loc in mask_locs:
+                sourcex = mask_loc[0]
+                sourcey = mask_loc[1]
+                r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
+                noise_annulus *= (r_source > mask_rad)
+        background_level = np.nanmean(cleaned[noise_annulus])
 
     for loc in locations:
         #grab satellite spot positions
@@ -1291,18 +1457,10 @@ def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=True)
         #interpolate image to grab satellite psf with it centered
         #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
         #create arrays of size 2*boxrad+2)
-        x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad, spoty + boxrad + 0.1, 1))
+        x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad,
+                                                                                         spoty + boxrad + 0.1, 1))
         spotpsf = ndimage.map_coordinates(cleaned, [y, x])
-
-        # if applicable, do a background subtraction
-        # TODO: update the background subtraction method here
-        if bg_sub:
-            y_img, x_img = np.indices(frame.shape, dtype=float)
-            r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
-            noise_annulus = np.where((r_img > 9) & (r_img <= 12))
-            background_mean = np.nanmean(cleaned[noise_annulus])
-            spotpsf -= background_mean
-
+        spotpsf -= background_level
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)
@@ -1315,3 +1473,331 @@ def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=True)
         genpsf = np.median(genpsf, axis=0)
 
     return genpsf
+
+
+def spot_bg_sub(filename, cube, cube_spot_locs, fit_angle=True, use_slices=None, inspect=False):
+    '''
+
+    Args:
+        cube: ndarray, 3D data cube, should already be a copy of CHARISData.input and thus is allowed to be directly
+              modified
+        cube_spot_locs: ndarray or list, spot locations in [x, y] format for the data cube, shape (nwv, nspots, 2)
+
+    Returns:
+
+    '''
+
+    cube_spot_locs = np.array(cube_spot_locs)
+    centroids = np.mean(cube_spot_locs, axis=1)
+
+    if not fit_angle:
+        # TODO: update the hard coded default angle below using the average results
+        default_reflection_angle = np.radians(21.) # hard coded
+        reflected_cube = reflect_cube(cube, centroids, default_reflection_angle)
+
+        return cube - reflected_cube, default_reflection_angle, True
+
+    if use_slices is None:
+        good_wv_indices = np.arange(10, cube.shape[0])
+    else:
+        good_wv_indices = np.array(use_slices)
+
+    cube_good = cube[good_wv_indices]
+    cube_spot_locs_good = cube_spot_locs[good_wv_indices]
+
+    r_range = [15, 50] # some hard coding here
+    # normalize to avoid overflow when calculating chi square, cube should not have nans
+    norm_cube = cube_good / np.amax(cube_good)
+    # theta is guaranteed to be within [0, pi / 2] by convention
+    theta = find_cube_symmetric_axis(norm_cube, cube_spot_locs_good, r_range)
+
+    # check the best fit spider arm reflection axis is sufficiently different from the satellite spot reflection axis
+    centroid0 = centroids[0]
+    spot0_dx_dy = cube_spot_locs[0, 0] - centroid0
+    spot_angle = np.degrees(np.arctan2(spot0_dx_dy[1], spot0_dx_dy[0])) + 45. + 360.
+    # convert both angles to first quadrant
+    spot_angle = np.radians(spot_angle % 90)
+    theta_ref = np.radians(np.degrees(theta) % 90)
+    if np.abs(spot_angle - theta_ref) <= (6. / 30. / 2.):
+        print('diffraction feature too close to satellite spot: {:.2f} deg best fit separation. using simple background'
+              'subtraction instead...'.format(2 * np.degrees(np.abs(spot_angle - theta_ref))))
+        success = False
+    else:
+        print('diffraction feature best fit reflection angle: {:.2f} deg, separation from satellite spot: '
+              '{:.2f}'.format(np.degrees(theta_ref), 2 * np.degrees(np.abs(spot_angle - theta_ref))))
+        success = True
+
+    reflected_cube = reflect_cube(cube, centroids, theta)
+
+    if inspect:
+        def save_spot_bgsub_cube_results(cube, reflected_cube, theta, outfile):
+
+            angle_diff = np.degrees(np.abs(spot_angle - theta_ref))
+            print('reflection axis: {:.2f} deg, diff from spot axis: {:.2f} deg'.format(np.degrees(theta), angle_diff))
+            cube = np.copy(cube)
+            resid = cube - reflected_cube
+            x = np.arange(cube.shape[2])
+            m = np.tan(theta)
+            b = 100. - m * 100.
+            y = m * x + b
+            y = np.around(y, decimals=0)
+            y = y.astype(int)
+            y[y > 200] = 200
+            y[y < 0] = 0
+            cube[:, y, x] = 0.
+
+            stitched_cube = np.zeros((cube.shape[0], cube.shape[1], cube.shape[2] * 2))
+            stitched_cube[:, :, 0:cube.shape[2]] = cube
+            stitched_cube[:, :, cube.shape[2] : cube.shape[2] * 2] = resid
+            hdul = fits.HDUList(fits.PrimaryHDU(data=stitched_cube))
+            hdul.writeto(outfile, overwrite=True)
+
+            return
+
+        outfile = os.path.join(os.path.dirname(filename), 'bgsub')
+        if not os.path.exists(outfile):
+            os.makedirs(outfile)
+        outfile = os.path.join(outfile, '{}'.format(os.path.basename(filename)))
+        outfile = re.sub('.fits', '_bgsub.fits', outfile)
+        save_spot_bgsub_cube_results(cube, reflected_cube, theta, outfile)
+
+    # debug begin
+    # print chi2 and plot residuals
+    # chi2 = cube_reflect_resid(theta, cube, cube_spot_locs, r_range, debug=True)
+    # # plot chi2 over a grid of angles
+    # theta_grid = np.radians(np.linspace(18, 24, 121))
+    # chi2_grid = np.zeros(theta_grid.shape)
+    # for i, theta_trial in enumerate(theta_grid):
+    #     chi2 = cube_reflect_resid(theta_trial, norm_cube, cube_spot_locs_good, r_range)
+    #     chi2_grid[i] = chi2
+    # import matplotlib.pyplot as plt
+    # plt.figure('chi2 grid', figsize=(15, 8))
+    # plt.plot(np.degrees(theta_grid), chi2_grid)
+    # plt.vlines(np.degrees(theta), ymin=np.amin(chi2_grid) - 1e-5, ymax=np.amax(chi2_grid), colors='C1',
+    #            linestyles='--', label='best fit')
+    # plt.xlabel('degrees')
+    # plt.ylabel('square residual (arbitrary units)')
+    # plt.legend(loc='upper right')
+    # outfile = '/home/minghan/CHARIS/charis-work/reduced_data/HR8799/centroid_spots_temp/bgsub/resid_grid.png'
+    # plt.savefig(outfile)
+    # plt.close()
+    # debug end
+
+    return cube - reflected_cube, theta, success
+
+
+def find_cube_symmetric_axis(cube, cube_spot_locs, r_range, opt_method='Nelder-Mead'):
+    # TODO: opt_method is unreachable from the user, decide whether to make this a user controled option
+
+    if len(cube_spot_locs.shape) != 3 or cube_spot_locs.shape[0] != cube.shape[0] or cube_spot_locs.shape[2] != 2:
+        raise ValueError('cube spot_locs must be an array of shape (nwv, nspots, 2)')
+
+    centroids = np.mean(cube_spot_locs, axis=1) # shape (nwv, 2) in [x, y] format
+    spot0_dx_dy = cube_spot_locs[0, 0] - centroids[0]
+    # np.arctan2() returns a value in the range of [-np.pi, np.pi]
+    p0 = np.arctan2(spot0_dx_dy[1], spot0_dx_dy[0]) + np.pi / 5. # initial guess for symmetric axis
+
+    # convention for the range best fit angle will be [0, pi/2)
+    p0 += 2 * np.pi
+    p0 = np.radians(np.degrees(p0) % 90)
+
+    # optimize
+    result = optimize.minimize(cube_reflect_resid, p0, (cube, cube_spot_locs, r_range), method=opt_method)
+    if not result.success:
+        raise ValueError('optimization did not converge...')
+    theta = result.x[0]
+
+    chi2, resid, resid_perp = cube_reflect_resid(theta, cube, cube_spot_locs, r_range, return_resids=True)
+
+    # return the axis with the smaller residual for background subtraction
+    if resid <= resid_perp:
+        return theta
+    else:
+        return theta + np.pi / 2.
+
+
+def cube_reflect_resid(theta, cube, cube_spot_locs, r_range, return_resids=False, debug=False):
+
+    # check boundary condition
+    if theta < 0. or theta > (np.pi / 2.):
+        return np.inf
+    theta_perp = theta + np.pi / 2.
+
+    centers = np.mean(cube_spot_locs, axis=1) # shape (nwv, 2), in [x, y] format
+    reflected = reflect_cube(cube, centers, theta)
+    reflected_perp = reflect_cube(cube, centers, theta_perp)
+    # take pixels within r_range and exclude pixels around satellite spot
+    z_cube, y_cube, x_cube = np.indices(cube.shape, dtype=float)
+    r_cube = np.sqrt((x_cube - centers[:, 0][:, np.newaxis, np.newaxis]) ** 2 +
+                     (y_cube - centers[:, 1][:, np.newaxis, np.newaxis]) ** 2)
+    noise_annuli = (r_cube >= r_range[0]) & (r_cube <= r_range[1])
+    noise_annuli_perp = np.copy(noise_annuli)
+    for i in range(cube.shape[0]):
+        center = centers[i]
+        for spot_loc in cube_spot_locs[i]:
+            # mask out a square aperture around every satellite spot
+            boxrad = 7
+            xint = int(round(spot_loc[0]))
+            yint = int(round(spot_loc[1]))
+            # 10 pix radius is roughly the edge of the second maxima of the airy disk at the longest wavelength in broadband
+            left, right = (xint - boxrad, xint + boxrad + 1)
+            bottom, top = (yint - boxrad, yint + boxrad + 1)
+            noise_annuli[i, bottom:top, left:right] = False
+            noise_annuli_perp[i, bottom:top, left:right] = False
+            # debug begin
+            # if debug:
+            #     print('spot loc: [{:.1f}, {:.1f}]'.format(xint, yint))
+            #     canvas1 = np.zeros(img.shape)
+            #     canvas1[noise_annulus] = 1.
+            #     canvas2 = np.zeros(img.shape)
+            #     canvas2[noise_annulus_perp] = 1.
+            #     import matplotlib.pyplot as plt
+            #     fig, axes = plt.subplots(1, 2, figsize=(15, 8))
+            #     axes[0].imshow(canvas1, origin='lower')
+            #     axes[1].imshow(canvas2, origin='lower')
+            #     plt.show()
+            # debug end
+            # mask out a square aperture around the reflected location of the satellite spot (theta)
+            m = np.tan(theta)
+            b = center[1] - m * center[0]
+            x_reflect, y_reflect = reflect_coordinates(spot_loc[0], spot_loc[1], m, b)
+            xint_reflect = int(round(x_reflect))
+            yint_reflect = int(round(y_reflect))
+            left, right = (xint_reflect - boxrad, xint_reflect + boxrad + 1)
+            bottom, top = (yint_reflect - boxrad, yint_reflect + boxrad + 1)
+            noise_annuli[i, bottom:top, left:right] = False
+            # debug begin
+            # if debug:
+            #     # _, _ = reflect_coordinates(spot_loc[0], spot_loc[1], m, b, debug=True)
+            #     print('reflected spot loc1: [{:.1f}, {:.1f}]'.format(xint_reflect, yint_reflect))
+            #     canvas1 = np.zeros(img.shape)
+            #     canvas1[noise_annulus] = 1.
+            #     canvas2 = np.zeros(img.shape)
+            #     canvas2[noise_annulus_perp] = 1.
+            #     import matplotlib.pyplot as plt
+            #     fig, axes = plt.subplots(1, 2, figsize=(15, 8))
+            #     axes[0].imshow(canvas1, origin='lower')
+            #     axes[1].imshow(canvas2, origin='lower')
+            #     plt.show()
+            # debug end
+            # mask out a square aperture around the reflected location of the satellite spot (theta perp)
+            m = np.tan(theta_perp)
+            b = center[1] - m * center[0]
+            x_reflect, y_reflect = reflect_coordinates(spot_loc[0], spot_loc[1], m, b)
+            xint_reflect = int(round(x_reflect))
+            yint_reflect = int(round(y_reflect))
+            left, right = (xint_reflect - boxrad, xint_reflect + boxrad + 1)
+            bottom, top = (yint_reflect - boxrad, yint_reflect + boxrad + 1)
+            noise_annuli_perp[i, bottom:top, left:right] = False
+            # debug begin
+            # if debug:
+            #     # _, _ = reflect_coordinates(spot_loc[0], spot_loc[1], m, b, debug=True)
+            #     print('reflected spot loc2: [{:.1f}, {:.1f}]'.format(xint_reflect, yint_reflect))
+            #     canvas1 = np.zeros(img.shape)
+            #     canvas1[noise_annulus] = 1.
+            #     canvas2 = np.zeros(img.shape)
+            #     canvas2[noise_annulus_perp] = 1.
+            #     import matplotlib.pyplot as plt
+            #     fig, axes = plt.subplots(1, 2, figsize=(15, 8))
+            #     axes[0].imshow(canvas1, origin='lower')
+            #     axes[1].imshow(canvas2, origin='lower')
+            #     plt.show()
+            # debug end
+
+    cube_section = cube[noise_annuli]
+    cube_section_perp = cube[noise_annuli_perp]
+    reflected_section = reflected[noise_annuli]
+    reflected_section_perp = reflected_perp[noise_annuli_perp]
+    resid = cube_section - reflected_section
+    resid_perp = cube_section_perp - reflected_section_perp
+
+    # TODO: two noise annuli have different shapes, is taking the mean squared residual value safe from bias/systematics?
+    chi2 = np.mean(resid ** 2) + np.mean(resid_perp ** 2)
+
+    # debug begin
+    if debug:
+        for frame_num in range(cube.shape[0]):
+            outfile = '/home/minghan/CHARIS/charis-work/reduced_data/HR8799/centroid_spots_temp/bgsub/resids_{:03d}.png'.format(frame_num)
+            resid_frame = cube[frame_num][noise_annuli[frame_num]] - reflected[frame_num][noise_annuli[frame_num]]
+            resid_perp_frame = cube[frame_num][noise_annuli_perp[frame_num]] - \
+                               reflected_perp[frame_num][noise_annuli_perp[frame_num]]
+            canvas1 = np.zeros(cube[0].shape)
+            canvas1[noise_annuli[frame_num]] = resid_frame
+            canvas2 = np.zeros(cube[0].shape)
+            canvas2[noise_annuli_perp[frame_num]] = resid_perp_frame
+            import matplotlib.pyplot as plt
+            fig, axes = plt.subplots(1, 2, figsize=(30, 15))
+            vmin, vmax = np.percentile(resid_frame, [5, 95])
+            axes[0].imshow(canvas1, origin='lower', vmin=vmin, vmax=vmax)
+            axes[1].imshow(canvas2, origin='lower', vmin=vmin, vmax=vmax)
+            plt.savefig(outfile)
+            plt.close()
+    # debug end
+
+    if return_resids:
+        return chi2, np.mean(resid ** 2), np.mean(resid_perp ** 2)
+
+    return chi2
+
+
+def reflect_cube(cube, centers, theta):
+
+    z_cube_reflected, y_cube_reflected, x_cube_reflected = np.indices(cube.shape)
+    for i in range(cube.shape[0]):
+        center = centers[i]
+        frame = cube[i]
+        y, x = np.indices(frame.shape)
+        m = np.tan(theta)
+        b = center[1] - m * center[0]
+        x_reflected, y_reflected = reflect_coordinates(x, y, m, b)
+        x_cube_reflected[i] = x_reflected
+        y_cube_reflected[i] = y_reflected
+
+    reflected_cube = ndimage.map_coordinates(cube, [z_cube_reflected, y_cube_reflected, x_cube_reflected])
+
+    return reflected_cube
+
+
+def reflect_coordinates(x, y, m, b, debug=False):
+    '''
+
+    Args:
+        x: scalar or ndarray
+        y: scalar or ndarray
+        m: scalar, slope of the reflection axis defined by y = mx + b
+        b: scalar, offset of the reflection axis defined by y = mx + b
+
+    Returns:
+
+    '''
+
+    if (not np.isscalar(x)) and (not np.isscalar(y)):
+        try:
+            x = np.array(x)
+            y = np.array(y)
+        except:
+            raise TypeError('x and y must be both scalars or both array-like inputs')
+
+        if x.shape != y.shape:
+            raise ValueError('x and y must have the same shape')
+    elif (not np.isscalar(x)) or (not np.isscalar(y)):
+        raise TypeError('x and y must be both scalars or both array-like inputs')
+
+    # find the constant(s) c in y = 1/m + c, the line(s) perpendicular to y = mx + b and pass through [x, y]
+    c = y + 1. / m * x
+    x_intersect = (c - b) / (m + 1. / m)
+    y_intersect = m * x_intersect + b
+    dx = x_intersect - x
+    dy = y_intersect - y
+    x_reflected = x_intersect + dx
+    y_reflected = y_intersect + dy
+    # debug begin
+    if debug:
+        print('x, y, m, b, c: {:.2f}, {:.2f}, {:.2f}, {:.2f}, {:.2f}'.format(x, y, m, b, c))
+        print('x_intersect, y_intersect: [{:.1f}, {:.1f}]'.format(x_intersect, y_intersect))
+    # debug end
+
+    if isinstance(x_reflected, np.ndarray) and x_reflected.size == 1:
+        return x_reflected[0], y_reflected[0]
+
+    return x_reflected, y_reflected

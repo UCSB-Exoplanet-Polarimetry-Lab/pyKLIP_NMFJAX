@@ -1,6 +1,7 @@
 __author__ = 'jruffio'
 
 import numpy as np
+from scipy import integrate
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
@@ -10,8 +11,6 @@ from scipy.optimize import minimize
 import glob
 import os
 import csv
-
-
 
 
 def find_upper_nearest(array,value):
@@ -39,7 +38,6 @@ def find_lower_nearest(array,value):
     diff[np.where(diff>0.0)] = np.nan
     idx = np.nanargmax(diff)
     return array[idx], idx
-
 
 def find_nearest(array,value):
     """
@@ -345,9 +343,221 @@ def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
+def get_pickles_model_spectrum(star_type, temperature=None):
+    '''
+    Get the spectrum of a star with given spectral type/temperature by interpolating the pickles database.
+    Similar to function get_star_spectrum(), but does not resample the model spectrum at different wavelengths and does
+    not normalize to a different unit. The model spectrum is retrieved/interpolated and then directly returned with
+    the original arbitrary units of the model and original sampling wavelengths. This model spectrum can then be used
+    for further calibration independent of instrument.
+
+    Args:
+        star_type: 'A5','F4',... Is ignored if temperature is defined.
+                   If star_type is longer than 2 characters it is truncated.
+        temperature: temperature of the star. Overwrite star_type if defined.
+
+    Returns:
+        wavelengths: wavelengths sampling in angstroms.
+        spectrum: the spectrum of the star at the given temperature or spectral type.
+    '''
+
+    if len(star_type) > 2:
+        star_type_selec = star_type[0:2].upper()
+    else:
+        star_type_selec = star_type.upper()
+
+    try:
+        int(star_type_selec[1])
+    except:
+        try:
+            star_type_selec = star_type[-3:-1]
+            int(star_type_selec[1])
+        except:
+            raise ValueError("Couldn't parse spectral type.")
+
+    # Sory hard-coded type...
+    if star_type_selec == "K8":
+        star_type_selec = "K7"
+
+    pykliproot = os.path.dirname(os.path.realpath(__file__))
+    filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
+    filename_pickles_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"AA_README"
+
+    # The interpolation is based on the temperature of the star
+    # If the input was not the temperature then it is taken from the mainseq_colors.txt based on the input spectral type
+    if temperature is None:
+        #Read pickles list
+        dict_temp = dict()
+        with open(filename_temp_lookup, 'r') as f:
+            for line in f:
+                if line.startswith('#'):
+                    pass
+                else:
+                    splitted_line = line.split()
+                    # splitted_line[0]: spectral type F5 G0...
+                    # splitted_line[2]: Temperature in K
+                    dict_temp[splitted_line[0]] = splitted_line[2]
+
+        try:
+            target_temp = float(dict_temp[star_type_selec])
+        except:
+            raise ValueError("Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
+    else:
+        target_temp = temperature
+
+    # "AA_README" contains the list of the temperature for which a spectrum is available
+    # Read it here
+    dict_filename = dict()
+    temp_list=[]
+    with open(filename_pickles_lookup, 'r') as f:
+        for line in f:
+            if line.startswith('pickles_uk_'):
+                splitted_line = line.split()
+                # splitted_line[0]: Filename
+                # splitted_line[1]: spectral type F5V G0III...
+                # splitted_line[2]: Temperature in K
+
+                #Check that the last character is numeric
+                spec_type = splitted_line[1]
+                if splitted_line[0][len(splitted_line[0])-1].isdigit() and not (spec_type.endswith('IV') or spec_type.endswith('I')):
+                    dict_filename[float(splitted_line[2])] = splitted_line[0]
+                    temp_list.append(float(splitted_line[2]))
+
+    #temp_list = np.array(dict_filename.keys())
+    temp_list = np.array(temp_list)
+    # won't work for the hottest and coldest spectra.
+    upper_temp, upper_temp_id = find_upper_nearest(temp_list,target_temp)
+    lower_temp, lower_temp_id = find_lower_nearest(temp_list,target_temp)
+    #print( upper_temp, upper_temp_id,lower_temp, lower_temp_id)
+
+    upper_filename = dict_filename[upper_temp]
+    lower_filename = dict_filename[lower_temp]
+
+    upper_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+upper_filename+".fits"
+    lower_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+lower_filename+".fits"
 
 
+    hdulist = pyfits.open(upper_filename)
+    cube = hdulist[1].data
+    upper_wave = []
+    upper_spec = []
+    for wave_value,spec_value in cube:
+        upper_wave.append(wave_value) # in angstrom
+        upper_spec.append(spec_value)
+    upper_wave = np.array(upper_wave) # in angstrom
+    upper_spec = np.array(upper_spec) # flux density, arbitrary units
 
+    hdulist = pyfits.open(lower_filename)
+    cube = hdulist[1].data
+    lower_wave = []
+    lower_spec = []
+    for wave_value,spec_value in cube:
+        lower_wave.append(wave_value) # in angstrom
+        lower_spec.append(spec_value)
+    lower_wave = np.array(lower_wave) # in angstrom
+    lower_spec = np.array(lower_spec) # flux density, arbitrary units
+
+    # all pickles library model spectra should be sampled at the same wavelengths, check this assumption
+    # if the assumption is wrong modify the code
+    if (upper_wave.shape[0] != lower_wave.shape[0]) or not np.allclose(upper_wave, lower_wave):
+        raise ValueError('Pickles model spectra not sampled at the same wavelengths')
+
+    spec_pip = ((target_temp - lower_temp) * upper_spec + (upper_temp - target_temp) * lower_spec) / \
+               (upper_temp - lower_temp)
+
+    return lower_wave, spec_pip
+
+def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnitude, wvs):
+    '''
+    Scale the Pickles stellar spectrum of a star to the observed apparent magnitude and returns the stellar spectrum in
+    physical units sampled at the specified wavelengths.
+    Currently only supports 2MASS filters and magnitudes.
+    TODO: implement a way to take magnitude error input and propogate the error to the final spectrum
+
+    Args:
+        template_spectrum: 1D array, model spectrum of the star with arbitrary units
+        template_wvs: 1D array, wavelengths at which the template_spectrum is smapled, in units of angstroms
+        filter_name: string, 2MASS filter, 'J', 'H', or 'Ks'
+        magnitude: scalar, observed apparent magnitude of the star
+        mag_error: scalar or 1D array with 2 elements, error(s) of the magnitude, not yet implemented
+        wvs: 1D array, the wvs at which to sample the scaled spectrum, in units of angstroms
+
+    Returns:
+        scaled_spectrum: 1D array, scaled stellar spectrum sampled at wvs
+    '''
+
+    # TODO: observed magnitude error is currently not taken into account, think about how to propagate this to the
+    #       extracted planet spectrum
+
+    # constants associated with 2MASS
+    filters_2MASS_upper = np.array(['J', 'H', 'KS', 'K']) # allow user to use 'K' for 'Ks' band
+    filters_2MASS = np.array(['J', 'H', 'Ks'])
+    zero_point_fluxes_2MASS = [3.143e-10, 1.144e-10, 4.306e-11] # 2MASS zero point fluxes, erg/cm2/s/Angstrom
+    pykliproot = os.path.dirname(os.path.realpath(__file__))
+
+    # check if input is valid
+    filter_name = filter_name.upper()
+    if filter_name not in filters_2MASS_upper:
+        raise ValueError('{} is not recognized as a 2MASS filter'.format(filter_name))
+    if filter_name == 'K':
+        filter_name = 'KS'
+
+    # assign the corresponding zero point flux and filter name with the proper captilization
+    # 'K' should already be converted to 'Ks' at this point, so filter_index should always be <= 2
+    filter_index = np.where(filters_2MASS_upper == filter_name)[0][0]
+    zero_point_flux = zero_point_fluxes_2MASS[filter_index]
+    filter_name = filters_2MASS[filter_index]
+
+    # TODO: either put these 3 transmission files in the pyklip package, or download them from the source website
+    # load transmission, integrate zero_point_flux to get the total zero point flux of the passband
+    transmission_filepath = os.path.join(pykliproot, '2MASS_filters', '2MASS_{}.dat'.format(filter_name))
+    transmission = np.loadtxt(transmission_filepath)
+    zero_point_flux = zero_point_flux * integrate.simps(transmission[:, 1], transmission[:, 0])
+
+    # re-sample the stellar model spectrum at the wavelengths of the given filter transmission
+    start_ind = np.where(template_wvs <= transmission[0, 0])[0][-1]
+    stop_ind = np.where(template_wvs >= transmission[-1, 0])[0][0] + 1
+    thisfilter_template_wvs = template_wvs[start_ind:stop_ind]
+    thisfilter_template_spectrum = template_spectrum[start_ind:stop_ind]
+    # Pickles stellar model samples much more finely (~factor of 10) than transmission, and includes all wavelengths
+    # sampled in the filter transmission, so this interpolation wouldn't actually interpolate but rather simply
+    # re-sample the existing model spectrum onto a courser grid
+    f = interp1d(thisfilter_template_wvs, thisfilter_template_spectrum, kind='cubic')
+    thisfilter_template_spectrum_resampled = f(transmission[:, 0])
+
+    # integrate to get total flux within the filter in arbitrary units
+    tot_flux = integrate.simps(thisfilter_template_spectrum_resampled * transmission[:, 1], transmission[:, 0])
+    # scale to physical units
+    scale_factor = np.power(10, -magnitude/2.5) * zero_point_flux / tot_flux
+    scaled_spectrum = template_spectrum * scale_factor
+    # integrate flux over each output wavelength bin, then divide by each bin width to get the flux density
+    f = interp1d(template_wvs, scaled_spectrum, kind='cubic')
+    bin_widths = np.diff(wvs)
+    bin_widths = np.append(bin_widths, bin_widths[-1])
+    bin_integrated_scaled_spectrum = []
+    for bin_center, bin_width in zip(wvs, bin_widths):
+        # define bin boundaries as integration region
+        bin_left = bin_center - bin_width / 2.
+        bin_right = bin_center + bin_width / 2.
+        # find the interpolated flux density at the bin boundaries
+        left_value = f(bin_left)
+        right_value = f(bin_right)
+        # cut out the bin segment from the spectrum
+        bin_wvs = template_wvs[(template_wvs >= bin_left) & (template_wvs <= bin_right)]
+        bin_spectrum = scaled_spectrum[(template_wvs >= bin_left) & (template_wvs <= bin_right)]
+        # adding the boundary values if they're not already sampled
+        if bin_wvs[0] != bin_left:
+            bin_wvs = np.insert(bin_wvs, 0, bin_left)
+            bin_spectrum = np.insert(bin_spectrum, 0, left_value)
+        if bin_wvs[-1] != bin_right:
+            bin_wvs = np.append(bin_wvs, bin_right)
+            bin_spectrum = np.append(bin_spectrum, right_value)
+        # integrate bin and devide by bin width to get the flux density of the bin
+        bin_flux_density = integrate.simps(bin_spectrum, bin_wvs) / bin_width
+        bin_integrated_scaled_spectrum.append(bin_flux_density)
+    bin_integrated_scaled_spectrum = np.array(bin_integrated_scaled_spectrum) # units erg/cm2/s/Angstrom
+
+    return bin_integrated_scaled_spectrum
 
 def LSQ_scale_model_PSF(PSF_template,planet_image,a):
     return np.nansum((planet_image-a*PSF_template)**2,axis = (0,1))#/y_model
