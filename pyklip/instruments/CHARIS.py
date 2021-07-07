@@ -829,18 +829,21 @@ class CHARISData(Data):
         for i, frame in enumerate(self.input):
 
             this_spot_locs = self.spot_locs[i] # shape (4, 2)
-            # calculate mask location at this frame taking into account field rotation
-            centroid = np.mean(this_spot_locs, axis=0)
-            PA_ref = self.PAs[mask_ref_ind * numwvs]
-            PA_frame = self.PAs[i]
-            # parang is measured clockwise from zenith, thus PA_diff is clockwise from PA_ref to PA_thiscube
-            PA_diff = np.radians(PA_frame - PA_ref)
-            mask_seps = np.sqrt((mask_locs[:, 0] - centroid[0])**2 + (mask_locs[:, 1] - centroid[1])**2)
-            # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
-            mask_phis = np.arctan2(mask_locs[:, 1] - centroid[1], mask_locs[:, 0] - centroid[0]) - PA_diff
-            mask_locs_frame = np.array([mask_seps * np.cos(mask_phis) + centroid[0],
-                                        mask_seps * np.sin(mask_phis) + centroid[1]]).transpose()
-                              # shape (nmask, 2)
+            if mask_locs is not None:
+                # calculate mask location at this frame taking into account field rotation
+                centroid = np.mean(this_spot_locs, axis=0)
+                PA_ref = self.PAs[mask_ref_ind * numwvs]
+                PA_frame = self.PAs[i]
+                # parang is measured clockwise from zenith, thus PA_diff is clockwise from PA_ref to PA_thiscube
+                PA_diff = np.radians(PA_frame - PA_ref)
+                mask_seps = np.sqrt((mask_locs[:, 0] - centroid[0])**2 + (mask_locs[:, 1] - centroid[1])**2)
+                # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
+                mask_phis = np.arctan2(mask_locs[:, 1] - centroid[1], mask_locs[:, 0] - centroid[0]) - PA_diff
+                mask_locs_frame = np.array([mask_seps * np.cos(mask_phis) + centroid[0],
+                                            mask_seps * np.sin(mask_phis) + centroid[1]]).transpose()
+                                  # shape (nmask, 2)
+            else:
+                mask_locs_frame = None
             #now make a psf
             spotpsf = generate_psf(frame, this_spot_locs, boxrad=boxrad, spots_collapse=spots_collapse,
                                    bg_sub=True, mask_locs=mask_locs_frame, mask_rad=mask_rad)
@@ -893,7 +896,7 @@ class CHARISData(Data):
         self.host_star_psfs = np.mean(self.host_star_psfs, axis=0)
 
 
-    def measure_spot_over_star_ratio(self, opaque_indices=[], boxrad=7, spots_collapse='mean', lyot_stop=True):
+    def measure_spot_over_star_ratio(self, opaque_indices=[], boxrad=7, spots_collapse='mean'):
         '''
         Obtain satellite spot flux to primary star flux ratio from unsaturated frames
 
@@ -908,7 +911,7 @@ class CHARISData(Data):
         wvs = np.unique(self.wvs)
         # generate self.psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), median/averaged over 4 spots
         # and averaged over exposures
-        self.generate_psfs(boxrad=boxrad, spots_collapse=spots_collapse, lyot_stop=lyot_stop)
+        self.generate_psfs(boxrad=boxrad, spots_collapse=spots_collapse)
         # generate self.host_star psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), averaged over exposures
         self.generate_host_star_psfs(boxrad=boxrad)
 
