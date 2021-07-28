@@ -483,7 +483,8 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
         dat: 2D image - already flux calibrated
         iwa: inner working angle
         owa: outer working angle
-        resolution: size of resolution element in pixels (FWHM or lambda/D)
+        resolution: size of noise resolution element in pixels (for speckle noise ~ FWHM or lambda/D)
+                    but it can be 1 pixel if limited by pixel-to-pixel noise. 
         center: location of star (x,y). If None, defaults the image size // 2.
         low_pass_filter: if True, run a low pass filter.
                          Can also be a float which specifices the width of the Gaussian filter (sigma).

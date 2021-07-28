@@ -678,6 +678,7 @@ class GPIData(Data):
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
+            time_collapse: if True, averages PSF in time. 
 
         Returns:
             saves PSFs to self.psfs as an array of size(N_wvs, psfy, psfx) where psfy=psfx=2*boxrad + 1
