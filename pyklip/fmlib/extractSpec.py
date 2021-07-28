@@ -77,44 +77,38 @@ class ExtractSpec(NoFM):
         self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.data_type))
         self.nl = np.size(input_psfs_wvs)
 
-        if len(self.input_psfs.shape)  == 3:
+        self.psf_centx_notscaled = {}
+        self.psf_centy_notscaled = {}
+
+        if len(self.input_psfs.shape) == 3:
             # default what we exepct
             self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
-            self.psf_centx_notscaled = {}
-            self.psf_centy_notscaled = {}
-
-            numwv,ny_psf,nx_psf =  self.input_psfs.shape
-            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(self.nx_psf * 1.)-self.nx_psf//2,np.arange(self.ny_psf* 1.)-self.ny_psf//2)
             psfs_func_list = []
-            for wv_index in range(numwv):
+            for wv_index in range(self.nl):
                 model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
-                psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+                psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:self.nx_psf-1]+0.5,y_psf_grid[0:self.ny_psf-1,0]+0.5))
 
-            self.psfs_func_list = psfs_func_list
             self.psfs_in_time = False
         else:
             # account for time variability of PSF
             self.ncubes, self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
-            self.psf_centx_notscaled = {}
-            self.psf_centy_notscaled = {}
-
             self.input_psfs_pas = input_psfs_pas
 
-            ncubes, numwv, ny_psf, nx_psf =  self.input_psfs.shape
-            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(self.nx_psf * 1.)-self.nx_psf//2,np.arange(self.ny_psf* 1.)-self.ny_psf//2)
             psfs_func_list = []
             for pa_index in range(self.ncubes):
                 psfs_func_list_perpa = []
-                for wv_index in range(numwv):
+                for wv_index in range(self.nl):
                     model_psf = self.input_psfs[pa_index, wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
-                    psfs_func_list_perpa.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+                    psfs_func_list_perpa.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:self.nx_psf-1]+0.5,y_psf_grid[0:self.ny_psf-1,0]+0.5))
                 psfs_func_list.append(psfs_func_list_perpa)
 
-            self.psfs_func_list = psfs_func_list
             self.psfs_in_time = True
-
+            
+        self.psfs_func_list = psfs_func_list
 
 
     def alloc_fmout(self, output_img_shape):
