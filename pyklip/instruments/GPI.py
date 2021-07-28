@@ -672,7 +672,7 @@ class GPIData(Data):
         return img
 
 
-    def generate_psfs(self, boxrad=7):
+    def generate_psfs(self, boxrad=7, time_collapse=True):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
 
@@ -680,7 +680,8 @@ class GPIData(Data):
             boxrad: the halflength of the size of the extracted PSF (in pixels)
 
         Returns:
-            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+            saves PSFs to self.psfs as an array of size(N_wvs, psfy, psfx) where psfy=psfx=2*boxrad + 1
+            unless time_collapse=False, in which case it has shape (N_cubes, N_wvs, psfy, psfx). 
         """
         self.psfs = []
 
@@ -715,10 +716,13 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-        # collapse in time dimension
+
         numwvs = np.size(np.unique(self.wvs))
         self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
-        self.psfs = np.mean(self.psfs, axis=0)
+        if time_collapse:
+            # collapse in time dimension
+            self.psfs = np.mean(self.psfs, axis=0)
+
 
     def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = True):
         """
