@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='pyklip',
-    version='2.3',
+    version='2.4',
     description='pyKLIP: PSF Subtraction for Exoplanets and Disks',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -26,8 +26,8 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 3',
         ],
     keywords='KLIP PSF Subtraction Exoplanets Astronomy',
     install_requires=['numpy', 'scipy', 'astropy', 'matplotlib', 'emcee', 'corner']
