@@ -26,6 +26,7 @@ class ExtractSpec(NoFM):
                  sep, pa,
                  input_psfs,
                  input_psfs_wvs,
+                 input_psfs_pas=None,
                  datatype="float",
                  stamp_size = None):
         """
@@ -36,8 +37,10 @@ class ExtractSpec(NoFM):
             numbasis: 1d numpy array consisting of the number of basis vectors to use
             sep: separation of the planet
             pa: position angle of the planet
-            input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
+            input_psfs: the psf of the image. A numpy array with shape (wv, y, x) 
+                        shape of (N_cubes, wvs, y, x) also acceptable to have PSFs change in time.
             input_psfs_wvs: the wavelegnths that correspond to the input psfs
+            input_psfs_pas: the parangs when each input psf was taken (should be unique)
             flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast
             wavelengths: wavelengths of data. Can just be a string like 'H' for H-band
             spectrallib: if not None, a list of spectra
@@ -74,48 +77,38 @@ class ExtractSpec(NoFM):
         self.input_psfs_wvs = list(np.array(input_psfs_wvs,dtype=self.data_type))
         self.nl = np.size(input_psfs_wvs)
 
-        # Make sure the peak value is unity for all wavelengths
-        #self.sat_spot_spec = np.nanmax(self.input_psfs,axis=(1,2))
-        #self.aper_over_peak_ratio = np.zeros(np.size(self.input_psfs_wvs))
-        #for l_id in range(self.input_psfs.shape[0]):
-        #    self.aper_over_peak_ratio[l_id] = np.nansum(self.input_psfs[l_id,:,:])/self.sat_spot_spec[l_id]
-        #    self.input_psfs[l_id,:,:] = self.input_psfs[l_id,:,:]/np.nansum(self.input_psfs[l_id,:,:])
-
-        self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
-
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
 
-        numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.)-nx_psf//2,np.arange(ny_psf* 1.)-ny_psf//2)
-        psfs_func_list = []
-        for wv_index in range(numwv):
-            model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
-            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+        if len(self.input_psfs.shape) == 3:
+            # default what we exepct
+            self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
 
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(self.nx_psf * 1.)-self.nx_psf//2,np.arange(self.ny_psf* 1.)-self.ny_psf//2)
+            psfs_func_list = []
+            for wv_index in range(self.nl):
+                model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+                psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:self.nx_psf-1]+0.5,y_psf_grid[0:self.ny_psf-1,0]+0.5))
+
+            self.psfs_in_time = False
+        else:
+            # account for time variability of PSF
+            self.ncubes, self.nl, self.ny_psf, self.nx_psf =  self.input_psfs.shape
+
+            self.input_psfs_pas = input_psfs_pas
+
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(self.nx_psf * 1.)-self.nx_psf//2,np.arange(self.ny_psf* 1.)-self.ny_psf//2)
+            psfs_func_list = []
+            for pa_index in range(self.ncubes):
+                psfs_func_list_perpa = []
+                for wv_index in range(self.nl):
+                    model_psf = self.input_psfs[pa_index, wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+                    psfs_func_list_perpa.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:self.nx_psf-1]+0.5,y_psf_grid[0:self.ny_psf-1,0]+0.5))
+                psfs_func_list.append(psfs_func_list_perpa)
+
+            self.psfs_in_time = True
+            
         self.psfs_func_list = psfs_func_list
-
-
-    # def alloc_interm(self, max_sector_size, numsciframes):
-    #     """Allocates shared memory array for intermediate step
-    #
-    #     Intermediate step is allocated for a sector by sector basis
-    #
-    #     Args:
-    #         max_sector_size: number of pixels in this sector. Max because this can be variable. Stupid rotating sectors
-    #
-    #     Returns:
-    #         interm: mp.array to store intermediate products from one sector in
-    #         interm_shape:shape of interm array (used to convert to numpy arrays)
-    #
-    #     """
-    #
-    #     interm_size = max_sector_size * np.size(self.numbasis) * numsciframes * len(self.spectrallib)
-    #
-    #     interm = mp.Array(ctypes.c_double, interm_size)
-    #     interm_shape = [numsciframes, len(self.spectrallib), max_sector_size, np.size(self.numbasis)]
-    #
-    #     return interm, interm_shape
 
 
     def alloc_fmout(self, output_img_shape):
@@ -200,7 +193,7 @@ class ExtractSpec(NoFM):
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
 
-        numwv, ny_psf, nx_psf =  self.input_psfs.shape
+        numwv, ny_psf, nx_psf =  self.nl, self.ny_psf, self.nx_psf
 
         # create bounds for PSF stamp size
         row_m = np.floor(ny_psf/2.0)    # row_minus
@@ -255,8 +248,14 @@ class ExtractSpec(NoFM):
             y_vec_stamp_centered /= (ref_wv/wv)
 
             # use intepolation spline to generate a model PSF and write to temp img
+            if not self.psfs_in_time:
+                # just grab the right wavelength
+                psf_func = self.psfs_func_list[int(wv_index)]
+            else:
+                pa_index = spec.find_nearest(self.input_psfs_pas, pa)[1]
+                psf_func = self.psfs_func_list[int(pa_index)][int(wv_index)]
             whiteboard[int(k-row_m):int(k+row_p), int(l-col_m):int(l+col_p)] = \
-                    self.psfs_func_list[int(wv_index)](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                    psf_func(x_vec_stamp_centered,y_vec_stamp_centered).transpose()
 
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]

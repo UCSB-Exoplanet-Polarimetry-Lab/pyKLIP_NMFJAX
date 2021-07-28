@@ -18,7 +18,8 @@ class FMPlanetPSF(NoFM):
     """
     Forward models the PSF of the planet through KLIP. Returns the forward modelled planet PSF
     """
-    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None):
+    def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, 
+                 spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None, input_psfs_pas=None):
         """
         Defining the planet to characterizae
 
@@ -29,6 +30,7 @@ class FMPlanetPSF(NoFM):
             pa: position angle of the planet
             dflux: guess for contrast of planet averaged across band w.r.t star
             input_psfs: the psf of the image. A numpy array with shape (wv, y, x)
+                        shape of (N_cubes, wvs, y, x) also acceptable to have PSFs change in time. Need to supply input_psfs_pas in that case.
             input_wvs: the wavelegnths that correspond to the input psfs
                 (doesn't need to be tiled to match the dimension of the input data of the instrument class)
             flux_conversion: an array of length N to convert from contrast to DN for each frame. Units of DN/contrast. 
@@ -37,6 +39,8 @@ class FMPlanetPSF(NoFM):
             spectrallib_units: can be either "flux"" or "contrast". Flux units requires dividing by the flux of the star to get contrast 
             star_spt: star spectral type, if None default to some random one
             refine_fit: (NOT implemented) refine the separation and pa supplied
+            field_dependent_correction: function to implement field dependent correction. See BKA tutorial.
+            input_psfs_pas: the parangs corresponding to the input PSFs (optional). Array of size N_cubes
         """
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
@@ -80,34 +84,50 @@ class FMPlanetPSF(NoFM):
         self.psf_centx_notscaled = {}
         self.psf_centy_notscaled = {}
 
-        numwv,ny_psf,nx_psf =  self.input_psfs.shape
-        x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.) - nx_psf//2, np.arange(ny_psf * 1.) - ny_psf//2)
-        psfs_func_list = []
-        for wv_index in range(numwv):
-            model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
-            #psfs_interp_model_list.append(interpolate.bisplrep(x_psf_grid,y_psf_grid,model_psf))
-            #psfs_interp_model_list.append(interpolate.SmoothBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel()))
-            psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
-            #psfs_interp_model_list.append(interpolate.interp2d(x_psf_grid,y_psf_grid,model_psf,kind="cubic",bounds_error=False,fill_value=0.0))
-            #psfs_interp_model_list.append(interpolate.Rbf(x_psf_grid,y_psf_grid,model_psf,function="gaussian"))
+        if len(self.input_psfs.shape) == 3:
+            numwv,ny_psf,nx_psf =  self.input_psfs.shape
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.) - nx_psf//2, np.arange(ny_psf * 1.) - ny_psf//2)
+            psfs_func_list = []
+            for wv_index in range(numwv):
+                model_psf = self.input_psfs[wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+                #psfs_interp_model_list.append(interpolate.bisplrep(x_psf_grid,y_psf_grid,model_psf))
+                #psfs_interp_model_list.append(interpolate.SmoothBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel()))
+                psfs_func_list.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+                #psfs_interp_model_list.append(interpolate.interp2d(x_psf_grid,y_psf_grid,model_psf,kind="cubic",bounds_error=False,fill_value=0.0))
+                #psfs_interp_model_list.append(interpolate.Rbf(x_psf_grid,y_psf_grid,model_psf,function="gaussian"))
 
-            if 0:
-                import matplotlib.pylab as plt
-                #print(x_psf_grid.shape)
-                #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
-                a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0]).transpose()
-                plt.figure()
-                plt.subplot(1,3,1)
-                plt.imshow(a,interpolation="nearest")
-                plt.colorbar()
-                ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
-                plt.subplot(1,3,2)
-                plt.imshow(self.input_psfs[wv_index, :, :],interpolation="nearest")
-                plt.colorbar()
-                plt.subplot(1,3,3)
-                plt.imshow(abs(self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
-                plt.colorbar()
-                plt.show()
+                if 0:
+                    import matplotlib.pylab as plt
+                    #print(x_psf_grid.shape)
+                    #print(psfs_interp_model_list[wv_index](x_psf_grid.ravel(),y_psf_grid.ravel()).shape)
+                    a = psfs_func_list[wv_index](x_psf_grid[0,:],y_psf_grid[:,0]).transpose()
+                    plt.figure()
+                    plt.subplot(1,3,1)
+                    plt.imshow(a,interpolation="nearest")
+                    plt.colorbar()
+                    ##plt.imshow(psfs_interp_model_list[wv_index](np.linspace(-10,10,500),np.linspace(-10,10,500)),interpolation="nearest")
+                    plt.subplot(1,3,2)
+                    plt.imshow(self.input_psfs[wv_index, :, :],interpolation="nearest")
+                    plt.colorbar()
+                    plt.subplot(1,3,3)
+                    plt.imshow(abs(self.input_psfs[wv_index, :, :]-a),interpolation="nearest")
+                    plt.colorbar()
+                    plt.show()
+            self.psfs_in_time = False
+        else:
+            self.input_psfs_pas = input_psfs_pas
+            n_cubes,numwv,ny_psf,nx_psf =  self.input_psfs.shape
+            x_psf_grid, y_psf_grid = np.meshgrid(np.arange(nx_psf * 1.) - nx_psf//2, np.arange(ny_psf * 1.) - ny_psf//2)
+
+            psfs_func_list = []
+            for pa_index in range(n_cubes):
+                psfs_func_list_perpa = []
+                for wv_index in range(numwv):
+                    model_psf = self.input_psfs[pa_index, wv_index, :, :] #* self.flux_conversion * self.spectrallib[0][wv_index] * self.dflux
+                    psfs_func_list_perpa.append(interpolate.LSQBivariateSpline(x_psf_grid.ravel(),y_psf_grid.ravel(),model_psf.ravel(),x_psf_grid[0,0:nx_psf-1]+0.5,y_psf_grid[0:ny_psf-1,0]+0.5))
+                psfs_func_list.append(psfs_func_list_perpa)
+    
+            self.psfs_in_time = True
 
         self.psfs_func_list = psfs_func_list
 
@@ -177,7 +197,7 @@ class FMPlanetPSF(NoFM):
         x_grid, y_grid = np.meshgrid(np.arange(nx * 1.)-ref_center[0], np.arange(ny * 1.)-ref_center[1])
 
         # retrieve wavelength, x and y dimensions of input psf
-        numwv, ny_psf, nx_psf =  self.input_psfs.shape
+        numwv, ny_psf, nx_psf =  self.input_psfs.shape[-3:]
 
         # create stamp for instrumental psf
         psf_lower = int(np.floor(ny_psf/2.0))    # lower bound
@@ -232,8 +252,14 @@ class FMPlanetPSF(NoFM):
 
 
             # use intepolation spline to generate a model PSF of planet and write to temp img
+            if not self.psfs_in_time:
+                # just grab the right wavelength
+                psf_func = self.psfs_func_list[wv_index]
+            else:
+                pa_index = spec.find_nearest(self.input_psfs_pas, pa)[1]
+                psf_func = self.psfs_func_list[pa_index][wv_index]
             whiteboard[stamp_len, stamp_width] = \
-                    self.psfs_func_list[wv_index](x_vec_stamp_centered,y_vec_stamp_centered).transpose()
+                    psf_func(x_vec_stamp_centered,y_vec_stamp_centered).transpose()
             
             # if specified, make field dependent PSF correction
             if self.field_dependent_correction is not None:
