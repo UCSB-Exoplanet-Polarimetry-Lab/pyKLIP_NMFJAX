@@ -93,9 +93,9 @@ def _spotloc(phi, sep, pitch=15, D=8.2, astrogrid='XYdiag'):
     '''
 
     phi = np.arange(4) * np.pi / 2 + phi
-    if astrogrid == 'Xdiag':
+    if astrogrid == 'Xdiag' or astrogrid == 'X':
         phi = np.take(phi, [1, 3])
-    elif astrogrid == 'Ydiag':
+    elif astrogrid == 'Ydiag' or astrogrid == 'Y':
         phi = np.take(phi, [0, 2])
     r = sep * 1e-6 / D * 3600 * 180 / np.pi / (pitch * 1e-3)
     r = r * np.ones(phi.shape)
@@ -301,6 +301,30 @@ def _cc_resid(p, pp, cube, lam, x, y, retarr=False):
         return chisq
 
 
+def _get_fids(prihdrs):
+
+    fids = []
+    mjd_found = True
+    for prihdr in prihdrs:
+        try:
+            mjd = prihdr['mjd']
+            # convert unit of days to unit of seconds and truncate (not mathematically necesary)
+            mjd = int(mjd * 24 * 3600)
+            fids.append(mjd)
+        except:
+            print('mjd keyword not found in the header')
+            mjd_found = False
+            break
+
+    if not mjd_found:
+        # if coundn't find mjd keyword in all headers, use arange() to generate indices for the polynomial fit
+        fids = np.arange(len(prihdrs))
+
+    fids = np.array(fids)
+    fids -= fids[0]
+
+    return fids
+
 def get_sats_satf(p, cube, lam, astrogrid='XYdiag'):
     '''
     retrieves the pixel locations of all four satellite spots at each wavelength,
@@ -330,7 +354,7 @@ def get_sats_satf(p, cube, lam, astrogrid='XYdiag'):
 
     dx, dy = _par_to_dx_dy(p[2:], lam)
 
-    if astrogrid == 'Xdiag' or astrogrid == 'Ydiag':
+    if astrogrid == 'Xdiag' or astrogrid == 'Ydiag' or astrogrid == 'X' or astrogrid == 'Y':
         spot_num = 2
     else:
         spot_num = 4
@@ -501,11 +525,10 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
     if spotsep is not None:
         if np.abs(spotsep - 15.9) < 1:
             phi = -18 * np.pi / 180
-        elif np.abs(spotsep - 10) < 1:
+        elif np.abs(spotsep - 10) < 2:
             phi = 27 * np.pi / 180
         else:
             print("Must call fitcen with a valid separation for the satellite spots.")
-            print("Currently accepted separations: 10 and 15.5 lambda/D.")
             return None
 
     ####################################################################
@@ -639,9 +662,10 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
         astrogrid_sep = []
         for i, head in enumerate(prihdrs):
             try:
-                if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag':
-                    print('{}: cannot parse astrogrid status from header, default to XYdiag at 15.5 lambda/D spot '
-                          'separation...'.format(os.path.basename(infiles[i])))
+                if head['X_GRDST'] != 'XYdiag' and head['X_GRDST'] != 'Xdiag' and head['X_GRDST'] != 'Ydiag'\
+                   and head['X_GRDST'] != 'X' and head['X_GRDST'] != 'Y':
+                    print('{}: astrogrid status {} is not recognized, default to XYdiag at 15.5 lambda/D spot '
+                          'separation...'.format(os.path.basename(infiles[i]), head['X_GRDST']))
                     astrogrid_status += ['XYdiag']
                     astrogrid_sep += [15.5]
                 else:
@@ -649,7 +673,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
                     astrogrid_sep += [head['X_GRDSEP']]
 
             except:
-                print('{}: cannot parse astrogrid status from header, default to XYdiag at 15.5 lambda/D spot '
+                print('{}: error reading astrogrid status from header, default to XYdiag at 15.5 lambda/D spot '
                       'separation...'.format(os.path.basename(infiles[i])))
                 astrogrid_status += ['XYdiag']
                 astrogrid_sep += [15.5]
@@ -662,8 +686,7 @@ def fitcen_parallel(infiles, cubes, ivars, prihdrs, astrogrid_status=None, astro
     for w in consumers:
         w.start()
 
-    # TODO: test if fids = np.arange(len(cubes)) work identically, if so, get rid of infiles variable
-    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile))) for infile in infiles]
+    fids = _get_fids(prihdrs)
 
     lamlist = []
     grid_on = np.zeros(len(cubes), np.int32)
@@ -939,8 +962,7 @@ def specphotcal(infiles, cubes, prihdrs, cencoef, aperture=1.):
 
     '''
 
-    fids = [int(re.sub('_.*', '', re.sub('.*CRSA', '', infile)))
-            for infile in infiles]
+    fids = _get_fids(prihdrs)
 
     phi = polyfit(fids, cencoef[:, 0], return_y=False)
     sep = polyfit(fids, cencoef[:, 1], return_y=False)

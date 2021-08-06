@@ -265,9 +265,12 @@ class CHARISData(Data):
         for index, filepath in enumerate(filepaths):
             with fits.open(filepath, lazy_load_hdus=False) as hdulist:
                 cube = hdulist[1].data
-                ivar = hdulist[2].data
                 prihdr = hdulist[0].header
                 exthdr = hdulist[1].header
+                if len(hdulist) > 2:
+                    ivar = hdulist[2].data
+                else:
+                    ivar = np.ones(cube.shape)
                 w = wcs.WCS(header=prihdr, naxis=[1, 2])
                 astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] # repeat astrom header for each wavelength slice
 
@@ -577,7 +580,7 @@ class CHARISData(Data):
         """
         for filename, hdr in zip(np.unique(self.filenames), self.exthdrs):
 
-            # insert a comment section for the new data saved
+            # insert a comment to mark a new section of info saved in the headers
             add_comment = True
             for comment_line in hdr['comment']:
                 if 'Processed Data' in comment_line:
@@ -1125,7 +1128,7 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
     spot_locs = []
     spot_fluxes = []
     try:
-        if hdr['X_GRDST'] == 'Xdiag' or hdr['X_GRDST'] == 'Ydiag':
+        if hdr['X_GRDST'] == 'Xdiag' or hdr['X_GRDST'] == 'Ydiag' or hdr['X_GRDST'] == 'X' or hdr['X_GRDST'] == 'Y':
             number_of_spots = 2
         else:
             number_of_spots = 4
