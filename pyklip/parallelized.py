@@ -24,6 +24,7 @@ except ImportError:
     mkl_exists = False
 
 # Turns parallelism off for debugging purposes
+global parallel
 debug = False
 
 if debug is True:
@@ -242,6 +243,95 @@ def _align_and_scale(iterable_arg):
 
     return ref_wv_index, ref_wv
 
+
+def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
+                  ref_center, dtype=None):
+    """
+    DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
+
+    Runs klip on a section of an image as given by the geometric parameters. Helper fucntion of klip routines and
+    requires thread pool to be initialized! Currently is designed only for ADI+SDI. Not yet that flexible.
+
+    Args:
+        img_num: file index for the science image to process
+        parang: PA of science iamge
+        wavelength: wavelength of science image
+        wv_index: array index of the wavelength of the science image
+        numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
+        avg_rad: average radius of this annulus
+        radstart: inner radius of the annulus (in pixels)
+        radend: outer radius of the annulus (in pixels)
+        phistart: lower bound in CCW angle from x axis for the start of the section
+        phiend: upper boundin CCW angle from y axis for the end of the section
+        minmove: minimum movement between science image and PSF reference image to use PSF reference image (in pixels)
+        ref_center: 2 element list for the center of the science frames. Science frames should all be aligned.
+        dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
+
+    Returns:
+        Returns True on success and False on failure.
+        Output images are stored in output array as defined by _tpool_init()
+    """
+    global output, aligned
+
+    if dtype is None:
+        dtype = ctypes.c_float
+
+    #create a coordinate system
+    x, y = np.meshgrid(np.arange(original_shape[2] * 1.0), np.arange(original_shape[1] * 1.0))
+    x.shape = (x.shape[0] * x.shape[1])
+    y.shape = (y.shape[0] * y.shape[1])
+    r = np.sqrt((x - ref_center[0])**2 + (y - ref_center[1])**2)
+    phi = np.arctan2(y - ref_center[1], x - ref_center[0])
+
+    #grab the pixel location of the section we are going to anaylze
+    section_ind = np.where((r >= radstart) & (r < radend) & (phi >= phistart) & (phi < phiend))
+    if np.size(section_ind) == 0:
+        if verbose is True:
+            print("section is empty, skipping...")
+        return False
+
+    #grab the files suitable for reference PSF
+    #load shared arrays for wavelengths and PAs
+    wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
+    pa_imgs = _arraytonumpy(img_pa,dtype=dtype)
+    #calculate average movement in this section
+    avg_rad = (radstart + radend) / 2.0
+    moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs)
+    file_ind = np.where(moves >= minmove)
+    if np.size(file_ind[0]) < 1:
+        if verbose is True:
+            print("less than 1 reference PSFs available for minmove={0}, skipping...".format(minmove))
+        return False
+
+    #load aligned images and make reference PSFs
+    aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2]*aligned_shape[3]),dtype=dtype)[wv_index]
+    ref_psfs = aligned_imgs[file_ind[0], :]
+    ref_psfs = ref_psfs[:,  section_ind[0]]
+    #ref_psfs = ref_psfs[:, section_ind]
+    #print(img_num, avg_rad, ref_psfs.shape)
+    #print(sub_imgs.shape)
+    #print(sub_imgs[img_num, section_ind, :].shape)
+
+    #write to output
+    output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]),dtype=dtype)
+    klipped = klip.klip_math(aligned_imgs[img_num, section_ind], ref_psfs, numbasis)
+    output_imgs[img_num, section_ind, :] = klipped
+    return True
+
+
+def _klip_section_profiler(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
+                           ref_center=None):
+    """
+    DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
+
+    Profiler wrapper for _klip_section. Outputs a file openable by pstats.Stats for each annulus wavelength.
+    However there is no guarentee which wavelength and which subsection of the annulus is saved to disk.
+
+    Args: Same arguments as _klip_section
+    """
+    cProfile.runctx("_klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend,"
+                    " minmove, ref_center)", globals(), locals(), 'profile-{0}.out'.format(int(radstart+radend)/2))
+    return True
 
 
 def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numbasis, radstart, radend, phistart,
@@ -903,16 +993,14 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
     filenums_imgs_np = _arraytonumpy(filenums_imgs,dtype=dtype)
     filenums_imgs_np[:] = filenums
 
+    tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
+                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
     # SINGLE THREAD DEBUG PURPOSES ONLY
-    if debug or numthreads==1:
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                               output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None)
-
-    if numthreads > 1:
-        tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                        initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                                output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
@@ -922,18 +1010,13 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
         print("Aligning and scaling imgs")
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape,dtype=dtype)
         
-        #multitask this most of the time
-        if not debug and numthreads > 1:
-            tasks = [tpool.apply_async(_align_and_scale_per_image, args=(img_index, aligned_center, this_wv,dtype))
-                    for img_index in range(recentered_imgs_shape[0])]
+        #multitask this
+        tasks = [tpool.apply_async(_align_and_scale_per_image, args=(img_index, aligned_center, this_wv,dtype))
+                 for img_index in range(recentered_imgs_shape[0])]
 
-            #save it to shared memory
-            for img_index, aligned_img_task in enumerate(tasks):
-                aligned_img_task.wait()
-        else:
-            tasks = [_align_and_scale_per_image(img_index, aligned_center, this_wv,dtype)
-                    for img_index in range(recentered_imgs_shape[0])]
-
+        #save it to shared memory
+        for img_index, aligned_img_task in enumerate(tasks):
+            aligned_img_task.wait()
 
         #list to store each threadpool task
         outputs = []
@@ -952,8 +1035,8 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
- 
-        if not debug and numthreads > 1:
+
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile,
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
                                                 maxnumbasis,
@@ -973,7 +1056,7 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #harness the data!
         #check make sure we are completely unblocked before outputting the data
-        if not debug and numthreads > 1:
+        if not debug:
             for out in outputs:
                 out.wait()
                 if (jobs_complete + 1) % 10 == 0:
@@ -981,11 +1064,11 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
                 jobs_complete += 1
 
 
-    if numthreads > 1:
-        #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
-        print("Closing threadpool")
-        tpool.close()
-        tpool.join()
+
+    #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
+    print("Closing threadpool")
+    tpool.close()
+    tpool.join()
 
     #finished. Let's reshape the output images
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
@@ -1207,30 +1290,24 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape,dtype=dtype)
         recentered_imgs_np[:] = restored_aligned
 
-    # # SINGLE THREADING, either user requested or for debug purposes
-    if debug or numthreads==1:
+    tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
+                    initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape),
+                    maxtasksperchild=50)
+
+    # # SINGLE THREAD DEBUG PURPOSES ONLY
+    if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                             output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape)
-    # note that even if debug is true, we may still want to parallelize align and scale for convenience
-    # so only don't create the threadpool if numthreads = 1
-    if numthreads > 1:
-        tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
-                        initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                                output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape),
-                        maxtasksperchild=50)
+
 
     if restored_aligned is None:
-        #align and scale the images for each image. 
+        #align and scale the images for each image. Use map to do this asynchronously
         if verbose is True:
             print("Begin align and scale images for each wavelength")
-        if numthreads > 1:
-            # Use imap to do this asynchronously
-            realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center),itertools.repeat(dtype)))
-        else:
-            # no parallelization, so do this all on single thread
-            realigned_index = map(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center),itertools.repeat(dtype)))
+        realigned_index = tpool.imap_unordered(_align_and_scale, zip(enumerate(unique_wvs), itertools.repeat(aligned_center),itertools.repeat(dtype)))
     else:
-        # images already aligned and scaled. 
+        #align and scale the images for each image. Use map to do this asynchronously
         realigned_index = enumerate(unique_wvs)
 
     #list to store each threadpool task
@@ -1253,7 +1330,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = False
 
-        if not debug and numthreads > 1:
+        if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile, (scidata_indices, wv_value, wv_index, numbasis,
                                                                         maxnumbasis,
                                                                         radstart, radend, phistart, phiend, movement,
@@ -1276,7 +1353,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 
     #harness the data!
     #check make sure we are completely unblocked before outputting the data
-    if not debug and numthreads > 1:
+    if not debug:
         if verbose is True:
             print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
         for index, out in enumerate(outputs):
@@ -1285,12 +1362,11 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                 print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
 
 
-    if numthreads > 1:
-        #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
-        if verbose is True:
-            print("Closing threadpool")
-        tpool.close()
-        tpool.join()
+    #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
+    if verbose is True:
+        print("Closing threadpool")
+    tpool.close()
+    tpool.join()
 
     #finished. Let's reshape the output images
     #move number of KLIP modes as leading axis (i.e. move from shape (N,y,x,b) to (b,N,y,x)
