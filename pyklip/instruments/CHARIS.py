@@ -8,6 +8,7 @@ from astropy import wcs
 import astropy.time as time
 import astropy.coordinates as coord
 import astropy.units as u
+import pyklip
 import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
@@ -236,7 +237,11 @@ class CHARISData(Data):
             cube[np.where(input_minfilter == 0)] = np.nan
 
             # recalculate parang if necessary
-            parang = prihdr['PARANG'] + 113.5
+            try:
+                parang = float(prihdr['PARANG']) + 113.5
+            except:
+                print("Warning, could not parse PARANG value of {0}. Default to 0".format(prihdr['PARANG']))
+                parang = 113.5
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
@@ -436,7 +441,7 @@ class CHARISData(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")

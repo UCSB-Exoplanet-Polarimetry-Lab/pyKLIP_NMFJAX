@@ -12,6 +12,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import random as rd
 
+import pyklip
 import pyklip.spectra_management as spec
 import pyklip.fakes as fakes
 
@@ -517,7 +518,7 @@ class GPIData(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")

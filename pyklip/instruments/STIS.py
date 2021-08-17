@@ -10,6 +10,7 @@ import math
 from astropy.nddata import Cutout2D
 #import matplotlib.pyplot as plt # This can be done here only if you're not using parallelized, which pyklip does use
 import timeit
+import pyklip
 import pyklip.klip as klip
 import pyklip.parallelized as parallelized
 import pyklip.instruments.utils.radonCenter as radonCenter
@@ -2349,7 +2350,7 @@ class STISData ( Data ):
         pykliproot                    = os.path.dirname ( os.path.dirname ( os.path.realpath ( __file__ ) ) )
 
         try:
-            pyklipver = subprocess.check_output ( [ 'git', 'rev-parse', '--short', 'HEAD' ], cwd = pykliproot, universal_newlines = True ).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
 
