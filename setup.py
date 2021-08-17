@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name='pyklip',
-    version='2.4',
+    version='2.4.1',
     description='pyKLIP: PSF Subtraction for Exoplanets and Disks',
     long_description=long_description,
     long_description_content_type="text/markdown",

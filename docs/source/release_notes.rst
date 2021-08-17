@@ -3,6 +3,9 @@
 Release Notes
 ==============
 
+Version 2.4.1
+ * Use pyKLIP version number rather than git commit to track versioning in headers (Jason Wang)
+
 Version 2.4
  * Forward modeling can handle time dependent PSFs now (Jason Wang)
  * Added STIS.py interface and demo notebook (Robert Thompson)
