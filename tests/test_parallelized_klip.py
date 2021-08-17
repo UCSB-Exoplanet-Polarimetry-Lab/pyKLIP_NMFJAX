@@ -144,9 +144,9 @@ def test_adi_gpi_klip_dataset_with_fakes_twice(filelist=None):
     # before we do it again, check that dataset.centers remains unchanged
     assert(dataset.centers[0][0] == oldcenters[0][0])
     
-    # And run it again to check that we can reuse the same dataset object
+    # And run it again to check that we can reuse the same dataset object, but don't use parallelization. 
     parallelized.klip_dataset(dataset, outputdir=outputdir, fileprefix=prefix,
-                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100],
+                          annuli=9, subsections=4, movement=1, numbasis=[1, 20, 50, 100], numthreads=1,
                           calibrate_flux=True, mode="ADI", lite=False, highpass=True, time_collapse="weighted-mean")
 
     # look at the output data. Validate the spectral cube
