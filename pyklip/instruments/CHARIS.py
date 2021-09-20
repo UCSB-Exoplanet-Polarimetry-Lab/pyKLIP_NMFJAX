@@ -799,7 +799,8 @@ class CHARISData(Data):
         return img
 
 
-    def generate_psfs(self, boxrad=7, spots_collapse='mean', mask_locs=None, mask_rad=15, mask_ref_ind=0):
+    def generate_psfs(self, boxrad=7, spots_collapse='mean', mask_locs=None, mask_rad=15, mask_ref_ind=0,
+                      bg_sub='global'):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
 
@@ -812,6 +813,12 @@ class CHARISData(Data):
             mask_rad: scalar, radius of the mask in pixels.
             mask_ref_ind: the cube index (range: 1-ncube) with respect to which mask_locs are specified, used to
                           account for its movement in the FOV due to field rotation.
+            bg_sub: the method for background estimate, 'global', 'local', or None.
+                    'global' method is the default method. It estimates the background level at the spot using an
+                    annulus around the central star. It is less prone to variances on small scales, and generally
+                    better for background that is relatively symmetric azimuthally.
+                    'local' method estimates the background using a small annulus around the spot. It is prone to
+                    speckle variations near the spot, and should be used when the background level is asymmetric.
 
         Returns:
             saves PSFs of all frames to self.uncollapsed_psfs.
@@ -849,7 +856,7 @@ class CHARISData(Data):
                 mask_locs_frame = None
             #now make a psf
             spotpsf = generate_psf(frame, this_spot_locs, boxrad=boxrad, spots_collapse=spots_collapse,
-                                   bg_sub=True, mask_locs=mask_locs_frame, mask_rad=mask_rad)
+                                   bg_sub=bg_sub, mask_locs=mask_locs_frame, mask_rad=mask_rad)
             self.psfs.append(spotpsf)
 
         self.psfs = np.array(self.psfs)
@@ -1302,7 +1309,7 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     hdr.set(flux_key, value=flux, comment="Peak flux of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
 
 
-def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=False, mask_locs=None, mask_rad=15):
+def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=None, mask_locs=None, mask_rad=15):
     """
     Generates a GPI PSF for the frame based on the satellite spots
     TODO: normalize psfs? GPI module normalizes these to DN units in the generate_PSF_cube() function.
@@ -1342,26 +1349,47 @@ def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=False
                          'the number of satellite spots')
 
     # define an annulus to estimate background level
-    background_level = 0.
-    if bg_sub:
+    background_levels = np.zeros(len(locations))
+    if bg_sub is not None:
         y_img, x_img = np.indices(frame.shape, dtype=float)
-        r_img = np.sqrt((x_img - centroid[0])**2 + (y_img - centroid[1])**2)
-        spot_sep_ref = np.sqrt((locations[0][0] - centroid[0])**2 + (locations[0][1] - centroid[1])**2)
-        noise_annulus = (r_img >= spot_sep_ref - 3) & (r_img <= spot_sep_ref + 3)
-        for loc in locations:
-            spotx = loc[0]
-            spoty = loc[1]
-            r_spot = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
-            noise_annulus *= (r_spot > 15)
-        if mask_locs is not None:
-            for mask_loc in mask_locs:
-                sourcex = mask_loc[0]
-                sourcey = mask_loc[1]
-                r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
-                noise_annulus *= (r_source > mask_rad)
-        background_level = np.nanmean(cleaned[noise_annulus])
+        if bg_sub.lower() == 'global':
+            r_img = np.sqrt((x_img - centroid[0])**2 + (y_img - centroid[1])**2)
+            spot_sep_ref = np.sqrt((locations[0][0] - centroid[0])**2 + (locations[0][1] - centroid[1])**2)
+            noise_annulus = (r_img >= spot_sep_ref - 3) & (r_img <= spot_sep_ref + 3)
+            for loc in locations:
+                spotx = loc[0]
+                spoty = loc[1]
+                r_spot = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+                noise_annulus *= (r_spot > 15)
+            if mask_locs is not None:
+                for mask_loc in mask_locs:
+                    sourcex = mask_loc[0]
+                    sourcey = mask_loc[1]
+                    r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
+                    noise_annulus *= (r_source > mask_rad)
+            background_levels[:] = np.nanmean(cleaned[noise_annulus])
+        elif bg_sub.lower() == 'local':
+            for i, loc in enumerate(locations):
+                spotx = loc[0]
+                spoty = loc[1]
+                r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+                noise_annulus = (r_img > 9) & (r_img <= 12)
+                if mask_locs is not None:
+                    for mask_loc in mask_locs:
+                        sourcex = mask_loc[0]
+                        sourcey = mask_loc[1]
+                        r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
+                        noise_annulus *= (r_source > mask_rad)
+                background_levels[i] = np.nanmean(cleaned[noise_annulus])
+        else:
+            raise ValueError('background subtraction method: {} is not a valid input'.format(bg_sub))
 
-    for loc in locations:
+        if np.any(np.isnan(background_levels)):
+            warnings.warn('Nan values encountered in satellite spot background estimates, '
+                          'background set to 0 instead...')
+            background_levels[np.isnan(background_levels)] = 0.
+
+    for i, loc in enumerate(locations):
         #grab satellite spot positions
         spotx = loc[0]
         spoty = loc[1]
@@ -1372,7 +1400,7 @@ def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=False
         x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad,
                                                                                          spoty + boxrad + 0.1, 1))
         spotpsf = ndimage.map_coordinates(cleaned, [y, x])
-        spotpsf -= background_level
+        spotpsf -= background_levels[i]
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)

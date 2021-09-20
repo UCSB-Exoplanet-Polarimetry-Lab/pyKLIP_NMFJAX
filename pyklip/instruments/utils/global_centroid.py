@@ -80,7 +80,7 @@ def _spotloc(phi, sep, pitch=15, D=8.2, astrogrid='XYdiag'):
     satellite spots in units of lambda
 
     Args:
-        phi: float, the angle of spots in degrees
+        phi: float, the angle of spots in radians
         sep: float, the separation of the spots in units of lambda/D
         pitch: float, lenslet pitch in units of milliarcseconds. Default 15
         D: float, telescope effective aperture in meters. Default 8.2
@@ -139,7 +139,7 @@ def _spotintens(p, cube, lam, astrogrid='XYdiag'):
 
     Args:
         p: list of floats
-           p[0] is the angle of spots in degrees
+           p[0] is the angle of spots in radians
            p[1] is the separation in lambda/D
            p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
         cube: 3D ndarray, input data cube, assumed to be smoothed and spline filtered
@@ -302,13 +302,23 @@ def _cc_resid(p, pp, cube, lam, x, y, retarr=False):
 
 
 def _get_fids(prihdrs):
+    '''
+    Read the observation times to use as the independent variable for the polynomial fit.
+
+    Args:
+        prihdrs: primary headers of the dataset
+
+    Returns:
+        fids: the observation time of each cube in integer seconds, offset by the first exposure.
+    '''
 
     fids = []
     mjd_found = True
     for prihdr in prihdrs:
         try:
             mjd = prihdr['mjd']
-            # convert unit of days to unit of seconds and truncate (not mathematically necesary)
+            # convert unit of days to unit of seconds.
+            # and truncate to integer (not mathematically necesary)
             mjd = int(mjd * 24 * 3600)
             fids.append(mjd)
         except:
@@ -502,7 +512,7 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
 
     Returns:
         p : list of floats
-            p[0] is the angle of spots in degrees
+            p[0] is the angle of spots in radians
             p[1] is the separation in lambda/D
             p[2] - p[-1] are the coefficients of the polynomial fit to the centroid
 
@@ -544,8 +554,8 @@ def fitcen(cube, ivar, lam, spotsep=None, guess_center_loc=None, i1=1, i2=-1, r1
         xc0, yc0 = optimize.minimize(_cc_resid, [0, 0], ([0, 0], cubesmooth[i1:i2], lam[i1:i2], x[indx], y[indx], False),
                                      method='Powell').x
     else:
-        xc0 = guess_center_loc[0]
-        yc0 = guess_center_loc[1]
+        xc0 = guess_center_loc[0] - cube.shape[2] // 2 # xc0 is 0th order dx
+        yc0 = guess_center_loc[1] - cube.shape[1] // 2 # yc0 is 0th order dx
 
     if spotsep is None:
         return [xc0, yc0]
