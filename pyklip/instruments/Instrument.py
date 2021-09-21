@@ -5,6 +5,7 @@ import subprocess
 import multiprocessing as mp
 import numpy as np
 import astropy.io.fits as fits
+import pyklip
 import pyklip.klip as klip
 import pyklip.instruments.utils.wcsgen as wcsgen
 
@@ -529,7 +530,7 @@ class GenericData(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")

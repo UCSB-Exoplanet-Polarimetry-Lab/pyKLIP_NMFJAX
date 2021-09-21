@@ -5,6 +5,7 @@ import numpy as np
 import scipy.ndimage as ndimage
 from scipy.ndimage.filters import median_filter
 
+import pyklip
 from pyklip.instruments.Instrument import Data
 import pyklip.klip as klip
 
@@ -509,7 +510,7 @@ class Ifs(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")

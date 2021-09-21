@@ -12,6 +12,7 @@ import scipy.ndimage as ndimage
 import scipy.stats
 import random as rd
 
+import pyklip
 import pyklip.spectra_management as spec
 import pyklip.fakes as fakes
 
@@ -517,7 +518,7 @@ class GPIData(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")
@@ -672,15 +673,17 @@ class GPIData(Data):
         return img
 
 
-    def generate_psfs(self, boxrad=7):
+    def generate_psfs(self, boxrad=7, time_collapse=True):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
+            time_collapse: if True, averages PSF in time. 
 
         Returns:
-            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+            saves PSFs to self.psfs as an array of size(N_wvs, psfy, psfx) where psfy=psfx=2*boxrad + 1
+            unless time_collapse=False, in which case it has shape (N_cubes, N_wvs, psfy, psfx). 
         """
         self.psfs = []
 
@@ -715,10 +718,13 @@ class GPIData(Data):
 
         self.psfs = np.array(self.psfs)
 
-        # collapse in time dimension
+
         numwvs = np.size(np.unique(self.wvs))
         self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
-        self.psfs = np.mean(self.psfs, axis=0)
+        if time_collapse:
+            # collapse in time dimension
+            self.psfs = np.mean(self.psfs, axis=0)
+
 
     def generate_psf_cube(self, boxw=20, threshold=0.01, tapersize=0, zero_neg=False, same_wv_only = True):
         """

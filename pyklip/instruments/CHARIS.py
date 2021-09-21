@@ -12,6 +12,7 @@ import astropy.time as time
 import time as systime
 import astropy.coordinates as coord
 import astropy.units as u
+import pyklip
 import pyklip.klip as klip
 from pyklip.instruments.Instrument import Data
 import pyklip.fakes as fakes
@@ -281,11 +282,10 @@ class CHARISData(Data):
 
             # recalculate parang if necessary
             try:
-                # based astrometric calibration using HST images:
-                # parang + 114 degrees with an uncertainty of 0.2 degrees points the image's yaxis north
-                parang = prihdr['PARANG'] + 114.
+                parang = float(prihdr['PARANG']) + 113.5
             except:
-                parang = 0.
+                print("Warning, could not parse PARANG value of {0}. Default to 0".format(prihdr['PARANG']))
+                parang = 113.5
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
@@ -678,7 +678,7 @@ class CHARISData(Data):
         # the universal_newline argument is just so python3 returns a string instead of bytes
         # this will probably come to bite me later
         try:
-            pyklipver = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'], cwd=pykliproot, universal_newlines=True).strip()
+            pyklipver = pyklip.__version__
         except:
             pyklipver = "unknown"
         hdulist[0].header['PSFSUB'] = ("pyKLIP", "PSF Subtraction Algo")

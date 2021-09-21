@@ -3,6 +3,16 @@
 Release Notes
 ==============
 
+Version 2.4.1
+ * Use pyKLIP version number rather than git commit to track versioning in headers (Jason Wang)
+
+Version 2.4
+ * Forward modeling can handle time dependent PSFs now (Jason Wang)
+ * Added STIS.py interface and demo notebook (Robert Thompson)
+ * Removed an extra 2x scaling in `klip.nan_gaussian_filter()` (Jason Wang)
+ * Fixed RDI bug where the reference library only has 1 image (Aarynn Carter)
+ * Fixed bug in background subtraction in `GPIData.generate_psf_cube()` (JB Ruffio)
+
 Version 2.3
  * GPI interface improvements: coronagrpahic throughput, updated astrometric calibration, edge cases (Jason Wang, Rob De Rosa)
  * GPI interface: Removed wind butterfly PCA subtraction has it was not effective (JB Ruffio)
