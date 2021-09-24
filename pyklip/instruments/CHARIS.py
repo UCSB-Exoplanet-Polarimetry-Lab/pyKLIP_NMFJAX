@@ -893,7 +893,7 @@ class CHARISData(Data):
             star_loc =np.mean(spots, axis=0) # [x, y] location of central star
 
             #now make a psf
-            starpsf = generate_psf(frame, [star_loc], boxrad=boxrad, bg_sub=False)
+            starpsf = generate_psf(frame, [star_loc], boxrad=boxrad, bg_sub=None)
             self.host_star_psfs.append(starpsf)
 
         self.host_star_psfs = np.array(self.host_star_psfs)
@@ -1319,7 +1319,7 @@ def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=None,
         locations: array of (N,2) containing [x,y] coordinates of all N satellite spots
         boxrad: half length of box to use to pull out PSF
         spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
-        bg_sub: bool, whether to perform background subtraction
+        bg_sub: str or None, method used to perform background subtraction
         mask_locs: ndarray, array of approximate [x, y] pixel locations where bright companions are located.
                    To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
                    number of bright sources that needs to be masked.

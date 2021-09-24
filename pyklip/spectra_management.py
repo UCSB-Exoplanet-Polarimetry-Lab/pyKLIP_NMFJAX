@@ -116,7 +116,7 @@ def get_specType(object_name,SpT_file_csv = None):
 
         return spec_type
 
-def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mute = None):
+def get_star_spectrum(wvs_or_filter_name=None,star_type = None, temperature = None,mute = None):
     """
     Get the spectrum of a star with given spectral type interpolating the pickles database.
     The spectrum is normalized to unit mean.
@@ -152,9 +152,9 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         return sampling_wvs,None
 
     if len(star_type) > 2:
-        star_type_selec = star_type[0:2]
+        star_type_selec = star_type[0:2].upper()
     else:
-        star_type_selec = star_type
+        star_type_selec = star_type.upper()
 
     try:
         int(star_type_selec[1])
@@ -242,8 +242,11 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         upper_spec.append(spec_value)
     delta_wave = upper_wave[1]-upper_wave[0]
     upper_wave = np.array(upper_wave)/10**4 # in mum
-    # upper_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
-    upper_spec = np.array(upper_spec)*delta_wave
+    if sampling_wvs is None:
+        upper_spec = np.array(upper_spec) # flux density
+    else:
+        # upper_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
+        upper_spec = np.array(upper_spec)*delta_wave
 
     hdulist = pyfits.open(lower_filename)
     cube = hdulist[1].data
@@ -253,29 +256,44 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         lower_wave.append(wave_value) # in angstrom
         lower_spec.append(spec_value)
     lower_wave = np.array(lower_wave)/10**4 # in mum
-    # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
-    lower_spec = np.array(lower_spec)*delta_wave
+    if sampling_wvs is None:
+        lower_spec = np.array(lower_spec) # flux density
+    else:
+        # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
+        lower_spec = np.array(lower_spec)*delta_wave
 
-    sampling_wvs_unique0 = np.insert(sampling_wvs_unique[:-1],0,sampling_wvs_unique[0])
-    sampling_wvs_unique1 = np.insert(sampling_wvs_unique[1::],-1,sampling_wvs_unique[-1])
-    upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
-    lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
+    if sampling_wvs is None:
+        # verify that all pickles library models are sampled at the same wavelengths
+        # this is necessary to perform matrix operations to obtain spec_pip
+        if (upper_wave.shape[0] != lower_wave.shape[0]) or not np.allclose(upper_wave, lower_wave):
+            raise ValueError('Pickles model spectra not sampled at the same wavelengths')
 
-    # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
-    # When this happens we don't average out the spectra and takes the nearest available sample
-    for k in range(np.size(upper_spec_unique)):
-        if np.isnan(upper_spec_unique[k]):
-            upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
-    for k in range(np.size(lower_spec_unique)):
-        if np.isnan(lower_spec_unique[k]):
-            lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+        spec_pip = ((target_temp - lower_temp) * upper_spec + (upper_temp - target_temp) * lower_spec) / \
+                   (upper_temp - lower_temp)
 
-    spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
+        return lower_wave, spec_pip
 
-    f = interp1d(sampling_wvs_unique, spec_pip_unique)
-    spec_pip = f(sampling_wvs)
+    else:
+        sampling_wvs_unique0 = np.insert(sampling_wvs_unique[:-1],0,sampling_wvs_unique[0])
+        sampling_wvs_unique1 = np.insert(sampling_wvs_unique[1::],-1,sampling_wvs_unique[-1])
+        upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
+        lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
 
-    return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
+        # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
+        # When this happens we don't average out the spectra and takes the nearest available sample
+        for k in range(np.size(upper_spec_unique)):
+            if np.isnan(upper_spec_unique[k]):
+                upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
+        for k in range(np.size(lower_spec_unique)):
+            if np.isnan(lower_spec_unique[k]):
+                lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+
+        spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
+
+        f = interp1d(sampling_wvs_unique, spec_pip_unique)
+        spec_pip = f(sampling_wvs)
+
+        return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
 
 def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
     """
@@ -343,130 +361,6 @@ def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
-def get_pickles_model_spectrum(star_type, temperature=None):
-    '''
-    Get the spectrum of a star with given spectral type/temperature by interpolating the pickles database.
-    Similar to function get_star_spectrum(), but does not resample the model spectrum at different wavelengths and does
-    not normalize to a different unit. The model spectrum is retrieved/interpolated and then directly returned with
-    the original arbitrary units of the model and original sampling wavelengths. This model spectrum can then be used
-    for further calibration independent of instrument.
-
-    Args:
-        star_type: 'A5','F4',... Is ignored if temperature is defined.
-                   If star_type is longer than 2 characters it is truncated.
-        temperature: temperature of the star. Overwrite star_type if defined.
-
-    Returns:
-        wavelengths: wavelengths sampling in angstroms.
-        spectrum: the spectrum of the star at the given temperature or spectral type.
-    '''
-
-    if len(star_type) > 2:
-        star_type_selec = star_type[0:2].upper()
-    else:
-        star_type_selec = star_type.upper()
-
-    try:
-        int(star_type_selec[1])
-    except:
-        try:
-            star_type_selec = star_type[-3:-1]
-            int(star_type_selec[1])
-        except:
-            raise ValueError("Couldn't parse spectral type.")
-
-    # Sory hard-coded type...
-    if star_type_selec == "K8":
-        star_type_selec = "K7"
-
-    pykliproot = os.path.dirname(os.path.realpath(__file__))
-    filename_temp_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"mainseq_colors.txt"
-    filename_pickles_lookup = pykliproot+os.path.sep+"pickles"+os.path.sep+"AA_README"
-
-    # The interpolation is based on the temperature of the star
-    # If the input was not the temperature then it is taken from the mainseq_colors.txt based on the input spectral type
-    if temperature is None:
-        #Read pickles list
-        dict_temp = dict()
-        with open(filename_temp_lookup, 'r') as f:
-            for line in f:
-                if line.startswith('#'):
-                    pass
-                else:
-                    splitted_line = line.split()
-                    # splitted_line[0]: spectral type F5 G0...
-                    # splitted_line[2]: Temperature in K
-                    dict_temp[splitted_line[0]] = splitted_line[2]
-
-        try:
-            target_temp = float(dict_temp[star_type_selec])
-        except:
-            raise ValueError("Couldn't find a temperature for this spectral type in pickles mainseq_colors.txt.")
-    else:
-        target_temp = temperature
-
-    # "AA_README" contains the list of the temperature for which a spectrum is available
-    # Read it here
-    dict_filename = dict()
-    temp_list=[]
-    with open(filename_pickles_lookup, 'r') as f:
-        for line in f:
-            if line.startswith('pickles_uk_'):
-                splitted_line = line.split()
-                # splitted_line[0]: Filename
-                # splitted_line[1]: spectral type F5V G0III...
-                # splitted_line[2]: Temperature in K
-
-                #Check that the last character is numeric
-                spec_type = splitted_line[1]
-                if splitted_line[0][len(splitted_line[0])-1].isdigit() and not (spec_type.endswith('IV') or spec_type.endswith('I')):
-                    dict_filename[float(splitted_line[2])] = splitted_line[0]
-                    temp_list.append(float(splitted_line[2]))
-
-    #temp_list = np.array(dict_filename.keys())
-    temp_list = np.array(temp_list)
-    # won't work for the hottest and coldest spectra.
-    upper_temp, upper_temp_id = find_upper_nearest(temp_list,target_temp)
-    lower_temp, lower_temp_id = find_lower_nearest(temp_list,target_temp)
-    #print( upper_temp, upper_temp_id,lower_temp, lower_temp_id)
-
-    upper_filename = dict_filename[upper_temp]
-    lower_filename = dict_filename[lower_temp]
-
-    upper_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+upper_filename+".fits"
-    lower_filename = pykliproot+os.path.sep+"pickles"+os.path.sep+lower_filename+".fits"
-
-
-    hdulist = pyfits.open(upper_filename)
-    cube = hdulist[1].data
-    upper_wave = []
-    upper_spec = []
-    for wave_value,spec_value in cube:
-        upper_wave.append(wave_value) # in angstrom
-        upper_spec.append(spec_value)
-    upper_wave = np.array(upper_wave) # in angstrom
-    upper_spec = np.array(upper_spec) # flux density, arbitrary units
-
-    hdulist = pyfits.open(lower_filename)
-    cube = hdulist[1].data
-    lower_wave = []
-    lower_spec = []
-    for wave_value,spec_value in cube:
-        lower_wave.append(wave_value) # in angstrom
-        lower_spec.append(spec_value)
-    lower_wave = np.array(lower_wave) # in angstrom
-    lower_spec = np.array(lower_spec) # flux density, arbitrary units
-
-    # all pickles library model spectra should be sampled at the same wavelengths, check this assumption
-    # if the assumption is wrong modify the code
-    if (upper_wave.shape[0] != lower_wave.shape[0]) or not np.allclose(upper_wave, lower_wave):
-        raise ValueError('Pickles model spectra not sampled at the same wavelengths')
-
-    spec_pip = ((target_temp - lower_temp) * upper_spec + (upper_temp - target_temp) * lower_spec) / \
-               (upper_temp - lower_temp)
-
-    return lower_wave, spec_pip
-
 def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnitude, wvs):
     '''
     Scale the Pickles stellar spectrum of a star to the observed apparent magnitude and returns the stellar spectrum in
@@ -476,7 +370,7 @@ def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnit
 
     Args:
         template_spectrum: 1D array, model spectrum of the star with arbitrary units
-        template_wvs: 1D array, wavelengths at which the template_spectrum is smapled, in units of angstroms
+        template_wvs: 1D array, wavelengths at which the template_spectrum is smapled, in units of microns
         filter_name: string, 2MASS filter, 'J', 'H', or 'Ks'
         magnitude: scalar, observed apparent magnitude of the star
         mag_error: scalar or 1D array with 2 elements, error(s) of the magnitude, not yet implemented
@@ -510,11 +404,12 @@ def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnit
 
     # TODO: either put these 3 transmission files in the pyklip package, or download them from the source website
     # load transmission, integrate zero_point_flux to get the total zero point flux of the passband
-    transmission_filepath = os.path.join(pykliproot, '2MASS_filters', '2MASS_{}.dat'.format(filter_name))
-    transmission = np.loadtxt(transmission_filepath)
+    transmission_filepath = os.path.join(pykliproot, 'filters', '2MASS_{}.dat'.format(filter_name))
+    transmission = np.loadtxt(transmission_filepath) # wavelengths are in units of angstroms for these files
     zero_point_flux = zero_point_flux * integrate.simps(transmission[:, 1], transmission[:, 0])
 
     # re-sample the stellar model spectrum at the wavelengths of the given filter transmission
+    template_wvs *= 1e4 # convert to angstroms
     start_ind = np.where(template_wvs <= transmission[0, 0])[0][-1]
     stop_ind = np.where(template_wvs >= transmission[-1, 0])[0][0] + 1
     thisfilter_template_wvs = template_wvs[start_ind:stop_ind]
