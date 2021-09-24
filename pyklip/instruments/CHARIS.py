@@ -1,11 +1,15 @@
 import os
-import copy
+import sys
+import re
+import warnings
+import subprocess
 import numpy as np
-import scipy.ndimage as ndimage
+from scipy import ndimage, signal, interpolate, optimize
 import astropy.io.fits as fits
 import datetime
 from astropy import wcs
 import astropy.time as time
+import time as systime
 import astropy.coordinates as coord
 import astropy.units as u
 import pyklip
@@ -16,7 +20,7 @@ import pyklip.instruments.utils.global_centroid as global_centroid
 
 class CHARISData(Data):
     """
-    A sequence of GPI Data. Each GPIData object has the following fields and functions
+    A sequence of CHARIS Data. Each CHARISData object has the following fields and functions
 
     Args:
         filepaths: list of filepaths to files
@@ -49,7 +53,7 @@ class CHARISData(Data):
 
     Methods:
         readdata(): reread in the data
-        savedata(): save a specified data in the GPI datacube format (in the 1st extension header)
+        savedata(): save a specified data in the CHARIS datacube format (in the 1st extension header)
         calibrate_output(): calibrates flux of self.output
     """
     ##########################
@@ -60,7 +64,13 @@ class CHARISData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
-    lenslet_scale = 0.0162 # arcseconds per pixel (pixel scale)
+    # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
+    # TODO: update the new lenslet scales
+    lenslet_scale = 0.01615 # CHARIS data will be re-scaled to this uniform lenslet scale
+    lenslet_scale_x = - lenslet_scale # lenslet scale, calibrated against HST images of M5
+    lenslet_scale_y = 0.01615 # lenslet scale, calibrated against HST images of M5
+    lenslet_scale_x_err = 0.00005
+    lenslet_scale_y_err = 0.00007
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
@@ -71,7 +81,8 @@ class CHARISData(Data):
     ####################
 
     def __init__(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None, platecal=False,
+                 smooth=True, photcal=False):
         """
         Initialization code for CHARISData
 
@@ -81,9 +92,10 @@ class CHARISData(Data):
         super(CHARISData, self).__init__()
         self._output = None
         self.flipx = False
-        self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_loc=guess_spot_locs,
+        self.readdata(filepaths, guess_spot_index=guess_spot_index, guess_spot_locs=guess_spot_locs,
                       guess_center_loc=guess_center_loc, skipslices=skipslices, PSF_cube=PSF_cube,
-                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, IWA=IWA, OWA=OWA)
+                      update_hdrs=update_hdrs, sat_fit_method=sat_fit_method, platecal=platecal, smooth=smooth,
+                      photcal=photcal, IWA=IWA, OWA=OWA)
 
     ################################
     ### Instance Required Fields ###
@@ -94,6 +106,13 @@ class CHARISData(Data):
     @input.setter
     def input(self, newval):
         self._input = newval
+
+    @property
+    def ivars(self):
+        return self._ivars
+    @ivars.setter
+    def ivars(self, newval):
+        self._ivars = newval
 
     @property
     def centers(self):
@@ -162,22 +181,33 @@ class CHARISData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, guess_spot_index=0, guess_spot_loc=None, guess_center_loc=None, skipslices=None,
-                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None):
+    def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
+                 PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None, platecal=False,
+                 smooth=True, photcal=False):
         """
         Method to open and read a list of CHARIS data
 
         Args:
             filespaths: a list of filepaths
             guess_spot_index: the wavelength index for which the initial guess is given
-            guess_spot_loc: initial guess of the satellite spot pixel indices.
+            guess_spot_locs: initial guess of the satellite spot pixel indices.
                             If None, will default to rough guesses for the four satellite spots of a typical
                             CHARIS data cube at the first wavelength slice, in [[x, y],...] format
             guess_center_loc: initial guess of the primary star center in [x, y] format
             skipslices: a list of wavelenegth slices to skip for each datacube (supply index numbers e.g. [0,1,2,3])
             PSF_cube: 3D array (nl,ny,nx) with the PSF cube to be used in the flux calculation.
-            update_hrs: if True, update input file headers by making sat spot measurements. If None, will only update if missing hdr info
+            update_hrs: If True, update input file headers with new sat spot measurements.
+                        If False, no measuremnets will be carried out and original headers will not be modified
+                        If None and sat_fit_method=='global', all cubes will be updated with new global measurement as
+                            long as there is a single cube without sat spot measurements.
+                        If None and sat_fit_method=='local', only cubes without existing sat spot measurements will be
+                            updated with new measurements.
             sat_fit_method: 'global' or 'local'
+            platecal: bool, whether to calibrate the plate scales of the data,
+                      should always be True because the pipeline will automatically skip already calibrated cubes
+                      only set to False if running on non-calibrated data and don't want them calibrated
+            smooth: bool, whether to smooth final data slightly
+            photcal: bool, whether to photocalibration all frames
             IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
             OWA: a floating point scalar (not array). Specifies to outer working angle in pixels
 
@@ -192,12 +222,13 @@ class CHARISData(Data):
         if len(filepaths) == 0:
             raise ValueError("An empty filelist was passed in")
 
-        if guess_spot_loc is None:
+        if guess_spot_locs is None:
             # default to typical locations for 4 satellite spots in a CHARIS data cube, each location in [x, y] format
-            guess_spot_loc = [[129, 90], [109, 129], [71, 109], [91, 70]]
+            guess_spot_locs = [[129, 90], [109, 129], [71, 109], [91, 70]]
 
         #make some lists for quick appending
         data = []
+        ivars = []
         filenums = []
         filenames = []
         rot_angles = []
@@ -210,31 +241,44 @@ class CHARISData(Data):
         inttimes = []
         prihdrs = []
         exthdrs = []
+        nan_indices = []
 
         if PSF_cube is not None:
             self.psfs = PSF_cube
 
-        # flag to see if we modified any headers
+        # flag to see if we modified any headers or data cubes
+
+        # If distortion correction is carried out (modified data=True) modified headers and data will be saved to new
+        # files without any changes to the original files
+
+        # If only headers are modified but not the data (no distortion correction), then headers will be updated in the
+        # original files and no new files will be saved.
+
+        sat_fit_method = sat_fit_method.lower()
         modified_hdrs = False
+        modified_data = np.zeros(len(filepaths), dtype=bool) # zero == False
+        missing_sats_measurement = np.zeros(len(filepaths), dtype=bool) # zero == False
+        astrogrid_status = None
 
-        # fit for satellite spots globally if enabled
-        spot_fit_coeffs = None
-        if update_hdrs == True and sat_fit_method.lower() == 'global':
-            print('fitting satellite spots globally')
-            spot_fit_coeffs, photcal = _measure_sat_spots_global(filepaths, guess_center_loc=guess_center_loc)
-
-        #extract data from each file
+        # read and organize data
+        # sort filepaths to ensure np.unique(filenames) correspond to the same order as cubes in the dataset
+        filepaths = sorted(filepaths)
         for index, filepath in enumerate(filepaths):
             with fits.open(filepath, lazy_load_hdus=False) as hdulist:
-                cube = copy.copy(hdulist[1].data)
-                prihdr = copy.copy(hdulist[0].header)
-                exthdr = copy.copy(hdulist[1].header)
-                w = wcs.WCS(header=prihdr, naxis=[1,2])
-                astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] #repeat astrom header for each wavelength slice
+                cube = hdulist[1].data
+                prihdr = hdulist[0].header
+                exthdr = hdulist[1].header
+                if len(hdulist) > 2:
+                    ivar = hdulist[2].data
+                else:
+                    ivar = np.ones(cube.shape)
+                w = wcs.WCS(header=prihdr, naxis=[1, 2])
+                astr_hdrs = [w.deepcopy() for _ in range(cube.shape[0])] # repeat astrom header for each wavelength slice
 
-            # mask pixels that receive no light as nans. Includ masking a 1 pix boundary around NaNs
+            # mask pixels that receive no light as nans. Include masking a 1 pix boundary around NaNs
+            # only record nan indices here, apply mask after distortion correction and global centroid
             input_minfilter = ndimage.minimum_filter(cube, (0, 1, 1))
-            cube[np.where(input_minfilter == 0)] = np.nan
+            nan_indices.append(np.where(input_minfilter == 0))
 
             # recalculate parang if necessary
             try:
@@ -245,56 +289,23 @@ class CHARISData(Data):
 
             # compute weavelengths
             cube_wv_indices = np.arange(cube.shape[0])
-            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM']) # nm
-            thiswvs /= 1e3 # now in microns
+            thiswvs = prihdr['LAM_MIN'] * np.exp(cube_wv_indices * prihdr['DLOGLAM'])  # nm
+            thiswvs /= 1e3  # now in microns
 
+            # check if there exist any cube that doesn't have existing satellite spot measurements
+            if 'SATS0_0' not in exthdr:
+                missing_sats_measurement[index] = True
 
-            #remove undesirable slices of the datacube if necessary
+            # remove undesirable slices of the datacube if necessary
             if skipslices is not None:
                 cube = np.delete(cube, skipslices, axis=0)
+                ivar = np.delete(ivar, skipslices, axis=0)
                 thiswvs = np.delete(thiswvs, skipslices)
                 cube_wv_indices = np.delete(cube_wv_indices, skipslices)
                 astr_hdrs = np.delete(astr_hdrs, skipslices)
 
-            if 'SATS0_0' in exthdr and not update_hdrs == True:
-                # read in sat spots from file
-                spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
-            elif sat_fit_method.lower() == 'global' and update_hdrs == True:
-                hdulist = fits.open(filepath)
-                im = hdulist[1].data.copy()
-
-                # TODO: decide whether to smooth, and whether to photocalibrate images here
-                # ivar = hdulist[2].data
-                # for j in range(im.shape[0]):
-                    # im[j] = _smooth(im[j], ivar[j], sig=0.5, spline_filter=True)
-                    # im[j] *= thiswvs[j] ** 2 / phot[i][j]
-
-                # TODO: spot_flux use peak flux or aperture flux?
-                spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], im, thiswvs)
-                for wv_ind in cube_wv_indices:
-                    for spot_num in range(len(guess_spot_loc)):
-                        fitx = spot_loc[wv_ind, spot_num, 0]
-                        fity = spot_loc[wv_ind, spot_num, 1]
-                        fitflux = spot_flux[wv_ind, spot_num]
-                        _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
-                spot_flux = np.nanmean(spot_flux, axis=1)
-                modified_hdrs = True
-            else:
-                print("Finding satellite spots for cube {0}".format(index))
-                try:
-                    spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_loc, hdr=exthdr, highpass=False)
-                except ValueError:
-                    print("Unable to locate sat spots for cube{0}. Skipping...".format(index))
-                    continue
-                modified_hdrs = True # we need to update input cube headers
-
-            # simple mean for center for now
-            center = np.mean(spot_loc, axis=1)
-
             data.append(cube)
-            centers.append(center)
-            spot_fluxes.append(spot_flux)
-            spot_locs.append(spot_loc)
+            ivars.append(ivar)
             rot_angles.append(np.ones(cube.shape[0], dtype=int) * parang)
             wvs.append(thiswvs)
             wv_indices.append(cube_wv_indices)
@@ -309,34 +320,152 @@ class CHARISData(Data):
             exthdrs.append(exthdr)
             filenames.append([filepath for i in range(cube.shape[0])])
 
+        # rescale all data to a uniform lenslet scale
+        if platecal:
+            tot_time = 0
+            for index, filepath in enumerate(filepaths):
+                try:
+                    if exthdrs[index]['PLATECAL'].lower() == 'true':
+                        print('already distortion corrected, skipping cube {}'.format(os.path.basename(filepath)))
+                        continue
+                except:
+                    pass
 
+                stime = systime.time()
+                filename, cube, ivar, prihdr, exthdr = _distortion_correction(filepath, data[index], ivars[index],
+                                                                              prihdrs[index], exthdrs[index],
+                                                                              rot_angles[index][0],
+                                                                              CHARISData.lenslet_scale,
+                                                                              CHARISData.lenslet_scale_x,
+                                                                              CHARISData.lenslet_scale_y,
+                                                                              method='Bspline')
+                tot_time += systime.time() - stime
+                sys.stdout.write('\r distortion correcting {}... Avg time per cube: '
+                                 '{:.3f} seconds'.format(os.path.basename(filepath), tot_time / (index + 1)))
+                sys.stdout.flush()
+                data[index] = cube
+                ivars[index] = ivar
+                prihdrs[index] = prihdr
+                exthdrs[index] = exthdr
+                filenames[index] = [filename for _ in range(cube.shape[0])]
+                modified_data[index] = True
+                # after distortion correction, need new satellite spots measurement
+                missing_sats_measurement[index] = True
+            sys.stdout.write('\n')
+        # measure and update headers in the next two segments
 
-        #convert everything into numpy arrays
-        #reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
+        # fit for satellite spots globally if enabled
+        spot_fit_coeffs = None
+        new_global_fit = False
+        if sat_fit_method == 'global':
+            if update_hdrs or (update_hdrs is None and np.any(missing_sats_measurement)):
+                print('fitting satellite spots globally')
+                new_global_fit = True
+                spot_fit_coeffs, allphot = _measure_sat_spots_global(filenames, data, ivars, prihdrs,
+                                                                     guess_center_loc=guess_center_loc,
+                                                                     photocal=photcal,
+                                                                     smooth_cubes=(not platecal))
+
+        # fit for satellite spots locally if enabled
+        # read satellite spots info or update measured info depending on user input
+        for index in range(len(data)):
+
+            # not using copy here to utilize mutable numpy arrays
+            # because modifications on an individual cube are intended to be applied to data as well
+            cube = data[index]
+            prihdr = prihdrs[index]
+            exthdr = exthdrs[index]
+            thiswvs = wvs[index]
+            cube_wv_indices = wv_indices[index]
+
+            # mask pixels that receive no light as nans. Include masking a 1 pix boundary around NaNs
+            # inverse variance frames are not masked as there is no need for now
+            cube[nan_indices[index]] = np.nan
+
+            if new_global_fit:
+                try:
+                    astrogrid_status = prihdr['X_GRDST']
+                except:
+                    astrogrid_status = None
+
+                # TODO: spot_flux use peak flux or aperture flux?
+                spot_loc, spot_flux = global_centroid.get_sats_satf(spot_fit_coeffs[index], cube, thiswvs,
+                                                                    astrogrid=astrogrid_status)
+
+                for wv_ind in cube_wv_indices:
+                    for spot_num in range(len(spot_loc[wv_ind])):
+                        fitx = spot_loc[wv_ind, spot_num, 0]
+                        fity = spot_loc[wv_ind, spot_num, 1]
+                        fitflux = spot_flux[wv_ind, spot_num]
+                        if np.isnan(fitflux):
+                            fitflux = 0.
+                        _add_satspot_to_hdr(exthdr, wv_ind, spot_num, [fitx, fity], fitflux)
+                spot_flux = np.nanmean(spot_flux, axis=1)
+                modified_hdrs = True
+            elif not missing_sats_measurement[index] and not update_hdrs == True:
+                # read in sat spots from file
+                if index == '0':
+                    print('using existing satellite spots in the headers')
+                spot_loc, spot_flux = _read_sat_spots_from_hdr(exthdr, cube_wv_indices)
+            elif sat_fit_method == 'local':
+                if update_hdrs or (update_hdrs is None and missing_sats_measurement[index]):
+                    print("Finding satellite spots for cube {0}".format(index))
+                    try:
+                        spot_loc, spot_flux, spot_fwhm = _measure_sat_spots(cube, thiswvs, guess_spot_index, guess_spot_locs,
+                                                                            hdr=exthdr, highpass=False)
+                    except ValueError:
+                        print("Unable to locate sat spots for cube{0}. Skipping...".format(index))
+                        continue
+                    modified_hdrs = True # we need to update input cube headers
+            else:
+                if update_hdrs == False:
+                    # this case could happen for data taken without turning on the astrogrid
+                    # set default value for the sake of data class structure, but has no physical meaning
+                    astrogrid_status = 'OFF'
+                    spot_loc = np.full((len(cube_wv_indices), 4, 2), cube.shape[1] // 2)
+                    spot_flux = np.zeros(len(cube_wv_indices))
+                else:
+                    raise ValueError('satellite spots fitting method:{} is not a valid option'.format(sat_fit_method))
+
+            # simple mean for center for now
+            center = np.mean(spot_loc, axis=1)
+            centers.append(center)
+            spot_fluxes.append(spot_flux)
+            spot_locs.append(spot_loc)
+
+        if astrogrid_status == 'OFF' and update_hdrs == False:
+            print('no satellite spots found in current headers and no satellite spots measurement requested')
+
+        # convert everything into numpy arrays
+        # reshape arrays so that we collapse all the files together (i.e. don't care about distinguishing files)
+        # wv_indices are never referenced from this point on so they're commented out currently
         data = np.array(data)
         dims = data.shape
         data = data.reshape([dims[0] * dims[1], dims[2], dims[3]])
+        ivars = np.array(ivars).reshape([dims[0] * dims[1], dims[2], dims[3]])
         filenums = np.array(filenums).reshape([dims[0] * dims[1]])
         filenames = np.array(filenames).reshape([dims[0] * dims[1]])
         rot_angles = (np.array(rot_angles).reshape([dims[0] * dims[1]])) 
         wvs = np.array(wvs).reshape([dims[0] * dims[1]]) # wvs now has shape (N*nwv)
-        wv_indices = np.array(wv_indices).reshape([dims[0] * dims[1]])
+        # wv_indices = np.array(wv_indices).reshape([dims[0] * dims[1]])
         wcs_hdrs = np.array(wcs_hdrs).reshape([dims[0] * dims[1]])
         centers = np.array(centers).reshape([dims[0] * dims[1], 2])
         spot_fluxes = np.array(spot_fluxes).reshape([dims[0] * dims[1]])
-        spot_locs = np.array(spot_locs).reshape([dims[0] * dims[1], 4, 2])
+        spot_locs = np.array(spot_locs).reshape([dims[0] * dims[1], spot_locs[0].shape[1], 2])
         inttimes = np.array(inttimes).reshape([dims[0] * dims[1]])
 
         # if there is more than 1 integration time, normalize all data to the first integration time
+        # TODO: This is in conflict with photcal? Since photcal normalizes everything by spot flux, integration time
+        #       would be reflected in spot flux.
         if np.size(np.unique(inttimes)) > 1:
             inttime0 = inttimes[0]
             # normalize integration times
             data = data * inttime0/inttimes[:, None, None]
             spot_fluxes *= inttime0/inttimes
 
-
         #set these as the fields for the CHARISData object
         self._input = data
+        self._ivars = ivars
         self._centers = centers
         self._filenums = filenums
         self._filenames = filenames
@@ -361,10 +490,88 @@ class CHARISData(Data):
         except KeyError:
             self.object_name = "None"
 
+        # if cube has been distortion corrected or otherwise modified, save to new file
+        if np.any(modified_data):
+            self.save_platecal_cubes(modified_data, dims)
+
         if update_hdrs or (update_hdrs is None and modified_hdrs):
             print("Updating original headers with sat spot measurements.")
             self.update_input_cubes()
 
+        # Smooth and calibrate flux here
+        # TODO: the next two conditions are temporary measures, will need to properly implement smoothing and
+        # spectrophotometric calibration
+        # TODO: implement this smoothing simultaneously with distortion correction, and check again if the effect of
+        #       smoothing is significant and how it compares to non-simultaneous smoothing.
+        # The spectrophotometric calibration here only works when global centroid measurement is explicitly carried out
+        # and not just read from headers (since we need the allphot array from the measurement), again, this needs to
+        # be fixed by having a proper spectrophotometric calibration procedure.
+        def _smooth(im, ivar, sig=1, spline_filter=False):
+            """
+
+            Private function _smooth smooths an image accounting for the
+            inverse variance.  It optionally spline filters the result to save
+            time in later calls to ndimage.map_coordinates.
+
+            Parameters
+            ----------
+            im : ndarray
+                2D image to smooth
+            ivar : ndarray
+                2D inverse variance, shape should match im
+            sig : float (optional)
+                standard deviation of Gaussian smoothing kernel
+                Default 1
+            spline_filter: boolean (optional)
+                Spline filter the result?  Default False.
+
+            Returns
+            -------
+            imsmooth : ndarray
+                smoothed image of the same size as im
+
+            """
+
+            if not isinstance(im, np.ndarray) or not isinstance(ivar, np.ndarray):
+                raise TypeError("image and ivar passed to _smooth must be ndarrays")
+            if im.shape != ivar.shape or len(im.shape) != 2:
+                raise ValueError("image and ivar must be 2D ndarrays of the same shape")
+
+            nx = int(sig * 4 + 1) * 2 + 1
+            x = np.arange(nx) - nx // 2
+            x, y = np.meshgrid(x, x)
+
+            window = np.exp(-(x ** 2 + y ** 2) / (2 * sig ** 2))
+            imsmooth = signal.convolve2d(im * ivar, window, mode='same')
+            imsmooth /= signal.convolve2d(ivar, window, mode='same') + 1e-35
+            imsmooth *= im != 0
+
+            if spline_filter:
+                imsmooth = ndimage.spline_filter(imsmooth)
+
+            return imsmooth
+
+        if smooth:
+            print('slightly smoothing all frames...')
+            for i, (img, ivar, wv) in enumerate(zip(data, ivars, wvs)):
+                # data[i] = (wv ** 2) * _smooth(img, ivar, sig=0.5) / photcal[i]
+                data[i] = klip.nan_gaussian_filter(img, sigma=0.5, ivar=ivar)
+        if photcal:
+            print('photocalibrating all frames...')
+            try:
+                allphot = np.array(allphot)
+            except:
+                warnings.warn('Cannot access allphot values, defaulting to only scaling fluxes by lambda^2...')
+                allphot = np.full((dims[0], dims[1]), 1.)
+            allphot = allphot.reshape((dims[0] * dims[1]))
+            for i, (img, wv) in enumerate(zip(data, wvs)):
+                data[i] *= (wv ** 2) / allphot[i]
+
+        # TODO: Bad format to set the input attribute here again when all attributes are set in a centralized segment
+        #       previously. This should be a temporary measure to deal with smoothed and photo calibrated data, for now
+        #       it has to be placed here because we don't want the smoothing and calibration to reflect on the saved
+        #       'CRSA*_platecal.fits' cubes, as we want those to be only plate scale calibrated and nothing else.
+        self._input = data
 
     def update_input_cubes(self):
         """
@@ -372,10 +579,41 @@ class CHARISData(Data):
         measured sat spot locations to disk. 
         """
         for filename, hdr in zip(np.unique(self.filenames), self.exthdrs):
+
+            # insert a comment to mark a new section of info saved in the headers
+            add_comment = True
+            for comment_line in hdr['comment']:
+                if 'Processed Data' in comment_line:
+                    add_comment = False
+            if add_comment:
+                try:
+                    hdr.insert('sats0_0', ('comment', '*'*60))
+                    hdr.insert('sats0_0', ('comment', '*'*22 + ' Processed Data ' + '*'*22))
+                    hdr.insert('sats0_0', ('comment', '*'*60))
+                except:
+                    pass
+
             with fits.open(filename, mode='update') as hdulist:
                 hdulist[1].header = hdr
                 hdulist.flush()
-        
+
+
+    def save_platecal_cubes(self, modified_data, dims):
+
+        modified_indices = np.argwhere(modified_data)
+        save_data = np.copy(np.reshape(self._input, dims))
+        # restore nan as 0s to be consistent with non-calibrated data and global centroid also cannot treat nans
+        save_data[np.isnan(save_data)] = 0.
+        save_ivars = self.ivars.reshape(dims)
+        save_filenames = np.unique(self.filenames)
+        for index in modified_indices:
+            hdulist = fits.HDUList()
+            hdulist.append(fits.PrimaryHDU(header=self.prihdrs[index[0]], data=None))
+            hdulist.append(fits.PrimaryHDU(header=self.exthdrs[index[0]], data=save_data[index[0]]))
+            hdulist.append(fits.PrimaryHDU(data=save_ivars[index[0]]))
+            hdulist.writeto(save_filenames[index[0]], overwrite=True)
+            hdulist.close()
+
 
     def savedata(self, filepath, data, klipparams = None, filetype = None, zaxis = None, more_keywords=None,
                  center=None, astr_hdr=None, fakePlparams = None,user_prihdr = None, user_exthdr = None,
@@ -419,7 +657,6 @@ class CHARISData(Data):
         # save all the files we used in the reduction
         # we'll assume you used all the input files
         # remove duplicates from list
-        # TODO: remove this next paragraph?
         filenames = np.unique(self.filenames)
         nfiles = np.size(filenames)
         # The following paragraph is only valid when reading raw GPI cube.
@@ -561,19 +798,88 @@ class CHARISData(Data):
         """
         return img
 
-    def generate_psfs(self, boxrad=7):
+
+    def generate_psfs(self, boxrad=7, spots_collapse='mean', mask_locs=None, mask_rad=15, mask_ref_ind=0,
+                      bg_sub='global'):
         """
         Generates PSF for each frame of input data. Only works on spectral mode data.
 
         Args:
             boxrad: the halflength of the size of the extracted PSF (in pixels)
+            spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
+            mask_locs: ndarray, array of approximate [x, y] pixel locations where bright companions are located.
+                       To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
+                       number of bright sources that needs to be masked.
+            mask_rad: scalar, radius of the mask in pixels.
+            mask_ref_ind: the cube index (range: 1-ncube) with respect to which mask_locs are specified, used to
+                          account for its movement in the FOV due to field rotation.
+            bg_sub: the method for background estimate, 'global', 'local', or None.
+                    'global' method is the default method. It estimates the background level at the spot using an
+                    annulus around the central star. It is less prone to variances on small scales, and generally
+                    better for background that is relatively symmetric azimuthally.
+                    'local' method estimates the background using a small annulus around the spot. It is prone to
+                    speckle variations near the spot, and should be used when the background level is asymmetric.
 
         Returns:
-            saves PSFs to self.psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+            saves PSFs of all frames to self.uncollapsed_psfs.
+            saves time collapsed PSFs to self.psfs as an array of size(nwv,psfy,psfx) where psfy=psfx=2*boxrad + 1
         """
+
         self.psfs = []
 
-        for i,frame in enumerate(self.input):
+        # check mask_locs input format and convert it to shape (n, 2) as a convention
+        if mask_locs is not None:
+            mask_locs = np.array(mask_locs)
+            if len(mask_locs.shape) == 1:
+                mask_locs = np.array([mask_locs])
+            if len(mask_locs.shape) != 2 or mask_locs.shape[1] != 2:
+                raise ValueError('mask_locs must have shape (2,) or (n, 2), specifying the [x, y] pixel locations to mask')
+
+        numwvs = np.size(np.unique(self.wvs))
+        for i, frame in enumerate(self.input):
+
+            this_spot_locs = self.spot_locs[i] # shape (4, 2)
+            if mask_locs is not None:
+                # calculate mask location at this frame taking into account field rotation
+                centroid = np.mean(this_spot_locs, axis=0)
+                PA_ref = self.PAs[mask_ref_ind * numwvs]
+                PA_frame = self.PAs[i]
+                # parang is measured clockwise from zenith, thus PA_diff is clockwise from PA_ref to PA_thiscube
+                PA_diff = np.radians(PA_frame - PA_ref)
+                mask_seps = np.sqrt((mask_locs[:, 0] - centroid[0])**2 + (mask_locs[:, 1] - centroid[1])**2)
+                # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
+                mask_phis = np.arctan2(mask_locs[:, 1] - centroid[1], mask_locs[:, 0] - centroid[0]) - PA_diff
+                mask_locs_frame = np.array([mask_seps * np.cos(mask_phis) + centroid[0],
+                                            mask_seps * np.sin(mask_phis) + centroid[1]]).transpose()
+                                  # shape (nmask, 2)
+            else:
+                mask_locs_frame = None
+            #now make a psf
+            spotpsf = generate_psf(frame, this_spot_locs, boxrad=boxrad, spots_collapse=spots_collapse,
+                                   bg_sub=bg_sub, mask_locs=mask_locs_frame, mask_rad=mask_rad)
+            self.psfs.append(spotpsf)
+
+        self.psfs = np.array(self.psfs)
+        self.uncollapsed_psfs = self.psfs
+
+        # collapse in time dimension
+        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
+        self.psfs = np.mean(self.psfs, axis=0)
+
+
+    def generate_host_star_psfs(self, boxrad=7):
+        """
+        Generates PSF of the unocculted host star for each frame of input data. Only works on spectral mode data.
+
+        Args:
+            boxrad: the halflength of the size of the extracted PSF (in pixels)
+
+        Returns:
+            saves PSFs to self.host_star_psfs as an array of size(N,psfy,psfx) where psfy=psfx=2*boxrad + 1
+        """
+        self.host_star_psfs = []
+
+        for i, frame in enumerate(self.input):
             this_spot_locs = self.spot_locs[i]
 
             # now grab the values from them by parsing the header
@@ -582,20 +888,241 @@ class CHARISData(Data):
             spot2 = this_spot_locs[2]
             spot3 = this_spot_locs[3]
 
-            # put all the sat spot info together
-            spots = [spot0, spot1, spot2, spot3]
+            # get the central star centroid
+            spots = np.array([spot0, spot1, spot2, spot3]) # shape (4, 2)
+            star_loc =np.mean(spots, axis=0) # [x, y] location of central star
 
             #now make a psf
-            spotpsf = generate_psf(frame, spots, boxrad=boxrad)
-            self.psfs.append(spotpsf)
+            starpsf = generate_psf(frame, [star_loc], boxrad=boxrad, bg_sub=None)
+            self.host_star_psfs.append(starpsf)
 
-        self.psfs = np.array(self.psfs)
-        self.uncollapsed_psfs = self.psfs
+        self.host_star_psfs = np.array(self.host_star_psfs)
 
         # collapse in time dimension
         numwvs = np.size(np.unique(self.wvs))
-        self.psfs = np.reshape(self.psfs, (self.psfs.shape[0]//numwvs, numwvs, self.psfs.shape[1], self.psfs.shape[2]))
-        self.psfs = np.mean(self.psfs, axis=0)
+        self.host_star_psfs = np.reshape(self.host_star_psfs,
+                                         (self.host_star_psfs.shape[0]//numwvs, numwvs,
+                                          self.host_star_psfs.shape[1], self.host_star_psfs.shape[2]))
+        self.host_star_psfs = np.mean(self.host_star_psfs, axis=0)
+
+
+    def measure_spot_over_star_ratio(self, opaque_indices=[], boxrad=7, spots_collapse='mean'):
+        '''
+        Obtain satellite spot flux to primary star flux ratio from unsaturated frames
+
+        Args:
+            opaque_ind: array of indices of wavelength slices that are opaque and should be interpolated in flux ratio fit
+            spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
+
+        Returns:
+            array of spot flux / star flux values for all wavelengths
+        '''
+
+        wvs = np.unique(self.wvs)
+        # generate self.psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), median/averaged over 4 spots
+        # and averaged over exposures
+        self.generate_psfs(boxrad=boxrad, spots_collapse=spots_collapse)
+        # generate self.host_star psfs with shape (nwv, 2*boxrad+1, 2*boxrad+1), averaged over exposures
+        self.generate_host_star_psfs(boxrad=boxrad)
+
+        # aperture photometry spectrum
+        star_aper_spectrum = np.sum(self.host_star_psfs, axis=(1, 2)) # shape (nwv,)
+        spot_aper_spectrum = np.sum(self.psfs, axis=(1, 2)) # shape (nwv,)
+        flux_ratio = spot_aper_spectrum / star_aper_spectrum
+        # lsq fit for flux_ratio = const1*grdamp^2/lambda^2 + const2, in the form of y=x*coeff
+        y = np.delete(flux_ratio, opaque_indices)
+        x = np.vstack([1. / (np.delete(wvs, opaque_indices) ** 2), np.ones(len(wvs) - len(opaque_indices))]).T
+        coeff = np.linalg.lstsq(x, y, rcond=None)[0]
+        x_full = np.vstack([1. / (wvs ** 2), np.ones(len(wvs))]).T
+        spot_to_star_fit_ratio = np.dot(x_full, coeff)
+
+        return spot_to_star_fit_ratio
+
+
+def _distortion_correction(filename, cube, ivar, prihdr, exthdr, rotation, lenslet_scale, xscale, yscale, method='Bspline'):
+    '''
+    Rescale cube and ivar to a uniform lenslet scale, update extension header indicating distortion correction status,
+    return a new filename along with distortion corrected cube, ivar, and updated extension header.
+    This function currently rescales y-axis to match x, i.e., abs(lenslet_scale) = abs(xscale), which is reflected in
+    the static variables of the data class as well. If changing this default, the implementation of distortion must also
+    be modified accordingly.
+    All proceeding operations will be done on the distortion corrected data, which will be saved to the new filenames.
+
+    Args:
+        filename: filename for the cube
+        cube: data cube, should not have any nan pixels at this point
+        ivar: inverse variance cube for the corresponding data cube
+        prihdr: primary header of the data cube
+        exthdr: extension header of the data cube
+        rotation: angle between yaxis and celestial north, in degrees
+        lenslet_scale: uniform scale the data will be correct to (by default is equal to abs(xscale))
+        xscale: measured x-axis lenslet scale for uncorrected CHARIS data
+        yscale: measured y-axis lenslet scale for uncorrected CHARIS data
+
+    Returns:
+        filename: an updated path to save the distortion corrected file
+        cube: distortion corrected cube
+        ivar: distortion corrected inverse variance
+        exthdr: updated header with keyword "PLATE_CAL" indicating distortion correction status
+    '''
+
+    if not isinstance(cube, np.ndarray) or not isinstance(ivar, np.ndarray):
+        raise TypeError("cube and ivar must be ndarrays")
+    if cube.shape != ivar.shape:
+        raise ValueError("cube and ivar must be ndarrays of the same shape")
+
+    cube_cal = np.copy(cube)
+    ivar_cal = np.copy(ivar)
+    # make a mask for pixel locations that receive no light in all wavelengths
+    mask = np.any(cube, axis=0) != 0
+
+    # rescale data and inverse variance to a uniform lenslet scale (and simultaneously apply smoothing if specified)
+    if method.lower() == 'bspline':
+        # gain = np.mean(cube)
+        def _make_Bspline_mesh(y, x):
+            '''
+            Calculate the values of the cubic B-spline interpolating function (How&Andrews 1978), evaluated at (y, x)
+            Args:
+                y: a grid of y indices
+                x: a grid of x indices
+
+            Returns:
+                spline_mesh: a grid of spline interpolating function values
+            '''
+
+            y = np.abs(y)
+            x = np.abs(x)
+            spline_mesh = np.zeros(y.shape)
+            spline_mesh[y < 1] = 0.5 * y[y < 1] ** 3 - y[y < 1] ** 2 + 4. / 6.
+            spline_mesh[(y > 1) & (y < 2)] = - y[(y > 1) & (y < 2)] ** 3 / 6. + y[(y > 1) & (y < 2)] ** 2 \
+                                             - 2. * y[(y > 1) & (y < 2)] + 8. / 6.
+            spline_mesh[x < 1] *= 0.5 * x[x < 1] ** 3 - x[x < 1] ** 2 + 4. / 6.
+            spline_mesh[(x > 1) & (x < 2)] *= - x[(x > 1) & (x < 2)] ** 3 / 6. + x[(x > 1) & (x < 2)] ** 2 \
+                                              - 2. * x[(x > 1) & (x < 2)] + 8. / 6.
+
+            return  spline_mesh
+
+        def _make_highres_spline_mesh(y, x, a=-0.5):
+            '''
+            Calculate the values of the high resolution cubic spline interpolating function, evaluated at y,x
+            All coordinates where x!=0 are set to 0, since we are scaling yscale to xscale, therefore, all x separations
+            are integers and evaluates to 0, except at 0 separation where it evaluates to 1.
+
+            Args:
+                y: a grid of y indices
+                x: a grid of x indices
+                a: free parameter for high resolution cubic spline
+
+            Returns:
+                spline_mesh: a grid of spline interpolating function values
+            '''
+            y = np.abs(y)
+            spline_mesh = np.zeros(y.shape)
+            spline_mesh[y == 0.] = 1.
+            spline_mesh[y < 1] = (a + 2) * y[y < 1] ** 3 - (a + 3) * y[y < 1] ** 2 + 1
+            spline_mesh[(y > 1) & (y < 2)] = a * y[(y > 1) & (y < 2)] ** 3 - 5 * a * y[(y > 1) & (y < 2)] ** 2 \
+                                             + 8 * a * y[(y > 1) & (y < 2)] - 4 * a
+            spline_mesh[x != 0.] = 0. #TODO: this essentially eliminates smoothing in x direction,
+                                      #      figure out how to correct this, perhaps f and g should not be multiplicative?
+
+            return spline_mesh
+
+        def _make_gaussian_mesh(y, x, sigma=0.5):
+            '''
+            Calculate the values of a 2d gaussian, evaluated at [y, x]
+
+            Args:
+                dy: a grid of y
+                dx: a grid of x
+                sigma: standard deviation for gaussian function
+
+            Returns:
+                gaussian_mesh: a grid of gaussian function values
+            '''
+
+            gaussian_mesh = np.exp(-(x ** 2 + y ** 2) / (2 * sigma ** 2))
+
+            return gaussian_mesh
+
+        x = np.arange(cube.shape[1]) - cube.shape[1] // 2
+        x, y = np.meshgrid(x, x) # meshgrid of integers
+        # crop out a smaller square to interpolate, since the outer edge pixels receive no photons
+        x = x[10:-10, 10:-10]
+        y = y[10:-10, 10:-10]
+        x_scaling = 1. # rescale y axis to xscale
+        y_scaling = 1. * lenslet_scale / yscale # lenslet_scale defined to be xscale
+        x_interp = x * x_scaling + cube.shape[1] // 2 # meshgrid of floats
+        y_interp = y * y_scaling + cube.shape[1] // 2 # meshgrid of floats
+        x += cube.shape[1] // 2
+        y += cube.shape[1] // 2
+        dx = x_interp - x
+        dy = y_interp - y
+        if np.any(dy > 1):
+            warnings.warn('There exist shifts larger than 1 pixel, interpolation may be suboptimal...')
+        # for each element in a 5*5 filter, calculate a meshgrid of filtered values for all data points corresponding
+        # to that filter element. Summing these 25 meshgrids and normalizing is the convolution.
+        D_interp = np.zeros((cube.shape[0], x.shape[0], x.shape[1])) # interpolated and smoothed data
+        W_interp = np.zeros(D_interp.shape) # interpolated and smoothed inverse variance frames
+        Norm = np.zeros(D_interp.shape)
+        sigma = 0.5
+        for i in range(-2, 3): # rows
+            for j in range(-2, 3): # columns
+                Fij = _make_Bspline_mesh(-dy + i, -dx + j)
+                Fij = np.tile(Fij, (cube.shape[0], 1, 1))
+                Gij = _make_gaussian_mesh(-dy + i, -dx + j, sigma)
+                Gij = np.tile(Gij, (cube.shape[0], 1, 1))
+                Nij = Fij * Gij
+                Wij = ivar[:, y + i, x + j] * Nij
+                Dij = cube[:, y + i, x + j] * Wij
+                D_interp += Dij
+                W_interp += Wij
+                Norm += Nij
+        D_interp /= W_interp + 1e-35
+        W_interp /= Norm + 1e-35
+        cube_cal[:, 10:-10, 10:-10] = D_interp
+        ivar_cal[:, 10:-10, 10:-10] = W_interp
+        # cube_cal[:, 98:103, 98:103] = D_interp
+        # ivar_cal[:, 98:103, 98:103] = W_interp
+        cube_cal *= mask
+        ivar_cal *= mask
+        # print the signal gain
+        # print('signal gain in distortion correction: {}'.format(np.mean(cube_cal) / gain))
+
+    else:
+        x = 1. * np.arange(cube.shape[1]) - cube.shape[1] // 2
+        x, y = np.meshgrid(x, x)
+        x_scaling = 1.
+        y_scaling = lenslet_scale / yscale
+        x = x * x_scaling + cube.shape[1] // 2
+        y = y * y_scaling + cube.shape[1] // 2
+        for i in range(cube.shape[0]):
+            cube_cal[i] = ndimage.map_coordinates(cube[i], [y, x])
+            ivar_cal[i] = ndimage.map_coordinates(ivar[i], [y, x])
+
+    # update all relevant header information
+    yscale = np.sign(yscale) * np.abs(lenslet_scale)
+    tot_rot = np.radians(-rotation)
+    plate_cal_key = 'PLATECAL'
+    plate_cal_str = 'True'
+    prihdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
+    exthdr.set(plate_cal_key, value=plate_cal_str, comment='distortion correction')
+    prihdr['CD1_1'] = xscale / (3.6e3) * np.cos(tot_rot)
+    prihdr['CD2_1'] = xscale / (3.6e3) * np.sin(tot_rot)
+    prihdr['CD1_2'] = yscale / (3.6e3) * (- np.sin(tot_rot))
+    prihdr['CD2_2'] = yscale / (3.6e3) * np.cos(tot_rot)
+    exthdr['CD1_1'] = xscale / (3.6e3) * np.cos(tot_rot)
+    exthdr['CD2_1'] = xscale / (3.6e3) * np.sin(tot_rot)
+    exthdr['CD1_2'] = yscale / (3.6e3) * (- np.sin(tot_rot))
+    exthdr['CD2_2'] = yscale / (3.6e3) * np.cos(tot_rot)
+    prihdr['XPIXSCAL'] = xscale / (3.6e3)
+    prihdr['YPIXSCAL'] = yscale / (3.6e3)
+    exthdr['XPIXSCAL'] = xscale / (3.6e3)
+    exthdr['YPIXSCAL'] = yscale / (3.6e3)
+    prihdr['TOT_ROT'] = np.degrees(tot_rot)
+    exthdr['TOT_ROT'] = np.degrees(tot_rot)
+    filename = re.sub('.fits', '_platecal.fits', filename)
+
+    return filename, cube_cal, ivar_cal, prihdr, exthdr
 
 
 def _read_sat_spots_from_hdr(hdr, wv_indices):
@@ -607,12 +1134,19 @@ def _read_sat_spots_from_hdr(hdr, wv_indices):
     """
     spot_locs = []
     spot_fluxes = []
+    try:
+        if hdr['X_GRDST'] == 'Xdiag' or hdr['X_GRDST'] == 'Ydiag' or hdr['X_GRDST'] == 'X' or hdr['X_GRDST'] == 'Y':
+            number_of_spots = 2
+        else:
+            number_of_spots = 4
+    except:
+        number_of_spots = 4
 
     for i in wv_indices:
         thiswv_spot_locs = []
         thiswv_spot_fluxes = []
 
-        for spot_num in range(4):
+        for spot_num in range(number_of_spots):
             loc_str = hdr['SATS{0}_{1}'.format(i, spot_num)]
             loc = loc_str.split()
             loc = [float(loc[0]), float(loc[1])]
@@ -712,13 +1246,18 @@ def _measure_sat_spots(cube, wvs, guess_spot_index, guess_spot_locs, highpass=Tr
     return np.array(locs), np.array(fluxes), np.array(fwhms)
 
 
-def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
+def _measure_sat_spots_global(filenames, cubes, ivars, prihdrs, photocal=False, guess_center_loc=None,
+                              smooth_cubes=True):
     '''
     Main function of this module to fit for the locations of the four satellite spots
 
     Args:
-        infiles: input data cubes to be recentered
+        TODO: check if fids in global_centroid.py can be replaced by simply np.arange(len(cubes))
+        filenames: list of filenames for every frame of all cubes, shape (ncube, nwv)
+        cubes: list of input data cubes to be measured
+        ivars: inverse variance frames corresponding to cubes
         photocal: boolean, whether to scale each wavelength to the same photometric scale
+        guess_center_loc: a user provided guess center
 
     Returns:
         p: fitted coefficients for all data cubes
@@ -726,16 +1265,13 @@ def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
 
     '''
 
-    # TODO: allow user to input initial guess for the satellite spots?
     # TODO: spotflux use peak flux or aperture flux?
 
-    if len(infiles) == 0:
-        raise IOError("Cannot open file")
-
-    astrogrid_status = [None for infile in infiles]
-    centroid_params, x, y, mask = global_centroid.fitcen_parallel(infiles, astrogrid_status=astrogrid_status,
-                                                                  smooth_coef=True, guess_center_loc=guess_center_loc)
-    xsol, ysol = global_centroid.fitallrelcen(infiles, r1=15, r2=45)
+    filepaths = np.unique(filenames)
+    centroid_params, x, y, mask = global_centroid.fitcen_parallel(filepaths, cubes, ivars, prihdrs, smooth_coef=True,
+                                                                  guess_center_loc=guess_center_loc,
+                                                                  smooth_cubes=smooth_cubes)
+    xsol, ysol = global_centroid.fitallrelcen(cubes, ivars, r1=15, r2=45, smooth=smooth_cubes)
 
     p = centroid_params.copy()
     if mask is not None:
@@ -744,9 +1280,9 @@ def _measure_sat_spots_global(infiles, photocal=False, guess_center_loc=None):
     p[:, 2] += xsol - x + np.median((x - xsol)[mask])
     p[:, 5] += ysol - y + np.median((y - ysol)[mask])
 
-    # TODO: dx, dy here are not referenced anywhere, so maybe change specphotcal to return only phot
     if photocal:
-        phot = global_centroid.specphotcal(infiles, p)
+        # TODO: implement a proper spectral photo-calibration somewhere in the reduction sequence
+        phot = global_centroid.specphotcal(filepaths, cubes, prihdrs, p)
     else:
         phot = 1.
 
@@ -773,25 +1309,87 @@ def _add_satspot_to_hdr(hdr, wv_ind, spot_num, pos, flux):
     hdr.set(flux_key, value=flux, comment="Peak flux of sat. spot {1} of slice {0}".format(wv_ind, spot_num))
 
 
-def generate_psf(frame, locations, boxrad=5):
+def generate_psf(frame, locations, boxrad=5, spots_collapse='mean', bg_sub=None, mask_locs=None, mask_rad=15):
     """
     Generates a GPI PSF for the frame based on the satellite spots
+    TODO: normalize psfs? GPI module normalizes these to DN units in the generate_PSF_cube() function.
 
     Args:
         frame: 2d frame of data
-        location: array of (N,2) containing [x,y] coordinates of all N satellite spots
+        locations: array of (N,2) containing [x,y] coordinates of all N satellite spots
         boxrad: half length of box to use to pull out PSF
+        spots_collapse: the method to collapse the psfs in this frame, currently supports: 'mean', 'median'
+        bg_sub: str or None, method used to perform background subtraction
+        mask_locs: ndarray, array of approximate [x, y] pixel locations where bright companions are located.
+                   To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
+                   number of bright sources that needs to be masked.
+        mask_rad: scalar, radius of the mask in pixels.
 
     Returns:
         genpsf: 2d frame of size (2*boxrad+1, 2*boxrad+1) with average PSF of satellite spots
     """
+
     genpsf = []
+
+    # check mask_locs input format and convert it to shape (n, 2) as a convention
+    if mask_locs is not None:
+        mask_locs = np.array(mask_locs)
+        if len(mask_locs.shape) == 1:
+            mask_locs = np.array([mask_locs])
+        if len(mask_locs.shape) != 2 or mask_locs.shape[1] != 2:
+            raise ValueError('mask_locs must have shape (2,) or (n, 2), specifying the [x, y] pixel locations to mask')
+
     #mask nans
     cleaned = np.copy(frame)
-    cleaned[np.where(np.isnan(cleaned))] = 0
+    cleaned[np.isnan(cleaned)] = 0
+    locations = np.array(locations)
+    centroid = np.mean(locations, axis=0) # [x, y] centroid of host star
+    if len(locations.shape) != 2 or locations.shape[1] != 2:
+        raise ValueError('locations must be an array of shape (N, 2) indicating satellite spot locations, where N is'
+                         'the number of satellite spots')
 
+    # define an annulus to estimate background level
+    background_levels = np.zeros(len(locations))
+    if bg_sub is not None:
+        y_img, x_img = np.indices(frame.shape, dtype=float)
+        if bg_sub.lower() == 'global':
+            r_img = np.sqrt((x_img - centroid[0])**2 + (y_img - centroid[1])**2)
+            spot_sep_ref = np.sqrt((locations[0][0] - centroid[0])**2 + (locations[0][1] - centroid[1])**2)
+            noise_annulus = (r_img >= spot_sep_ref - 3) & (r_img <= spot_sep_ref + 3)
+            for loc in locations:
+                spotx = loc[0]
+                spoty = loc[1]
+                r_spot = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+                noise_annulus *= (r_spot > 15)
+            if mask_locs is not None:
+                for mask_loc in mask_locs:
+                    sourcex = mask_loc[0]
+                    sourcey = mask_loc[1]
+                    r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
+                    noise_annulus *= (r_source > mask_rad)
+            background_levels[:] = np.nanmean(cleaned[noise_annulus])
+        elif bg_sub.lower() == 'local':
+            for i, loc in enumerate(locations):
+                spotx = loc[0]
+                spoty = loc[1]
+                r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
+                noise_annulus = (r_img > 9) & (r_img <= 12)
+                if mask_locs is not None:
+                    for mask_loc in mask_locs:
+                        sourcex = mask_loc[0]
+                        sourcey = mask_loc[1]
+                        r_source = np.sqrt((x_img - sourcex)**2 + (y_img - sourcey)**2)
+                        noise_annulus *= (r_source > mask_rad)
+                background_levels[i] = np.nanmean(cleaned[noise_annulus])
+        else:
+            raise ValueError('background subtraction method: {} is not a valid input'.format(bg_sub))
 
-    for loc in locations:
+        if np.any(np.isnan(background_levels)):
+            warnings.warn('Nan values encountered in satellite spot background estimates, '
+                          'background set to 0 instead...')
+            background_levels[np.isnan(background_levels)] = 0.
+
+    for i, loc in enumerate(locations):
         #grab satellite spot positions
         spotx = loc[0]
         spoty = loc[1]
@@ -799,20 +1397,19 @@ def generate_psf(frame, locations, boxrad=5):
         #interpolate image to grab satellite psf with it centered
         #add .1 to make sure we get 2*boxrad+1 but can't add +1 due to floating point precision (might cause us to
         #create arrays of size 2*boxrad+2)
-        x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad, spoty + boxrad + 0.1, 1))
+        x, y = np.meshgrid(np.arange(spotx - boxrad, spotx + boxrad + 0.1, 1), np.arange(spoty - boxrad,
+                                                                                         spoty + boxrad + 0.1, 1))
         spotpsf = ndimage.map_coordinates(cleaned, [y, x])
-
-        # if applicable, do a background subtraction
-        if boxrad >= 7:
-            y_img, x_img = np.indices(frame.shape, dtype=float)
-            r_img = np.sqrt((x_img - spotx)**2 + (y_img - spoty)**2)
-            noise_annulus = np.where((r_img > 9) & (r_img <= 12))
-            background_mean = np.nanmean(cleaned[noise_annulus])
-            spotpsf -= background_mean
-
+        spotpsf -= background_levels[i]
         genpsf.append(spotpsf)
 
     genpsf = np.array(genpsf)
-    genpsf = np.mean(genpsf, axis=0) #average the different psfs together
+    if spots_collapse.lower() == 'median':
+        genpsf = np.median(genpsf, axis=0)
+    elif spots_collapse.lower() == 'mean':
+        genpsf = np.mean(genpsf, axis=0) #average the different psfs together
+    else:
+        warnings.warn('{} collapse for the different satellite psfs is not supported, using median collapse instead...')
+        genpsf = np.median(genpsf, axis=0)
 
     return genpsf

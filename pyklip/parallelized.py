@@ -77,7 +77,7 @@ def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_c
     Saves spectral cubes by collapsing dataset along time dimension
 
     Args:
-        dataset: an instance of CHARISData class
+        dataset: an instance of Data class
         pixel_weights: pixel weights for dataset.output, same shape as dataset.output
         time_collapse: method for time collapse. Support: 'mean', 'weighted-mean', 'median'
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
@@ -113,7 +113,7 @@ def _save_wv_collapsed_images(dataset, pixel_weights, numbasis, time_collapse, w
     wavelength dimension for a specific numbasis
 
     Args:
-        dataset: an instance of CHARISData
+        dataset: an instance of Data class
         pixel_weights: pixel weights for dataset.output, same shape as dataset.output
         numbasis: number of KL basis vectors to use (can be a scalar or list like). Length of b
         time_collapse: method for time collapse. Support: 'median', 'mean', 'weighted-mean', 'weighted-median'
