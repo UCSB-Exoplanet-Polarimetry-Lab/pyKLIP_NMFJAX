@@ -7,7 +7,7 @@ from astropy import wcs
 
 import numpy as np
 import re
-import os
+import os, shutil
 
 class JWSTData(Data):
     """
@@ -339,6 +339,8 @@ class JWSTData(Data):
         except TypeError:
             hdulist.writeto(filepath, clobber=True)
         hdulist.close()
+
+
 
 def organise_files(filepaths, copy_dir='./ORGANISED/', heirarchy='TARGPROP/FILTER'):
     '''
