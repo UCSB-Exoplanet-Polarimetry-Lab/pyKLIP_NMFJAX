@@ -1,6 +1,7 @@
 __author__ = 'jruffio'
 
 import numpy as np
+from scipy import integrate
 from scipy.interpolate import interp1d
 import astropy.io.fits as pyfits
 import platform
@@ -10,8 +11,6 @@ from scipy.optimize import minimize
 import glob
 import os
 import csv
-
-
 
 
 def find_upper_nearest(array,value):
@@ -39,7 +38,6 @@ def find_lower_nearest(array,value):
     diff[np.where(diff>0.0)] = np.nan
     idx = np.nanargmax(diff)
     return array[idx], idx
-
 
 def find_nearest(array,value):
     """
@@ -118,7 +116,7 @@ def get_specType(object_name,SpT_file_csv = None):
 
         return spec_type
 
-def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mute = None):
+def get_star_spectrum(wvs_or_filter_name=None,star_type = None, temperature = None,mute = None):
     """
     Get the spectrum of a star with given spectral type interpolating the pickles database.
     The spectrum is normalized to unit mean.
@@ -154,9 +152,9 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         return sampling_wvs,None
 
     if len(star_type) > 2:
-        star_type_selec = star_type[0:2]
+        star_type_selec = star_type[0:2].upper()
     else:
-        star_type_selec = star_type
+        star_type_selec = star_type.upper()
 
     try:
         int(star_type_selec[1])
@@ -244,8 +242,11 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         upper_spec.append(spec_value)
     delta_wave = upper_wave[1]-upper_wave[0]
     upper_wave = np.array(upper_wave)/10**4 # in mum
-    # upper_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
-    upper_spec = np.array(upper_spec)*delta_wave
+    if sampling_wvs is None:
+        upper_spec = np.array(upper_spec) # flux density
+    else:
+        # upper_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
+        upper_spec = np.array(upper_spec)*delta_wave
 
     hdulist = pyfits.open(lower_filename)
     cube = hdulist[1].data
@@ -255,29 +256,44 @@ def get_star_spectrum(wvs_or_filter_name,star_type = None, temperature = None,mu
         lower_wave.append(wave_value) # in angstrom
         lower_spec.append(spec_value)
     lower_wave = np.array(lower_wave)/10**4 # in mum
-    # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
-    lower_spec = np.array(lower_spec)*delta_wave
+    if sampling_wvs is None:
+        lower_spec = np.array(lower_spec) # flux density
+    else:
+        # lower_spec is a density spectrum in flux.A-1 so we need to multiply by delta_wave to integrate and get a flux.
+        lower_spec = np.array(lower_spec)*delta_wave
 
-    sampling_wvs_unique0 = np.insert(sampling_wvs_unique[:-1],0,sampling_wvs_unique[0])
-    sampling_wvs_unique1 = np.insert(sampling_wvs_unique[1::],-1,sampling_wvs_unique[-1])
-    upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
-    lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
+    if sampling_wvs is None:
+        # verify that all pickles library models are sampled at the same wavelengths
+        # this is necessary to perform matrix operations to obtain spec_pip
+        if (upper_wave.shape[0] != lower_wave.shape[0]) or not np.allclose(upper_wave, lower_wave):
+            raise ValueError('Pickles model spectra not sampled at the same wavelengths')
 
-    # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
-    # When this happens we don't average out the spectra and takes the nearest available sample
-    for k in range(np.size(upper_spec_unique)):
-        if np.isnan(upper_spec_unique[k]):
-            upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
-    for k in range(np.size(lower_spec_unique)):
-        if np.isnan(lower_spec_unique[k]):
-            lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+        spec_pip = ((target_temp - lower_temp) * upper_spec + (upper_temp - target_temp) * lower_spec) / \
+                   (upper_temp - lower_temp)
 
-    spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
+        return lower_wave, spec_pip
 
-    f = interp1d(sampling_wvs_unique, spec_pip_unique)
-    spec_pip = f(sampling_wvs)
+    else:
+        sampling_wvs_unique0 = np.insert(sampling_wvs_unique[:-1],0,sampling_wvs_unique[0])
+        sampling_wvs_unique1 = np.insert(sampling_wvs_unique[1::],-1,sampling_wvs_unique[-1])
+        upper_spec_unique = np.array([np.mean(upper_spec[np.where((upper_wave>wv0)*(upper_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
+        lower_spec_unique = np.array([np.mean(lower_spec[np.where((lower_wave>wv0)*(lower_wave<wv1))]) for wv0,wv1 in zip(sampling_wvs_unique0,sampling_wvs_unique1)])
 
-    return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
+        # Sometimes the wavelength sampling is weird and the strategy above yields nans in the spectra.
+        # When this happens we don't average out the spectra and takes the nearest available sample
+        for k in range(np.size(upper_spec_unique)):
+            if np.isnan(upper_spec_unique[k]):
+                upper_spec_unique[k]= upper_spec[find_nearest(upper_wave,sampling_wvs_unique[k])[1]]
+        for k in range(np.size(lower_spec_unique)):
+            if np.isnan(lower_spec_unique[k]):
+                lower_spec_unique[k]= lower_spec[find_nearest(lower_wave,sampling_wvs_unique[k])[1]]
+
+        spec_pip_unique = ((target_temp-lower_temp)*upper_spec_unique+(upper_temp-target_temp)*lower_spec_unique)/(upper_temp-lower_temp)
+
+        f = interp1d(sampling_wvs_unique, spec_pip_unique)
+        spec_pip = f(sampling_wvs)
+
+        return (sampling_wvs,spec_pip/np.nanmean(spec_pip))
 
 def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
     """
@@ -345,9 +361,98 @@ def get_planet_spectrum(spectrum,wavelength,ori_wvs=None):
 
     return (sampling_pip,spec_pip/np.nanmean(spec_pip))
 
+def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnitude, wvs):
+    '''
+    Scale the Pickles stellar spectrum of a star to the observed apparent magnitude and returns the stellar spectrum in
+    physical units sampled at the specified wavelengths.
+    Currently only supports 2MASS filters and magnitudes.
+    TODO: implement a way to take magnitude error input and propogate the error to the final spectrum
 
+    Args:
+        template_spectrum: 1D array, model spectrum of the star with arbitrary units
+        template_wvs: 1D array, wavelengths at which the template_spectrum is smapled, in units of microns
+        filter_name: string, 2MASS filter, 'J', 'H', or 'Ks'
+        magnitude: scalar, observed apparent magnitude of the star
+        mag_error: scalar or 1D array with 2 elements, error(s) of the magnitude, not yet implemented
+        wvs: 1D array, the wvs at which to sample the scaled spectrum, in units of angstroms
 
+    Returns:
+        scaled_spectrum: 1D array, scaled stellar spectrum sampled at wvs
+    '''
 
+    # TODO: observed magnitude error is currently not taken into account, think about how to propagate this to the
+    #       extracted planet spectrum
+
+    # constants associated with 2MASS
+    filters_2MASS_upper = np.array(['J', 'H', 'KS', 'K']) # allow user to use 'K' for 'Ks' band
+    filters_2MASS = np.array(['J', 'H', 'Ks'])
+    zero_point_fluxes_2MASS = [3.143e-10, 1.144e-10, 4.306e-11] # 2MASS zero point fluxes, erg/cm2/s/Angstrom
+    pykliproot = os.path.dirname(os.path.realpath(__file__))
+
+    # check if input is valid
+    filter_name = filter_name.upper()
+    if filter_name not in filters_2MASS_upper:
+        raise ValueError('{} is not recognized as a 2MASS filter'.format(filter_name))
+    if filter_name == 'K':
+        filter_name = 'KS'
+
+    # assign the corresponding zero point flux and filter name with the proper captilization
+    # 'K' should already be converted to 'Ks' at this point, so filter_index should always be <= 2
+    filter_index = np.where(filters_2MASS_upper == filter_name)[0][0]
+    zero_point_flux = zero_point_fluxes_2MASS[filter_index]
+    filter_name = filters_2MASS[filter_index]
+
+    # TODO: either put these 3 transmission files in the pyklip package, or download them from the source website
+    # load transmission, integrate zero_point_flux to get the total zero point flux of the passband
+    transmission_filepath = os.path.join(pykliproot, 'filters', '2MASS_{}.dat'.format(filter_name))
+    transmission = np.loadtxt(transmission_filepath) # wavelengths are in units of angstroms for these files
+    zero_point_flux = zero_point_flux * integrate.simps(transmission[:, 1], transmission[:, 0])
+
+    # re-sample the stellar model spectrum at the wavelengths of the given filter transmission
+    template_wvs *= 1e4 # convert to angstroms
+    start_ind = np.where(template_wvs <= transmission[0, 0])[0][-1]
+    stop_ind = np.where(template_wvs >= transmission[-1, 0])[0][0] + 1
+    thisfilter_template_wvs = template_wvs[start_ind:stop_ind]
+    thisfilter_template_spectrum = template_spectrum[start_ind:stop_ind]
+    # Pickles stellar model samples much more finely (~factor of 10) than transmission, and includes all wavelengths
+    # sampled in the filter transmission, so this interpolation wouldn't actually interpolate but rather simply
+    # re-sample the existing model spectrum onto a courser grid
+    f = interp1d(thisfilter_template_wvs, thisfilter_template_spectrum, kind='cubic')
+    thisfilter_template_spectrum_resampled = f(transmission[:, 0])
+
+    # integrate to get total flux within the filter in arbitrary units
+    tot_flux = integrate.simps(thisfilter_template_spectrum_resampled * transmission[:, 1], transmission[:, 0])
+    # scale to physical units
+    scale_factor = np.power(10, -magnitude/2.5) * zero_point_flux / tot_flux
+    scaled_spectrum = template_spectrum * scale_factor
+    # integrate flux over each output wavelength bin, then divide by each bin width to get the flux density
+    f = interp1d(template_wvs, scaled_spectrum, kind='cubic')
+    bin_widths = np.diff(wvs)
+    bin_widths = np.append(bin_widths, bin_widths[-1])
+    bin_integrated_scaled_spectrum = []
+    for bin_center, bin_width in zip(wvs, bin_widths):
+        # define bin boundaries as integration region
+        bin_left = bin_center - bin_width / 2.
+        bin_right = bin_center + bin_width / 2.
+        # find the interpolated flux density at the bin boundaries
+        left_value = f(bin_left)
+        right_value = f(bin_right)
+        # cut out the bin segment from the spectrum
+        bin_wvs = template_wvs[(template_wvs >= bin_left) & (template_wvs <= bin_right)]
+        bin_spectrum = scaled_spectrum[(template_wvs >= bin_left) & (template_wvs <= bin_right)]
+        # adding the boundary values if they're not already sampled
+        if bin_wvs[0] != bin_left:
+            bin_wvs = np.insert(bin_wvs, 0, bin_left)
+            bin_spectrum = np.insert(bin_spectrum, 0, left_value)
+        if bin_wvs[-1] != bin_right:
+            bin_wvs = np.append(bin_wvs, bin_right)
+            bin_spectrum = np.append(bin_spectrum, right_value)
+        # integrate bin and devide by bin width to get the flux density of the bin
+        bin_flux_density = integrate.simps(bin_spectrum, bin_wvs) / bin_width
+        bin_integrated_scaled_spectrum.append(bin_flux_density)
+    bin_integrated_scaled_spectrum = np.array(bin_integrated_scaled_spectrum) # units erg/cm2/s/Angstrom
+
+    return bin_integrated_scaled_spectrum
 
 def LSQ_scale_model_PSF(PSF_template,planet_image,a):
     return np.nansum((planet_image-a*PSF_template)**2,axis = (0,1))#/y_model

@@ -19,6 +19,10 @@ def make_polar_coordinates(x, y, center=[0,0]):
 
     r = np.sqrt((x - center[0]) ** 2 + (y - center[1]) ** 2)
     phi = np.arctan2(y - center[1], x - center[0])
+    # TODO: np.arctan2 already ensures return value to be in range [-pi, pi)
+    #       So the following line of code is not necessary
+    #       However, since the following line introduces an offset of -pi, if eliminating the next line of code,
+    #       will need to make sure all of pyklip's reduction is unaffected by eliminating this offset
     # make sure phi is in range [-pi, pi)
     phi = (phi % (2 * np.pi)) - np.pi
 
@@ -545,33 +549,39 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
     return seps, np.array(contrast)
 
 
-def nan_gaussian_filter(img, sigma):
+def nan_gaussian_filter(img, sigma, ivar=None):
     """
     Gaussian low-pass filter that handles nans
 
     Args:
         img: 2-D image
         sigma: float specifiying width of Gaussian
+        ivar: inverse variance frame for the image, optional
 
     Returns:
         filtered: 2-D image that has been smoothed with a Gaussian
 
     """
+    if ivar is None:
+        ivar = np.ones(img.shape)
+    if img.shape != ivar.shape or len(img.shape) != 2:
+        raise ValueError("image and ivar must be 2D ndarrays of the same shape")
     # make a copy to mask with nans
     masked = np.copy(img)
-    nan_locs = np.where(np.isnan(img))
+    masked_ivar = np.copy(ivar)
+    nan_locs = np.where(np.isnan(img) | np.isnan(ivar))
     masked[nan_locs] = 0
+    masked_ivar[nan_locs] = 0
 
     # filter the image
-    filtered = ndimage.gaussian_filter(masked, sigma=sigma, truncate=4)
+    filtered = ndimage.gaussian_filter(masked * masked_ivar, sigma=sigma, truncate=4)
 
     # because of NaNs, we need to renormalize the gaussian filter, since NaNs shouldn't contribute
-    norm_dat = np.ones(filtered.shape)
-    norm_dat[nan_locs] = 0
-    filter_norm = ndimage.gaussian_filter(norm_dat, sigma=sigma, truncate=4)
+    filter_norm = ndimage.gaussian_filter(masked_ivar, sigma=sigma, truncate=4)
     filtered /= filter_norm
     filtered[nan_locs] = np.nan
 
+    # for some reason, the fitlered image peak pixel fluxes get decreased by 2
     # (2020-09-10: checking the gain for each image, it seems this is no longer a problem, next line is commented out)
     #filtered *= 2
 
