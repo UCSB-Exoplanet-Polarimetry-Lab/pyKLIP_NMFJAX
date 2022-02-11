@@ -25,6 +25,24 @@ class JWSTData(Data):
         # Initialize the super class
         super(JWSTData, self).__init__()
 
+        # Filter effective wavelengths
+        self.wave = {'F182M': 1.838899e-6, # m
+                     'F187N': 1.873722e-6, # m
+                     'F210M': 2.090846e-6, # m
+                     'F212N': 2.121193e-6, # m
+                     'F200W': 1.968088e-6, # m
+                     'F250M': 2.500588e-6, # m
+                     'F300M': 2.981837e-6, # m
+                     'F335M': 3.353823e-6, # m
+                     'F356W': 3.528743e-6, # m
+                     'F360M': 3.614837e-6, # m
+                     'F410M': 4.072309e-6, # m
+                     'F430M': 4.278486e-6, # m
+                     'F444W': 4.350440e-6, # m
+                     'F460M': 4.626991e-6, # m
+                     'F480M': 4.813906e-6, # m
+                     }
+
         # Get the target dataset
         self.readdata(filepaths, centering)
 
@@ -133,7 +151,6 @@ class JWSTData(Data):
         if len(filepaths) == 0:
             raise ValueError('Empty filepath list provided to JWSTData!')
 
-
         # Intialise some arrays
         data = []
         centers = []
@@ -143,19 +160,20 @@ class JWSTData(Data):
         wcs_hdrs = []
 
         # Go through files one by one
+        fiducial_point_override = False
         for index, file in enumerate(filepaths):
             with fits.open(file) as f:
+
                 # Grab number of integrations, as this is how many images are in the file
                 nints = f[0].header['NINTS']
-                pixel_scale = np.sqrt(f[1].header['PIXAR_A2']) # Need this for later to calculate IWA
-                
+                pixel_scale = np.sqrt(f[1].header['PIXAR_A2']) # arcsec; Need this for later to calculate IWA
+
                 # Get the images
                 data.append(f[1].data)
 
                 # Get image centers based on desired algorithm
                 if centering == 'basic':
-                    # Use the mid point of the image
-                    centers.append([i / 2.0  for i in f[1].data.shape[-2:]] * nints)
+                    centers.append([f[1].header['CRPIX1']-1, f[1].header['CRPIX2']-1] * nints) # header keywords are in 1-indexed coordinates
                 else:
                     raise ValueError('No other centering algorithms developed yet.')
 
@@ -167,7 +185,8 @@ class JWSTData(Data):
 
                 # Get the filter wavelength, should be the same for each file though (for JWST)
                 filt = f[0].header['FILTER']
-                wave = int(re.findall("\d+", filt)[0]) / 1e2 #Get wavelength in micron
+                # wave = int(re.findall("\d+", filt)[0]) / 1e2 # Get wavelength in micron
+                wave = self.wave[filt] * 1e6 # Get wavelength in micron
                 wvs.append([wave]*nints)
 
                 # Get WCS information
@@ -175,18 +194,31 @@ class JWSTData(Data):
                 for i in range(nints):
                     wcs_hdrs.append(wcs_hdr.deepcopy())
 
+                # Check for fiducial point override
+                if ('NARROW' in f[0].header['APERNAME']):
+                    fiducial_point_override = True
+
         # Convert to numpy arrays and collapse integrations along a single axis
-        data = np.array(data)
-        data = data.reshape(-1, *data.shape[-2:]) 
-        centers = np.array(centers).reshape(-1, 2)
+        data = np.concatenate(data)
+        centers = np.concatenate(centers).reshape(-1, 2)
         filenames = np.array(filenames)
         filenums = np.array(range(len(filenames)))
         pas = np.array(pas).flatten()
         wvs = np.array(wvs).flatten()
 
+        #Need to align the images so that they have the same centers.
+        image_center = np.array(data[0].shape) / 2.0
+        for i, image in enumerate(data):
+            recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=centers[i])
+            data[i] = recentered_image
+            centers[i] = image_center
+
         # Assume an inner working angle of 1 lambda / D
-        lambda_d_arcsec = ((wvs[0] / 1e6) / 6.5) * (180 / np.pi) * 3600
-        IWA = lambda_d_arcsec / pixel_scale
+        if (fiducial_point_override == True):
+            IWA = 1. # pix
+        else:
+            lambda_d_arcsec = ((wvs[0] / 1e6) / 6.5) * (180 / np.pi) * 3600
+            IWA = lambda_d_arcsec / pixel_scale # pix
 
         # Assign all necessary properties
         self._input = data
@@ -227,35 +259,35 @@ class JWSTData(Data):
         # Prepare reference data for RDI subtractions
         for index, file in enumerate(psflib_filepaths):
             with fits.open(file) as f:
+
                 #Grab some header parameters
                 nints = f[0].header['NINTS']
-                pixel_scale = np.sqrt(f[1].header['PIXAR_A2'])
+                pixel_scale = np.sqrt(f[1].header['PIXAR_A2']) # arcsec
 
                 psflib_data.append(f[1].data)
 
                 if centering == 'basic':
-                    center = [dim / 2.0  for dim in f[1].data.shape[-2:]]
+                    center = [f[1].header['CRPIX1']-1, f[1].header['CRPIX2']-1]
                     psflib_offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']] / pixel_scale
                     psflib_centers.append([sum(x) for x in zip(center, psflib_offset)] * nints)
 
                 psflib_filenames += ['{}_INT{}'.format(file.split('/')[-1], i+1) for i in range(nints)]
 
         # Convert to numpy arrays andn collapse along integration axis
-        psflib_data = np.array(psflib_data)
-        psflib_data = psflib_data.reshape(-1, *psflib_data.shape[-2:]) 
-        psflib_centers = np.array(psflib_centers).reshape(-1, 2)
+        psflib_data = np.concatenate(psflib_data)
+        psflib_centers = np.concatenate(psflib_centers).reshape(-1, 2)
         psflib_filenames = np.array(psflib_filenames)
+
+        #Need to align the images so that they have the same centers.
+        image_center = np.array(psflib_data[0].shape) / 2.0
+        for i, image in enumerate(psflib_data):
+            recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
+            psflib_data[i] = recentered_image
 
         # Append the target images as well
         psflib_data = np.append(psflib_data, self._input, axis=0)
         psflib_filenames = np.append(psflib_filenames, self._filenames, axis=0)
         psflib_centers = np.append(psflib_centers, self._centers, axis=0)
-
-        #Need to align the images so that they have the same centers. 
-        image_center = np.array(psflib_data[0].shape) / 2.0
-        for i, image in enumerate(psflib_data):
-            recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
-            psflib_data[i] = recentered_image
 
         # Create the PSF library
         psflib = rdi.PSFLibrary(psflib_data, image_center, psflib_filenames, compute_correlation=True)
@@ -265,7 +297,7 @@ class JWSTData(Data):
 
         self._psflib = psflib
 
-    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None):
+    def savedata(self, filepath, data, klipparams=None, filetype="", zaxis=None, more_keywords=None):
         """
         Saves data for this instrument
 
@@ -327,6 +359,11 @@ class JWSTData(Data):
         wcshdr = self.output_wcs[0].to_header()
         for key in wcshdr.keys():
             hdulist[0].header[key] = wcshdr[key]
+
+        # store extra keywords in header
+        if more_keywords is not None:
+            for hdr_key in more_keywords:
+                hdulist[0].header[hdr_key] = more_keywords[hdr_key]
 
         # but update the image center
         center = self.output_centers[0]
