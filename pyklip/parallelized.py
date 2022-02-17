@@ -245,7 +245,7 @@ def _align_and_scale(iterable_arg):
 
 
 def _klip_section(img_num, parang, wavelength, wv_index, numbasis, radstart, radend, phistart, phiend, minmove,
-                  ref_center, dtype=None):
+                  ref_center, dtype=None, verbose=True):
     """
     DEPRECIATED. Still being preserved in case we want to change size of atomization. But will need some fixing
 
@@ -352,7 +352,7 @@ def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numb
 
 def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, corr_smooth=1, psflib_good=None,
-                            psflib_corr=None, lite=False, dtype=None, algo='klip'):
+                            psflib_corr=None, lite=False, dtype=None, algo='klip', verbose=False):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
@@ -381,6 +381,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
         lite: if True, use low memory footprint mode
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
         algo (str): algorithm to use ('klip', 'nmf', 'empca')
+        verbose (bool): if True, prints out warnings
 
     Returns:
         returns True on success, False on failure. Does not return whether KLIP on each individual image was sucessful.
@@ -506,7 +507,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
                                             parang, filenum, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
                                             maxnumbasis, minmove, minrot, maxrot, mode, psflib_good=psflib_good,
                                             psflib_corr=psflib_corr, spectrum=spectrum, lite=lite, dtype=dtype,
-                                            algo=algo)
+                                            algo=algo, verbose=verbose)
         except (ValueError, RuntimeError, TypeError) as err:
             print(err.args)
             return False
@@ -522,7 +523,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, filenum, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
                                     psflib_good=None, psflib_corr=None,
-                                    spectrum=None, lite=False, dtype=None, algo='klip'):
+                                    spectrum=None, lite=False, dtype=None, algo='klip', verbose=True):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection and runs KLIP.
 
@@ -550,6 +551,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
                     if smaller than 10%, (hard coded quantity), then use it for reference PSF
         lite: if True, in memory-lite mode
         dtype: data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
+        verbose (bool): if True, prints out error messages
 
     Returns:
         return True on success, False on failure.
@@ -1337,7 +1339,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                                                                         aligned_center, minrot, maxrot, spectrum,
                                                                         mode, corr_smooth, 
                                                                         psf_library_good, psf_library_corr, False,
-                                                                        dtype, algo))
+                                                                        dtype, algo, verbose))
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
         else:
@@ -1347,7 +1349,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                                                 aligned_center, minrot, maxrot, spectrum,
                                                 mode, corr_smooth,
                                                 psf_library_good, psf_library_corr, False,
-                                                dtype, algo)
+                                                dtype, algo, verbose)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
 
@@ -1446,7 +1448,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median', "weighted-median"
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
-        verbose (bool): if True, print KLIP processes. 
+        verbose (bool): if True, print warning messages during KLIP process. 
 
     Returns
         Saved files in the output directory
