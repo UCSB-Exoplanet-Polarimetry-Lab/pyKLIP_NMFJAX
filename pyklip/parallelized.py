@@ -352,7 +352,7 @@ def _klip_section_multifile_profiler(scidata_indices, wavelength, wv_index, numb
 
 def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, maxnumbasis, radstart, radend, phistart,
                             phiend, minmove, ref_center, minrot, maxrot, spectrum, mode, corr_smooth=1, psflib_good=None,
-                            psflib_corr=None, lite=False, dtype=None, algo='klip', verbose=False):
+                            psflib_corr=None, lite=False, dtype=None, algo='klip', verbose=True):
     """
     Runs klip on a section of the image for all the images of a given wavelength.
     Bigger size of atomization of work than _klip_section but saves computation time and memory. Currently no need to
