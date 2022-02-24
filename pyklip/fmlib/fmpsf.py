@@ -45,6 +45,8 @@ class FMPlanetPSF(NoFM):
         # allocate super class
         super(FMPlanetPSF, self).__init__(inputs_shape, numbasis)
 
+        self.supports_rdi = True # tempoary attribute to check for RDI compatability until they can all be tested. 
+
         self.inputs_shape = inputs_shape
         self.numbasis = numbasis
         self.sep = sep
@@ -171,7 +173,7 @@ class FMPlanetPSF(NoFM):
         return perturbmag, perturbmag_shape
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, rdi_indices):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -187,6 +189,7 @@ class FMPlanetPSF(NoFM):
             parang: parallactic angle of input image [DEGREES]
             ref_wv: wavelength of science image
             flipx: if True, flip x coordinate in final image
+            rdi_indices: array of N corresponding to whether it is (1) or isn't (0) an RDI frame
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -211,7 +214,11 @@ class FMPlanetPSF(NoFM):
             canvases = []
         models = []
 
-        for pa, wv in zip(pas, wvs):
+        for pa, wv, is_rdi in zip(pas, wvs, rdi_indices):
+            # if RDI, generate a blank canvas since we assume there is no astrophysical signal in the RDI frames
+            if is_rdi:
+                models.append(np.zeros(np.size(section_ind)))
+                continue
 
             # grab PSF given wavelength
             wv_index = spec.find_nearest(self.input_psfs_wvs,wv)[1]
@@ -290,9 +297,10 @@ class FMPlanetPSF(NoFM):
 
 
 
-    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
+    def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, flipx=True, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, flipx=True, 
+                     rdi_psfs=None, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -323,19 +331,28 @@ class FMPlanetPSF(NoFM):
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
             perturbmag: numpy output for size of linear perturbation. Shape is (N, b)
             klipped: PSF subtracted image. Shape of ( size(section), b)
+            ref_rdi_indices: array of N+M indicating N ADI/SDI images (0's) and M RDI images (1;s).
+            rdi_psfs: array of M RDI reference images in this sector.  
             kwargs: any other variables that we don't use but are part of the input
         """
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
 
+        # handle the RDI case
+        if rdi_psfs is not None:
+            # there are RDI frames
+            refs = np.append(refs, rdi_psfs, axis=0)
+            pas = np.append(pas, np.nan * np.ones(rdi_psfs.shape[0]))
+            wvs = np.append(wvs, np.nan * np.ones(rdi_psfs.shape[0]))
+            ref_rdi_indices = np.append(np.zeros(np.size(ref_psfs_indicies)), np.ones(rdi_psfs.shape[0]))
 
         # generate models for the PSF of the science image
-        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)[0]
+        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, [0])[0]
         model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, ref_rdi_indices)
 
         # Calculate the spectra to determine the flux of each model reference PSF
         total_imgs = np.size(self.flux_conversion)
@@ -343,6 +360,8 @@ class FMPlanetPSF(NoFM):
         input_spectrum = self.flux_conversion[:num_wvs] * self.spectrallib[0] * self.dflux
         input_spectrum = np.ravel(np.tile(input_spectrum,(1, total_imgs//num_wvs)))
         input_spectrum = input_spectrum[ref_psfs_indicies]
+        if rdi_psfs is not None:
+            input_spectrum = np.append(input_spectrum, np.zeros(rdi_psfs.shape[0]), axis=0)
         models_ref = models_ref * input_spectrum[:, None]
 
         # using original Kl modes and reference models, compute the perturbed KL modes (spectra is already in models)

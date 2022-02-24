@@ -1611,6 +1611,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # numcubes = np.size(wvs_imgs)/numwv
     numpix = np.shape(section_ind)[1]
     
+    rdi_psfs_selected = None # by default, no RDI images unless include_rdi
+
     if maxbasis_possible > maxbasis_requested:
         xcorr = corr_psfs[img_num, file_ind[0]]  # grab the x-correlation with the sci img for valid PSFs
         if include_rdi:
@@ -1675,6 +1677,14 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
             rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
     
 
+    # grab PAs and wvs of reference images for forward modeling
+    pa_refimgs = pa_imgs[ref_psfs_indicies]
+    wvs_refimgs = wvs_imgs[ref_psfs_indicies]
+
+    # create a list that tracks with reference PSFs are RDI psfs. 1 if RDI PSF, 0 if not. 
+    # here, the list is created with just ADI/RDI PSFs first before we merge in the RDI files
+    ref_rdi_indices = np.zeros(ref_psfs_selected.shape[0])
+
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
 
@@ -1705,9 +1715,8 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
 
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
-    
-
-    # numref = np.shape(ref_psfs_indicies)[0]
+        # add RDI psfs to RDI PSF tracking array
+        ref_rdi_indices = np.append(ref_rdi_indices, np.ones(rdi_psfs_selected.shape[0]))
 
     # restore NaNs
     ref_psfs_mean_sub[ref_nanpix] = np.nan
@@ -1744,24 +1753,26 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable
     # and it can choose which variables it wants to deal with using **kwargs
     # result is stored in fmout
+    # TODO: ref_psfs_indices is being used, but not generalizable to RDI. pa_imgs and wv_imgs are being passed in as all zeros. 
+    # possibly solution: edit pa_imgs, and wv_imgs to include the RDI frames. Maybe also append ref_psf_indices. spectrallib in fmclasses only interpolate nonzeros for ADI/SDI. 
     fm_class.fm_from_eigen(klmodes=original_KL, evals=evals, evecs=evecs,
                            input_img_shape=[original_shape[1], original_shape[2]], input_img_num=img_num,
                            ref_psfs_indicies=ref_psfs_indicies, section_ind=section_ind,
                            section_ind_nopadding=section_ind_nopadding, aligned_imgs=aligned_imgs,
-                           pas=pa_imgs[ref_psfs_indicies], wvs=wvs_imgs[ref_psfs_indicies], radstart=radstart,
-                           radend=radend, phistart=phistart, phiend=phiend, padding=padding,IOWA = IOWA, 
+                           pas=pa_refimgs, wvs=wvs_refimgs, radstart=radstart,
+                           radend=radend, phistart=phistart, phiend=phiend, padding=padding, IOWA = IOWA, 
                            ref_center=ref_center, parang=parang, ref_wv=wavelength, numbasis=numbasis,
                            maxnumbasis=maxnumbasis, fmout=fmout_np, output_img_shape = outputs_shape, perturbmag = perturbmag_np,klipped=klipped, 
-                           covar_files=covar_files, flipx=flipx, mode=mode)
+                           covar_files=covar_files, flipx=flipx, mode=mode, rdi_psfs=rdi_psfs_selected)
 
     return sector_index
 
 
 def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="pyklipfm", annuli=5, subsections=4,
                  OWA=None, N_pix_sector=None, movement=None, flux_overlap=0.1, PSF_FWHM=3.5, minrot=0, padding=0,
-                 numbasis=None, maxnumbasis=None, numthreads=None, corr_smooth=1, calibrate_flux=False, aligned_center=None, psf_library=None,
-                 spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, mute_progression=False,
-                 time_collapse="mean"):
+                 numbasis=None, maxnumbasis=None, numthreads=None, corr_smooth=1, calibrate_flux=False, aligned_center=None, 
+                 psf_library=None, spectrum=None, highpass=False, annuli_spacing="constant", save_klipped=True, 
+                 mute_progression=False, time_collapse="mean"):
     """
     Run KLIP-FM on a dataset object
 
@@ -1844,14 +1855,15 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
 
     # RDI Sanity Checks to make sure PSF Library is properly configured
     if "RDI" in mode:
+        if not fm_class.supports_rdi:
+            raise ValueError("This forward modeling class does not support RDI. Please use ADI/SDI instead. RDI coming soon. ")
         if psf_library is None:
             raise ValueError("You need to pass in a psf_library if you want to run RDI")
-        if psf_library.dataset is dataset:
+        if psf_library.dataset is not dataset:
             raise ValueError("The PSF Library is not prepared for this dataset. Run psf_library.prepare_library()")
         if aligned_center is not None:
             if not np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
-
         else:
             aligned_center = psf_library.aligned_center
         # good rdi_library
