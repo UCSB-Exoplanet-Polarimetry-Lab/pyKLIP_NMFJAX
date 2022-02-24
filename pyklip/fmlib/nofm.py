@@ -28,6 +28,8 @@ class NoFM(object):
         # Use float32
         self.data_type = ctypes.c_float
 
+        self.supports_rdi = False # while techncially true, this is a default for all other RDI classes that don't support RDI yet
+
     def alloc_output(self):
         """
         Allocates shared memory array for final output

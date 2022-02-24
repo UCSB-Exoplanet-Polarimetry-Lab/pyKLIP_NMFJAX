@@ -134,7 +134,7 @@ def test_fmastrometry():
 
 
     fma.best_fit_and_residuals()
-    plt.savefig("tests/bka2.png")
+    plt.savefig(os.path.join(testdir, "bka2.png"))
 
     fm_hdu.close()
     data_hdu.close()
@@ -194,7 +194,7 @@ def test_maxlikehood():
     assert(np.abs(fma.fit_y.bestfit - data_centy - -361.1/14.166) < 0.33)
 
     fma.best_fit_and_residuals()
-    plt.savefig("tests/fitpsf.png")
+    plt.savefig(os.path.join(testdir, "fitpsf.png"))
     
     fm_hdu.close()
     data_hdu.close()
