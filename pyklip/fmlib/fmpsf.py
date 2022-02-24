@@ -338,6 +338,7 @@ class FMPlanetPSF(NoFM):
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
+        ref_rdi_indices = np.zeros(np.size(ref_psfs_indicies)) # only used to track RDI frames. 1 if RDI. 
 
         # handle the RDI case
         if rdi_psfs is not None:
@@ -345,7 +346,8 @@ class FMPlanetPSF(NoFM):
             refs = np.append(refs, rdi_psfs, axis=0)
             pas = np.append(pas, np.nan * np.ones(rdi_psfs.shape[0]))
             wvs = np.append(wvs, np.nan * np.ones(rdi_psfs.shape[0]))
-            ref_rdi_indices = np.append(np.zeros(np.size(ref_psfs_indicies)), np.ones(rdi_psfs.shape[0]))
+            ref_rdi_indices = np.append(ref_rdi_indices, np.ones(rdi_psfs.shape[0]))
+
 
         # generate models for the PSF of the science image
         model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, [0])[0]
