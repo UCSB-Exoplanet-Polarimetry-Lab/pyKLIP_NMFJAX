@@ -1779,7 +1779,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
     Args:
         dataset: an instance of Instrument.Data (see instruments/ subfolder)
         fm_class: class that implements the the forward modelling functionality
-        mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
+        mode: some combination of ADI, SDI, and RDI (e.g. "ADI+SDI", "RDI"). Note that note all FM classes support RDI.
         anuuli: Annuli to use for KLIP. Can be a number, or a list of 2-element tuples (a, b) specifying
                 the pixel bondaries (a <= r < b) for each annulus
         subsections: Sections to break each annuli into. Can be a number [integer], or a list of 2-element tuples (a, b)
@@ -1811,6 +1811,7 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         calibrate_flux: if true, flux calibrates the regular KLIP subtracted data. DOES NOT CALIBRATE THE FM
         aligned_center: array of 2 elements [x,y] that all the KLIP subtracted images will be centered on for image
                         registration
+        psf_library: a rdi.PSFLibrary object with a PSF Library for RDI
         spectrum: (only applicable for SDI) if not None, optimizes the choice of the reference PSFs based on the
                         spectrum shape.
                     - an array: of length N with the flux of the template spectrum at each wavelength.
