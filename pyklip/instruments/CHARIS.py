@@ -816,7 +816,7 @@ class CHARISData(Data):
                        To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
                        number of bright sources that needs to be masked.
             mask_rad: scalar, radius of the mask in pixels.
-            mask_ref_ind: the cube index (range: 0-ncube) with respect to which mask_locs are specified, used to
+            mask_ref_ind: the cube index (range: 0-ncube) in the filelist for which mask_locs are specified, used to
                           account for its movement in the FOV due to field rotation.
             bg_sub: the method for background estimate, 'global', 'local', or None.
                     'global' method is the default method. It estimates the background level at the spot using an
@@ -854,8 +854,9 @@ class CHARISData(Data):
                 mask_seps = np.sqrt((mask_locs[:, 0] - centroid[0])**2 + (mask_locs[:, 1] - centroid[1])**2)
                 # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
                 mask_phis = np.arctan2(mask_locs[:, 1] - centroid[1], mask_locs[:, 0] - centroid[0]) - PA_diff
-                mask_locs_frame = np.array([mask_seps * np.cos(mask_phis) + centroid[0],
-                                            mask_seps * np.sin(mask_phis) + centroid[1]]).transpose()
+                # negative np.sin for x-axis and np.cos for y axis because PA is measured north to east
+                mask_locs_frame = np.array([-mask_seps * np.sin(mask_phis) + centroid[0],
+                                            mask_seps * np.cos(mask_phis) + centroid[1]]).transpose()
                                   # shape (nmask, 2)
             else:
                 mask_locs_frame = None
