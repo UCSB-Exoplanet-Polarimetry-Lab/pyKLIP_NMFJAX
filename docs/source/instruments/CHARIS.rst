@@ -173,7 +173,8 @@ satellite spots scale as :math:`\propto A^2\lambda ^2`, where A is the amplitude
 :math:`\lambda` is the wavelength. The CHARIS module stores a reference flux ratio between an unocculted star and the
 satellite spot at a grid amplitude of 0.25nm and a wavelength of 1.55 microns, which can then be scaled to all CHARIS
 wavelengths depending on the grid amplitude and the CHARIS bandpass. The following code generates the psf models and
-sets up the scaling that converts the psf models to the flux of the central star.
+sets up the scaling that converts the psf models to the flux of the central star:
+:math:`F_{star} = F_{psf\;model} \times flux\;conversion`
 
 .. code-block:: python
 
@@ -191,6 +192,7 @@ sets up the scaling that converts the psf models to the flux of the central star
 Now we are ready to run the forward modeling reduction:
 
 .. code-block:: python
+
     fm_class = fmpsf.FMPlanetPSF(dataset.input.shape, numbasis, guesssep, guesspa, guessflux, dataset.psfs,
                                  np.unique(dataset.wvs), flux_conversion, star_spt=star_type, spectrallib=guessspec)
 
@@ -218,9 +220,10 @@ the satellite spot psfs ``dataset.psfs``.
     exspec_outpath = '/path/to/extracted/spectrum/output'
     prefix = 'object_name-fmspect' # fileprefix for the output files
 
-    # use the known planet separation and PA, for example, from the previous forward-model fitted astrometry
-    planet_sep = 45.94 # pixels
-    planet_pa = 261.12 # degrees
+    # use the known planet separation and position angle,
+    # for example, use the measurements from the forward-model fitted astrometry
+    planet_sep = 45.94 # companion separation in pixels
+    planet_pa = 261.12 # companion position angle in degrees
     planet_stamp_size = 10 # how big of a stamp around the companion in pixels, stamp will be stamp_size**2 pixels
     stellar_template = None # a stellar template spectrum, if you want
 
@@ -279,11 +282,19 @@ Spectral Calibration
 Finally, we calibrate the extracted contrast spectrum to physical units. The spectrum extracted in the previous section
 is in units of contrast relative to our psf models at each wavelength ``dataset.psfs``. To convert this to the spectrum
 of the companion in real physical units, we need the stellar model spectrum for the host star, the observed magnitude
-of the host star, and the contrast between the unocculted host star and our psf models. The last quantity has been
-explained and defined in :ref:`CHARIS_FM-label` as `star_to_spot_ratio`, which we re-use below. For the stellar models,
+of the host star, and the contrast between the unocculted host star and our psf models. For the stellar models,
 we use the `The Castelli AND Kurucz 2004 Stellar Atmosphere Models <https://www.stsci.edu/hst/instrumentation/reference-data-for-calibration-and-tools/astronomical-catalogs/castelli-and-kurucz-atlas>`_
 library implemented in the `pysynphot package <https://pysynphot.readthedocs.io/en/latest/using_pysynphot.html>`_ for
-this tutorial. The user is free to use other models of their choosing.
+this tutorial. However, the user is free to use other models of their choosing. The calibration can be expressed as:
+
+.. math::
+
+    F_{companion} = \frac{F_{companion}}{F_{spot}} \times \frac{F_{spot}}{F_{star}} \times F_{star}
+
+where :math:`\frac{F_{companion}}{F_{spot}}` is the extracted spectrum from :ref:`CHARIS_spectral_extraction-label`,
+:math:`\frac{F_{spot}}{F_{star}}` has been explained and defined in :ref:`CHARIS_FM-label` as ``star_to_spot_ratio``,
+which we re-use below, and :math:`F_{star}` is calibrated from the stellar model of the host star type and the observed
+magnitude of the host star.
 
 First, we read in the extracted spectrum from the previous section, and convert the contrast spectrum relative to the
 satellite spots into the contrast spectrum relative to the host star:
@@ -321,7 +332,9 @@ Then, we specify the stellar parameters for the host star and interpolate the st
     stellar_model_fluxes = stellar_model.flux[stellar_model.wave < 25000]
 
 We need to resample the stellar model at the CHARIS wavelength bins, this can be done using ``calibrate_star_spectrum``
-in :py:mod:`klip.spectra_management`. Multiplying the contrast spectrum by the stellar model, we finally obtain the
+in :py:mod:`klip.spectra_management`.
+
+Finally, multiplying the contrast spectrum by the stellar model, we obtain the
 calibrated spectrum in flux density units.
 
 .. code-block:: python
