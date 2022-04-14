@@ -373,7 +373,10 @@ class JWSTData(Data):
                 center = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1] # header keywords are in 1-indexed coordinates
                 offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
                 psflib_offsets.append(offset.tolist()*nints)
-                psflib_centers.append([sum(x) for x in zip(center, offset)]*nints)
+                if centering == 'basic':
+                    psflib_centers.append([sum(x) for x in zip(center, offset)]*nints)
+                else:
+                    psflib_centers.append([sum(x) for x in zip(center, [0., 0.])]*nints) # dither will be detected using image registration
 
                 # Assign filenames based on the file and the integration
                 psflib_filenames += ['{}_INT{}'.format(file.split('/')[-1], i+1) for i in range(nints)]
