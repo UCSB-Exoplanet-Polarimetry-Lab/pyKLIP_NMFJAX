@@ -5,7 +5,7 @@ import pyklip.klip
 from astropy.io import fits
 from astropy import wcs
 from astroquery.svo_fps import SvoFps
-from scipy.ndimage import fourier_shift, median_filter
+from scipy.ndimage import fourier_shift, median_filter, shift
 from scipy.optimize import leastsq
 from skimage.registration import phase_cross_correlation
 
@@ -252,7 +252,7 @@ class JWSTData(Data):
 
         # Get image centers based on desired algorithm
         if centering == 'basic':
-            pass
+            reference = data[0].copy() # align to first science image
         else:
             # Need to subtract residual background so that image registration
             # does not fit to it
