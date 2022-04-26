@@ -86,6 +86,8 @@ class MatchedFilter(NoFM):
         # allocate super class
         super(MatchedFilter, self).__init__(inputs_shape, np.array(numbasis))
 
+        self.supports_rdi = True # flag needed while not all fm classes support RDI
+
         self.save_bbfm = save_bbfm
         self.save_fm = save_fm
         if (self.save_bbfm or self.save_fm) and (np.size(numbasis) != 1 or len(spectrallib) != 1):
@@ -312,7 +314,8 @@ class MatchedFilter(NoFM):
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None,
                       ref_psfs_indicies=None, section_ind=None,section_ind_nopadding=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
-                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, flipx=True, **kwargs):
+                     parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None,klipped=None, flipx=True, 
+                     rdi_psfs=None, **kwargs):
         """
         Calculate and project the FM at every pixel of the sector. Store the result in fmout.
 
@@ -342,6 +345,7 @@ class MatchedFilter(NoFM):
             fmout: numpy output array for FM output. Shape is (N, y, x, b)
             klipped: array of shape (p,b) that is the PSF subtracted data for each of the b KLIP basis
                      cutoffs. If numbasis was an int, then sub_img_row_selected is just an array of length p
+            rdi_psfs: array of M RDI reference images in this sector.  
             kwargs: any other variables that we don't use but are part of the input
         """
         if hasattr(self,"ref_center"):
@@ -368,6 +372,16 @@ class MatchedFilter(NoFM):
         sci = aligned_imgs[input_img_num, section_ind[0]]
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
+
+        ref_rdi_indices = np.zeros(np.size(ref_psfs_indicies)) # only used to track RDI frames. 1 if RDI. 
+
+        # handle the RDI case
+        if rdi_psfs is not None:
+            # there are RDI frames
+            refs = np.append(refs, rdi_psfs, axis=0)
+            pas = np.append(pas, np.nan * np.ones(rdi_psfs.shape[0]))
+            wvs = np.append(wvs, np.nan * np.ones(rdi_psfs.shape[0]))
+            ref_rdi_indices = np.append(ref_rdi_indices, np.ones(rdi_psfs.shape[0]))
 
         # Calculate the PA,sep 2D map
 
@@ -510,10 +524,13 @@ class MatchedFilter(NoFM):
                 # references rotate.
                 if not self.disable_FM:
                     models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend,
-                                                      phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk, flipx)
+                                                      phistart, phiend, padding, ref_center, parang, ref_wv,
+                                                      sep_fk, pa_fk, flipx, ref_rdi_indices)
 
                     # Normalize the models with the spectrum. the model is normalize to unit contrast,
                     input_spectrum = self.spectrallib[spec_id][ref_psfs_indicies]
+                    if rdi_psfs is not None:
+                        input_spectrum = np.append(input_spectrum, np.zeros(rdi_psfs.shape[0]), axis=0)
                     models_ref = models_ref * input_spectrum[:, None]
 
                     # 3/ Calculate the perturbation of the KL modes
@@ -957,7 +974,7 @@ class MatchedFilter(NoFM):
 
         return segment_with_model,mask
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk,flipx):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv,sep_fk,pa_fk,flipx, rdi_indices):
         """
         Generate model PSFs at the correct location of this segment for each image denotated by its wv and parallactic
         angle.
@@ -999,7 +1016,12 @@ class MatchedFilter(NoFM):
         whiteboard = np.zeros((ny,nx))
         models = []
         #print(self.input_psfs.shape)
-        for pa, wv in zip(pas, wvs):
+        for pa, wv, is_rdi in zip(pas, wvs, rdi_indices):
+            # if RDI, generate a blank canvas since we assume there is no astrophysical signal in the RDI frames
+            if is_rdi:
+                models.append(np.zeros(np.size(section_ind)))
+                continue
+
             # grab PSF given wavelength
             wv_index = [spec.find_nearest(self.input_psfs_wvs,wv)[1]]
 

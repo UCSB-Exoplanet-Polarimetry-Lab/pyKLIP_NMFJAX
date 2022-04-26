@@ -208,6 +208,9 @@ class PSFLibrary(object):
         isgood = ~in_dataset & ~badfiles
         good = np.where(isgood)[0]
 
+        if np.size(good) == 0:
+            raise ValueError("There are no good PSFs to use in the reference library. Are all the images in the PSF library from the science dataset?")
+
         # create a view on the good files
 
         # figure out how the ordering of dataset files are in the PSF library compared to the dataset
@@ -229,6 +232,8 @@ class PSFLibrary(object):
 
             # generate a list indicating which files are good
             self.isgoodpsf = good
+
+            self.dataset = dataset
 
     def add_new_dataset_to_library(self, dataset, collapse = False, verbose=False):
         """

@@ -3,15 +3,23 @@
 Release Notes
 ==============
 
+Version 2.5
+ * Add support for RDI for FM classes FMPlanetPSF and MatchedFilter (FMMF) (Jason Wang)
+ * Improved error checking for RDI PSF Library before running KLIP (Jason Wang)
+ * Update MagAO/VisAO astrometric calibration (William Balmer)
+ * Merged ``get_pickles_model_spectrum()`` into ``get_star_spectrum()`` in spectral_management (Minghan Chen)
+ * Improvements and bug fixes in CHARIS instrument module (Minghan Chen)
+ * Fixed bug where ``parallelized.klip_dataset`` would crash due to insufficient PSFs introduced in Version 2.2 (Jason Wang & Kate Follette)
+
 Version 2.4.1
  * Use pyKLIP version number rather than git commit to track versioning in headers (Jason Wang)
 
 Version 2.4
  * Forward modeling can handle time dependent PSFs now (Jason Wang)
  * Added STIS.py interface and demo notebook (Robert Thompson)
- * Removed an extra 2x scaling in `klip.nan_gaussian_filter()` (Jason Wang)
+ * Removed an extra 2x scaling in ``klip.nan_gaussian_filter()`` (Jason Wang)
  * Fixed RDI bug where the reference library only has 1 image (Aarynn Carter)
- * Fixed bug in background subtraction in `GPIData.generate_psf_cube()` (JB Ruffio)
+ * Fixed bug in background subtraction in ``GPIData.generate_psf_cube()`` (JB Ruffio)
 
 Version 2.3
  * GPI interface improvements: coronagrpahic throughput, updated astrometric calibration, edge cases (Jason Wang, Rob De Rosa)
