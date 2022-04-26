@@ -178,17 +178,26 @@ class JWSTData(Data):
         for index, file in enumerate(filepaths):
             with fits.open(file) as f:
 
+                # Let's figure out what instrument this is
+                inst = f[0].header['INSTRUME']
+
                 # Grab number of integrations, as this is how many images are
                 # in the file
                 nints = f[0].header['NINTS']
                 pixel_scale = np.sqrt(f['SCI'].header['PIXAR_A2']) # arcsec; need this for later to calculate IWA
 
-                # Get the images
-                data.append(f['SCI'].data)
-                pxdq.append(f['DQ'].data)
+                if inst == 'NIRCAM':
+                    sci_data = f['SCI'].data
+                    dq_data = f['DQ'].data
+                    img_centers = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]*nints
+                elif inst == 'MIRI':
+                    sci_data, dq_data = trim_miri_data(f['SCI'].data, f['DQ'].data)
+                    img_centers = [106.5, 108]*nints
 
-                # Get image centers based on header
-                centers.append([f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]*nints) # header keywords are in 1-indexed coordinates
+                # Get the images
+                data.append(sci_data)
+                pxdq.append(dq_data)
+                centers.append(img_centers) # header keywords are in 1-indexed coordinates
 
                 # Assign filenames based on the file and the integration
                 filenames += ['{}_INT{}'.format(file.split('/')[-1], i+1) for i in range(nints)]
@@ -208,12 +217,15 @@ class JWSTData(Data):
                     wcs_hdrs.append(wcs_hdr.deepcopy())
 
                 # Check for fiducial point override
-                if 'NARROW' in f[0].header['APERNAME']:
-                    fiducial_point_override = True
+
+                if inst == 'NIRCAM':
+                    if 'NARROW' in f[0].header['APERNAME'] :
+                        fiducial_point_override = True
 
         # Convert to numpy arrays and collapse integrations along a single axis
         data = np.concatenate(data)
         pxdq = np.concatenate(pxdq)
+
         centers = np.concatenate(centers).reshape(-1, 2)
         filenames = np.array(filenames)
         filenums = np.array(range(len(filenames)))
@@ -221,8 +233,10 @@ class JWSTData(Data):
         wvs = np.array(wvs).flatten()
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-        threshold = 0.01
+
+        threshold = 0.1
         frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
+
         good = frac <= threshold
         data = data[good]
         pxdq = pxdq[good]
@@ -360,18 +374,30 @@ class JWSTData(Data):
         for index, file in enumerate(psflib_filepaths):
             with fits.open(file) as f:
 
+                inst = f[0].header['INSTRUME']
+
                 # Grab number of integrations, as this is how many images are
                 # in the file
                 nints = f[0].header['NINTS']
                 pixel_scale = np.sqrt(f['SCI'].header['PIXAR_A2']) # arcsec; need this for later to calculate IWA
 
-                # Get the images
-                psflib_data.append(f['SCI'].data)
-                psflib_pxdq.append(f['DQ'].data)
+                if inst == 'NIRCAM':
+                    sci_data = f['SCI'].data
+                    dq_data = f['DQ'].data
+                    center = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]
+                elif inst == 'MIRI':
+                    sci_data, dq_data = trim_miri_data(f['SCI'].data, f['DQ'].data)
+                    center = [106.5, 108]
 
-                # Get image centers based on header
-                center = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1] # header keywords are in 1-indexed coordinates
-                offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                # Get the images
+                psflib_data.append(sci_data)
+                psflib_pxdq.append(dq_data)
+
+                if inst == 'NIRCAM':
+                    offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                elif inst == 'MIRI':
+                    offset = get_miri_offset(file) / pixel_scale
+
                 psflib_offsets.append(offset.tolist()*nints)
                 if centering == 'basic':
                     psflib_centers.append([sum(x) for x in zip(center, offset)]*nints)
@@ -389,7 +415,8 @@ class JWSTData(Data):
         psflib_filenames = np.array(psflib_filenames)
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-        threshold = 0.01
+        threshold = 0.1
+
         frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
         good = frac <= threshold
         psflib_data = psflib_data[good]
@@ -503,6 +530,7 @@ class JWSTData(Data):
         data_fixed : array
             Fixed images.
         """
+
         if data.ndim != 3:
             raise UserWarning('Requires 3D data cube')
 
@@ -868,6 +896,33 @@ class JWSTData(Data):
         except TypeError:
             hdulist.writeto(filepath, clobber=True)
         hdulist.close()
+
+
+def trim_miri_data(sci_data, dq_data):
+    '''
+    Trim the MIRI data to remove regions that receive no illumination. 
+    '''
+
+    # This needs to be improved significantly once the MIRI headers are correct. 
+    sci_data = sci_data[:,5:220,14:230]
+    dq_data = dq_data[:,5:220,14:230]
+
+    return sci_data, dq_data
+
+def get_miri_offset(file):
+    if ('HD141569' in file) or ('SGD0' in file):
+        # No offset
+        offset = [0, 0]
+    elif 'SGD1' in file:
+        offset = [-0.01, 0.01]
+    elif 'SGD2' in file:
+        offset = [0.01, 0.01]
+    elif 'SGD3' in file:
+        offset = [0.01,-0.01]
+    elif 'SGD4' in file:
+        offset = [-0.01, -0.01]
+
+    return offset
 
 def organise_files(filepaths, copy_dir='./ORGANISED/', hierarchy='TARGPROP/FILTER'):
     """

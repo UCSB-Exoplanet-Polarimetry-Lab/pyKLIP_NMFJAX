@@ -80,3 +80,18 @@ so that this reduction also aligns the science images to that center.
                             aligned_center=aligned_center, psf_library=psflib, movement=1)
 
 
+RDI Forward modeling
+--------------------
+You can also use RDI with most of the forward modeling features in pyKLIP. The following forward modeling features can be
+used with RDI with slight modifications:
+
+  *  :ref:`bka-label`
+  *  :ref:`fmmf-label`
+  *  :ref:`diskfm_gpi-label`
+
+The main changes to make are just to set ``mode='RDI'`` and include the keyword ``psf_library=psflib`` in 
+:py:meth:`pyklip.fm.klip_dataset`. The rest will be taken care of under the hood. It is also possible
+to combine RDI with ADI/SDI. 
+
+Note that the current PSF library does not distinguish spectral channels so it is not well suited for spectral
+RDI capabilities, and thus, the forward model spectral extraction is not currently compatible with RDI. 

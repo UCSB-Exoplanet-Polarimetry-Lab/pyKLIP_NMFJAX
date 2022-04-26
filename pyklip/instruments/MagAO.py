@@ -282,6 +282,7 @@ class MagAOData(object):
         self.contrast_scaling = 1./star_fluxes
         self.prihdrs = prihdrs
         self._flipx = False
+        self.numwvs = np.size(np.unique(self.wvs))
 
     ##not currently used but will when we apply flux conversion
     def calibrate_output(self, img, spectral=False, units="contrast"):

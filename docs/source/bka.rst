@@ -388,7 +388,7 @@ calibration uncertainities in, so it will need to be done by hand.
 
 
 Correcting for Coronagraphic Throughput
-------------
+---------------------------------------
 Coronagraphs have measurable effects on the planet fluxes that we measure. Typically, 
 we can expect them to diminish the overall image flux at separations closer to host star, while 
 larger separations remain relatively unaffected. In order to improve the accuracy of our forward model, 
