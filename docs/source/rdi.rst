@@ -78,5 +78,3 @@ so that this reduction also aligns the science images to that center.
     parallelized.klip_dataset(dataset, outputdir="data/", fileprefix="pyklip_k150a3s4m1", annuli=annuli,
                             subsections=subsections, numbasis=numbasis, maxnumbasis=maxnumbasis, mode="RDI",
                             aligned_center=aligned_center, psf_library=psflib, movement=1)
-
-
