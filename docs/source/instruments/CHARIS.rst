@@ -34,8 +34,8 @@ Once you have the extracted data cubes using the
 data set and measure the centroid of the images. This will allow us to re-register and align the images for PSF modeling
 and subtraction.
 
-For this tutorial, we use an example dataset of HR8799, a small subset of the full dataset taken by CHARIS in 2018
-(todo: give credits to the data here), which you can also download yourself at
+For this tutorial, we use an example dataset of HR8799, a small subset of the full dataset taken by CHARIS in 2018,
+which you can also download yourself at
 `pyKLIP CHARIS tutorial data <https://github.com/minghanmilan/pyKLIP_CHARIS_Tutorial_Data>`_ and follow along with the
 tutorial.
 
