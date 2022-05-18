@@ -34,6 +34,11 @@ Once you have the extracted data cubes using the
 data set and measure the centroid of the images. This will allow us to re-register and align the images for PSF modeling
 and subtraction.
 
+For this tutorial, we use an example dataset of HR8799, a small subset of the full dataset taken by CHARIS in 2018
+(todo: give credits to the data here), which you can also download yourself at
+`pyKLIP CHARIS tutorial data <https://github.com/minghanmilan/pyKLIP_CHARIS_Tutorial_Data>`_ and follow along with the
+tutorial.
+
 This tutorial is aimed at processing SCExAO+CHARIS data, in which a coronagraph blocks out the central star, and a
 diffractive grid in the pupil plane consisting of deformable mirrors (DM) with a large amount of high-speed actuators
 creates fainter copies of the central star at fixed offsets relative to the host star. These copies are called satallite
@@ -122,6 +127,12 @@ Now we are ready to perform the KLIP algorithm with the following code and recom
 `pyklip.parallelized.klip_dataset` will save the processed KLIP images in the field ``dataset.output`` and as FITS files
 in the specified directory. To learn about the two types of outputs, please refer to :ref:`basic-tutorial-label`
 
+Running the tutorial on the example dataset produces the following PSF subtracted, collapsed images at each KL mode.
+Planet HR8799 c and d (upper right and lower right of the star, respectively) is already barely visible at 1 KLmode,
+and all three planets become clearly visible at 20 and 50 KLmodes.
+
+.. image:: imgs/HR8799_example_KLmodes_cube.png
+
 .. _CHARIS_FM-label:
 
 Forward-Model Astrometry and Photometry
@@ -143,9 +154,9 @@ You can run the forward modeled reduction with the following code.
 
     # setup FM guesses, change these to the numbers suited for your data.
     # radius from primary star centroid in pixels
-    guesssep = 45.5
+    guesssep = 58.59
     # position angle in degrees
-    guesspa = 261.25
+    guesspa = 333.16
     guessflux = 2e-4 # in units of contrast to the host star
     star_type = 'F8V'
     guessspec = your_spectrum # should be 1-D array with number of elements = np.size(np.unique(dataset.wvs))
@@ -222,14 +233,14 @@ the satellite spot psfs ``dataset.psfs``.
 
     # use the known planet separation and position angle,
     # for example, use the measurements from the forward-model fitted astrometry
-    planet_sep = 45.94 # companion separation in pixels
-    planet_pa = 261.12 # companion position angle in degrees
+    planet_sep = 58.59 # companion separation in pixels
+    planet_pa = 333.16 # companion position angle in degrees
     planet_stamp_size = 10 # how big of a stamp around the companion in pixels, stamp will be stamp_size**2 pixels
     stellar_template = None # a stellar template spectrum, if you want
 
     # reduction parameters
     numbasis = np.array([5, 20])
-    maxnumbasis =150
+    maxnumbasis = 150
     mode = 'ADI+SDI'
     annuli=[[planet_sep-planet_stamp_size, planet_sep+planet_stamp_size]]
     phi_section_size = 2 * planet_stamp_size / planet_sep # radians
@@ -335,7 +346,11 @@ We need to resample the stellar model at the CHARIS wavelength bins, this can be
 in :py:mod:`klip.spectra_management`.
 
 Finally, multiplying the contrast spectrum by the stellar model, we obtain the
-calibrated spectrum in flux density units.
+calibrated spectrum in flux density units. The extracted spectrum of planet c for the example dataset is shown here.
+Note that the quality is poor and quite different from the published spectrum of this planet because we are using a
+small subset of the full dataset for the tutorial.
+
+.. image:: imgs/HR8799c_KL20_exspec_example.png
 
 .. code-block:: python
 
