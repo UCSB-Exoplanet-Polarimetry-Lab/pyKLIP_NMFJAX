@@ -128,6 +128,8 @@ class DiskFM(NoFM):
 
         super(DiskFM, self).__init__(inputs_shape, numbasis)
 
+        self.supports_rdi = True # temporary flag until all FM classes supports RDI. 
+
         self.data_type = ctypes.c_double
 
         self.basis_filename = basis_filename
