@@ -64,14 +64,19 @@ class CHARISData(Data):
     fpm_diam = {}  # in pixels
     flux_zeropt = {}
     spot_ratio = {} #w.r.t. central star
+
     # the quoted value for CHARIS lenslet scale is 16.2 mas/pixel
-    # TODO: update the new lenslet scales
     lenslet_scale = 0.01615 # CHARIS data will be re-scaled to this uniform lenslet scale
     lenslet_scale_x = - lenslet_scale # lenslet scale, calibrated against HST images of M5
     lenslet_scale_y = 0.01615 # lenslet scale, calibrated against HST images of M5
     lenslet_scale_x_err = 0.00005
     lenslet_scale_y_err = 0.00007
     ifs_rotation = 0.0  # degrees CCW from +x axis to zenith
+
+    ref_spot_contrast_wv = 1.55 # micron
+    ref_spot_contrast = 0.00272 # spot/star contrast, Thayne's 2017 measurement
+    ref_spot_contrast_error_fraction = 0.00013 / ref_spot_contrast #
+    ref_spot_contrast_gridamp = 0.025
 
     obs_latitude = 19 + 49./60 + 43./3600 # radians
     obs_longitude = -(155 + 28./60 + 50./3600) # radians
@@ -183,7 +188,7 @@ class CHARISData(Data):
 
     def readdata(self, filepaths, guess_spot_index=0, guess_spot_locs=None, guess_center_loc=None, skipslices=None,
                  PSF_cube=None, update_hdrs=None, sat_fit_method='global', IWA=None, OWA=None, platecal=False,
-                 smooth=True, photcal=False):
+                 smooth=False, photcal=False):
         """
         Method to open and read a list of CHARIS data
 
@@ -204,8 +209,8 @@ class CHARISData(Data):
                             updated with new measurements.
             sat_fit_method: 'global' or 'local'
             platecal: bool, whether to calibrate the plate scales of the data,
-                      should always be True because the pipeline will automatically skip already calibrated cubes
-                      only set to False if running on non-calibrated data and don't want them calibrated
+                      since there is no evidence for distortion in the plate scales to first order (x, y axes have
+                      different plate scales), this keyword should always be false for now.
             smooth: bool, whether to smooth final data slightly
             photcal: bool, whether to photocalibration all frames
             IWA: a floating point scalar (not array). Specifies to inner working angle in pixels
@@ -811,7 +816,7 @@ class CHARISData(Data):
                        To be masked out when calculating background noise level. Shape (2,) or (n, 2), where n is the
                        number of bright sources that needs to be masked.
             mask_rad: scalar, radius of the mask in pixels.
-            mask_ref_ind: the cube index (range: 1-ncube) with respect to which mask_locs are specified, used to
+            mask_ref_ind: the cube index (range: 0-ncube) in the filelist for which mask_locs are specified, used to
                           account for its movement in the FOV due to field rotation.
             bg_sub: the method for background estimate, 'global', 'local', or None.
                     'global' method is the default method. It estimates the background level at the spot using an
@@ -849,8 +854,9 @@ class CHARISData(Data):
                 mask_seps = np.sqrt((mask_locs[:, 0] - centroid[0])**2 + (mask_locs[:, 1] - centroid[1])**2)
                 # minus PA_diff below because np.arctan2 measures angles from x-axis in counter-clockwise direction
                 mask_phis = np.arctan2(mask_locs[:, 1] - centroid[1], mask_locs[:, 0] - centroid[0]) - PA_diff
-                mask_locs_frame = np.array([mask_seps * np.cos(mask_phis) + centroid[0],
-                                            mask_seps * np.sin(mask_phis) + centroid[1]]).transpose()
+                # negative np.sin for x-axis and np.cos for y axis because PA is measured north to east
+                mask_locs_frame = np.array([-mask_seps * np.sin(mask_phis) + centroid[0],
+                                            mask_seps * np.cos(mask_phis) + centroid[1]]).transpose()
                                   # shape (nmask, 2)
             else:
                 mask_locs_frame = None
