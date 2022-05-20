@@ -25,7 +25,6 @@ from matplotlib.colors import LogNorm
 
 
 from astropy.io import fits
-from photutils import aperture_photometry, CircularAperture
 
 import pyklip.instruments.P1640_support.P1640cores
 
