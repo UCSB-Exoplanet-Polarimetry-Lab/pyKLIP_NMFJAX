@@ -16,7 +16,7 @@ from astropy import units
 from astropy.modeling import models, fitting
 
 try:
-    from photutils import aperture_photometry, CircularAperture
+    from photutils.aperture import aperture_photometry, CircularAperture
 except:
     print("P1640: photutils not available; spot photometry will fail.")
 
