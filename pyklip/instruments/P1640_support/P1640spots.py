@@ -15,10 +15,10 @@ from astropy.io import fits
 from astropy import units
 from astropy.modeling import models, fitting
 
-try:
-    from photutils.aperture import aperture_photometry, CircularAperture
-except:
-    print("P1640: photutils not available; spot photometry will fail.")
+
+from photutils.aperture import aperture_photometry, CircularAperture
+# except:
+#     print("P1640: photutils not available; spot photometry will fail.")
 
 #for handling different python versions
 if sys.version_info < (3,0):
@@ -207,7 +207,7 @@ def guess_grid_spot_loc(img):
     """
     get max pixel as initial guess of location
     """
-    spot_pos = np.unravel_index(np.argmax(img), dims=img.shape)
+    spot_pos = np.unravel_index(np.argmax(img), img.shape)
     return spot_pos
 
 def fit_grid_spot(img, center, loc=None):
