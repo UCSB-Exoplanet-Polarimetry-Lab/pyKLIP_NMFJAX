@@ -14,6 +14,7 @@ KLIP reductions, but may not work for the more sophisticated forward modelling l
    gpi
    p1640
    sphere
+   CHARIS
    generic_data
 
 
