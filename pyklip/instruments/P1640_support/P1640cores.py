@@ -14,7 +14,7 @@ import pandas as pd
 from scipy import interpolate
 
 from astropy.io import fits
-from photutils import aperture_photometry, CircularAperture
+from photutils.aperture import aperture_photometry, CircularAperture
 
 sys.path.append("~/pyklip")
 from pyklip.klip import align_and_scale
