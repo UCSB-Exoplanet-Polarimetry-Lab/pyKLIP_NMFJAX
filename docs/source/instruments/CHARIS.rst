@@ -102,8 +102,6 @@ maxnumbasis: the maximum number of KL modes used for the realization of the spec
 
 mode: for CHARIS, use either 'ADI', 'SDI' or 'ADI+SDI'
 
-guessspec:
-
 Running KLIP
 ------------
 Now we are ready to perform the KLIP algorithm with the following code and recommended default parameters:
@@ -131,7 +129,7 @@ Running the tutorial on the example dataset produces the following PSF subtracte
 Planet HR8799 c and d (upper right and lower right of the star, respectively) is already barely visible at 1 KLmode,
 and all three planets become clearly visible at 20 and 50 KLmodes.
 
-.. image:: imgs/HR8799_example_KLmodes_cube.png
+.. image:: /imgs/HR8799_example_KLmodes_cube.png
 
 .. _CHARIS_FM-label:
 
@@ -357,7 +355,7 @@ calibrated spectrum in flux density units. The extracted spectrum of planet c fo
 Note that the quality is poor and quite different from the published spectrum of this planet because we are using a
 small subset of the full dataset for the tutorial.
 
-.. image:: imgs/HR8799c_KL20_exspec_example.png
+.. image:: /imgs/HR8799c_KL20_exspec_example.png
 
 .. code-block:: python
 
