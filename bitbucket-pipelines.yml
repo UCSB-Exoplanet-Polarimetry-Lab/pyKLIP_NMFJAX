@@ -33,7 +33,7 @@ pipelines:
           #- conda install -y -c astropy photutils
           - apt-get update # make sure it can find gcc
           - apt-get install -y gcc
-          - pip install --no-deps photutils
+          - pip install photutils
 
 
           #Coverage and Coverall hooking
