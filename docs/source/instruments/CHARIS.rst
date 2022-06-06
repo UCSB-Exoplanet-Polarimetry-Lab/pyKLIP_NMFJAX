@@ -102,8 +102,6 @@ maxnumbasis: the maximum number of KL modes used for the realization of the spec
 
 mode: for CHARIS, use either 'ADI', 'SDI' or 'ADI+SDI'
 
-guessspec:
-
 Running KLIP
 ------------
 Now we are ready to perform the KLIP algorithm with the following code and recommended default parameters:
@@ -131,7 +129,7 @@ Running the tutorial on the example dataset produces the following PSF subtracte
 Planet HR8799 c and d (upper right and lower right of the star, respectively) is already barely visible at 1 KLmode,
 and all three planets become clearly visible at 20 and 50 KLmodes.
 
-.. image:: imgs/HR8799_example_KLmodes_cube.png
+.. image:: /imgs/HR8799_example_KLmodes_cube.png
 
 .. _CHARIS_FM-label:
 
@@ -178,14 +176,21 @@ in each frame as well as over exposures. As a result, we obtain one psf model fo
 
 We then need to set the flux conversion for CHARIS that converts the psf models we just generated to the flux of the
 unocculted star. Since the psf models are generated from satellite spots, our flux conversion will be the flux ratios
-between the unocculted star and the satellite spots. These flux ratios are measured using an internal source over a
-narrow bandpass by Thayne and reported in `this paper <http://dx.doi.org/10.1117/12.2576349>`_. The fluxes of the
+between the unocculted star and the satellite spots. The fluxes of the
 satellite spots scale as :math:`\propto A^2\lambda ^2`, where A is the amplitude of the diffractive grid and
-:math:`\lambda` is the wavelength. The CHARIS module stores a reference flux ratio between an unocculted star and the
-satellite spot at a grid amplitude of 0.25nm and a wavelength of 1.55 microns, which can then be scaled to all CHARIS
-wavelengths depending on the grid amplitude and the CHARIS bandpass. The following code generates the psf models and
-sets up the scaling that converts the psf models to the flux of the central star:
-:math:`F_{star} = F_{psf\;model} \times flux\;conversion`
+:math:`\lambda` is the wavelength. The CHARIS module has, as a class constant, a reference spot-to-star contrast of
+:math:`2.72 \times 10^{-3} \pm 1.3 \times 10^{-4}` at a grid amplitude of 0.25nm and a wavelength of 1.55 microns, which
+can then be scaled to all CHARIS wavelengths depending on the grid amplitude and the CHARIS bandpass. This reference
+flux ratio comes from measurements of an internal source over a narrow bandpass in Summer 2017, reported in
+`Thayne et al. <http://dx.doi.org/10.1117/12.2576349>`_. The following code block generates the psf models and sets up the
+scaling that converts the psf models to the flux of the central star: :math:`F_{star} = F_{psf\;model} \times flux\;conversion`
+
+.. note::
+    Separate tests of the satellite spot to central star contrast performed on difference dates showed disagreements, suggesting
+    that this flux ratio is not stable over time, and the results from a test closest to the date when the science data is taken
+    should be used. Currently, there is one other measurement taken in Fall 2018 that gives a contrast of
+    :math:`2.94 \times 10^{-3}`, an ~8% increase compared to 2017's measurement. Some new pending calibration results
+    suggest that this contrast has changed again since late 2021.
 
 .. code-block:: python
 
@@ -350,7 +355,7 @@ calibrated spectrum in flux density units. The extracted spectrum of planet c fo
 Note that the quality is poor and quite different from the published spectrum of this planet because we are using a
 small subset of the full dataset for the tutorial.
 
-.. image:: imgs/HR8799c_KL20_exspec_example.png
+.. image:: /imgs/HR8799c_KL20_exspec_example.png
 
 .. code-block:: python
 
