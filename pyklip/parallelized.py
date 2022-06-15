@@ -1448,7 +1448,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'none'). None will run no PSF subtraction. 
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median', "weighted-median"
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
-        verbose (bool): if True, print warning messages during KLIP process. 
+        verbose (bool): if True, print warning messages during KLIP process.
 
     Returns
         Saved files in the output directory

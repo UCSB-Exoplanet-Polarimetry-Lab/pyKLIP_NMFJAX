@@ -402,14 +402,13 @@ def calibrate_star_spectrum(template_spectrum, template_wvs, filter_name, magnit
     zero_point_flux = zero_point_fluxes_2MASS[filter_index]
     filter_name = filters_2MASS[filter_index]
 
-    # TODO: either put these 3 transmission files in the pyklip package, or download them from the source website
     # load transmission, integrate zero_point_flux to get the total zero point flux of the passband
     transmission_filepath = os.path.join(pykliproot, 'filters', '2MASS_{}.dat'.format(filter_name))
     transmission = np.loadtxt(transmission_filepath) # wavelengths are in units of angstroms for these files
     zero_point_flux = zero_point_flux * integrate.simps(transmission[:, 1], transmission[:, 0])
 
     # re-sample the stellar model spectrum at the wavelengths of the given filter transmission
-    template_wvs *= 1e4 # convert to angstroms
+    template_wvs = template_wvs * 1e4 # convert to angstroms
     start_ind = np.where(template_wvs <= transmission[0, 0])[0][-1]
     stop_ind = np.where(template_wvs >= transmission[-1, 0])[0][0] + 1
     thisfilter_template_wvs = template_wvs[start_ind:stop_ind]

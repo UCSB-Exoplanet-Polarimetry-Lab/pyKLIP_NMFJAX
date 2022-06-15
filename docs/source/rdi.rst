@@ -94,4 +94,4 @@ The main changes to make are just to set ``mode='RDI'`` and include the keyword 
 to combine RDI with ADI/SDI. 
 
 Note that the current PSF library does not distinguish spectral channels so it is not well suited for spectral
-RDI capabilities, and thus, the forward model spectral extraction is not currently compatible with RDI. 
+RDI capabilities, and thus, the forward model spectral extraction is not currently compatible with RDI.
