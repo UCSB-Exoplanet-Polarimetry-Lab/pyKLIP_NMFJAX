@@ -934,9 +934,24 @@ class JWSTData(Data):
 def trim_miri_data(data, filt):
     '''
     Trim the MIRI data to remove regions that receive no illumination. 
+    
+    Parameters
+    ----------
+    data : list of datacubes
+        List of 3D datacubes that will be trimmed
+    filt : string
+        Filter data was gathered in
+
+    Returns
+    -------
+    data_trim : list of datacubes
+        Trimmed 3D datacubes
+    trim : list
+        Number of pixels trimmed from the left (trim[0]) and bottom (trim[1]))
     '''
 
-    # Pixel values to trim around based on filter/mask
+    # Pixel values to trim around based on filter/mask, these were determined using
+    # the MIRI psfmask files found on CRDS. 
     if filt.lower() == 'f1065c':
         l,r,b,t = 5, 217, 14, 227
     elif filt.lower() == 'f1140c':
@@ -946,6 +961,7 @@ def trim_miri_data(data, filt):
     elif filt.lower() == 'f2300c':
         l,r,b,t = 3, 299, 9, 277
 
+    # Copy data and trim accordingly
     data_trim = copy.deepcopy(data)
     for i, arr in enumerate(data):
         data_trim[i] = arr[:,l:r,b:t]
@@ -954,21 +970,6 @@ def trim_miri_data(data, filt):
     trim = [l , b]
 
     return data_trim, trim
-
-# def get_miri_offset(file):
-#     if ('HD141569' in file) or ('SGD0' in file):
-#         # No offset
-#         offset = [0, 0]
-#     elif 'SGD1' in file:
-#         offset = [-0.01, 0.01]
-#     elif 'SGD2' in file:
-#         offset = [0.01, 0.01]
-#     elif 'SGD3' in file:
-#         offset = [0.01,-0.01]
-#     elif 'SGD4' in file:
-#         offset = [-0.01, -0.01]
-
-#     return offset
 
 def organise_files(filepaths, copy_dir='./ORGANISED/', hierarchy='TARGPROP/FILTER'):
     """
