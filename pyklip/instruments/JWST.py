@@ -13,6 +13,7 @@ import numpy as np
 import os, shutil
 import matplotlib.pyplot as plt
 import time
+import copy 
 
 import matplotlib
 matplotlib.rc('font', serif='DejaVu Sans')
@@ -186,13 +187,34 @@ class JWSTData(Data):
                 nints = f[0].header['NINTS']
                 pixel_scale = np.sqrt(f['SCI'].header['PIXAR_A2']) # arcsec; need this for later to calculate IWA
 
+                sci_data = f['SCI'].data
+                dq_data = f['DQ'].data
+
+                # NIRCam specifics
                 if inst == 'NIRCAM':
-                    sci_data = f['SCI'].data
-                    dq_data = f['DQ'].data
                     img_centers = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]*nints
+                    # Check for fiducial point override
+                    if 'NARROW' in f[0].header['APERNAME'] :
+                        fiducial_point_override = True
+                # MIRI specifics
                 elif inst == 'MIRI':
-                    sci_data, dq_data = trim_miri_data(f['SCI'].data, f['DQ'].data)
-                    img_centers = [106.5, 108]*nints
+                    filt = f[0].header['FILTER']
+                    # Cut out the unilluminated pixels
+                    all_data, trim = trim_miri_data([sci_data, dq_data], filt)
+                    sci_data, dq_data = all_data[0], all_data[1]
+
+                    if filt == 'F1065C':
+                        img_centers = [float(121-trim[0]), float(113-trim[1])]*nints
+                    elif filt == 'F1140C':
+                        img_centers = [float(114-trim[0]), float(116-trim[1])]*nints
+                    elif filt == 'F1550C':
+                        img_centers = [float(116-trim[0]), float(114-trim[1])]*nints
+                    else:
+                        raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
+
+                    # plt.imshow(sci_data[0])
+                    # plt.scatter([116-trim[0]], [114-trim[1]])
+                    # plt.show()
 
                 # Get the images
                 data.append(sci_data)
@@ -216,11 +238,6 @@ class JWSTData(Data):
                 for i in range(nints):
                     wcs_hdrs.append(wcs_hdr.deepcopy())
 
-                # Check for fiducial point override
-
-                if inst == 'NIRCAM':
-                    if 'NARROW' in f[0].header['APERNAME'] :
-                        fiducial_point_override = True
 
         # Convert to numpy arrays and collapse integrations along a single axis
         data = np.concatenate(data)
@@ -381,22 +398,38 @@ class JWSTData(Data):
                 nints = f[0].header['NINTS']
                 pixel_scale = np.sqrt(f['SCI'].header['PIXAR_A2']) # arcsec; need this for later to calculate IWA
 
+                sci_data = f['SCI'].data
+                dq_data = f['DQ'].data
+
+                # NIRCam specifics
                 if inst == 'NIRCAM':
-                    sci_data = f['SCI'].data
-                    dq_data = f['DQ'].data
                     center = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]
+                # MIRI specifics
                 elif inst == 'MIRI':
-                    sci_data, dq_data = trim_miri_data(f['SCI'].data, f['DQ'].data)
-                    center = [106.5, 108]
+                    filt = f[0].header['FILTER']
+                    # Cut out the unilluminated pixels
+                    all_data, trim = trim_miri_data([sci_data, dq_data], filt)
+                    sci_data, dq_data = all_data[0], all_data[1]
+
+                    if filt == 'F1065C':
+                        center = [float(121-trim[0]), float(113-trim[1])]
+                    elif filt == 'F1140C':
+                        center = [float(114-trim[0]), float(116-trim[1])]
+                    elif filt == 'F1550C':
+                        center = [float(116-trim[0]), float(114-trim[1])]
+                    else:
+                        raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
                 # Get the images
                 psflib_data.append(sci_data)
                 psflib_pxdq.append(dq_data)
 
-                if inst == 'NIRCAM':
-                    offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
-                elif inst == 'MIRI':
-                    offset = get_miri_offset(file) / pixel_scale
+                # Get the known offset between images
+                offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                # if inst == 'NIRCAM':
+                #     offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                # elif inst == 'MIRI':
+                #     offset = get_miri_offset(file) / pixel_scale
 
                 psflib_offsets.append(offset.tolist()*nints)
                 if centering == 'basic':
@@ -898,31 +931,44 @@ class JWSTData(Data):
         hdulist.close()
 
 
-def trim_miri_data(sci_data, dq_data):
+def trim_miri_data(data, filt):
     '''
     Trim the MIRI data to remove regions that receive no illumination. 
     '''
 
-    # This needs to be improved significantly once the MIRI headers are correct. 
-    sci_data = sci_data[:,5:220,14:230]
-    dq_data = dq_data[:,5:220,14:230]
+    # Pixel values to trim around based on filter/mask
+    if filt.lower() == 'f1065c':
+        l,r,b,t = 5, 217, 14, 227
+    elif filt.lower() == 'f1140c':
+        l,r,b,t = 7, 216, 13, 227
+    elif filt.lower() == 'f1550c':
+        l,r,b,t = 8, 215, 13, 226
+    elif filt.lower() == 'f2300c':
+        l,r,b,t = 3, 299, 9, 277
 
-    return sci_data, dq_data
+    data_trim = copy.deepcopy(data)
+    for i, arr in enumerate(data):
+        data_trim[i] = arr[:,l:r,b:t]
 
-def get_miri_offset(file):
-    if ('HD141569' in file) or ('SGD0' in file):
-        # No offset
-        offset = [0, 0]
-    elif 'SGD1' in file:
-        offset = [-0.01, 0.01]
-    elif 'SGD2' in file:
-        offset = [0.01, 0.01]
-    elif 'SGD3' in file:
-        offset = [0.01,-0.01]
-    elif 'SGD4' in file:
-        offset = [-0.01, -0.01]
+    # Trim is how many left and bottom pixels were cut off
+    trim = [l , b]
 
-    return offset
+    return data_trim, trim
+
+# def get_miri_offset(file):
+#     if ('HD141569' in file) or ('SGD0' in file):
+#         # No offset
+#         offset = [0, 0]
+#     elif 'SGD1' in file:
+#         offset = [-0.01, 0.01]
+#     elif 'SGD2' in file:
+#         offset = [0.01, 0.01]
+#     elif 'SGD3' in file:
+#         offset = [0.01,-0.01]
+#     elif 'SGD4' in file:
+#         offset = [-0.01, -0.01]
+
+#     return offset
 
 def organise_files(filepaths, copy_dir='./ORGANISED/', hierarchy='TARGPROP/FILTER'):
     """
