@@ -31,7 +31,7 @@ class JWSTData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe', badpix_threshold=0.01):
+    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe', badpix_threshold=0.2):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -137,7 +137,7 @@ class JWSTData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, centering='basic', badpix_threshold=0.01, verbose=False):
+    def readdata(self, filepaths, centering='basic', badpix_threshold=0.2, verbose=False):
         """
         Method to open and read JWST data.
 
@@ -354,7 +354,7 @@ class JWSTData(Data):
         self._IWA = IWA
         return reference
 
-    def readpsflib(self, psflib_filepaths, centering='basic', badpix_threshold=0.01, reference=None, verbose=False):
+    def readpsflib(self, psflib_filepaths, centering='basic', badpix_threshold=0.2, reference=None, verbose=False):
         """
         Method to open and read JWST data for use as part of a PSF library.
 
