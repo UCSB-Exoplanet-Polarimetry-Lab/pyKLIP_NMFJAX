@@ -52,11 +52,11 @@ class JWSTData(Data):
         del filter_list
 
         # Get the target dataset
-        reference = self.readdata(filepaths, centering)
+        reference = self.readdata(filepaths, centering, badpix_threshold)
 
         # If necessary, get the PSF library dataset for RDI procedures
         if psflib_filepaths != None:
-            self.readpsflib(psflib_filepaths, centering, reference)
+            self.readpsflib(psflib_filepaths, centering, badpix_threshold, reference)
         else:
             self._psflib = None
 
@@ -137,7 +137,7 @@ class JWSTData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, centering='basic', verbose=False):
+    def readdata(self, filepaths, centering='basic', badpix_threshold=0.01, verbose=False):
         """
         Method to open and read JWST data.
 
@@ -354,7 +354,7 @@ class JWSTData(Data):
         self._IWA = IWA
         return reference
 
-    def readpsflib(self, psflib_filepaths, centering='basic', reference=None, verbose=False):
+    def readpsflib(self, psflib_filepaths, centering='basic', badpix_threshold=0.01, reference=None, verbose=False):
         """
         Method to open and read JWST data for use as part of a PSF library.
 
