@@ -31,7 +31,7 @@ class JWSTData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe'):
+    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe', badpix_threshold=0.01):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -250,11 +250,9 @@ class JWSTData(Data):
         wvs = np.array(wvs).flatten()
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-
-        threshold = 0.1
         frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
 
-        good = frac <= threshold
+        good = frac <= badpix_threshold
         data = data[good]
         pxdq = pxdq[good]
         centers = centers[good]
@@ -267,7 +265,7 @@ class JWSTData(Data):
         # f = plt.figure()
         # ax = plt.gca()
         # ax.plot(frac*100)
-        # ax.axhline(threshold*100, color='red', label='threshold = %.0f%%' % (threshold*100.))
+        # ax.axhline(badpix_threshold*100, color='red', label='threshold = %.0f%%' % (badpix_threshold*100.))
         # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
         # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
         # ax.set_ylim([0., 100.])
@@ -279,7 +277,7 @@ class JWSTData(Data):
         # plt.savefig('bpfix_sci.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), threshold*100.))
+        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
         if centering == 'basic':
@@ -288,7 +286,12 @@ class JWSTData(Data):
             # Need to subtract residual background so that image registration
             # does not fit to it
             data_medsub = data-np.median(data, axis=(1, 2), keepdims=True)
+            # For MIRI, let's only look at the central region
+            # if inst == 'MIRI':
+            #     _, nx, ny = data_medsub.shape
+            #     data_medsub = data_medsub[:,int(nx/4):int(3*nx/4),int(ny/4):int(3*ny/4)]
             reference = data_medsub[0].copy() # align to first science image
+
             tstart = time.time()
             if centering == 'jwstpipe':
                 shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub[1:])
@@ -448,10 +451,8 @@ class JWSTData(Data):
         psflib_filenames = np.array(psflib_filenames)
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-        threshold = 0.1
-
         frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
-        good = frac <= threshold
+        good = frac <= badpix_threshold
         psflib_data = psflib_data[good]
         psflib_pxdq = psflib_pxdq[good]
         psflib_offsets = psflib_offsets[good]
@@ -462,7 +463,7 @@ class JWSTData(Data):
         # f = plt.figure()
         # ax = plt.gca()
         # ax.plot(frac*100)
-        # ax.axhline(threshold*100, color='red', label='threshold = %.0f%%' % (threshold*100.))
+        # ax.axhline(badpix_threshold*100, color='red', label='threshold = %.0f%%' % (badpix_threshold*100.))
         # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
         # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
         # ax.set_ylim([0., 100.])
@@ -474,7 +475,7 @@ class JWSTData(Data):
         # plt.savefig('bpfix_ref.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), threshold*100.))
+        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
         if centering == 'basic':
@@ -485,6 +486,9 @@ class JWSTData(Data):
             # Need to subtract residual background so that image registration
             # does not fit to it
             data_medsub = psflib_data-np.median(psflib_data, axis=(1, 2), keepdims=True)
+            # if inst == 'MIRI':
+            #     _, nx, ny = data_medsub.shape
+            #     data_medsub = data_medsub[:,int(nx/4):int(3*nx/4),int(ny/4):int(3*ny/4)]
             tstart = time.time()
             if centering == 'jwstpipe':
                 shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub)
@@ -964,7 +968,7 @@ def trim_miri_data(data, filt):
     # Copy data and trim accordingly
     data_trim = copy.deepcopy(data)
     for i, arr in enumerate(data):
-        data_trim[i] = arr[:,l:r,b:t]
+        data_trim[i] = arr[:,l:r+1,b:t+1] #Want to include the final row/column
 
     # Trim is how many left and bottom pixels were cut off
     trim = [l , b]
