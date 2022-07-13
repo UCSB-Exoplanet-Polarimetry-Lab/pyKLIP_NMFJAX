@@ -47,7 +47,7 @@ def NMFcomponents(ref, ref_err = None, n_components = None, maxiters = 1e3, oneB
     
     return components_column.T
     
-def NMFmodelling(trg, components, n_components = None, trg_err = None, maxiters = 1e3, returnChi2 = False, projectionsOnly = False, coefsAlso = False, cube = False, trgThresh = 1.0):
+def NMFmodelling(trg, components, n_components = None, trg_err = None, maxiters = 1e3, returnChi2 = False, projectionsOnly = False, coefsAlso = False, cube = False, trgThresh = 1.0, data_amputation_mask=None):
     """ NMF modeling.
     Args:
         trg: 1D array, p pixels
@@ -57,7 +57,8 @@ def NMFmodelling(trg, components, n_components = None, trg_err = None, maxiters 
         projectionsOnly: output the individual projection results.
         cube: whether output a cube or not (increasing the number of components).
         trgThresh: ignore the regions with low photon counts. Especially when they are ~10^-15 or smaller. I chose 1 in this case.
-    
+        data_amputation_mask: 1d array of p pixels specify mask for data amutation. 1 are good pixels, 0 are missing data. 
+
     Returns:
         NMF model of the target.
     """
