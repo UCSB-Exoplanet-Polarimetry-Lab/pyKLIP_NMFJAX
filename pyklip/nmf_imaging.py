@@ -1,10 +1,11 @@
 from NonnegMFPy import nmf
 import numpy as np
 
-def NMFcomponents(ref, ref_err = None, n_components = None, maxiters = 1e3, oneByOne = False):
+def NMFcomponents(ref, ref_err = None, n_components = None, maxiters = 1e3, oneByOne = False, ignore_mask = None):
     """Returns the NMF components, where the rows contain the information.
     Args:
         ref and ref_err should be (N * p) where n is the number of references, p is the number of pixels in each reference.
+        ignore_mask: array of shape (N, p). mask pixels in each image that you don't want to use. 
     Returns: 
         NMf components (n_components * p).
     """
