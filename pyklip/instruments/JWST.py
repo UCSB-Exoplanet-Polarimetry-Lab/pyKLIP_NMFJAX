@@ -31,7 +31,8 @@ class JWSTData(Data):
     ####################
     ### Constructors ###
     ####################
-    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe', badpix_threshold=0.2):
+    def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
+                     badpix_threshold=0.2, scishiftfile=False, refshiftfile=False):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -51,12 +52,15 @@ class JWSTData(Data):
             self.wave[name] = filter_list['WavelengthMean'][i]/1e4 # micron
         del filter_list
 
+        self.badpix_threshold = badpix_threshold
+        self.centering = centering
+
         # Get the target dataset
-        reference = self.readdata(filepaths, centering, badpix_threshold)
+        reference = self.readdata(filepaths, scishiftfile)
 
         # If necessary, get the PSF library dataset for RDI procedures
         if psflib_filepaths != None:
-            self.readpsflib(psflib_filepaths, centering, badpix_threshold, reference)
+            self.readpsflib(psflib_filepaths, reference, refshiftfile)
         else:
             self._psflib = None
 
@@ -137,7 +141,7 @@ class JWSTData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, centering='basic', badpix_threshold=0.2, verbose=False):
+    def readdata(self, filepaths, scishiftfile=False, verbose=False):
         """
         Method to open and read JWST data.
 
@@ -175,7 +179,7 @@ class JWSTData(Data):
         wcs_hdrs = []
 
         # Go through files one by one
-        fiducial_point_override = False
+        fiducial_point_override = True
         for index, file in enumerate(filepaths):
             with fits.open(file) as f:
 
@@ -204,11 +208,11 @@ class JWSTData(Data):
                     sci_data, dq_data = all_data[0], all_data[1]
 
                     if filt == 'F1065C':
-                        img_centers = [float(121-trim[0]), float(113-trim[1])]*nints
+                        img_centers = [float(120.81-trim[0]), float(111.89-trim[1])]*nints
                     elif filt == 'F1140C':
-                        img_centers = [float(114-trim[0]), float(116-trim[1])]*nints
+                        img_centers = [float(119.99-trim[0]), float(112.2-trim[1])]*nints
                     elif filt == 'F1550C':
-                        img_centers = [float(116-trim[0]), float(114-trim[1])]*nints
+                        img_centers = [float(119.84-trim[0]), float(113.33-trim[1])]*nints
                     else:
                         raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
@@ -252,7 +256,7 @@ class JWSTData(Data):
         # Fix bad pixels, reject frames with more than 1% bad pixels
         frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
 
-        good = frac <= badpix_threshold
+        good = frac <= self.badpix_threshold
         data = data[good]
         pxdq = pxdq[good]
         centers = centers[good]
@@ -265,7 +269,7 @@ class JWSTData(Data):
         # f = plt.figure()
         # ax = plt.gca()
         # ax.plot(frac*100)
-        # ax.axhline(badpix_threshold*100, color='red', label='threshold = %.0f%%' % (badpix_threshold*100.))
+        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
         # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
         # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
         # ax.set_ylim([0., 100.])
@@ -277,57 +281,72 @@ class JWSTData(Data):
         # plt.savefig('bpfix_sci.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), badpix_threshold*100.))
+        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
-        if centering == 'basic':
+        if self.centering == 'basic':
             reference = data[0].copy() # align to first science image
         else:
             # Need to subtract residual background so that image registration
             # does not fit to it
             data_medsub = data-np.median(data, axis=(1, 2), keepdims=True)
             # For MIRI, let's only look at the central region
-            # if inst == 'MIRI':
-            #     _, nx, ny = data_medsub.shape
-            #     data_medsub = data_medsub[:,int(nx/4):int(3*nx/4),int(ny/4):int(3*ny/4)]
-            reference = data_medsub[0].copy() # align to first science image
+            if inst == 'MIRI':
+                _, nx, ny = data_medsub.shape
+                data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
+            #     from matplotlib.colors import LogNorm
+            #     plt.imshow(data_medsub[0], norm=LogNorm())
+            #     plt.show()
+            # exit()
+            reference = data_medsub[1].copy() # align to first science image
 
             tstart = time.time()
-            if centering == 'jwstpipe':
+            if self.centering == 'jwstpipe':
                 shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub[1:])
-            elif centering == 'imageregis':
+            elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(reference, data_medsub[1:])
+            elif self.centering == 'savefile':
+                shift_data = np.load(scishiftfile+'.npz')
+                shifts = shift_data['shifts']
+                res_before = shift_data['res_before']
+                res_after = shift_data['res_after']
             else:
                 raise ValueError('Unknown centering algorithm')
+
+            # Save shifts if requested
+            if self.centering != 'savefile' and scishiftfile != False:
+                np.savez(scishiftfile, shifts=shifts, res_before=res_before, res_after=res_after)
+
             tend = time.time()
             centers[1:] -= shifts[:, :2]
 
-            # f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
-            # ax[0].plot(res_before, label='before align')
-            # ax[0].plot(res_after, label='after align')
-            # ax[0].grid(axis='y')
-            # ax[0].set_xlabel('Image index')
-            # ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
-            # ax[0].legend(loc='upper center')
-            # ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # temp = np.unique(pas[1:])
-            # for i in range(len(temp)):
-            #     ww = pas[1:] == temp[i]
-            #     ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., label='PA = %.0f deg' % temp[i])
-            # ax[1].axis('square')
-            # xlim = ax[1].get_xlim()
-            # temp = xlim[1]-xlim[0]
-            # ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
-            # ax[1].grid(axis='both')
-            # ax[1].set_xlabel('Image x-shift [mas]')
-            # ax[1].set_ylabel('Image y-shift [mas]')
-            # ax[1].legend(loc='center right')
-            # ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # plt.suptitle('Science image alignment -- '+centering+' method (%.0f s runtime)' % (tend-tstart))
-            # plt.tight_layout()
-            # plt.savefig(centering+'_sci.pdf')
-            # # plt.savefig(centering+'_sci_bad.pdf')
-            # plt.show()
+            f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
+            ax[0].plot(res_before, label='before align')
+            ax[0].plot(res_after, label='after align')
+            ax[0].grid(axis='y')
+            ax[0].set_xlabel('Image index')
+            ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
+            ax[0].legend(loc='upper center')
+            ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            temp = np.unique(pas[1:])
+            for i in range(len(temp)):
+                ww = pas[1:] == temp[i]
+                ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., label='PA = %.0f deg' % temp[i])
+            ax[1].axis('square')
+            xlim = ax[1].get_xlim()
+            temp = xlim[1]-xlim[0]
+            ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ax[1].grid(axis='both')
+            ax[1].set_xlabel('Image x-shift [mas]')
+            ax[1].set_ylabel('Image y-shift [mas]')
+            ax[1].legend(loc='center right')
+            ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            plt.suptitle('Science image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
+            plt.tight_layout()
+            plt.savefig(self.centering+'_sci.pdf')
+            plt.clf()
+            # plt.savefig(centering+'_sci_bad.pdf')
+            #plt.show()
 
         # Need to align the images so that they have the same centers
         image_center = np.array(data[0].shape)/2.
@@ -354,7 +373,8 @@ class JWSTData(Data):
         self._IWA = IWA
         return reference
 
-    def readpsflib(self, psflib_filepaths, centering='basic', badpix_threshold=0.2, reference=None, verbose=False):
+    def readpsflib(self, psflib_filepaths, reference=None, refshiftfile=False,
+     verbose=False):
         """
         Method to open and read JWST data for use as part of a PSF library.
 
@@ -415,17 +435,22 @@ class JWSTData(Data):
                     sci_data, dq_data = all_data[0], all_data[1]
 
                     if filt == 'F1065C':
-                        center = [float(121-trim[0]), float(113-trim[1])]
+                        center = [float(120.81-trim[0]), float(111.89-trim[1])]
                     elif filt == 'F1140C':
-                        center = [float(114-trim[0]), float(116-trim[1])]
+                        center = [float(119.99-trim[0]), float(112.2-trim[1])]
                     elif filt == 'F1550C':
-                        center = [float(116-trim[0]), float(114-trim[1])]
+                        center = [float(119.84-trim[0]), float(113.33-trim[1])]
                     else:
                         raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
                 # Get the images
                 psflib_data.append(sci_data)
                 psflib_pxdq.append(dq_data)
+
+                # from matplotlib.colors import LogNorm
+                # plt.imshow(sci_data[0], norm=LogNorm())
+                # plt.scatter(center[0], center[1], c='r')
+                # plt.show()
 
                 # Get the known offset between images
                 offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
@@ -435,7 +460,7 @@ class JWSTData(Data):
                 #     offset = get_miri_offset(file) / pixel_scale
 
                 psflib_offsets.append(offset.tolist()*nints)
-                if centering == 'basic':
+                if self.centering == 'basic':
                     psflib_centers.append([sum(x) for x in zip(center, offset)]*nints)
                 else:
                     psflib_centers.append([sum(x) for x in zip(center, [0., 0.])]*nints) # dither will be detected using image registration
@@ -452,7 +477,7 @@ class JWSTData(Data):
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
         frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
-        good = frac <= badpix_threshold
+        good = frac <= self.badpix_threshold
         psflib_data = psflib_data[good]
         psflib_pxdq = psflib_pxdq[good]
         psflib_offsets = psflib_offsets[good]
@@ -463,7 +488,7 @@ class JWSTData(Data):
         # f = plt.figure()
         # ax = plt.gca()
         # ax.plot(frac*100)
-        # ax.axhline(badpix_threshold*100, color='red', label='threshold = %.0f%%' % (badpix_threshold*100.))
+        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
         # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
         # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
         # ax.set_ylim([0., 100.])
@@ -475,10 +500,10 @@ class JWSTData(Data):
         # plt.savefig('bpfix_ref.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), badpix_threshold*100.))
+        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
-        if centering == 'basic':
+        if self.centering == 'basic':
             pass
         else:
             if reference is None:
@@ -486,48 +511,59 @@ class JWSTData(Data):
             # Need to subtract residual background so that image registration
             # does not fit to it
             data_medsub = psflib_data-np.median(psflib_data, axis=(1, 2), keepdims=True)
-            # if inst == 'MIRI':
-            #     _, nx, ny = data_medsub.shape
-            #     data_medsub = data_medsub[:,int(nx/4):int(3*nx/4),int(ny/4):int(3*ny/4)]
+            if inst == 'MIRI':
+                _, nx, ny = data_medsub.shape
+                data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             tstart = time.time()
-            if centering == 'jwstpipe':
+            if self.centering == 'jwstpipe':
                 shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub)
-            elif centering == 'imageregis':
+            elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(reference, data_medsub)
+            elif self.centering == 'savefile':
+                shift_data = np.load(refshiftfile+'.npz')
+                shifts = shift_data['shifts']
+                res_before = shift_data['res_before']
+                res_after = shift_data['res_after']
             else:
                 raise ValueError('Unknown centering algorithm')
+
+            # Save shifts if requested
+            if self.centering != 'savefile' and refshiftfile != False:
+                np.savez(refshiftfile, shifts=shifts, res_before=res_before, res_after=res_after)
+
             tend = time.time()
             psflib_centers -= shifts[:, :2]
 
-            # f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
-            # colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-            # ax[0].plot(res_before, label='before align')
-            # ax[0].plot(res_after, label='after align')
-            # ax[0].grid(axis='y')
-            # ax[0].set_xlabel('Image index')
-            # ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
-            # ax[0].legend(loc='upper center')
-            # ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # temp = np.unique(psflib_offsets, axis=0)
-            # for i in range(temp.shape[0]):
-            #     ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
-            #     ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., c=colors[i], label='dpos %.0f' % (i+1))
-            #     ax[1].plot([-temp[i, 0]*pixel_scale*1000., -temp[i, 0]*pixel_scale*1000.], [-temp[i, 1]*pixel_scale*1000.-5., -temp[i, 1]*pixel_scale*1000.+5.], color=colors[i])
-            #     ax[1].plot([-temp[i, 0]*pixel_scale*1000.-5., -temp[i, 0]*pixel_scale*1000.+5.], [-temp[i, 1]*pixel_scale*1000., -temp[i, 1]*pixel_scale*1000.], color=colors[i])
-            # ax[1].axis('square')
-            # xlim = ax[1].get_xlim()
-            # temp = xlim[1]-xlim[0]
-            # ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
-            # ax[1].grid(axis='both')
-            # ax[1].set_xlabel('Image x-shift [mas]')
-            # ax[1].set_ylabel('Image y-shift [mas]')
-            # ax[1].legend(loc='center right')
-            # ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # plt.suptitle('Reference image alignment -- '+centering+' method (%.0f s runtime)' % (tend-tstart))
-            # plt.tight_layout()
-            # plt.savefig(centering+'_ref.pdf')
-            # # plt.savefig(centering+'_ref_bad.pdf')
-            # plt.show()
+            f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
+            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            ax[0].plot(res_before, label='before align')
+            ax[0].plot(res_after, label='after align')
+            ax[0].grid(axis='y')
+            ax[0].set_xlabel('Image index')
+            ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
+            ax[0].legend(loc='upper center')
+            ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            temp = np.unique(psflib_offsets, axis=0)
+            for i in range(temp.shape[0]):
+                ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
+                ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., c=colors[i], label='dpos %.0f' % (i+1))
+                #ax[1].plot([-temp[i, 0]*pixel_scale*1000., -temp[i, 0]*pixel_scale*1000.], [-temp[i, 1]*pixel_scale*1000.-5., -temp[i, 1]*pixel_scale*1000.+5.], color=colors[i])
+                #ax[1].plot([-temp[i, 0]*pixel_scale*1000.-5., -temp[i, 0]*pixel_scale*1000.+5.], [-temp[i, 1]*pixel_scale*1000., -temp[i, 1]*pixel_scale*1000.], color=colors[i])
+            ax[1].axis('square')
+            xlim = ax[1].get_xlim()
+            temp = xlim[1]-xlim[0]
+            ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ax[1].grid(axis='both')
+            ax[1].set_xlabel('Image x-shift [mas]')
+            ax[1].set_ylabel('Image y-shift [mas]')
+            ax[1].legend(loc='center right')
+            ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            plt.suptitle('Reference image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
+            plt.tight_layout()
+            plt.savefig(self.centering+'_ref.pdf')
+            plt.clf()
+            # plt.savefig(centering+'_ref_bad.pdf')
+            #plt.show()
 
         # Need to align the images so that they have the same centers
         image_center = np.array(psflib_data[0].shape)/2.
@@ -957,18 +993,18 @@ def trim_miri_data(data, filt):
     # Pixel values to trim around based on filter/mask, these were determined using
     # the MIRI psfmask files found on CRDS. 
     if filt.lower() == 'f1065c':
-        l,r,b,t = 5, 217, 14, 227
+        l,r,b,t = 14, 227, 5, 217
     elif filt.lower() == 'f1140c':
-        l,r,b,t = 7, 216, 13, 227
+        l,r,b,t = 13, 227, 7, 216
     elif filt.lower() == 'f1550c':
-        l,r,b,t = 8, 215, 13, 226
+        l,r,b,t = 13, 226, 8, 215
     elif filt.lower() == 'f2300c':
-        l,r,b,t = 3, 299, 9, 277
+        l,r,b,t = 9, 277, 32, 299
 
     # Copy data and trim accordingly
-    data_trim = copy.deepcopy(data)
+    data_trim = copy.copy(data)
     for i, arr in enumerate(data):
-        data_trim[i] = arr[:,l:r+1,b:t+1] #Want to include the final row/column
+        data_trim[i] = arr[:,b:t+1,l:r+1] #Want to include the final row/column
 
     # Trim is how many left and bottom pixels were cut off
     trim = [l , b]
