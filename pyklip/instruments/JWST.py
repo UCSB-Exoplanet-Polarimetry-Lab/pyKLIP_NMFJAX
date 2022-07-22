@@ -216,10 +216,6 @@ class JWSTData(Data):
                     else:
                         raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
-                    # plt.imshow(sci_data[0])
-                    # plt.scatter([116-trim[0]], [114-trim[1]])
-                    # plt.show()
-
                 # Get the images
                 data.append(sci_data)
                 pxdq.append(dq_data)
@@ -254,17 +250,17 @@ class JWSTData(Data):
         wvs = np.array(wvs).flatten()
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-        frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
+        # frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
 
-        good = frac <= self.badpix_threshold
-        data = data[good]
-        pxdq = pxdq[good]
-        centers = centers[good]
-        filenames = filenames[good]
-        filenums = filenums[good]
-        pas = pas[good]
-        wvs = wvs[good]
-        data = self.fix_bad_pixels(data, pxdq)
+        # good = frac <= self.badpix_threshold
+        # data = data[good]
+        # pxdq = pxdq[good]
+        # centers = centers[good]
+        # filenames = filenames[good]
+        # filenums = filenums[good]
+        # pas = pas[good]
+        # wvs = wvs[good]
+        # data = self.fix_bad_pixels(data, pxdq)
 
         # f = plt.figure()
         # ax = plt.gca()
@@ -281,7 +277,7 @@ class JWSTData(Data):
         # plt.savefig('bpfix_sci.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
+        #print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
@@ -298,7 +294,7 @@ class JWSTData(Data):
             #     plt.imshow(data_medsub[0], norm=LogNorm())
             #     plt.show()
             # exit()
-            reference = data_medsub[1].copy() # align to first science image
+            reference = data_medsub[0].copy() # align to first science image
 
             tstart = time.time()
             if self.centering == 'jwstpipe':
@@ -318,7 +314,6 @@ class JWSTData(Data):
                 np.savez(scishiftfile, shifts=shifts, res_before=res_before, res_after=res_after)
 
             tend = time.time()
-            centers[1:] -= shifts[:, :2]
 
             f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
             ax[0].plot(res_before, label='before align')
@@ -329,8 +324,12 @@ class JWSTData(Data):
             ax[0].legend(loc='upper center')
             ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
             temp = np.unique(pas[1:])
+            medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             for i in range(len(temp)):
                 ww = pas[1:] == temp[i]
+                shifts_pa = shifts[ww]
+                shifts_med = np.median(shifts_pa, axis=0)
+                ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
                 ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., label='PA = %.0f deg' % temp[i])
             ax[1].axis('square')
             xlim = ax[1].get_xlim()
@@ -343,13 +342,22 @@ class JWSTData(Data):
             ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
             plt.suptitle('Science image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
             plt.tight_layout()
-            plt.savefig(self.centering+'_sci.pdf')
+            plt.savefig(scishiftfile+'.pdf')
             plt.clf()
             # plt.savefig(centering+'_sci_bad.pdf')
             #plt.show()
 
+            # # Let's median the shifts
+            # temp = np.unique(pas[1:]) # Get unique PAs
+            # for i in range(len(temp)):
+            #     ww = pas[1:] == temp[i] # Get locations of each PA 
+            #     shifts_pa = shifts[ww]
+            #     shifts[ww] = np.median(shifts_pa, axis=0)
+
+            centers[1:] -= shifts[:, :2]
+
         # Need to align the images so that they have the same centers
-        image_center = np.array(data[0].shape)/2.
+        image_center = image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.#np.array(data[0].shape)/2.
         for i, image in enumerate(data):
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=centers[i])
             data[i] = recentered_image
@@ -476,14 +484,14 @@ class JWSTData(Data):
         psflib_filenames = np.array(psflib_filenames)
 
         # Fix bad pixels, reject frames with more than 1% bad pixels
-        frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
-        good = frac <= self.badpix_threshold
-        psflib_data = psflib_data[good]
-        psflib_pxdq = psflib_pxdq[good]
-        psflib_offsets = psflib_offsets[good]
-        psflib_centers = psflib_centers[good]
-        psflib_filenames = psflib_filenames[good]
-        psflib_data = self.fix_bad_pixels(psflib_data, psflib_pxdq)
+        # frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
+        # good = frac <= self.badpix_threshold
+        # psflib_data = psflib_data[good]
+        # psflib_pxdq = psflib_pxdq[good]
+        # psflib_offsets = psflib_offsets[good]
+        # psflib_centers = psflib_centers[good]
+        # psflib_filenames = psflib_filenames[good]
+        # psflib_data = self.fix_bad_pixels(psflib_data, psflib_pxdq)
 
         # f = plt.figure()
         # ax = plt.gca()
@@ -500,7 +508,7 @@ class JWSTData(Data):
         # plt.savefig('bpfix_ref.pdf')
         # plt.show()
 
-        print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
+        # print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
 
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
@@ -532,7 +540,6 @@ class JWSTData(Data):
                 np.savez(refshiftfile, shifts=shifts, res_before=res_before, res_after=res_after)
 
             tend = time.time()
-            psflib_centers -= shifts[:, :2]
 
             f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
             colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -544,8 +551,12 @@ class JWSTData(Data):
             ax[0].legend(loc='upper center')
             ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
             temp = np.unique(psflib_offsets, axis=0)
+            medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             for i in range(temp.shape[0]):
                 ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
+                shifts_dp = shifts[ww]
+                shifts_med = np.median(shifts_dp, axis=0)
+                ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
                 ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., c=colors[i], label='dpos %.0f' % (i+1))
                 #ax[1].plot([-temp[i, 0]*pixel_scale*1000., -temp[i, 0]*pixel_scale*1000.], [-temp[i, 1]*pixel_scale*1000.-5., -temp[i, 1]*pixel_scale*1000.+5.], color=colors[i])
                 #ax[1].plot([-temp[i, 0]*pixel_scale*1000.-5., -temp[i, 0]*pixel_scale*1000.+5.], [-temp[i, 1]*pixel_scale*1000., -temp[i, 1]*pixel_scale*1000.], color=colors[i])
@@ -560,13 +571,22 @@ class JWSTData(Data):
             ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
             plt.suptitle('Reference image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
             plt.tight_layout()
-            plt.savefig(self.centering+'_ref.pdf')
+            plt.savefig(refshiftfile+'.pdf')
             plt.clf()
             # plt.savefig(centering+'_ref_bad.pdf')
             #plt.show()
 
+            # Let's median the shifts
+            # temp = np.unique(psflib_offsets, axis=0)
+            # for i in range(len(temp)):
+            #     ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
+            #     shifts_dp = shifts[ww]
+            #     shifts[ww] = np.median(shifts_dp, axis=0)
+
+            psflib_centers -= shifts[:, :2]
+
         # Need to align the images so that they have the same centers
-        image_center = np.array(psflib_data[0].shape)/2.
+        image_center = np.array([psflib_data[0].shape[1], psflib_data[0].shape[0]])/2.
         for i, image in enumerate(psflib_data):
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
             psflib_data[i] = recentered_image
