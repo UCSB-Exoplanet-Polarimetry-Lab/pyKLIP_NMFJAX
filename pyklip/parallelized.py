@@ -1403,7 +1403,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
-                 highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
+                 highpass=False, lite=False, save_aligned = False, restored_aligned = None, save_ints = False, dtype=None, algo='klip',
                  time_collapse="mean", wv_collapse='mean', verbose = True):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
@@ -1682,6 +1682,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # reformat the output to be consistent with the other modes.
         # Currently shape is (wv,b,N,y,x). Switch to (b,N,wv,y,x), then flatten in wavelength dimension
         dataset.output = np.swapaxes(dataset.output, 0, 1) # shape of (b, wv, N, y, x)
+
+        if save_ints:
+            dataset.allints = copy.copy(dataset.output)
+
         dataset.output = np.swapaxes(dataset.output, 1, 2) # shape of (b, N, wv, y, x)
         # then collapse N/wv together
         dataset.output = np.reshape(dataset.output, (dataset.output.shape[0], dataset.output.shape[1]*dataset.output.shape[2], dataset.output.shape[3], dataset.output.shape[4]) )
