@@ -43,7 +43,7 @@ def subtract_bkgd(input_frames, bkgd_frames, opt_maps, sub_maps):
             result = linalg.lstsq(bkgd_frames_ravel.T[opt_zone[0],:], input_ravel[opt_zone])
 
             coeffs = result[0]
-            print(coeffs)
+            #print(coeffs)
             #coeffs[np.where(np.abs(coeffs/coeffs[0]) < 0.001)] = 0
             
             #loci_psf = np.dot(kl_basis.T, coeffs)
