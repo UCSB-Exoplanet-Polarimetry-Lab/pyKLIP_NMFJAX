@@ -55,12 +55,12 @@ def subtract_bkgd(input_frames, bkgd_frames, opt_maps, sub_maps, conserve_flux=F
                     
                     return sci_sub_loci
 
-            tot_frames = bkgd_frames_ravel.shape[0]
-            guess = np.ones(tot_frames-1, dtype=float) * (1/tot_frames)
-            result = optimize.leastsq(loci_noscale, guess, args=(input_ravel[opt_zone], bkgd_frames_ravel.T[opt_zone[0],:]))
+                tot_frames = bkgd_frames_ravel.shape[0]
+                guess = np.ones(tot_frames-1, dtype=float) * (1/tot_frames)
+                result = optimize.leastsq(loci_noscale, guess, args=(input_ravel[opt_zone], bkgd_frames_ravel.T[opt_zone[0],:]))
 
-            coeffs = result[0]
-            coeffs = np.append(coeffs, 1-np.sum(coeffs))
+                coeffs = result[0]
+                coeffs = np.append(coeffs, 1-np.sum(coeffs))
             
             #loci_psf = np.dot(kl_basis.T, coeffs)
             loci_psf = np.dot(bkgd_frames_ravel.T, coeffs)

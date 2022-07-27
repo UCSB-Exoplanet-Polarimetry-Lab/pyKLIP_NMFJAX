@@ -32,7 +32,8 @@ class JWSTData(Data):
     ### Constructors ###
     ####################
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
-                     badpix_threshold=0.2, scishiftfile=False, refshiftfile=False):
+                     badpix_threshold=0.2, scishiftfile=False, refshiftfile=False,
+                     fiducial_point_override=False):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -54,6 +55,7 @@ class JWSTData(Data):
 
         self.badpix_threshold = badpix_threshold
         self.centering = centering
+        self.fiducial_point_override = fiducial_point_override
 
         # Get the target dataset
         reference = self.readdata(filepaths, scishiftfile)
@@ -179,7 +181,6 @@ class JWSTData(Data):
         wcs_hdrs = []
 
         # Go through files one by one
-        fiducial_point_override = True
         for index, file in enumerate(filepaths):
             with fits.open(file) as f:
 
@@ -199,10 +200,13 @@ class JWSTData(Data):
                     img_centers = [f['SCI'].header['CRPIX1']-1, f['SCI'].header['CRPIX2']-1]*nints
                     # Check for fiducial point override
                     if 'NARROW' in f[0].header['APERNAME'] :
-                        fiducial_point_override = True
+                        self.fiducial_point_override = True
                 # MIRI specifics
                 elif inst == 'MIRI':
                     filt = f[0].header['FILTER']
+                    self.orig_xoff = f[0].header['XOFFSET']
+                    self.orig_yoff = f[0].header['YOFFSET']
+
                     # Cut out the unilluminated pixels
                     all_data, trim = trim_miri_data([sci_data, dq_data], filt)
                     sci_data, dq_data = all_data[0], all_data[1]
@@ -357,18 +361,19 @@ class JWSTData(Data):
             centers[1:] -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
-        image_center = image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.#np.array(data[0].shape)/2.
+        image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.#np.array(data[0].shape)/2.
+        image_center = centers[0]
         for i, image in enumerate(data):
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=centers[i])
             data[i] = recentered_image
             centers[i] = image_center
 
-        # Assume an inner working angle of 1 lambda/D
-        if fiducial_point_override:
+        # Assume an inner working angle of 0.5 lambda/D
+        if self.fiducial_point_override:
             IWA = 1. # pix
         else:
             lambda_d_arcsec = ((wvs[0]/1e6)/6.5)*(180./np.pi)*3600.
-            IWA = lambda_d_arcsec/pixel_scale # pix
+            IWA = 0.5*lambda_d_arcsec/pixel_scale # pix
 
         # Assign all necessary properties
         self._input = data
@@ -461,7 +466,11 @@ class JWSTData(Data):
                 # plt.show()
 
                 # Get the known offset between images
-                offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                if inst == 'NIRCAM':
+                    offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
+                elif inst == 'MIRI':
+                    offset = [f[0].header['XOFFSET']-self.orig_xoff, f[0].header['YOFFSET']-self.orig_yoff]/pixel_scale
+
                 # if inst == 'NIRCAM':
                 #     offset = [f[0].header['XOFFSET'], f[0].header['YOFFSET']]/pixel_scale # pix
                 # elif inst == 'MIRI':
@@ -587,6 +596,7 @@ class JWSTData(Data):
 
         # Need to align the images so that they have the same centers
         image_center = np.array([psflib_data[0].shape[1], psflib_data[0].shape[0]])/2.
+        image_center = center
         for i, image in enumerate(psflib_data):
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
             psflib_data[i] = recentered_image
