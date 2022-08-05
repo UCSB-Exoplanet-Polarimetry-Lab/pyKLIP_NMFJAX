@@ -6,7 +6,7 @@ from astropy.io import fits
 from astropy import wcs
 from astroquery.svo_fps import SvoFps
 from scipy.ndimage import fourier_shift, median_filter, shift, gaussian_filter
-from scipy.optimize import leastsq
+from scipy.optimize import leastsq, minimize
 from skimage.registration import phase_cross_correlation
 
 import numpy as np
@@ -200,7 +200,33 @@ class JWSTData(Data):
                 if inst == 'NIRCAM':
                     crp1 = f['SCI'].header['CRPIX1']-1
                     crp2 = f['SCI'].header['CRPIX2']-1
+                    
+                    # Use the central 11x11 pixels (based on coronagraph center CRPIX)
+                    # to identify the absolute star location using the bright 
+                    # leakage speckle. Only do this for the first image
+                    if index == 0:
+                        s0 = 5
+                        if self.blur != False:
+                            cen_im = gaussian_filter(sci_data[0], self.blur)
+                        else:
+                            cen_im = sci_data[0].copy()
+                        tiny = cen_im[int(round(crp2))-s0:int(round(crp2))+s0+1, int(round(crp1))-s0:int(round(crp1))+s0+1]
+                        p0 = np.array([0., 0.])
+                        pp = minimize(self.recenterlsq, p0, args=(tiny))['x']
+                        test = self.fourier_imshift(tiny, pp)
+                        ymax, xmax = np.unravel_index(np.argmax(test), test.shape)
+                        # Shifts from CRPIX to the star pixel location
+                        shft0 = [pp[0]+crp1-int(round(crp1))+s0-xmax, pp[1]+crp2-int(round(crp2))+s0-ymax]
+                        crp1 -= shft0[0]
+                        crp2 -= shft0[1]
+                        # Save centers
+                        self.nircam_centers = [crp1, crp2]
+
+                    # Load centers estimated from first image
+                    crp1, crp2 = self.nircam_centers
+                    # Assign centers
                     img_centers = [crp1, crp2]*nints
+
                     # Check for fiducial point override
                     if 'NARROW' in f[0].header['APERNAME'] :
                         self.fiducial_point_override = True
@@ -291,7 +317,7 @@ class JWSTData(Data):
             reference = data[0].copy() # align to first science image
         else:
             # Need to subtract residual background so that image registration
-            # does not fit to it
+            # does not fit to itprint(s)
             data_medsub = data-np.nanmedian(data, axis=(1, 2), keepdims=True)
 
             # For MIRI, let's only look at the central region
@@ -299,16 +325,29 @@ class JWSTData(Data):
                 _, nx, ny = data_medsub.shape
                 data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             elif inst == 'NIRCAM':
-                _, nx, ny = data_medsub.shape
-                data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
+                tr = 10
+                data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
 
-            reference = data_medsub[0].copy() # align to first science image
+                #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
+
+            # from matplotlib.colors import LogNorm
+            # plt.imshow(data_medsub[0], norm=LogNorm())
+            # plt.show()
+
+            reference = data_medsub[0].copy() # align to first science image 
 
             tstart = time.time()
             if self.centering == 'jwstpipe':
-                shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub[1:])
+                if self.blur != False:
+                    # Need to blur the images before image registration
+                    ref_shifts = gaussian_filter(reference, self.blur)
+                    msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
+                else:
+                    ref_shifts = reference
+                    msub_shifts = data_medsub
+                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts[1:])
             elif self.centering == 'imageregis':
-                shifts, res_before, res_after = self.align_imageregis(reference, data_medsub[1:])
+                shifts, res_before, res_after = self.align_imageregis(ref_shifts, msub_shifts[1:])
             elif self.centering == 'savefile':
                 shift_data = np.load(scishiftfile+'.npz')
                 shifts = shift_data['shifts']
@@ -361,7 +400,6 @@ class JWSTData(Data):
             #     ww = pas[1:] == temp[i] # Get locations of each PA 
             #     shifts_pa = shifts[ww]
             #     shifts[ww] = np.median(shifts_pa, axis=0)
-
             centers[1:] -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
@@ -372,12 +410,12 @@ class JWSTData(Data):
             image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.
         #image_center = centers[0]
         for i, image in enumerate(data):
+            if self.blur != False:
+                # Blur if requested *before* align_and_scale
+                image = gaussian_filter(image, self.blur)
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=centers[i])
             centers[i] = image_center
-            if self.blur != False:
-                data[i] = gaussian_filter(recentered_image, self.blur)
-            else:
-                data[i] = recentered_image
+            data[i] = recentered_image
 
         # Assume an inner working angle of 0.5 lambda/D
         if self.fiducial_point_override:
@@ -439,6 +477,7 @@ class JWSTData(Data):
             with fits.open(file) as f:
 
                 inst = f[0].header['INSTRUME']
+                filt = f[0].header['FILTER']
 
                 # Grab number of integrations, as this is how many images are
                 # in the file
@@ -450,12 +489,14 @@ class JWSTData(Data):
 
                 # NIRCam specifics
                 if inst == 'NIRCAM':
-                    crp1 = f['SCI'].header['CRPIX1']-1
-                    crp2 = f['SCI'].header['CRPIX2']-1
+                    try:
+                        crp1, crp2 = self.nircam_centers
+                    except:
+                        crp1 = f['SCI'].header['CRPIX1']-1
+                        crp2 = f['SCI'].header['CRPIX2']-1
                     center = [crp1, crp2]
                 # MIRI specifics
                 elif inst == 'MIRI':
-                    filt = f[0].header['FILTER']
                     # Cut out the unilluminated pixels
                     all_data, trim = trim_miri_data([sci_data, dq_data], filt)
                     sci_data, dq_data = all_data[0], all_data[1]
@@ -541,12 +582,22 @@ class JWSTData(Data):
                 data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             elif inst == 'NIRCAM':
                 _, nx, ny = data_medsub.shape
-                print('WARNING: Are you using the NIRCam 335R mask? If not you should look at how image registration \
-                    is being done in the JWST.py file of pyKLIP')
-                data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
+                print('''WARNING: Are you using the NIRCam 335R mask? If not you should look at 
+                    how image registrationis being done in the JWST.py file of pyKLIP''')
+                #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
+                tr = 10
+                data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
             tstart = time.time()
             if self.centering == 'jwstpipe':
-                shifts, res_before, res_after = self.align_jwstpipe(reference, data_medsub)
+                # Need to blur the images before image registration
+                if self.blur != False:
+                    # Need to blur the images before image registration
+                    ref_shifts = gaussian_filter(reference, self.blur)
+                    msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
+                else:
+                    ref_shifts = reference
+                    msub_shifts = data_medsub
+                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts)
             elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(reference, data_medsub)
             elif self.centering == 'savefile':
@@ -614,12 +665,11 @@ class JWSTData(Data):
             image_center = np.array([psflib_data[0].shape[1], psflib_data[0].shape[0]])/2.
         #image_center = center
         for i, image in enumerate(psflib_data):
+            if self.blur != False:
+                # Blur if requested *before* align_and_scale
+                image = gaussian_filter(image, self.blur)
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
             psflib_data[i] = recentered_image
-            if self.blur != False:
-                psflib_data[i] = gaussian_filter(recentered_image, self.blur)
-            else:
-                psflib_data[i] = recentered_image
 
         # Append the target images as well
         psflib_data = np.append(psflib_data, self._input, axis=0)
@@ -664,6 +714,9 @@ class JWSTData(Data):
             data_fixed[i][bad] = median_filter(data[i], size=5)[bad]
 
         return data_fixed
+
+    def recenterlsq(self, shft, data):
+        return 1./np.max(self.fourier_imshift(data, shft))
 
     def fourier_imshift(self,
                         image,
