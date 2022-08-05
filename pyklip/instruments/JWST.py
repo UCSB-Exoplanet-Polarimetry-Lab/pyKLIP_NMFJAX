@@ -1,12 +1,15 @@
 from pyklip.instruments.Instrument import Data
 import pyklip.rdi as rdi
 import pyklip.klip
+from pyklip.klip import nan_gaussian_filter
 
 from astropy.io import fits
 from astropy import wcs
 from astroquery.svo_fps import SvoFps
+
 from scipy.ndimage import fourier_shift, median_filter, shift, gaussian_filter
 from scipy.optimize import leastsq, minimize
+
 from skimage.registration import phase_cross_correlation
 
 import numpy as np
@@ -412,7 +415,7 @@ class JWSTData(Data):
         for i, image in enumerate(data):
             if self.blur != False:
                 # Blur if requested *before* align_and_scale
-                image = gaussian_filter(image, self.blur)
+                image = nan_gaussian_filter(image, self.blur)
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=centers[i])
             centers[i] = image_center
             data[i] = recentered_image
@@ -667,7 +670,7 @@ class JWSTData(Data):
         for i, image in enumerate(psflib_data):
             if self.blur != False:
                 # Blur if requested *before* align_and_scale
-                image = gaussian_filter(image, self.blur)
+                image = nan_gaussian_filter(image, self.blur)
             recentered_image = pyklip.klip.align_and_scale(image, new_center=image_center, old_center=psflib_centers[i])
             psflib_data[i] = recentered_image
 
