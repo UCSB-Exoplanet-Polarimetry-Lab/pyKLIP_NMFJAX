@@ -209,10 +209,11 @@ class JWSTData(Data):
                     # leakage speckle. Only do this for the first image
                     if index == 0:
                         s0 = 5
-                        if self.blur != False:
-                            cen_im = gaussian_filter(sci_data[0], self.blur)
-                        else:
-                            cen_im = sci_data[0].copy()
+                        # Blurring was messing up the image registration
+                        # if self.blur != False:
+                        #     cen_im = gaussian_filter(sci_data[0], self.blur)
+                        # else:
+                        cen_im = sci_data[0].copy()
                         tiny = cen_im[int(round(crp2))-s0:int(round(crp2))+s0+1, int(round(crp1))-s0:int(round(crp1))+s0+1]
                         p0 = np.array([0., 0.])
                         pp = minimize(self.recenterlsq, p0, args=(tiny))['x']
@@ -244,11 +245,11 @@ class JWSTData(Data):
                     sci_data, dq_data = all_data[0], all_data[1]
 
                     if filt == 'F1065C':
-                        img_centers = [float(120.81-trim[0]), float(111.89-trim[1])]*nints
+                        img_centers = [float(120.184-trim[0]), float(112.116-trim[1])]*nints
                     elif filt == 'F1140C':
-                        img_centers = [float(119.99-trim[0]), float(112.2-trim[1])]*nints
+                        img_centers = [float(119.749-trim[0]), float(112.236-trim[1])]*nints
                     elif filt == 'F1550C':
-                        img_centers = [float(119.84-trim[0]), float(113.33-trim[1])]*nints
+                        img_centers = [float(119.746-trim[0]), float(113.289-trim[1])]*nints
                     else:
                         raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
@@ -336,18 +337,20 @@ class JWSTData(Data):
             # from matplotlib.colors import LogNorm
             # plt.imshow(data_medsub[0], norm=LogNorm())
             # plt.show()
+            # exit()
 
             reference = data_medsub[0].copy() # align to first science image 
 
             tstart = time.time()
             if self.centering == 'jwstpipe':
-                if self.blur != False:
-                    # Need to blur the images before image registration
-                    ref_shifts = gaussian_filter(reference, self.blur)
-                    msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
-                else:
-                    ref_shifts = reference
-                    msub_shifts = data_medsub
+                # Blurring was messing up the iamge registration
+                # if self.blur != False:
+                #     # Need to blur the images before image registration
+                #     ref_shifts = gaussian_filter(reference, self.blur)
+                #     msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
+                # else:
+                ref_shifts = reference
+                msub_shifts = data_medsub
                 shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts[1:])
             elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(ref_shifts, msub_shifts[1:])
@@ -505,11 +508,11 @@ class JWSTData(Data):
                     sci_data, dq_data = all_data[0], all_data[1]
 
                     if filt == 'F1065C':
-                        center = [float(120.81-trim[0]), float(111.89-trim[1])]
+                        center = [float(120.184-trim[0]), float(112.116-trim[1])]
                     elif filt == 'F1140C':
-                        center = [float(119.99-trim[0]), float(112.2-trim[1])]
+                        center = [float(119.749-trim[0]), float(112.236-trim[1])]
                     elif filt == 'F1550C':
-                        center = [float(119.84-trim[0]), float(113.33-trim[1])]
+                        center = [float(119.746-trim[0]), float(113.289-trim[1])]
                     else:
                         raise ValueError('pyKLIP only currently supports F1065C/F1140C/F1550C MIRI data')
 
@@ -592,14 +595,14 @@ class JWSTData(Data):
                 data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
             tstart = time.time()
             if self.centering == 'jwstpipe':
-                # Need to blur the images before image registration
-                if self.blur != False:
-                    # Need to blur the images before image registration
-                    ref_shifts = gaussian_filter(reference, self.blur)
-                    msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
-                else:
-                    ref_shifts = reference
-                    msub_shifts = data_medsub
+                # Blurring was messing up the iamge registration
+                # if self.blur != False:
+                #     # Need to blur the images before image registration
+                #     ref_shifts = gaussian_filter(reference, self.blur)
+                #     msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
+                # else:
+                ref_shifts = reference
+                msub_shifts = data_medsub
                 shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts)
             elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(reference, data_medsub)
