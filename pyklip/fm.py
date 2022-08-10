@@ -697,7 +697,7 @@ def calculate_validity(covar_perturb, models_ref, numbasis, evals_orig, covar_or
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
                 output_imgs_numstacked,
                 pa_imgs, wvs_imgs, centers_imgs, interm_imgs, interm_imgs_shape, fmout_imgs, fmout_imgs_shape,
-                perturbmag_imgs, perturbmag_imgs_shape, psf_library, psf_library_shape):
+                perturbmag_imgs, perturbmag_imgs_shape, psf_library, psf_library_shape, centers_mask):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array) - output_imgs does not need to be mp.Array and can be anything
@@ -721,10 +721,11 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         fmout_imgs_shape: shape of fmout
         perturbmag_imgs: array for output of size of linear perturbation to assess validity
         perturbmag_imgs_shape: shape of perturbmag_imgs
+        centers_mask: mask centers. same dimesion as center_imgs that specify star_centers
     """
     global original, original_shape, aligned, aligned_shape, outputs, outputs_shape, outputs_numstacked, img_pa, \
         img_wv, img_center, interm, interm_shape, fmout, fmout_shape, perturbmag, perturbmag_shape, \
-        psf_lib, psf_lib_shape
+        psf_lib, psf_lib_shape, mask_centers
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -739,6 +740,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_pa = pa_imgs
     img_wv = wvs_imgs
     img_center = centers_imgs
+    mask_centers = centers_mask
 
     #intermediate and FM arrays
     interm = interm_imgs
@@ -769,6 +771,7 @@ def _align_and_scale_subset(thread_index, aligned_center,numthreads = None,dtype
     original_imgs = _arraytonumpy(original, original_shape,dtype=dtype)
     wvs_imgs = _arraytonumpy(img_wv,dtype=dtype)
     centers_imgs = _arraytonumpy(img_center, (np.size(wvs_imgs),2),dtype=dtype)
+    centers_mask = _arraytonumpy(mask_centers, (np.size(wvs_imgs),2),dtype=dtype)
     aligned_imgs = _arraytonumpy(aligned, aligned_shape,dtype=dtype)
 
     unique_wvs = np.unique(wvs_imgs)
@@ -988,22 +991,24 @@ def _save_rotated_section(input_shape, sector, sector_ind, output_img, output_im
         output_img_numstacked.shape = [outputs_shape[1] *  outputs_shape[2]]
 
 
-def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
-                      movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, corr_smooth=1,
-                      aligned_center=None, numthreads=None, minrot=0, maxrot=360,
+def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, mask_centers, OWA=None, mode='ADI+SDI', annuli=5, 
+                      subsections=4, movement=None, flux_overlap=0.1,PSF_FWHM=3.5, numbasis=None,maxnumbasis=None, 
+                      corr_smooth=1, aligned_center=None, numthreads=None, minrot=0, maxrot=360,
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
                       padding=0, save_klipped=True, flipx=True,
-                      N_pix_sector = None,mute_progression = False, annuli_spacing="constant", compute_noise_cube=False):
+                      N_pix_sector = None,mute_progression = False, annuli_spacing="constant", 
+                      compute_noise_cube=False):
     """
     multithreaded KLIP PSF Subtraction
 
     Args:
         imgs: array of 2D images for ADI. Shape of array (N,y,x)
-        centers: N by 2 array of (x,y) coordinates of image centers
+        centers: N by 2 array of (x,y) coordinates of image star centers
         parangs: N length array detailing parallactic angle of each image
         wvs: N length array of the wavelengths
         IWA: inner working angle (in pixels)
         fm_class: class that implements the the forward modelling functionality
+        mask_centers: N by 2 array of (x,y) coordinates of coronagraph mask centers
         OWA: if defined, the outer working angle for pyklip. Otherwise, it will pick it as the cloest distance to a
             nan in the first frame
         mode: one of ['ADI', 'SDI', 'ADI+SDI'] for ADI, SDI, or ADI+SDI
@@ -1201,6 +1206,10 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     centers_imgs = mp.Array(fm_class.data_type, np.size(centers))
     centers_imgs_np = _arraytonumpy(centers_imgs, centers.shape,dtype=fm_class.data_type)
     centers_imgs_np[:] = centers
+    # mask centers
+    centers_mask = mp.Array(fm_class.data_type, np.size(centers))
+    centers_mask_np = _arraytonumpy(centers_mask, mask_centers.shape, dtype=fm_class.data_type)
+    centers_mask_np[:] = mask_centers
 
     if psf_library is not None:
         psf_lib = mp.Array(fm_class.data_type, np.size(psf_library))
@@ -1234,13 +1243,14 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                               output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                              fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape), maxtasksperchild=50)
+                              fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape, centers_mask), 
+                    maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if debug :
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
                     output_imgs_shape, output_imgs_numstacked, pa_imgs, wvs_imgs, centers_imgs, None, None,
-                    fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape)
+                    fmout_data, fmout_shape,perturbmag,perturbmag_shape, psf_lib, psf_lib_shape, centers_mask)
 
 
 
@@ -1253,6 +1263,9 @@ def klip_parallelized(imgs, centers, parangs, wvs, IWA, fm_class, OWA=None, mode
         #save it to shared memory
     for aligned_output in aligned_outputs:
         aligned_output.wait()
+    
+    # update mask center after shift
+    centers_mask_np += (aligned_center - centers_imgs_np)
 
     print("Align and scale finished")
 
@@ -1750,6 +1763,9 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                                       radstart, radend, phistart, phiend, padding,IOWA, ref_center, flipx=flipx)
 
 
+    # load mask centers for forward modeling
+    centers_mask = _arraytonumpy(mask_centers, (np.size(wvs_imgs),2), dtype=fm_class.data_type)
+
     # call FM Class to handle forward modelling if it wants to. Basiclaly we are passing in everything as a variable
     # and it can choose which variables it wants to deal with using **kwargs
     # result is stored in fmout
@@ -1763,7 +1779,7 @@ def _klip_section_multifile_perfile(img_num, sector_index, radstart, radend, phi
                            radend=radend, phistart=phistart, phiend=phiend, padding=padding, IOWA = IOWA, 
                            ref_center=ref_center, parang=parang, ref_wv=wavelength, numbasis=numbasis,
                            maxnumbasis=maxnumbasis, fmout=fmout_np, output_img_shape = outputs_shape, perturbmag = perturbmag_np,klipped=klipped, 
-                           covar_files=covar_files, flipx=flipx, mode=mode, rdi_psfs=rdi_psfs_selected)
+                           covar_files=covar_files, flipx=flipx, mode=mode, rdi_psfs=rdi_psfs_selected, mask_centers=centers_mask)
 
     return sector_index
 
@@ -1943,8 +1959,8 @@ def klip_dataset(dataset, fm_class, mode="ADI+SDI", outputdir=".", fileprefix="p
         mkl.set_num_threads(1)
 
     klip_outputs = klip_parallelized(dataset.input, dataset.centers, dataset.PAs, dataset.wvs, dataset.IWA, fm_class,
-                                     OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, movement=movement,
-                                     flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
+                                     dataset.mask_centers, OWA=OWA, mode=mode, annuli=annuli, subsections=subsections, 
+                                     movement=movement, flux_overlap=flux_overlap, PSF_FWHM=PSF_FWHM, numbasis=numbasis,
                                      maxnumbasis=maxnumbasis, corr_smooth=corr_smooth,
                                      aligned_center=aligned_center, numthreads=numthreads,
                                      minrot=minrot, spectrum=spectra_template, padding=padding, save_klipped=True,
