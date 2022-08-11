@@ -238,7 +238,7 @@ class JWSTData(Data):
                         #Starting Guess. 
                         self.nircam_centers = [crp1,crp2]
                         if load_file0_center and os.path.exists(save_center_file+'.npz'):
-                            print("[spaceklip] Loading the star center in the first file from: {}".format(save_center_file+".npz"))
+                            print("Loading the star center in the first file from: {}".format(save_center_file+".npz"))
                             saved_centers = np.load(save_center_file+'.npz')['center']
                             crp1 = saved_centers[0]
                             crp2 = saved_centers[1]
@@ -1054,7 +1054,7 @@ class JWSTData(Data):
 
         instrument = "NIRCam"
 
-        print("[spaceklip] Generating a Webb PSF to help with the centering. This might take a minute or so. ")
+        print("Generating a Webb PSF to help with the centering. This might take a minute or so. ")
         #Generate the psfs
         psf = JWST_PSF(instrument,filter_name,image_mask,fov_pix,**kwargs)
 
@@ -1081,7 +1081,7 @@ class JWSTData(Data):
         shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
         #shift is returned as [y,x]
 
-        print("[spaceklip] Calculated Shift between the coronagraph center and stellar location{}".format(shift))
+        print("Calculated Shift between the coronagraph center and stellar location {}".format(shift))
         #TODO: Need to confirm that this is the right sign to apply. 
         crp1 += shift[1]
         crp2 += shift[0]
@@ -1089,7 +1089,7 @@ class JWSTData(Data):
         psf._shift_psfs(shifts = [osamp*shift[1],osamp*shift[0]])
         shifted_model_psf = frebin(psf.psf_on,scale=1/osamp)
         shift_check, _, _ = phase_cross_correlation(data0*mask, shifted_model_psf*mask,upsample_factor=1000,normalization=None)
-        print("[spaceklip] Calculated Shift after applying previous shift{}".format(shift_check))
+        print("Calculated Shift after applying previous shift{}".format(shift_check))
 
         shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
 
