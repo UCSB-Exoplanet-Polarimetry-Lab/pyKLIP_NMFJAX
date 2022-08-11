@@ -319,9 +319,15 @@ def nmf_math(sci, ref_psfs, sci_err = None, ref_psfs_err = None, componentNum = 
     badpix = np.where(np.isnan(sci))
     sci[badpix] = 0
 
+    ## MMB says: This has always just worked better for me with just the ones anyway..
+    if ref_psfs_err is None:
+        ref_psfs_err = np.ones(ref_psfs.shape)
+    if sci_err is None:
+        sci_err = np.ones(sci.shape)
+
     components = NMFcomponents(ref_psfs, ref_err = ref_psfs_err, n_components = componentNum, maxiters = maxiters, oneByOne=oneByOne,
                                 ignore_mask = ignore_mask, path_save = path_save, recalculate = recalculate)
-                                
+                            
     if mask_data_imputation is None:
         model = NMFmodelling(trg = sci, components = components, n_components = componentNum, trg_err = sci_err, maxiters=maxiters,
                                 mask_data_imputation = mask_data_imputation)
