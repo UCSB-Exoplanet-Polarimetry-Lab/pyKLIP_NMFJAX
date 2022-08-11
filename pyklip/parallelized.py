@@ -16,6 +16,8 @@ import scipy.interpolate as interp
 from scipy.stats import norm
 import scipy.ndimage as ndi
 
+from tqdm.auto import trange, tqdm
+
 #Logic to test mkl exists
 try:
     import mkl
@@ -1365,11 +1367,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
     if not debug:
         if verbose is True:
             print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
-        for index, out in enumerate(outputs):
-            out.wait()
-            if (index + 1) % 10 == 0:
-                print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
-
+        for index in trange(len(outputs)):
+            outputs[index].wait()
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     if verbose is True:
