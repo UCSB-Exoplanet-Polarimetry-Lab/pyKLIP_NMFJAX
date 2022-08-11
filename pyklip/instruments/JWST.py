@@ -19,6 +19,7 @@ import time
 import copy 
 
 from spaceKLIP.psf import JWST_PSF
+from spaceKLIP.utils import fourier_imshift
 
 import matplotlib
 matplotlib.rc('font', serif='DejaVu Sans')
@@ -38,8 +39,12 @@ class JWSTData(Data):
     ####################
     ### Constructors ###
     ####################
+
+    # Fourier image shift. Adapted from JWST stage 3 pipeline.
+    fourier_imshift = fourier_imshift
+
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
-                     badpix_threshold=0.2, scishiftfile=False, refshiftfile=False,
+                     scishiftfile=False, refshiftfile=False,
                      fiducial_point_override=False, blur=False,spectral_type=None,
                      load_file0_center=False,save_center_file=False):
 
@@ -61,7 +66,6 @@ class JWSTData(Data):
             self.wave[name] = filter_list['WavelengthMean'][i]/1e4 # micron
         del filter_list
 
-        self.badpix_threshold = badpix_threshold
         self.centering = centering
         self.fiducial_point_override = fiducial_point_override
         self.blur = blur
@@ -313,36 +317,6 @@ class JWSTData(Data):
         pas = np.array(pas).flatten()
         wvs = np.array(wvs).flatten()
 
-        # Fix bad pixels, reject frames with more than 1% bad pixels
-        # frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
-
-        # good = frac <= self.badpix_threshold
-        # data = data[good]
-        # pxdq = pxdq[good]
-        # centers = centers[good]
-        # filenames = filenames[good]
-        # filenums = filenums[good]
-        # pas = pas[good]
-        # wvs = wvs[good]
-        # data = self.fix_bad_pixels(data, pxdq)
-
-        # f = plt.figure()
-        # ax = plt.gca()
-        # ax.plot(frac*100)
-        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
-        # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
-        # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
-        # ax.set_ylim([0., 100.])
-        # ax.set_xlabel('Image index')
-        # ax.set_ylabel('Bad pixel fraction [%]')
-        # plt.legend(loc='upper right')
-        # plt.title('Science image rejection')
-        # plt.tight_layout()
-        # plt.savefig('bpfix_sci.pdf')
-        # plt.show()
-
-        #print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
-
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
             reference = data[0].copy() # align to first science image
@@ -574,33 +548,6 @@ class JWSTData(Data):
         psflib_centers = np.concatenate(psflib_centers).reshape(-1, 2)
         psflib_filenames = np.array(psflib_filenames)
 
-        # Fix bad pixels, reject frames with more than 1% bad pixels
-        # frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
-        # good = frac <= self.badpix_threshold
-        # psflib_data = psflib_data[good]
-        # psflib_pxdq = psflib_pxdq[good]
-        # psflib_offsets = psflib_offsets[good]
-        # psflib_centers = psflib_centers[good]
-        # psflib_filenames = psflib_filenames[good]
-        # psflib_data = self.fix_bad_pixels(psflib_data, psflib_pxdq)
-
-        # f = plt.figure()
-        # ax = plt.gca()
-        # ax.plot(frac*100)
-        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
-        # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
-        # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
-        # ax.set_ylim([0., 100.])
-        # ax.set_xlabel('Image index')
-        # ax.set_ylabel('Bad pixel fraction [%]')
-        # plt.legend(loc='upper right')
-        # plt.title('Reference image rejection')
-        # plt.tight_layout()
-        # plt.savefig('bpfix_ref.pdf')
-        # plt.show()
-
-        # print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
-
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
             pass
@@ -751,43 +698,6 @@ class JWSTData(Data):
     def recenterlsq(self, shft, data):
         return 1./np.max(self.fourier_imshift(data, shft))
 
-    def fourier_imshift(self,
-                        image,
-                        shift):
-        """
-        From JWST stage 3 pipeline.
-
-        Parameters
-        ----------
-        image : array
-            A 2D image to be shifted.
-        shift : array
-            xshift, yshift.
-
-        Returns
-        -------
-        offset : array
-            Shifted image.
-        """
-        if image.ndim == 2:
-            shift = np.asanyarray(shift)[:2]
-            offset_image = fourier_shift(np.fft.fftn(image), shift[::-1])
-            offset = np.fft.ifftn(offset_image).real
-
-        elif image.ndim == 3:
-            nslices = image.shape[0]
-            shift = np.asanyarray(shift)[:, :2]
-            if shift.shape[0] != nslices:
-                raise ValueError('The number of provided shifts must be equal to the number of slices in the input image')
-
-            offset = np.empty_like(image, dtype=float)
-            for k in range(nslices):
-                offset[k] = self.fourier_imshift(image[k], shift[k])
-
-        else:
-            raise ValueError('Input image must be either a 2D or a 3D array')
-
-        return offset
 
     def shift_subtract(self,
                        pp,
