@@ -18,10 +18,14 @@ import matplotlib.pyplot as plt
 import time
 import copy 
 
+from spaceKLIP.psf import JWST_PSF
+
 import matplotlib
 matplotlib.rc('font', serif='DejaVu Sans')
 matplotlib.rcParams.update({'font.size': 14})
 import matplotlib.patheffects as PathEffects
+
+from webbpsf_ext.image_manip import frebin
 
 class JWSTData(Data):
     """
@@ -36,7 +40,8 @@ class JWSTData(Data):
     ####################
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
                      badpix_threshold=0.2, scishiftfile=False, refshiftfile=False,
-                     fiducial_point_override=False, blur=False):
+                     fiducial_point_override=False, blur=False,spectral_type=None,
+                     load_file0_center=False,save_center_file=False):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -61,8 +66,11 @@ class JWSTData(Data):
         self.fiducial_point_override = fiducial_point_override
         self.blur = blur
 
+        self.spectral_type = spectral_type
         # Get the target dataset
-        reference = self.readdata(filepaths, scishiftfile)
+        reference = self.readdata(filepaths, scishiftfile,
+                            load_file0_center=load_file0_center,
+                            save_center_file=save_center_file)
 
         # If necessary, get the PSF library dataset for RDI procedures
         if psflib_filepaths != None:
@@ -147,7 +155,8 @@ class JWSTData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, scishiftfile=False, verbose=False):
+    def readdata(self, filepaths, scishiftfile=False, verbose=False, 
+                load_file0_center=False, save_center_file=False):
         """
         Method to open and read JWST data.
 
@@ -208,21 +217,42 @@ class JWSTData(Data):
                     # to identify the absolute star location using the bright 
                     # leakage speckle. Only do this for the first image
                     if index == 0:
-                        s0 = 5
+
+                        ## Old Code by Aarynn Replaced by new code below
+                        # s0 = 5
                         # Blurring was messing up the image registration
                         # if self.blur != False:
                         #     cen_im = gaussian_filter(sci_data[0], self.blur)
                         # else:
-                        cen_im = sci_data[0].copy()
-                        tiny = cen_im[int(round(crp2))-s0:int(round(crp2))+s0+1, int(round(crp1))-s0:int(round(crp1))+s0+1]
-                        p0 = np.array([0., 0.])
-                        pp = minimize(self.recenterlsq, p0, args=(tiny))['x']
-                        test = self.fourier_imshift(tiny, pp)
-                        ymax, xmax = np.unravel_index(np.argmax(test), test.shape)
-                        # Shifts from CRPIX to the star pixel location
-                        shft0 = [pp[0]+crp1-int(round(crp1))+s0-xmax, pp[1]+crp2-int(round(crp2))+s0-ymax]
-                        crp1 -= shft0[0]
-                        crp2 -= shft0[1]
+                        # cen_im = sci_data[0].copy()
+                        # tiny = cen_im[int(round(crp2))-s0:int(round(crp2))+s0+1, int(round(crp1))-s0:int(round(crp1))+s0+1]
+                        # p0 = np.array([0., 0.])
+                        # pp = minimize(self.recenterlsq, p0, args=(tiny))['x']
+                        # test = self.fourier_imshift(tiny, pp)
+                        # ymax, xmax = np.unravel_index(np.argmax(test), test.shape)
+                        # # Shifts from CRPIX to the star pixel location
+                        # shft0 = [pp[0]+crp1-int(round(crp1))+s0-xmax, pp[1]+crp2-int(round(crp2))+s0-ymax]
+                        # crp1 -= shft0[0]
+                        # crp2 -= shft0[1]
+
+                        #Starting Guess. 
+                        self.nircam_centers = [crp1,crp2]
+                        print("Testing")
+                        print(load_file0_center)
+                        print(os.path.exists(save_center_file+'.npz'))
+                        if load_file0_center and os.path.exists(save_center_file+'.npz'):
+                            print("[spaceklip] Loading the star center in the first file from: {}".format(save_center_file+".npz"))
+                            saved_centers = np.load(save_center_file+'.npz')['center']
+                            crp1 = saved_centers[0]
+                            crp2 = saved_centers[1]
+                        else:
+                            crp1, crp2 = self.update_nircam_centers(sci_data[0].copy(),
+                                            filter_name = f[0].header['FILTER'], 
+                                            image_mask = f[0].header['CORONMSK'],
+                                            date = f[0].header['DATE-BEG'],
+                                            spectral_type = self.spectral_type,
+                                            save_center_file=save_center_file)
+
                         # Save centers
                         self.nircam_centers = [crp1, crp2]
 
@@ -991,6 +1021,86 @@ class JWSTData(Data):
             # import pdb; pdb.set_trace()
 
         return np.array(shifts), np.array(res_before), np.array(res_after)
+
+    def update_nircam_centers(self, 
+            data0, filter_name, image_mask,
+            osamp=2,date=None,use_coeff=False,spectral_type='G2V',mask_radius=10,
+            save_center_file=False):
+        """
+        A function that updates the nircam_centers by generating a PSF and getting its relative offset
+        compared to the data. 
+
+        It uses a mask to mask out the center pixels because of that leakage 
+        """
+        
+        #Clean the input data
+        data0[data0 != data0] = 0.
+        
+        import webbpsf_ext
+        spectrum = webbpsf_ext.stellar_spectrum(spectral_type)
+        
+        #Get the Current centers
+        crp1,crp2 = self.nircam_centers
+        
+        #TODO: Figure out how to best choose this. 
+        fov_pix = 320
+        
+        kwargs = {
+            'oversample': osamp,
+            'date': date,
+            'sp':spectrum,
+            'use_coeff':use_coeff,
+        }
+
+        if image_mask == "MASKA335R" or image_mask == "MASKB335R":
+            image_mask = "MASK335R"
+
+        instrument = "NIRCam"
+
+        print("[spaceklip] Generating a Webb PSF to help with the centering. This might take a minute or so. ")
+        #Generate the psfs
+        psf = JWST_PSF(instrument,filter_name,image_mask,fov_pix,**kwargs)
+
+        #The current center of this PSF is center of the array
+        xcen = fov_pix/2
+        ycen = fov_pix/2
+
+        #Let's shift the PSFs to the coronagraph centers
+        psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here. 
+        #Now grab the model and downsample back to where it should be: 
+        model_psf = frebin(psf.psf_on,scale=1/osamp)
+
+        #Make a msak to mask out the center bits
+        ys,xs = np.indices(data0.shape,dtype=float)
+        xs -= crp1
+        ys -= crp2
+        rs = np.sqrt(xs**2+ys**2)
+        mask = np.ones(data0.shape)
+        mask[rs<mask_radius] = 0
+
+        # This gets the shift of the model relative to the data. 
+        # The model is centered at nircam_centers
+        # So we just need to apply the shift to the nircam centers
+        shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
+        #shift is returned as [y,x]
+
+        print("[spaceklip] Calculated Shift between the coronagraph center and stellar location{}".format(shift))
+        #TODO: Need to confirm that this is the right sign to apply. 
+        crp1 += shift[1]
+        crp2 += shift[0]
+
+        psf._shift_psfs(shifts = [osamp*shift[1],osamp*shift[0]])
+        shifted_model_psf = frebin(psf.psf_on,scale=1/osamp)
+        shift_check, _, _ = phase_cross_correlation(data0*mask, shifted_model_psf*mask,upsample_factor=1000,normalization=None)
+        print("[spaceklip] Calculated Shift after applying previous shift{}".format(shift_check))
+
+        shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
+
+        # Save shifts if requested
+        if save_center_file != False:
+            np.savez(save_center_file, center=np.array([crp1,crp2]))
+
+        return crp1,crp2
 
     def savedata(self, filepath, data, klipparams=None, filetype='', zaxis=None, more_keywords=None):
         """
