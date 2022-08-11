@@ -725,7 +725,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
         elif algo.lower() == 'nmf':
             import pyklip.nmf_imaging as nmf_imaging
-            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs, componentNum=numbasis[0])
+            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis[0])
             klipped = klipped.reshape(klipped.shape[0], 1)
         elif algo.lower() == "none":
             klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis

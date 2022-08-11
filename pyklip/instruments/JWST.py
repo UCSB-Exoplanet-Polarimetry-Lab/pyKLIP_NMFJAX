@@ -237,9 +237,6 @@ class JWSTData(Data):
 
                         #Starting Guess. 
                         self.nircam_centers = [crp1,crp2]
-                        print("Testing")
-                        print(load_file0_center)
-                        print(os.path.exists(save_center_file+'.npz'))
                         if load_file0_center and os.path.exists(save_center_file+'.npz'):
                             print("[spaceklip] Loading the star center in the first file from: {}".format(save_center_file+".npz"))
                             saved_centers = np.load(save_center_file+'.npz')['center']
