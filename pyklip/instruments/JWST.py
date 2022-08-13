@@ -1126,6 +1126,8 @@ def trim_miri_data(data, filt):
         l,r,b,t = 13, 226, 8, 215
     elif filt.lower() == 'f2300c':
         l,r,b,t = 9, 277, 32, 299
+    else:
+        raise ValueError(f'Filter {filt} does not match one of [F1065C, F1140C, F1550C, F2300C]')
 
     # Copy data and trim accordingly
     data_trim = copy.copy(data)
