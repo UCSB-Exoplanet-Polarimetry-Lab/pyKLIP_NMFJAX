@@ -210,8 +210,9 @@ class JWSTData(Data):
 
                 # NIRCam specifics
                 if inst == 'NIRCAM':
-                    crp1 = f['SCI'].header['CRPIX1']-1
-                    crp2 = f['SCI'].header['CRPIX2']-1
+                    crp1 = f['SCI'].header['CRPIX1']-1-0.2
+                    crp2 = f['SCI'].header['CRPIX2']-1+0.2
+                    print('WARNING: Modifying NIRCam centers by (-0.2,+0.2)')
                     
                     # Use the central 11x11 pixels (based on coronagraph center CRPIX)
                     # to identify the absolute star location using the bright 
@@ -313,36 +314,6 @@ class JWSTData(Data):
         pas = np.array(pas).flatten()
         wvs = np.array(wvs).flatten()
 
-        # Fix bad pixels, reject frames with more than 1% bad pixels
-        # frac = np.sum(pxdq != 0, axis=(1, 2))/np.prod(pxdq.shape[1:])
-
-        # good = frac <= self.badpix_threshold
-        # data = data[good]
-        # pxdq = pxdq[good]
-        # centers = centers[good]
-        # filenames = filenames[good]
-        # filenums = filenums[good]
-        # pas = pas[good]
-        # wvs = wvs[good]
-        # data = self.fix_bad_pixels(data, pxdq)
-
-        # f = plt.figure()
-        # ax = plt.gca()
-        # ax.plot(frac*100)
-        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
-        # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
-        # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
-        # ax.set_ylim([0., 100.])
-        # ax.set_xlabel('Image index')
-        # ax.set_ylabel('Bad pixel fraction [%]')
-        # plt.legend(loc='upper right')
-        # plt.title('Science image rejection')
-        # plt.tight_layout()
-        # plt.savefig('bpfix_sci.pdf')
-        # plt.show()
-
-        #print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
-
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
             reference = data[0].copy() # align to first science image
@@ -359,8 +330,6 @@ class JWSTData(Data):
                 tr = 10
                 data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
 
-                #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
-
             # from matplotlib.colors import LogNorm
             # plt.imshow(data_medsub[0], norm=LogNorm())
             # plt.show()
@@ -370,12 +339,6 @@ class JWSTData(Data):
 
             tstart = time.time()
             if self.centering == 'jwstpipe':
-                # Blurring was messing up the iamge registration
-                # if self.blur != False:
-                #     # Need to blur the images before image registration
-                #     ref_shifts = gaussian_filter(reference, self.blur)
-                #     msub_shifts = np.array([gaussian_filter(img, self.blur) for img in data_medsub])
-                # else:
                 ref_shifts = reference
                 msub_shifts = data_medsub
                 shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts[1:])
@@ -433,6 +396,10 @@ class JWSTData(Data):
             #     ww = pas[1:] == temp[i] # Get locations of each PA 
             #     shifts_pa = shifts[ww]
             #     shifts[ww] = np.median(shifts_pa, axis=0)
+            
+            # Shifts are calculated as the shift of the image to match 
+            # the reference, therefore we *subtract* to get the correct
+            # center relative to the reference. 
             centers[1:] -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
@@ -574,33 +541,6 @@ class JWSTData(Data):
         psflib_centers = np.concatenate(psflib_centers).reshape(-1, 2)
         psflib_filenames = np.array(psflib_filenames)
 
-        # Fix bad pixels, reject frames with more than 1% bad pixels
-        # frac = np.sum(psflib_pxdq != 0, axis=(1, 2))/np.prod(psflib_pxdq.shape[1:])
-        # good = frac <= self.badpix_threshold
-        # psflib_data = psflib_data[good]
-        # psflib_pxdq = psflib_pxdq[good]
-        # psflib_offsets = psflib_offsets[good]
-        # psflib_centers = psflib_centers[good]
-        # psflib_filenames = psflib_filenames[good]
-        # psflib_data = self.fix_bad_pixels(psflib_data, psflib_pxdq)
-
-        # f = plt.figure()
-        # ax = plt.gca()
-        # ax.plot(frac*100)
-        # ax.axhline(self.badpix_threshold*100, color='red', label='threshold = %.0f%%' % (self.badpix_threshold*100.))
-        # tt = ax.text(0.01, 0.99, 'Rejected %.0f of %.0f images' % (len(good)-np.sum(good), len(good)), ha='left', va='top', color='black', transform=ax.transAxes, size=12)
-        # tt.set_path_effects([PathEffects.withStroke(linewidth=3, foreground='white')])
-        # ax.set_ylim([0., 100.])
-        # ax.set_xlabel('Image index')
-        # ax.set_ylabel('Bad pixel fraction [%]')
-        # plt.legend(loc='upper right')
-        # plt.title('Reference image rejection')
-        # plt.tight_layout()
-        # plt.savefig('bpfix_ref.pdf')
-        # plt.show()
-
-        # print('--> Rejected %.0f of %.0f images due to too many bad pixels (threshold = %.0f%%)' % (len(good)-np.sum(good), len(good), self.badpix_threshold*100.))
-
         # Get image centers based on desired algorithm
         if self.centering == 'basic':
             pass
@@ -687,8 +627,11 @@ class JWSTData(Data):
             # for i in range(len(temp)):
             #     ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
             #     shifts_dp = shifts[ww]
-            #     shifts[ww] = np.median(shifts_dp, axis=0)
+            #     shifts[ww] =  np.median(shifts_dp, axis=0)
 
+            # Shifts are calculated as the shift of the image to match 
+            # the reference, therefore we *subtract* to get the correct
+            # center relative to the reference. 
             psflib_centers -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
@@ -1035,9 +978,17 @@ class JWSTData(Data):
         
         import webbpsf_ext
         spectrum = webbpsf_ext.stellar_spectrum(spectral_type)
-        
+
         #Get the Current centers
         crp1,crp2 = self.nircam_centers
+
+        #Make a msak to mask out the center bits
+        ys,xs = np.indices(data0.shape,dtype=float)
+        xs -= crp1
+        ys -= crp2
+        rs = np.sqrt(xs**2+ys**2)
+        mask = np.ones(data0.shape)
+        mask[rs<mask_radius] = 0
         
         #TODO: Figure out how to best choose this. 
         fov_pix = 320
@@ -1059,21 +1010,14 @@ class JWSTData(Data):
         psf = JWST_PSF(instrument,filter_name,image_mask,fov_pix,**kwargs)
 
         #The current center of this PSF is center of the array
-        xcen = fov_pix/2
-        ycen = fov_pix/2
+        #Need to subtract 0.5, 0.5 offset
+        xcen = fov_pix/2 - 0.5
+        ycen = fov_pix/2 - 0.5 
 
         #Let's shift the PSFs to the coronagraph centers
         psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here. 
         #Now grab the model and downsample back to where it should be: 
         model_psf = frebin(psf.psf_on,scale=1/osamp)
-
-        #Make a msak to mask out the center bits
-        ys,xs = np.indices(data0.shape,dtype=float)
-        xs -= crp1
-        ys -= crp2
-        rs = np.sqrt(xs**2+ys**2)
-        mask = np.ones(data0.shape)
-        mask[rs<mask_radius] = 0
 
         # This gets the shift of the model relative to the data. 
         # The model is centered at nircam_centers
@@ -1083,6 +1027,8 @@ class JWSTData(Data):
 
         print("Calculated Shift between the coronagraph center and stellar location {}".format(shift))
         #TODO: Need to confirm that this is the right sign to apply. 
+        # Shift is calculated as the shift of a perfectly on-axis model PSF 
+        # to match the true PSF, so want to *add* the shifts to the initial model center
         crp1 += shift[1]
         crp2 += shift[0]
 
