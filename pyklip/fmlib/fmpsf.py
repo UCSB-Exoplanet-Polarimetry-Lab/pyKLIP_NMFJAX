@@ -21,7 +21,7 @@ class FMPlanetPSF(NoFM):
     def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, 
                  spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None, input_psfs_pas=None):
         """
-        Defining the planet to characterizae
+        Defining the planet to characterize
 
         Args:
             inputs_shape: shape of the inputs numpy array. Typically (N, y, x)
@@ -173,7 +173,7 @@ class FMPlanetPSF(NoFM):
         return perturbmag, perturbmag_shape
 
 
-    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, rdi_indices, mask_centers):
+    def generate_models(self, input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, rdi_indices):
         """
         Generate model PSFs at the correct location of this segment for each image denoated by its wv and parallactic angle
 
@@ -190,7 +190,6 @@ class FMPlanetPSF(NoFM):
             ref_wv: wavelength of science image
             flipx: if True, flip x coordinate in final image
             rdi_indices: array of N corresponding to whether it is (1) or isn't (0) an RDI frame
-            mask_centers: array of (N, 2) mask center locations
 
         Return:
             models: array of size (N, p) where p is the number of pixels in the segment
@@ -215,7 +214,7 @@ class FMPlanetPSF(NoFM):
             canvases = []
         models = []
 
-        for pa, wv, mask_cen, is_rdi in zip(pas, wvs, mask_centers, rdi_indices):
+        for pa, wv, is_rdi in zip(pas, wvs, rdi_indices):
             # if RDI, generate a blank canvas since we assume there is no astrophysical signal in the RDI frames
             if is_rdi:
                 models.append(np.zeros(np.size(section_ind)))
@@ -273,9 +272,8 @@ class FMPlanetPSF(NoFM):
             if self.field_dependent_correction is not None:
 
                 # find distance from center in x and y dimensions
-                # define coordinates to be relative to coronagraph mask center, not star center
-                dx = x_grid[stamp_len, stamp_width] + (mask_cen[0] - ref_center[0])
-                dy = y_grid[stamp_len, stamp_width] + (mask_cen[1] - ref_center[1])
+                dx = x_grid[stamp_len, stamp_width]
+                dy = y_grid[stamp_len, stamp_width]
                 whiteboard[stamp_len, stamp_width] = \
                         self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy)
     
@@ -302,7 +300,7 @@ class FMPlanetPSF(NoFM):
     def fm_from_eigen(self, klmodes=None, evals=None, evecs=None, input_img_shape=None, input_img_num=None, ref_psfs_indicies=None, section_ind=None, aligned_imgs=None, pas=None,
                      wvs=None, radstart=None, radend=None, phistart=None, phiend=None, padding=None,IOWA = None, ref_center=None,
                      parang=None, ref_wv=None, numbasis=None, fmout=None, perturbmag=None, klipped=None, covar_files=None, flipx=True, 
-                     rdi_psfs=None, mask_centers=None, **kwargs):
+                     rdi_psfs=None, **kwargs):
         """
         Generate forward models using the KL modes, eigenvectors, and eigenvectors from KLIP. Calls fm.py functions to
         perform the forward modelling
@@ -341,7 +339,6 @@ class FMPlanetPSF(NoFM):
         refs = aligned_imgs[ref_psfs_indicies, :]
         refs = refs[:, section_ind[0]]
         ref_rdi_indices = np.zeros(np.size(ref_psfs_indicies)) # only used to track RDI frames. 1 if RDI. 
-        mask_centers_ref = mask_centers[ref_psfs_indicies]
 
         # handle the RDI case
         if rdi_psfs is not None:
@@ -350,15 +347,14 @@ class FMPlanetPSF(NoFM):
             pas = np.append(pas, np.nan * np.ones(rdi_psfs.shape[0]))
             wvs = np.append(wvs, np.nan * np.ones(rdi_psfs.shape[0]))
             ref_rdi_indices = np.append(ref_rdi_indices, np.ones(rdi_psfs.shape[0]))
-            mask_centers_ref = np.append(mask_centers_ref, np.nan * np.ones(rdi_psfs.shape[0], 2), axis=0)
 
 
         # generate models for the PSF of the science image
-        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, [0], [mask_centers[input_img_num]])[0]
+        model_sci = self.generate_models(input_img_shape, section_ind, [parang], [ref_wv], radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, [0])[0]
         model_sci *= self.flux_conversion[input_img_num] * self.spectrallib[0][np.where(self.input_psfs_wvs == ref_wv)] * self.dflux
 
         # generate models of the PSF for each reference segments. Output is of shape (N, pix_in_segment)
-        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, ref_rdi_indices, mask_centers_ref)
+        models_ref = self.generate_models(input_img_shape, section_ind, pas, wvs, radstart, radend, phistart, phiend, padding, ref_center, parang, ref_wv, flipx, ref_rdi_indices)
 
         # Calculate the spectra to determine the flux of each model reference PSF
         total_imgs = np.size(self.flux_conversion)
