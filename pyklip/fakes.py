@@ -651,7 +651,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
 
     #mask bad pixels
     fitbox[np.where(np.isnan(fitbox))] = 0
- 
+
     #fit a least squares gaussian to refine the fit on the source, otherwise just use the guess
     if refinefit:
         #construct the residual to the fit

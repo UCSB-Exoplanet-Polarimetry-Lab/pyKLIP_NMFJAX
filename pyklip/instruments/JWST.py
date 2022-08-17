@@ -13,7 +13,7 @@ from scipy.optimize import leastsq, minimize
 from skimage.registration import phase_cross_correlation
 
 import numpy as np
-import os, shutil
+import os, shutil, re
 import matplotlib.pyplot as plt
 import time
 import copy 
@@ -1113,8 +1113,9 @@ class JWSTData(Data):
         hdulist[0].header['pyklipv'] = (pyklipver, 'pyKLIP version that was used')
 
         if klipparams is not None:
-            hdulist[0].header['PSFPARAM'] = (klipparams, 'KLIP parameters')
-            hdulist[0].header.add_history('pyKLIP reduction with parameters {0}'.format(klipparams))
+            klipparams_clean = klipparams.replace('\n', '')# Get rid of Non-ascii characters that sometimes sneak in. 
+            hdulist[0].header['PSFPARAM'] = (klipparams_clean, 'KLIP parameters')
+            hdulist[0].header.add_history('pyKLIP reduction with parameters {0}'.format(klipparams_clean))
 
         # Write z axis units if necessary
         if zaxis is not None:
