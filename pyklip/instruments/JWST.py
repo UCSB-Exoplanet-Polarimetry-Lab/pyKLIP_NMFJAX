@@ -378,6 +378,9 @@ class JWSTData(Data):
             xlim = ax[1].get_xlim()
             temp = xlim[1]-xlim[0]
             ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ylim = ax[1].get_ylim()
+            temp = ylim[1]-ylim[0]
+            ax[1].set_ylim([ylim[0]-0.15*temp, ylim[1]+0.15*temp])
             ax[1].grid(axis='both')
             ax[1].set_xlabel('Image x-shift [mas]')
             ax[1].set_ylabel('Image y-shift [mas]')
@@ -610,6 +613,9 @@ class JWSTData(Data):
             xlim = ax[1].get_xlim()
             temp = xlim[1]-xlim[0]
             ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ylim = ax[1].get_ylim()
+            temp = ylim[1]-ylim[0]
+            ax[1].set_ylim([ylim[0]-0.15*temp, ylim[1]+0.15*temp])
             ax[1].grid(axis='both')
             ax[1].set_xlabel('Image x-shift [mas]')
             ax[1].set_ylabel('Image y-shift [mas]')
