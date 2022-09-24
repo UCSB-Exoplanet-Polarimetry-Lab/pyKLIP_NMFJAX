@@ -556,7 +556,7 @@ class JWSTData(Data):
             elif inst == 'NIRCAM':
                 _, nx, ny = data_medsub.shape
                 print('''WARNING: Are you using the NIRCam 335R mask? If not you should look at 
-                    how image registrationis being done in the JWST.py file of pyKLIP''')
+                    how image registration is being done in the JWST.py file of pyKLIP''')
                 #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
                 tr = 10
                 data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
