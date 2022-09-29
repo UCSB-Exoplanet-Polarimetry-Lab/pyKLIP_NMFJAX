@@ -358,35 +358,38 @@ class JWSTData(Data):
 
             tend = time.time()
 
-            # f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
-            # ax[0].plot(res_before, label='before align')
-            # ax[0].plot(res_after, label='after align')
-            # ax[0].grid(axis='y')
-            # ax[0].set_xlabel('Image index')
-            # ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
-            # ax[0].legend(loc='upper center')
-            # ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # temp = np.unique(pas[1:])
-            # medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
-            # for i in range(len(temp)):
-            #     ww = pas[1:] == temp[i]
-            #     shifts_pa = shifts[ww]
-            #     shifts_med = np.median(shifts_pa, axis=0)
-            #     ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
-            #     ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., label='PA = %.0f deg' % temp[i])
-            # ax[1].axis('square')
-            # xlim = ax[1].get_xlim()
-            # temp = xlim[1]-xlim[0]
-            # ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
-            # ax[1].grid(axis='both')
-            # ax[1].set_xlabel('Image x-shift [mas]')
-            # ax[1].set_ylabel('Image y-shift [mas]')
-            # ax[1].legend(loc='center right')
-            # ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # plt.suptitle('Science image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
-            # plt.tight_layout()
-            # plt.savefig(scishiftfile+'.pdf')
-            # plt.clf()
+            f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
+            ax[0].plot(res_before, label='before align')
+            ax[0].plot(res_after, label='after align')
+            ax[0].grid(axis='y')
+            ax[0].set_xlabel('Image index')
+            ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
+            ax[0].legend(loc='upper center')
+            ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            temp = np.unique(pas[1:])
+            medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+            for i in range(len(temp)):
+                ww = pas[1:] == temp[i]
+                shifts_pa = shifts[ww]
+                shifts_med = np.median(shifts_pa, axis=0)
+                ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
+                ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., label='PA = %.0f deg' % temp[i])
+            ax[1].axis('square')
+            xlim = ax[1].get_xlim()
+            temp = xlim[1]-xlim[0]
+            ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ylim = ax[1].get_ylim()
+            temp = ylim[1]-ylim[0]
+            ax[1].set_ylim([ylim[0]-0.15*temp, ylim[1]+0.15*temp])
+            ax[1].grid(axis='both')
+            ax[1].set_xlabel('Image x-shift [mas]')
+            ax[1].set_ylabel('Image y-shift [mas]')
+            ax[1].legend(loc='center right')
+            ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            plt.suptitle('Science image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
+            plt.tight_layout()
+            plt.savefig(scishiftfile+'.pdf')
+            plt.clf()
             # plt.savefig(centering+'_sci_bad.pdf')
             #plt.show()
 
@@ -559,7 +562,7 @@ class JWSTData(Data):
             elif inst == 'NIRCAM':
                 _, nx, ny = data_medsub.shape
                 print('''WARNING: Are you using the NIRCam 335R mask? If not you should look at 
-                    how image registrationis being done in the JWST.py file of pyKLIP''')
+                    how image registration is being done in the JWST.py file of pyKLIP''')
                 #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
                 tr = 10
                 data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
@@ -590,38 +593,42 @@ class JWSTData(Data):
 
             tend = time.time()
 
-            # f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
-            # colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-            # ax[0].plot(res_before, label='before align')
-            # ax[0].plot(res_after, label='after align')
-            # ax[0].grid(axis='y')
-            # ax[0].set_xlabel('Image index')
-            # ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
-            # ax[0].legend(loc='upper center')
-            # ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # temp = np.unique(psflib_offsets, axis=0)
-            # medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
-            # for i in range(temp.shape[0]):
-            #     ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
-            #     shifts_dp = shifts[ww]
-            #     shifts_med = np.median(shifts_dp, axis=0)
-            #     ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
-            #     ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., c=colors[i], label='dpos %.0f' % (i+1))
-            #     #ax[1].plot([-temp[i, 0]*pixel_scale*1000., -temp[i, 0]*pixel_scale*1000.], [-temp[i, 1]*pixel_scale*1000.-5., -temp[i, 1]*pixel_scale*1000.+5.], color=colors[i])
-            #     #ax[1].plot([-temp[i, 0]*pixel_scale*1000.-5., -temp[i, 0]*pixel_scale*1000.+5.], [-temp[i, 1]*pixel_scale*1000., -temp[i, 1]*pixel_scale*1000.], color=colors[i])
-            # ax[1].axis('square')
-            # xlim = ax[1].get_xlim()
-            # temp = xlim[1]-xlim[0]
-            # ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
-            # ax[1].grid(axis='both')
-            # ax[1].set_xlabel('Image x-shift [mas]')
-            # ax[1].set_ylabel('Image y-shift [mas]')
-            # ax[1].legend(loc='center right')
-            # ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
-            # plt.suptitle('Reference image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
-            # plt.tight_layout()
-            # plt.savefig(refshiftfile+'.pdf')
-            # plt.clf()
+            f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
+            colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            ax[0].plot(res_before, label='before align')
+            ax[0].plot(res_after, label='after align')
+            ax[0].grid(axis='y')
+            ax[0].set_xlabel('Image index')
+            ax[0].set_ylabel(r'$\Sigma$(residual${}^2$)')
+            ax[0].legend(loc='upper center')
+            ax[0].set_title('Residual reference-image', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            temp = np.unique(psflib_offsets, axis=0)
+            medcols = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+            for i in range(temp.shape[0]):
+                ww = np.where((psflib_offsets == temp[i]).all(axis=1))[0]
+                shifts_dp = shifts[ww]
+                shifts_med = np.median(shifts_dp, axis=0)
+                ax[1].scatter(shifts_med[0]*pixel_scale*1000., shifts_med[1]*pixel_scale*1000, marker='o', color=medcols[i], edgecolor='k', zorder=99)
+                ax[1].scatter(shifts[ww, 0]*pixel_scale*1000., shifts[ww, 1]*pixel_scale*1000., c=colors[i], label='dpos %.0f' % (i+1))
+                #ax[1].plot([-temp[i, 0]*pixel_scale*1000., -temp[i, 0]*pixel_scale*1000.], [-temp[i, 1]*pixel_scale*1000.-5., -temp[i, 1]*pixel_scale*1000.+5.], color=colors[i])
+                #ax[1].plot([-temp[i, 0]*pixel_scale*1000.-5., -temp[i, 0]*pixel_scale*1000.+5.], [-temp[i, 1]*pixel_scale*1000., -temp[i, 1]*pixel_scale*1000.], color=colors[i])
+            ax[1].axis('square')
+            xlim = ax[1].get_xlim()
+            temp = xlim[1]-xlim[0]
+            ax[1].set_xlim([xlim[0]-0.35*temp, xlim[1]+0.35*temp])
+            ylim = ax[1].get_ylim()
+            temp = ylim[1]-ylim[0]
+            ax[1].set_ylim([ylim[0]-0.15*temp, ylim[1]+0.15*temp])
+            ax[1].grid(axis='both')
+            ax[1].set_xlabel('Image x-shift [mas]')
+            ax[1].set_ylabel('Image y-shift [mas]')
+            ax[1].legend(loc='center right')
+            ax[1].set_title('Image shifts', y=1., pad=10, bbox=dict(facecolor='white', edgecolor='lightgrey', boxstyle='round'))
+            plt.suptitle('Reference image alignment -- '+self.centering+' method (%.0f s runtime)' % (tend-tstart))
+            plt.tight_layout()
+            plt.savefig(refshiftfile+'.pdf')
+            plt.clf()
+>>>>>>> 81a95c659f9faa54a08dfde4faaf78b1a6165cf0
             # plt.savefig(centering+'_ref_bad.pdf')
             #plt.show()
 
