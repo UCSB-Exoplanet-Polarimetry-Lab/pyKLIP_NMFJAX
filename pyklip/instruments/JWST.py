@@ -225,24 +225,6 @@ class JWSTData(Data):
                     # to identify the absolute star location using the bright 
                     # leakage speckle. Only do this for the first image
                     if index == 0:
-
-                        ## Old Code by Aarynn Replaced by new code below
-                        # s0 = 5
-                        # Blurring was messing up the image registration
-                        # if self.blur != False:
-                        #     cen_im = gaussian_filter(sci_data[0], self.blur)
-                        # else:
-                        # cen_im = sci_data[0].copy()
-                        # tiny = cen_im[int(round(crp2))-s0:int(round(crp2))+s0+1, int(round(crp1))-s0:int(round(crp1))+s0+1]
-                        # p0 = np.array([0., 0.])
-                        # pp = minimize(self.recenterlsq, p0, args=(tiny))['x']
-                        # test = self.fourier_imshift(tiny, pp)
-                        # ymax, xmax = np.unravel_index(np.argmax(test), test.shape)
-                        # # Shifts from CRPIX to the star pixel location
-                        # shft0 = [pp[0]+crp1-int(round(crp1))+s0-xmax, pp[1]+crp2-int(round(crp2))+s0-ymax]
-                        # crp1 -= shft0[0]
-                        # crp2 -= shft0[1]
-
                         #Starting Guess. 
                         self.nircam_centers = [crp1,crp2]
                         if load_file0_center and os.path.exists(save_center_file+'.npz'):
@@ -306,7 +288,9 @@ class JWSTData(Data):
                 filenames += ['{}_INT{}'.format(file.split('/')[-1], i+1) for i in range(nints)]
 
                 # Get PA for all frame withing the file
-                pas.append([f['SCI'].header['ROLL_REF']]*nints)
+                roll_ref = f['SCI'].header['ROLL_REF']
+                roll_ref += f['SCI'].header['V3I_YANG']
+                pas.append([roll_ref]*nints)
 
                 # Get the filter wavelength, should be the same for each file
                 # though (for JWST)
@@ -318,7 +302,6 @@ class JWSTData(Data):
                 wcs_hdr = wcs.WCS(header=f['SCI'].header, naxis=f['SCI'].header['WCSAXES'])
                 for i in range(nints):
                     wcs_hdrs.append(wcs_hdr.deepcopy())
-
 
         # Convert to numpy arrays and collapse integrations along a single axis
         data = np.concatenate(data)
@@ -332,7 +315,7 @@ class JWSTData(Data):
         wvs = np.array(wvs).flatten()
 
         # Get image centers based on desired algorithm
-        if self.centering == 'basic':
+        if self.centering == 'basic' or self.centering == 'zero':
             reference = data[0].copy() # align to first science image
         else:
             # Need to subtract residual background so that image registration
@@ -420,12 +403,10 @@ class JWSTData(Data):
             centers[1:] -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
-        
         if inst == 'MIRI':
-            image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.
+            image_center = np.array([data[0].shape[1]-1, data[0].shape[0]-1])/2.
         elif inst == 'NIRCAM':
-            image_center = np.array([data[0].shape[1], data[0].shape[0]])/2.
-        #image_center = centers[0]
+            image_center = np.array([data[0].shape[1]-1, data[0].shape[0]-1])/2.
         for i, image in enumerate(data):
             if self.blur != False:
                 # Blur if requested *before* align_and_scale
@@ -537,6 +518,7 @@ class JWSTData(Data):
                 # plt.imshow(sci_data[0], norm=LogNorm())
                 # plt.scatter(center[0], center[1], c='r')
                 # plt.show()
+                # exit()
 
                 # Get the known offset between images
                 if inst == 'NIRCAM':
@@ -547,6 +529,8 @@ class JWSTData(Data):
                 psflib_offsets.append(offset.tolist()*nints)
                 if self.centering == 'basic':
                     psflib_centers.append([sum(x) for x in zip(center, offset)]*nints)
+                elif self.centering == 'zero':
+                    psflib_centers.append([sum(x) for x in zip(center, [0., 0.])]*nints) # Wont be shifted
                 else:
                     psflib_centers.append([sum(x) for x in zip(center, [0., 0.])]*nints) # dither will be detected using image registration
 
@@ -561,7 +545,7 @@ class JWSTData(Data):
         psflib_filenames = np.array(psflib_filenames)
 
         # Get image centers based on desired algorithm
-        if self.centering == 'basic':
+        if self.centering == 'basic' or self.centering =='zero':
             pass
         else:
             if reference is None:
@@ -655,9 +639,9 @@ class JWSTData(Data):
 
         # Need to align the images so that they have the same centers
         if inst == 'MIRI':
-            image_center = np.array([psflib_data[0].shape[1], psflib_data[0].shape[0]])/2.
+            image_center = np.array([psflib_data[0].shape[1]-1, psflib_data[0].shape[0]-1])/2.
         elif inst == 'NIRCAM':
-            image_center = np.array([psflib_data[0].shape[1], psflib_data[0].shape[0]])/2.
+            image_center = np.array([psflib_data[0].shape[1]-1, psflib_data[0].shape[0]-1])/2.
         #image_center = center
         for i, image in enumerate(psflib_data):
             if self.blur != False:

@@ -257,7 +257,6 @@ class FMPlanetPSF(NoFM):
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
-
             # use intepolation spline to generate a model PSF of planet and write to temp img
             if not self.psfs_in_time:
                 # just grab the right wavelength
@@ -269,14 +268,27 @@ class FMPlanetPSF(NoFM):
                     psf_func(x_vec_stamp_centered,y_vec_stamp_centered).transpose()
             
             # if specified, make field dependent PSF correction
+            # import matplotlib.pyplot as plt
+            # fig, axs = plt.subplots(nrows=1, ncols=2)
+            # axs[0].imshow(whiteboard)
+            # print(self.sep * np.cos(np.radians(90. - sign*self.pa - pa)))
+            # print(self.sep * np.sin(np.radians(90. - sign*self.pa - pa)))
+            # print(90. - sign*self.pa - pa)
+            # print(pa)
+            # print(self.pa)
+            # print('----')
+            # exit()
             if self.field_dependent_correction is not None:
-
                 # find distance from center in x and y dimensions
                 dx = x_grid[stamp_len, stamp_width]
                 dy = y_grid[stamp_len, stamp_width]
+                minx = min(x_vec_stamp_centered, key=abs) 
+                miny = min(y_vec_stamp_centered, key=abs)
                 whiteboard[stamp_len, stamp_width] = \
-                        self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy)
-    
+                        self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy, minx=minx, miny=miny)
+            # axs[1].imshow(whiteboard)
+            # plt.show()
+            # exit()
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
             segment_with_model = copy(whiteboard[section_ind])
