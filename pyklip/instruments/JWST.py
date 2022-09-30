@@ -628,7 +628,6 @@ class JWSTData(Data):
             plt.tight_layout()
             plt.savefig(refshiftfile+'.pdf')
             plt.clf()
->>>>>>> 81a95c659f9faa54a08dfde4faaf78b1a6165cf0
             # plt.savefig(centering+'_ref_bad.pdf')
             #plt.show()
 
