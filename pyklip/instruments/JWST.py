@@ -16,7 +16,7 @@ import numpy as np
 import os, shutil, re
 import matplotlib.pyplot as plt
 import time
-import copy 
+import copy
 import warnings
 
 from spaceKLIP.psf import JWST_PSF
@@ -161,7 +161,7 @@ class JWSTData(Data):
     ### Methods ###
     ###############
 
-    def readdata(self, filepaths, scishiftfile=False, verbose=False, 
+    def readdata(self, filepaths, scishiftfile=False, verbose=False,
                 load_file0_center=False, save_center_file=False):
         """
         Method to open and read JWST data.
@@ -220,12 +220,12 @@ class JWSTData(Data):
                     crp1 = f['SCI'].header['CRPIX1']-1-0.2
                     crp2 = f['SCI'].header['CRPIX2']-1+0.2
                     print('WARNING: Modifying NIRCam centers by (-0.2,+0.2)')
-                    
+
                     # Use the central 11x11 pixels (based on coronagraph center CRPIX)
-                    # to identify the absolute star location using the bright 
+                    # to identify the absolute star location using the bright
                     # leakage speckle. Only do this for the first image
                     if index == 0:
-                        #Starting Guess. 
+                        #Starting Guess.
                         self.nircam_centers = [crp1,crp2]
                         if load_file0_center and os.path.exists(save_center_file+'.npz'):
                             print("Loading the star center in the first file from: {}".format(save_center_file+".npz"))
@@ -234,7 +234,7 @@ class JWSTData(Data):
                             crp2 = saved_centers[1]
                         else:
                             crp1, crp2 = self.update_nircam_centers(sci_data[0].copy(),
-                                            filter_name = f[0].header['FILTER'], 
+                                            filter_name = f[0].header['FILTER'],
                                             image_mask = f[0].header['CORONMSK'],
                                             date = f[0].header['DATE-BEG'],
                                             spectral_type = self.spectral_type,
@@ -335,7 +335,7 @@ class JWSTData(Data):
             # plt.show()
             # exit()
 
-            reference = data_medsub[0].copy() # align to first science image 
+            reference = data_medsub[0].copy() # align to first science image
 
             tstart = time.time()
             if self.centering == 'jwstpipe':
@@ -396,13 +396,13 @@ class JWSTData(Data):
             # # Let's median the shifts
             # temp = np.unique(pas[1:]) # Get unique PAs
             # for i in range(len(temp)):
-            #     ww = pas[1:] == temp[i] # Get locations of each PA 
+            #     ww = pas[1:] == temp[i] # Get locations of each PA
             #     shifts_pa = shifts[ww]
             #     shifts[ww] = np.median(shifts_pa, axis=0)
-            
-            # Shifts are calculated as the shift of the image to match 
+
+            # Shifts are calculated as the shift of the image to match
             # the reference, therefore we *subtract* to get the correct
-            # center relative to the reference. 
+            # center relative to the reference.
             centers[1:] -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
@@ -561,7 +561,7 @@ class JWSTData(Data):
                 data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             elif inst == 'NIRCAM':
                 _, nx, ny = data_medsub.shape
-                print('''WARNING: Are you using the NIRCam 335R mask? If not you should look at 
+                print('''WARNING: Are you using the NIRCam 335R mask? If not you should look at
                     how image registration is being done in the JWST.py file of pyKLIP''')
                 #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
                 tr = 10
@@ -638,9 +638,9 @@ class JWSTData(Data):
             #     shifts_dp = shifts[ww]
             #     shifts[ww] =  np.median(shifts_dp, axis=0)
 
-            # Shifts are calculated as the shift of the image to match 
+            # Shifts are calculated as the shift of the image to match
             # the reference, therefore we *subtract* to get the correct
-            # center relative to the reference. 
+            # center relative to the reference.
             psflib_centers -= shifts[:, :2]
 
         # Need to align the images so that they have the same centers
@@ -675,7 +675,7 @@ class JWSTData(Data):
                        pxdq):
         """
         Fix bad pixels using a median filter.
-        
+
         Parameters
         ----------
         data : array
@@ -971,20 +971,20 @@ class JWSTData(Data):
 
         return np.array(shifts), np.array(res_before), np.array(res_after)
 
-    def update_nircam_centers(self, 
+    def update_nircam_centers(self,
             data0, filter_name, image_mask,
             osamp=2,date=None,use_coeff=False,spectral_type='G2V',mask_radius=10,
             save_center_file=False):
         """
         A function that updates the nircam_centers by generating a PSF and getting its relative offset
-        compared to the data. 
+        compared to the data.
 
-        It uses a mask to mask out the center pixels because of that leakage 
+        It uses a mask to mask out the center pixels because of that leakage
         """
-        
+
         #Clean the input data
         data0[data0 != data0] = 0.
-        
+
         import webbpsf_ext
         spectrum = webbpsf_ext.stellar_spectrum(spectral_type)
 
@@ -998,10 +998,10 @@ class JWSTData(Data):
         rs = np.sqrt(xs**2+ys**2)
         mask = np.ones(data0.shape)
         mask[rs<mask_radius] = 0
-        
-        #TODO: Figure out how to best choose this. 
+
+        #TODO: Figure out how to best choose this.
         fov_pix = 320
-        
+
         kwargs = {
             'oversample': osamp,
             'date': date,
@@ -1105,7 +1105,7 @@ class JWSTData(Data):
         hdulist[0].header['pyklipv'] = (pyklipver, 'pyKLIP version that was used')
 
         if klipparams is not None:
-            klipparams_clean = klipparams.replace('\n', '')# Get rid of Non-ascii characters that sometimes sneak in. 
+            klipparams_clean = klipparams.replace('\n', '')# Get rid of Non-ascii characters that sometimes sneak in.
             hdulist[0].header['PSFPARAM'] = (klipparams_clean, 'KLIP parameters')
             hdulist[0].header.add_history('pyKLIP reduction with parameters {0}'.format(klipparams_clean))
 
@@ -1147,8 +1147,8 @@ class JWSTData(Data):
 
 def trim_miri_data(data, filt):
     '''
-    Trim the MIRI data to remove regions that receive no illumination. 
-    
+    Trim the MIRI data to remove regions that receive no illumination.
+
     Parameters
     ----------
     data : list of datacubes
@@ -1165,7 +1165,7 @@ def trim_miri_data(data, filt):
     '''
 
     # Pixel values to trim around based on filter/mask, these were determined using
-    # the MIRI psfmask files found on CRDS. 
+    # the MIRI psfmask files found on CRDS.
     if filt.lower() == 'f1065c':
         l,r,b,t = 14, 227, 5, 217
     elif filt.lower() == 'f1140c':
