@@ -126,7 +126,8 @@ def _inject_gaussian_planet(frame, xpos, ypos, amplitude, fwhm=3.5, stampsize=No
     return frame
 
 
-def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None, stampsize=None, field_dependent_correction=None):
+def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, thetas=None, stampsize=None, 
+                    field_dependent_correction=None, mask_centers=None):
     """
     Injects a fake planet into a dataset either using a Gaussian PSF or an input PSF
 
@@ -148,6 +149,7 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
                                     the same shape and represent the offset of each pixel from the star (in pixel units). The 
                                     function returns an output_stamp of the same shape, but corrected for any field dependent
                                     throughputs or distortions.
+        mask_centers: array of size (N,2) of [x,y] coordinates of coronagraph mask center. If None, defaults to using star centers. 
 
     Returns:
         saves result in input "frames" variable
@@ -156,11 +158,14 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
     if thetas is None:
         thetas = np.array([convert_pa_to_image_polar(pa, astr_hdr) for astr_hdr in astr_hdrs])
 
+    if mask_centers is None:
+        mask_centers = centers
+
     if (np.size(inputflux) == 1):
         #input is probably a number and we want an array
         inputflux = np.ones(frames.shape[0]) * inputflux
 
-    for frame, center, inputpsf, theta in zip(frames, centers, inputflux, thetas):
+    for frame, center, inputpsf, theta, mask_center in zip(frames, centers, inputflux, thetas, mask_centers):
         #calculate the x,y location of the planet for each image
         #theta = covert_pa_to_image_polar(pa, astr_hdr)
         x_pl = radius * np.cos(theta*np.pi/180.) + center[0]
@@ -225,8 +230,8 @@ def inject_planet(frames, centers, inputflux, astr_hdrs, radius, pa, fwhm=3.5, t
             psf = ndimage.map_coordinates(inputpsf, [ypsf, xpsf], mode='constant', cval=0.0)
             # if specified, make field dependent PSF correction
             if field_dependent_correction is not None:
-                dx_psf = np.arange(xmin, xmax+1, 1) - center[0]
-                dy_psf = np.arange(ymin, ymax+1, 1) - center[1]
+                dx_psf = np.arange(xmin, xmax+1, 1) - mask_center[0]
+                dy_psf = np.arange(ymin, ymax+1, 1) - mask_center[1]
                 # convert to 2D
                 dx_psf, dy_psf = np.meshgrid(dx_psf, dy_psf)
                 psf = field_dependent_correction(psf, dx_psf, dy_psf)
@@ -646,7 +651,7 @@ def gaussfit2d(frame, xguess, yguess, searchrad=5, guessfwhm=3, guesspeak=1, ref
 
     #mask bad pixels
     fitbox[np.where(np.isnan(fitbox))] = 0
- 
+
     #fit a least squares gaussian to refine the fit on the source, otherwise just use the guess
     if refinefit:
         #construct the residual to the fit
