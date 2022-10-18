@@ -1009,8 +1009,8 @@ class JWSTData(Data):
             'use_coeff':use_coeff,
         }
 
-        if image_mask == "MASKA335R" or image_mask == "MASKB335R":
-            image_mask = "MASK335R"
+        if image_mask.startswith('MASKA') or image_mask.startswith('MASKB'):
+            image_mask = image_mask[:4]+image_mask[5:]
 
         instrument = "NIRCam"
 
@@ -1021,28 +1021,30 @@ class JWSTData(Data):
         #The current center of this PSF is center of the array
         #Need to subtract 0.5, 0.5 offset
         xcen = fov_pix/2 - 0.5
-        ycen = fov_pix/2 - 0.5 
+        ycen = fov_pix/2 - 0.5
 
         #Let's shift the PSFs to the coronagraph centers
-        psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here. 
-        #Now grab the model and downsample back to where it should be: 
-        model_psf = frebin(psf.psf_on,scale=1/osamp)
+        psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here.
+        # Get modeled coronagraphic PSF offset to nominal sci pixel location
+        model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
+                                    return_oversample=False)
 
-        # This gets the shift of the model relative to the data. 
+        # This gets the shift of the model relative to the data.
         # The model is centered at nircam_centers
         # So we just need to apply the shift to the nircam centers
         shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
         #shift is returned as [y,x]
 
         print("Calculated Shift between the coronagraph center and stellar location {}".format(shift))
-        #TODO: Need to confirm that this is the right sign to apply. 
-        # Shift is calculated as the shift of a perfectly on-axis model PSF 
+        #TODO: Need to confirm that this is the right sign to apply.
+        # Shift is calculated as the shift of a perfectly on-axis model PSF
         # to match the true PSF, so want to *add* the shifts to the initial model center
         crp1 += shift[1]
         crp2 += shift[0]
 
         psf._shift_psfs(shifts = [osamp*shift[1],osamp*shift[0]])
-        shifted_model_psf = frebin(psf.psf_on,scale=1/osamp)
+        shifted_model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
+                                            return_oversample=False)
         shift_check, _, _ = phase_cross_correlation(data0*mask, shifted_model_psf*mask,upsample_factor=1000,normalization=None)
         print("Calculated Shift after applying previous shift{}".format(shift_check))
 
