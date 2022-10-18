@@ -1023,10 +1023,9 @@ class JWSTData(Data):
         xcen = fov_pix/2 - 0.5
         ycen = fov_pix/2 - 0.5 
 
-        #Let's shift the PSFs to the coronagraph centers
-        psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here. 
-        #Now grab the model and downsample back to where it should be: 
-        model_psf = frebin(psf.psf_on,scale=1/osamp)
+        # Get modeled coronagraphic PSF offset to nominal sci pixel location
+        model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
+                                    return_oversample=False)
 
         # This gets the shift of the model relative to the data. 
         # The model is centered at nircam_centers
@@ -1041,8 +1040,8 @@ class JWSTData(Data):
         crp1 += shift[1]
         crp2 += shift[0]
 
-        psf._shift_psfs(shifts = [osamp*shift[1],osamp*shift[0]])
-        shifted_model_psf = frebin(psf.psf_on,scale=1/osamp)
+        shifted_model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
+                                            return_oversample=False)
         shift_check, _, _ = phase_cross_correlation(data0*mask, shifted_model_psf*mask,upsample_factor=1000,normalization=None)
         print("Calculated Shift after applying previous shift{}".format(shift_check))
 
