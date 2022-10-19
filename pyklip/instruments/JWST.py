@@ -23,8 +23,8 @@ from spaceKLIP.psf import JWST_PSF
 from spaceKLIP.utils import fourier_imshift
 
 import matplotlib
-matplotlib.rc('font', serif='DejaVu Sans')
-matplotlib.rcParams.update({'font.size': 14})
+# matplotlib.rc('font', serif='DejaVu Sans')
+# matplotlib.rcParams.update({'font.size': 14})
 import matplotlib.patheffects as PathEffects
 
 from webbpsf_ext.image_manip import frebin
