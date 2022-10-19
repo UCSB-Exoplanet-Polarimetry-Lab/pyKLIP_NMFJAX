@@ -42,7 +42,7 @@ class JWSTData(Data):
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
                      badpix_threshold=0.2, scishiftfile=False, refshiftfile=False,
                      fiducial_point_override=False, blur=False,spectral_type=None,
-                     load_file0_center=False,save_center_file=False):
+                     load_file0_center=False,save_center_file=False, mask=None):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -71,11 +71,11 @@ class JWSTData(Data):
         # Get the target dataset
         reference = self.readdata(filepaths, scishiftfile,
                             load_file0_center=load_file0_center,
-                            save_center_file=save_center_file)
+                            save_center_file=save_center_file, mask=mask)
 
         # If necessary, get the PSF library dataset for RDI procedures
         if psflib_filepaths != None:
-            self.readpsflib(psflib_filepaths, reference, refshiftfile)
+            self.readpsflib(psflib_filepaths, reference, refshiftfile, mask=mask)
         else:
             self._psflib = None
 
@@ -162,7 +162,7 @@ class JWSTData(Data):
     ###############
 
     def readdata(self, filepaths, scishiftfile=False, verbose=False,
-                load_file0_center=False, save_center_file=False):
+                load_file0_center=False, save_center_file=False, mask=None):
         """
         Method to open and read JWST data.
 
@@ -328,7 +328,8 @@ class JWSTData(Data):
                 data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             elif inst == 'NIRCAM':
                 tr = 10
-                data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
+                if (mask is None):
+                    data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
 
             # from matplotlib.colors import LogNorm
             # plt.imshow(data_medsub[0], norm=LogNorm())
@@ -341,7 +342,7 @@ class JWSTData(Data):
             if self.centering == 'jwstpipe':
                 ref_shifts = reference
                 msub_shifts = data_medsub
-                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts[1:])
+                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts[1:], mask=mask)
             elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(ref_shifts, msub_shifts[1:])
             elif self.centering == 'savefile':
@@ -439,7 +440,7 @@ class JWSTData(Data):
         return reference
 
     def readpsflib(self, psflib_filepaths, reference=None, refshiftfile=False,
-     verbose=False):
+     verbose=False, mask=None):
         """
         Method to open and read JWST data for use as part of a PSF library.
 
@@ -565,7 +566,8 @@ class JWSTData(Data):
                     how image registration is being done in the JWST.py file of pyKLIP''')
                 #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
                 tr = 10
-                data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
+                if (mask is None):
+                    data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
             tstart = time.time()
             if self.centering == 'jwstpipe':
                 # Blurring was messing up the iamge registration
@@ -576,7 +578,7 @@ class JWSTData(Data):
                 # else:
                 ref_shifts = reference
                 msub_shifts = data_medsub
-                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts)
+                shifts, res_before, res_after = self.align_jwstpipe(ref_shifts, msub_shifts, mask=mask)
             elif self.centering == 'imageregis':
                 shifts, res_before, res_after = self.align_imageregis(reference, data_medsub)
             elif self.centering == 'savefile':
@@ -807,7 +809,8 @@ class JWSTData(Data):
 
     def align_jwstpipe(self,
                        reference,
-                       data):
+                       data,
+                       mask=None):
         """
         Align a 3D data cube of images to a reference image using the same
         algorithm as the JWST stage 3 pipeline.
@@ -837,7 +840,7 @@ class JWSTData(Data):
         res_before = []
         res_after = []
         for i in range(data.shape[0]):
-            pp = self.align_fourierLSQ(reference, data[i].copy())
+            pp = self.align_fourierLSQ(reference, data[i].copy(), mask=mask)
             shifts += [pp[0]]
             res_before += [np.sum((reference-pp[0][2]*data[i])**2)]
             res_after += [np.sum(pp[2]['fvec']**2)]
