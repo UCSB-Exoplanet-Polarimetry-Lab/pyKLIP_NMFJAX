@@ -28,6 +28,7 @@ import matplotlib
 import matplotlib.patheffects as PathEffects
 
 from webbpsf_ext.image_manip import frebin
+from webbpsf_ext.utils import get_one_siaf
 
 class JWSTData(Data):
     """
@@ -159,6 +160,7 @@ class JWSTData(Data):
     # mask centers default to star centers if not overridden
     @property
     def mask_centers(self):
+        """Center of mask in pixel coordinates (0-indexed)"""
         return self._mask_centers
 
     ###############
@@ -221,15 +223,39 @@ class JWSTData(Data):
 
                 # NIRCam specifics
                 if inst == 'NIRCAM':
-                    crp1 = f['SCI'].header['CRPIX1']-1-0.2
-                    crp2 = f['SCI'].header['CRPIX2']-1+0.2
-                    print('WARNING: Modifying NIRCam centers by (-0.2,+0.2)')
+                    apname = f[0].header['APERNAME']
+                    nrc_siaf = get_one_siaf(instrument='NIRCam')
+                    ap_siaf = nrc_siaf[apname]
+
+                    # Offset values of mask relative to that are not yet updated in pysiaf
+                    # TODO: Remove these offsets when SIAF is finally updated to latest values
+                    if '335R' in apname:
+                        mask_xoff, mask_yoff = (-0.2, +0.2)
+                    elif '430R' in apname:
+                        mask_xoff, mask_yoff = (0, 0)
+                    elif 'LWB' in apname:
+                        mask_xoff, mask_yoff = (0, +1.1)
+                    elif '210R' in apname:
+                        mask_xoff, mask_yoff = (0, 0)
+                    elif 'SWB' in apname:
+                        mask_xoff, mask_yoff = (0, 0)
+                    else:
+                        print(f'WARNING: {apname} does not appear to be a coronagraphic obs!')
+                        mask_xoff, mask_yoff = (0, 0)
+
+                    if mask_xoff!=0 or mask_yoff!=0:
+                        print(f'WARNING: Modifying NIRCam centers by ({mask_xoff:+.2f},{mask_yoff:+.2f})')
+
+                    # Get aperture reference point (mask positions) 
+                    # and modify to image index (-1) along with known mask offsets
+                    xref = ap_siaf.XSciRef - 1 + mask_xoff
+                    yref = ap_siaf.YSciRef - 1 + mask_yoff
+                    crp1, crp2 = (xref, yref)
                     
-                    # Use the central 11x11 pixels (based on coronagraph center CRPIX)
-                    # to identify the absolute star location using the bright 
-                    # leakage speckle. Only do this for the first image
+                    # Compare empirical PSF with WebbPSF simulation to centroid only
+                    # the first image. Later images are then registered to this first.
                     if index == 0:
-                        #Starting Guess. 
+                        # Initial guess 
                         self.nircam_centers = [crp1,crp2]
                         if load_file0_center and os.path.exists(save_center_file+'.npz'):
                             print("Loading the star center in the first file from: {}".format(save_center_file+".npz"))
@@ -240,7 +266,7 @@ class JWSTData(Data):
                             crp1, crp2 = self.update_nircam_centers(sci_data[0].copy(),
                                             filter_name = f[0].header['FILTER'], 
                                             image_mask = f[0].header['CORONMSK'],
-                                            apname = f[0].header['APERNAME'],
+                                            apname = apname,
                                             date = f[0].header['DATE-BEG'],
                                             spectral_type = self.spectral_type,
                                             save_center_file=save_center_file)
@@ -250,15 +276,13 @@ class JWSTData(Data):
 
                     # Load centers estimated from first image
                     crp1, crp2 = self.nircam_centers
-                    # Assign centers
+                    # Assign centers of stellar position
                     img_centers = [crp1, crp2]*nints
-
-                    # assign mask_centers
-                    these_mask_centers = [149.9, 174.4]*nints
-                    warnings.warn("Adpoting hard-coded [149.9, 174.4] as the NIRCAM mask center")
+                    # Assign mask_centers from SIAF aperture ref pixel
+                    these_mask_centers = [xref, yref] * nints
 
                     # Check for fiducial point override
-                    if 'NARROW' in f[0].header['APERNAME'] :
+                    if 'NARROW' in apname:
                         self.fiducial_point_override = True
                 # MIRI specifics
                 elif inst == 'MIRI':
@@ -953,6 +977,10 @@ class JWSTData(Data):
         the SIAF aperture reference point (nominal star position).
         """
 
+        import webbpsf_ext
+        from webbpsf_ext.webbpsf_ext_core import _transmission_map
+        from webbpsf_ext.coords import dist_image
+
         def crop_image(image, xycen, npix, return_indices=False):
             """
             Function to crop an image with option to return
@@ -972,10 +1000,6 @@ class JWSTData(Data):
                 return imsub, xsub_indarr, ysub_indarr
             else:
                 return imsub
-
-        import webbpsf_ext
-        from webbpsf_ext.webbpsf_ext_core import _transmission_map
-        from webbpsf_ext.coords import dist_image
         
         #Clean the input data
         indz = np.isnan(data0) | (data0 != data0)
@@ -986,8 +1010,6 @@ class JWSTData(Data):
         # Get the Current centers
         # These are 0-based indices corresponding to center of pixel
         crp1, crp2 = self.nircam_centers
-
-
         
         # Small subarray for PSF
         # Will crop input image around stellar location
@@ -1014,13 +1036,18 @@ class JWSTData(Data):
         # First convert to tel coords from input data SIAF aperture
         # in case psf.inst_on aperture is different
         apsiaf = psf.inst_on.siaf[apname]
-        crtel = apsiaf.sci_to_tel(crp1+1, crp2+1)  # Add 1 to get sci pixel values (1-indexed)
+        xsci_ref, ysci_ref = (apsiaf.XSciRef, apsiaf.YSciRef)
+        # These offsets need to be applied to pass proper reference point 
+        # in current version of pysiaf so simulations work correctly 
+        xoff = (crp1 + 1) - xsci_ref
+        yoff = (crp2 + 1) - ysci_ref
+        crtel = apsiaf.sci_to_tel((crp1 + 1) - xoff, (crp2 + 1) - yoff)
         model_psf = psf.gen_psf_idl(crtel, coord_frame='tel', return_oversample=False)
 
         # Create transmission mask for masking center regions
         if mask_radius is None:
             yi, xi = np.indices(data0.shape)
-            xtel, ytel = apsiaf.sci_to_tel(xi+1,yi+1)
+            xtel, ytel = apsiaf.sci_to_tel(xi+1-xoff,yi+1-yoff)
             tmask, _, _ = _transmission_map(psf.inst_on, (xtel, ytel), 'tel')
             mask = tmask**2
         else:
