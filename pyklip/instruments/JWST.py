@@ -240,6 +240,7 @@ class JWSTData(Data):
                             crp1, crp2 = self.update_nircam_centers(sci_data[0].copy(),
                                             filter_name = f[0].header['FILTER'], 
                                             image_mask = f[0].header['CORONMSK'],
+                                            apname = f[0].header['APERNAME'],
                                             date = f[0].header['DATE-BEG'],
                                             spectral_type = self.spectral_type,
                                             save_center_file=save_center_file)
@@ -939,35 +940,59 @@ class JWSTData(Data):
         return np.array(shifts), np.array(res_before), np.array(res_after)
 
     def update_nircam_centers(self, 
-            data0, filter_name, image_mask,
-            osamp=2,date=None,use_coeff=False,spectral_type='G2V',mask_radius=10,
+            data0, filter_name, image_mask, apname,
+            osamp=2, date=None, use_coeff=False,
+            spectral_type='G2V', mask_radius=None,
             save_center_file=False):
         """
-        A function that updates the nircam_centers by generating a PSF and getting its relative offset
-        compared to the data. 
+        A function that updates the nircam_centers by generating a PSF 
+        and getting its relative offset compared to the data. 
 
-        It uses a mask to mask out the center pixels because of that leakage 
+        By default, uses transmission mask to mask center pixels (leakage),
+        but can set mask_radius to use a circular mask that is centered on
+        the SIAF aperture reference point (nominal star position).
         """
+
+        def crop_image(image, xycen, npix, return_indices=False):
+            """
+            Function to crop an image with option to return
+            original cropped indices corresponding to original image.
+            """
+
+            xc, yc = xycen
+            x1 = int(xc - npix / 2 + 0.5)
+            x2 = x1 + npix
+            y1 = int(yc - npix / 2 + 0.5)
+            y2 = y1 + npix
+
+            imsub = image[y1:y2,x1:x2]
+            if return_indices:
+                xsub_indarr = np.arange(x1,x2).astype('int')
+                ysub_indarr = np.arange(y1,y2).astype('int')
+                return imsub, xsub_indarr, ysub_indarr
+            else:
+                return imsub
+
+        import webbpsf_ext
+        from webbpsf_ext.webbpsf_ext_core import _transmission_map
+        from webbpsf_ext.coords import dist_image
         
         #Clean the input data
-        data0[data0 != data0] = 0.
-        
-        import webbpsf_ext
+        indz = np.isnan(data0) | (data0 != data0)
+        data0[indz] = 0.
+
         spectrum = webbpsf_ext.stellar_spectrum(spectral_type)
 
-        #Get the Current centers
-        crp1,crp2 = self.nircam_centers
+        # Get the Current centers
+        # These are 0-based indices corresponding to center of pixel
+        crp1, crp2 = self.nircam_centers
 
-        #Make a msak to mask out the center bits
-        ys,xs = np.indices(data0.shape,dtype=float)
-        xs -= crp1
-        ys -= crp2
-        rs = np.sqrt(xs**2+ys**2)
-        mask = np.ones(data0.shape)
-        mask[rs<mask_radius] = 0
+
         
-        #TODO: Figure out how to best choose this. 
-        fov_pix = 320
+        # Small subarray for PSF
+        # Will crop input image around stellar location
+        # Make this odd so simulated PSF is in centered in middle of pixel
+        fov_pix = 65
         
         kwargs = {
             'oversample': osamp,
@@ -981,51 +1006,55 @@ class JWSTData(Data):
 
         instrument = "NIRCam"
 
-        print("Generating a Webb PSF to help with the centering. This might take a minute or so. ")
+        print("Generating WebbPSF image for centering. This might take a minute or so...")
         #Generate the psfs
-        psf = JWST_PSF(instrument,filter_name,image_mask,fov_pix,**kwargs)
-
-        #The current center of this PSF is center of the array
-        #Need to subtract 0.5, 0.5 offset
-        xcen = fov_pix/2 - 0.5
-        ycen = fov_pix/2 - 0.5 
-
-        # #Let's shift the PSFs to the coronagraph centers
-        # psf._shift_psfs(shifts = [osamp*(crp1-xcen),osamp*(crp2-ycen)]) #Need to include oversampling here. 
-        # #Now grab the model and downsample back to where it should be: 
-        # model_psf = frebin(psf.psf_on,scale=1/osamp)
+        psf = JWST_PSF(instrument, filter_name, image_mask, fov_pix, **kwargs)
 
         # Get modeled coronagraphic PSF offset to nominal sci pixel location
-        model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
-                                    return_oversample=False)
+        # First convert to tel coords from input data SIAF aperture
+        # in case psf.inst_on aperture is different
+        apsiaf = psf.inst_on.siaf[apname]
+        crtel = apsiaf.sci_to_tel(crp1+1, crp2+1)  # Add 1 to get sci pixel values (1-indexed)
+        model_psf = psf.gen_psf_idl(crtel, coord_frame='tel', return_oversample=False)
 
-        # This gets the shift of the model relative to the data. 
-        # The model is centered at nircam_centers
-        # So we just need to apply the shift to the nircam centers
-        shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
-        #shift is returned as [y,x]
+        # Create transmission mask for masking center regions
+        if mask_radius is None:
+            yi, xi = np.indices(data0.shape)
+            xtel, ytel = apsiaf.sci_to_tel(xi+1,yi+1)
+            tmask, _, _ = _transmission_map(psf.inst_on, (xtel, ytel), 'tel')
+            mask = tmask**2
+        else:
+            # Mask out the center bits
+            rs = dist_image(data0, center=(crp1,crp2))
+            mask = np.ones(data0.shape)
+            mask[rs<mask_radius] = 0
 
-        print("Calculated Shift between the coronagraph center and stellar location {}".format(shift))
-        #TODO: Need to confirm that this is the right sign to apply. 
-        # Shift is calculated as the shift of a perfectly on-axis model PSF 
-        # to match the true PSF, so want to *add* the shifts to the initial model center
-        crp1 += shift[1]
-        crp2 += shift[0]
+        # Interate a few times to get final center position
+        # via image registration with model PSF
+        print('Finding stellar position...')
+        xc, yc = (crp1, crp2)
+        for i in range(3):
+            res = crop_image(data0, (xc,yc), fov_pix, return_indices=True)
+            data_sub, xsub_indarr, ysub_indarr = res
+            mask_sub = crop_image(mask, (xc, yc), fov_pix)
 
-        # psf._shift_psfs(shifts = [osamp*shift[1],osamp*shift[0]])
-        # shifted_model_psf = frebin(psf.psf_on,scale=1/osamp)
-        shifted_model_psf = psf.gen_psf_idl((crp1,crp2), coord_frame='sci', do_shift=True,
-                                            return_oversample=False)
-        shift_check, _, _ = phase_cross_correlation(data0*mask, shifted_model_psf*mask,upsample_factor=1000,normalization=None)
-        print("Calculated Shift after applying previous shift{}".format(shift_check))
+            # Get x/y shift values of the model relative to the data.
+            # shift is returned as [y,x]
+            ysh, xsh = phase_cross_correlation(data_sub*mask_sub, model_psf*mask_sub, 
+                                               upsample_factor=1000, normalization=None,
+                                               return_error=False)
 
-        shift, _, _ = phase_cross_correlation(data0*mask, model_psf*mask,upsample_factor=1000,normalization=None)
+            xc = np.mean(xsub_indarr) + xsh
+            yc = np.mean(ysub_indarr) + ysh
+
+        xsh, ysh = (xc-crp1, yc-crp2)
+        print(f"Stellar position relative to coron center, (dx,dy)=({xsh:.2f},{ysh:.2f} pixels)")
 
         # Save shifts if requested
         if save_center_file != False:
-            np.savez(save_center_file, center=np.array([crp1,crp2]))
+            np.savez(save_center_file, center=np.array([xc,yc]))
 
-        return crp1,crp2
+        return xc, yc
 
     def savedata(self, filepath, data, klipparams=None, filetype='', zaxis=None, more_keywords=None):
         """
