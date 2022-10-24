@@ -731,7 +731,7 @@ class JWSTData(Data):
     def recenterlsq(self, shft, data):
         return 1./np.max(self.fourier_imshift(data, shft))
 
-    def fourier_imshift(self, *args, **kwargs):
+    def fourier_imshift(self, image, shift, pad=False, cval=0.0):
         """
         Fourier image shift. Adapted from JWST stage 3 pipeline.
 
@@ -756,7 +756,7 @@ class JWSTData(Data):
             Shifted image.
 
         """
-        return fourier_imshift(args, **kwargs)
+        return fourier_imshift(image, shift, pad=pad, cval=cval)
 
     def shift_subtract(self,
                        pp,
