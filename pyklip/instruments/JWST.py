@@ -42,9 +42,6 @@ class JWSTData(Data):
     ### Constructors ###
     ####################
 
-    # Fourier image shift. Adapted from JWST stage 3 pipeline.
-    fourier_imshift = fourier_imshift
-
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
                      scishiftfile=False, refshiftfile=False,
                      fiducial_point_override=False, blur=False,spectral_type=None,
@@ -734,6 +731,32 @@ class JWSTData(Data):
     def recenterlsq(self, shft, data):
         return 1./np.max(fourier_imshift(data, shft))
 
+    def fourier_imshift(self, image, shift, pad=False, cval=0.0):
+        """
+        Fourier image shift. Adapted from JWST stage 3 pipeline.
+
+        Parameters
+        ----------
+        image : array
+            A 2D/3D image to be shifted.
+        shift : array
+            xshift, yshift.
+        pad : bool
+            Should we pad the array before shifting, then truncate?
+            Otherwise, the image is wrapped.
+        cval : sequence or float, optional
+            The values to set the padded values for each axis. Default is 0.
+            ((before_1, after_1), ... (before_N, after_N)) unique pad constants for each axis.
+            ((before, after),) yields same before and after constants for each axis.
+            (constant,) or int is a shortcut for before = after = constant for all axes.
+
+        Returns
+        -------
+        offset : array
+            Shifted image.
+
+        """
+        return fourier_imshift(image, shift, pad=pad, cval=cval)
 
     def shift_subtract(self,
                        pp,
