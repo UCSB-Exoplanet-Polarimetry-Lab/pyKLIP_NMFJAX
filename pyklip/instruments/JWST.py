@@ -732,7 +732,7 @@ class JWSTData(Data):
         return data_fixed
 
     def recenterlsq(self, shft, data):
-        return 1./np.max(self.fourier_imshift(data, shft))
+        return 1./np.max(fourier_imshift(data, shft))
 
 
     def shift_subtract(self,
@@ -763,7 +763,7 @@ class JWSTData(Data):
         shift = pp[:2]
         beta = pp[2]
 
-        offset = self.fourier_imshift(target, shift)
+        offset = fourier_imshift(target, shift)
 
         if mask is not None:
             return ((reference-beta*offset)*mask).ravel()
@@ -878,7 +878,7 @@ class JWSTData(Data):
                                                           upsample_factor=100)
         shift = shift[::-1]
 
-        offset = self.fourier_imshift(target, shift)
+        offset = fourier_imshift(target, shift)
 
         if mask is not None:
             return ((reference-pp[0]*offset)*mask).ravel()
@@ -954,7 +954,7 @@ class JWSTData(Data):
             shift = shift[::-1]
             shifts += [np.array([shift[0], shift[1], pp[0][0]])]
             res_before += [np.sum((reference-pp[0][0]*data[i])**2)]
-            res_after += [np.sum((reference-pp[0][0]*self.fourier_imshift(data[i].copy(), shift))**2)]
+            res_after += [np.sum((reference-pp[0][0]*fourier_imshift(data[i].copy(), shift))**2)]
 
             # f, ax = plt.subplots(1, 2, figsize=(2*6.4, 1*4.8))
             # p0 = ax[0].imshow(reference-data[i], origin='lower')
@@ -1082,7 +1082,7 @@ class JWSTData(Data):
 
         # Save shifts if requested
         if save_center_file != False:
-            np.savez(save_center_file, center=np.array([xc,yc]))
+            np.savez(save_center_file, center=np.array([xc,yc]), pixshift=np.array([xsh,ysh]))
 
         return xc, yc
 
