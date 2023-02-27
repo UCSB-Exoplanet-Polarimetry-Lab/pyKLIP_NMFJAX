@@ -469,7 +469,7 @@ class JWSTData(Data):
         return reference
 
     def readpsflib(self, psflib_filepaths, reference=None, refshiftfile=False,
-     verbose=False, mask=None):
+     verbose=False, mask=None, center_small=False):
         """
         Method to open and read JWST data for use as part of a PSF library.
 
