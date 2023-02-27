@@ -168,7 +168,7 @@ class JWSTData(Data):
     ###############
 
     def readdata(self, filepaths, scishiftfile=False, verbose=False,
-                load_file0_center=False, save_center_file=False, mask=None):
+                load_file0_center=False, save_center_file=False, mask=None, center_small=False):
         """
         Method to open and read JWST data.
 
