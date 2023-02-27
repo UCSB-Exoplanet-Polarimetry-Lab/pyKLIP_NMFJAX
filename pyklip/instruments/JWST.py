@@ -45,7 +45,8 @@ class JWSTData(Data):
     def __init__(self, filepaths=None, psflib_filepaths=None, centering='jwstpipe',
                      scishiftfile=False, refshiftfile=False,
                      fiducial_point_override=False, blur=False,spectral_type=None,
-                     load_file0_center=False,save_center_file=False, mask=None):
+                     load_file0_center=False,save_center_file=False, mask=None,
+                     center_small=False):
 
         # Initialize the super class
         super(JWSTData, self).__init__()
@@ -73,11 +74,13 @@ class JWSTData(Data):
         # Get the target dataset
         reference = self.readdata(filepaths, scishiftfile,
                             load_file0_center=load_file0_center,
-                            save_center_file=save_center_file, mask=mask)
+                            save_center_file=save_center_file, mask=mask, 
+                            center_small=False)
 
         # If necessary, get the PSF library dataset for RDI procedures
         if psflib_filepaths != None:
-            self.readpsflib(psflib_filepaths, reference, refshiftfile, mask=mask)
+            self.readpsflib(psflib_filepaths, reference, refshiftfile, mask=mask, 
+                            center_small=False)
         else:
             self._psflib = None
 
@@ -354,7 +357,7 @@ class JWSTData(Data):
                 data_medsub = data_medsub[:,int(nx/3):int(2*nx/3),int(ny/3):int(2*ny/3)]
             elif inst == 'NIRCAM':
                 tr = 10
-                if (mask is None):
+                if (mask is None) or (center_small == True):
                     data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
 
             # from matplotlib.colors import LogNorm
@@ -592,7 +595,7 @@ class JWSTData(Data):
                     how image registration is being done in the JWST.py file of pyKLIP''')
                 #data_medsub = data_medsub[:,int(nx/3):int(3*nx/4),int(ny/4):int(2*ny/3)]
                 tr = 10
-                if (mask is None):
+                if (mask is None) or (center_small == True):
                     data_medsub = data_medsub[:,int(crp2-tr):int(crp2+tr+1),int(crp1-tr):int(crp1+tr+1)]
             tstart = time.time()
             if self.centering == 'jwstpipe':
