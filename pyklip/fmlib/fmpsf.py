@@ -285,7 +285,7 @@ class FMPlanetPSF(NoFM):
                 minx = min(x_vec_stamp_centered, key=abs) 
                 miny = min(y_vec_stamp_centered, key=abs)
                 whiteboard[stamp_len, stamp_width] = \
-                        self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy, minx=minx, miny=miny)
+                        self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy)
             # axs[1].imshow(whiteboard)
             # plt.show()
             # exit()
