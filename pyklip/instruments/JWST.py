@@ -8,22 +8,12 @@ from astroquery.svo_fps import SvoFps
 
 import numpy as np
 import os, shutil, re
-import matplotlib.pyplot as plt
-import time
 import copy
 import warnings
 
-import matplotlib
-# matplotlib.rc('font', serif='DejaVu Sans')
-# matplotlib.rcParams.update({'font.size': 14})
-import matplotlib.patheffects as PathEffects
-
-from webbpsf_ext.image_manip import frebin
-from webbpsf_ext.utils import get_one_siaf
-
 class JWSTData(Data):
     """
-    The pyKLIP instrument class for space telescope data.
+    The pyKLIP instrument class for JWST data.
     
     """
     
@@ -34,7 +24,7 @@ class JWSTData(Data):
     def __init__(self,
                  filepaths,
                  psflib_filepaths=None,
-                 center_include_offset=True):
+                 center_include_offset=False):
         """
         Initialize the pyKLIP instrument class for space telescope data.
         
