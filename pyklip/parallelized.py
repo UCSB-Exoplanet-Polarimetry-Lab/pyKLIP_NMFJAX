@@ -219,7 +219,7 @@ def _align_and_scale(iterable_arg):
             ref_wv_iter: a tuple of two elements. First is the index of the reference wavelength (between 0 and 36).
                          second is the value of the reference wavelength. This is to determine scaling
             ref_center: a two-element array with the [x,y] center position to align all the images to.
-            dtype: Should be equal to float or np.float32. Define the data type of the arrays.
+            dtype: Should be equal to float. Define the data type of the arrays.
                     float is actually the default double.
 
     Returns:
