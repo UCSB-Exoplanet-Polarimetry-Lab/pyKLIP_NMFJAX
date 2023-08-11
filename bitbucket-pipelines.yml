@@ -37,6 +37,6 @@ pipelines:
 
 
           #Coverage and Coverall hooking
-          - coverage run --source ./pyklip -m py.test
+          - coverage run --source ./pyklip -m pytest
           - coverage combine
           - COVERALLS_REPO_TOKEN=$COVERALLS_REPO_TOKEN_2 coveralls
