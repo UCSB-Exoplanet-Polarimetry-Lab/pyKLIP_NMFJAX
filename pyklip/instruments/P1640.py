@@ -738,7 +738,7 @@ class P1640Data(Data):
                     #y_stamp = y_grid[(yarr_spot-boxw/2):(yarr_spot+boxw/2),(xarr_spot-boxw/2):(xarr_spot+boxw/2)]
                     #print(spotx,spoty)
                     #print(stamp_x+ spotx-xarr_spot,stamp_y+spoty-yarr_spot)
-                    stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=float32), np.arange(boxw, dtype=float32))
+                    stamp_x, stamp_y = np.meshgrid(np.arange(boxw, dtype=float), np.arange(boxw, dtype=float))
                     dx = spotx-xarr_spot
                     dy = spoty-yarr_spot
                     #stamp_x += spotx-xarr_spot
@@ -846,9 +846,9 @@ class P1640Data(Data):
             rad_psf_cube = np.zeros((nl,nx,nx))
             #current_slice = np.zeros((nx,nx))
 
-            stamp_x, stamp_y = np.meshgrid(np.arange(nx, dtype=float32), np.arange(nx, dtype=float32))
+            stamp_x, stamp_y = np.meshgrid(np.arange(nx, dtype=float), np.arange(nx, dtype=float))
             stamp_r = np.sqrt((stamp_x - nx/2)**2+(stamp_y - nx/2)**2)
-            stamp_x_hd, stamp_y_hd = np.meshgrid(np.arange(nx_hd, dtype=float32)/(nx_hd-1)*(nx-1), np.arange(nx_hd, dtype=float32)/(nx_hd-1)*(nx-1))
+            stamp_x_hd, stamp_y_hd = np.meshgrid(np.arange(nx_hd, dtype=float)/(nx_hd-1)*(nx-1), np.arange(nx_hd, dtype=float)/(nx_hd-1)*(nx-1))
             for l in range(nl):
                 hd_psf[l,:,:] = ndimage.map_coordinates(self.psfs[l,:,:], [stamp_y_hd, stamp_x_hd])
                 #hd_psf[l,nx/2*k_hd,nx/2*k_hd] = 0. # center
