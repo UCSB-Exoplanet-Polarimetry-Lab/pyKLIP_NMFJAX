@@ -228,7 +228,7 @@ class JWSTData(Data):
             PAs_all += [shead['ROLL_REF'] - (shead['V3I_YANG']*shead['VPARITY'])] * NINTS
             if INSTRUME == 'NIRCAM':
                 if phead['PUPIL'] in self.wave_nircam.keys():
-                        CWAVEL = self.wave_nircam[phead['PUPIL']]
+                    CWAVEL = self.wave_nircam[phead['PUPIL']]
                 else:
                     CWAVEL = self.wave_nircam[phead['FILTER']]
             elif INSTRUME == 'NIRISS':
