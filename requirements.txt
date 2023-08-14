@@ -8,7 +8,6 @@ NonnegMFPy
 scikit-image
 astroquery
 psutil
-tkinter
 pandas
 photutils
 docutils<0.17
