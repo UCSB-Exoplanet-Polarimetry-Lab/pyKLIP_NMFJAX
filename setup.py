@@ -3,6 +3,12 @@ from setuptools import setup, find_packages
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
+def get_requires():
+    reqs = []
+    for line in open("requirements.txt", "r").readlines():
+        reqs.append(line)
+    return reqs
+
 setup(
     name='pyklip',
     version='2.6',
@@ -30,5 +36,5 @@ setup(
         'Programming Language :: Python :: 3',
         ],
     keywords='KLIP PSF Subtraction Exoplanets Astronomy',
-    install_requires=['numpy', 'scipy', 'astropy', 'matplotlib', 'emcee', 'corner']
+    install_requires=get_requires()
     )
