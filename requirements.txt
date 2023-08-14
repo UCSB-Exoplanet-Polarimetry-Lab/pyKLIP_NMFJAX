@@ -4,4 +4,11 @@ astropy
 matplotlib
 emcee
 corner
+NonnegMFPy
+skimage
+astroquery
+psutil
+tkinter
+pandas
+photutils
 docutils<0.17

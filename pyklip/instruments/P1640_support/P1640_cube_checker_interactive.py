@@ -40,9 +40,9 @@ if sys.version_info[0] < 3:
     import tkFileDialog
 else:
     import tkinter as Tk
-    import filedialog
+    import tkinter.filedialog
 
-import tkFont
+import tkinter.font as tkFont
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 
