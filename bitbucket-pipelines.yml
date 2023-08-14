@@ -7,6 +7,9 @@ image: continuumio/anaconda3
 options:
   max-time: 20 # configure default 20 minute timeout
 
+clone:
+  lfs: true
+
 pipelines:
   default:
     - step:
@@ -34,8 +37,6 @@ pipelines:
           - apt-get update # make sure it can find gcc
           - apt-get install -y gcc
           - pip install photutils
-
-          - git lfs pull
 
           #Coverage and Coverall hooking
           - coverage run --source ./pyklip -m pytest
