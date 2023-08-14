@@ -1094,8 +1094,8 @@ def generate_psf(frame, locations, boxrad=5, medianboxsize=30):
     #mask source for median filter
     masked = np.copy(cleaned)
     for loc in locations:
-        spotx = np.int(np.round(loc[0]))
-        spoty = np.int(np.round(loc[1]))
+        spotx = int(np.round(loc[0]))
+        spoty = int(np.round(loc[1]))
         masked[spotx-boxrad:spotx+boxrad+1, spoty-boxrad:spoty+boxrad+1] = np.nanmedian(
             masked.reshape(masked.shape[0]*masked.shape[1]))
     #subtract out median filtered image
