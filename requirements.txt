@@ -5,7 +5,7 @@ matplotlib
 emcee
 corner
 NonnegMFPy
-skimage
+scikit-image
 astroquery
 psutil
 tkinter
