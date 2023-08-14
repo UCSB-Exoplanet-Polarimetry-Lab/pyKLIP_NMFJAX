@@ -35,6 +35,7 @@ pipelines:
           - apt-get install -y gcc
           - pip install photutils
 
+          - git lfs pull
 
           #Coverage and Coverall hooking
           - coverage run --source ./pyklip -m pytest
