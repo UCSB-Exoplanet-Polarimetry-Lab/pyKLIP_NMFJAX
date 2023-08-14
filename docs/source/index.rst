@@ -86,6 +86,24 @@ If you use the NMF algorithm, please cite:
 
  * `Ren, B., Pueyo, L., Zhu, G. B., et al. 2018, ApJ, 852, 104. <https://ui.adsabs.harvard.edu/abs/2018ApJ...852..104R/abstract>`_
 
+Instrument Interface Citations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you use the JWST interface, please cite:
+
+ * `Kammerer, J., Girard, J., Carter, A. L., et al. 2022, Proc. SPIE, 12180, 121803N. <https://ui.adsabs.harvard.edu/abs/2022SPIE12180E..3NK/abstract>`_
+ * `Carter, A. L., Hinkley, S., Kammerer, J., et al. 2023, ApJL, 951, L20. <https://ui.adsabs.harvard.edu/abs/2023ApJ...951L..20C/abstract>`_
+
+If you use the CHARIS interface, please cite:
+
+ * Chen, M., Wang, J. J., Brandt, T. D., et al. submitted. 
+
+If you use the Keck interface, please acknowledge Tom Esposito's development of the interface in your Acknowledgements section.
+
+If you use the MagAO/VisAO interface, please cite:
+
+ * `Follette, K. B., Rameau, J., Dong, R., et al. 2017, AJ, 153, 264. <https://ui.adsabs.harvard.edu/abs/2017AJ....153..264F/abstract>`_
+
 
 Contents
 --------
