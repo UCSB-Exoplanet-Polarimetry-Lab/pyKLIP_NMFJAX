@@ -13,3 +13,4 @@ photutils
 h5py
 docutils
 pyklip
+sphinx_rtd_theme
