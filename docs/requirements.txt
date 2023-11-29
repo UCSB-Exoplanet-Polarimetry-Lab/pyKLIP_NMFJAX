@@ -11,5 +11,5 @@ psutil
 pandas
 photutils
 h5py
-docutils<0.17
+docutils
 pyklip
