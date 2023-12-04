@@ -105,7 +105,7 @@ class PSFLibrary(object):
         if verbose:
             print("Making correlation matrix")
 
-        if mask != None:
+        if mask is not None:
             self.correlation_mask = mask
 
         #Loop the correlation matrix calculation
@@ -123,7 +123,7 @@ class PSFLibrary(object):
                     stdout.flush()
                 
                 #You might want to only correlate some of the image. 
-                if mask != None:
+                if mask is not None:
                     where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) & (mask == mask)
                 else: 
                 #Ditch where either of the two arrays have NANs
@@ -295,7 +295,7 @@ class PSFLibrary(object):
                     stdout.flush()
                 
                 #You might want to only correlate some of the image. 
-                if self.correlation_mask != None:
+                if self.correlation_mask is not None:
                     where_to_corr = (self.master_library[i,:,:] == self.master_library[i,:,:]) & (self.master_library[j,:,:] == self.master_library[j,:,:]) & (self.correlation_mask == self.correlation_mask)
                 else: 
                 #Ditch where either of the two arrays have NANs
