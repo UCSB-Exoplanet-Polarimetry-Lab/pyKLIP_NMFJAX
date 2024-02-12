@@ -1507,7 +1507,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if aligned_center is not None:
             if not np.array_equal(aligned_center, psf_library.aligned_center): 
                 raise ValueError("The images need to be aligned to the same center as the RDI Library")
-
         else:
             aligned_center = psf_library.aligned_center
         # good rdi_library
@@ -1548,16 +1547,12 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         if isinstance(highpass, bool):
             if highpass:
                 dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads)
-                if master_library is not None:
-                    master_library = high_pass_filter_imgs(master_library, numthreads=numthreads)
         else:
             # should be a number
             if isinstance(highpass, (float, int)):
                 highpass = float(highpass)
                 fourier_sigma_size = (dataset.input.shape[1]/(highpass)) / (2*np.sqrt(2*np.log(2)))
                 dataset.input = high_pass_filter_imgs(dataset.input, numthreads=numthreads, filtersize=fourier_sigma_size)
-                if master_library is not None:
-                    master_library = high_pass_filter_imgs(master_library, numthreads=numthreads, filtersize=fourier_sigma_size)
 
 
     # if no outputdir specified, then current working directory (don't want to write to '/'!)
