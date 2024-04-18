@@ -24,7 +24,8 @@ class JWSTData(Data):
     def __init__(self,
                  filepaths,
                  psflib_filepaths=None,
-                 center_include_offset=False):
+                 highpass=False,
+                 center_include_offset=True):
         """
         Initialize the pyKLIP instrument class for space telescope data.
         
@@ -76,7 +77,7 @@ class JWSTData(Data):
         # Read science and reference files.
         self.readdata(filepaths)
         if psflib_filepaths is not None and len(psflib_filepaths) != 0:
-            self.readpsflib(psflib_filepaths)
+            self.readpsflib(psflib_filepaths, highpass)
         else:
             self._psflib = None
         
@@ -143,6 +144,13 @@ class JWSTData(Data):
         self._IWA = newval
     
     @property
+    def OWA(self):
+        return self._OWA
+    @OWA.setter
+    def OWA(self, newval):
+        self._OWA = newval
+    
+    @property
     def psflib(self):
         return self._psflib
     @psflib.setter
@@ -189,7 +197,7 @@ class JWSTData(Data):
         PAs_all = []  # deg
         wvs_all = []  # m
         wcs_all = []
-        PIXSCALE = []  # mas
+        PIXSCALE = []  # arcsec
         for i, filepath in enumerate(filepaths):
             
             # Read science file.
@@ -199,7 +207,10 @@ class JWSTData(Data):
             TELESCOP = phead['TELESCOP']
             INSTRUME = phead['INSTRUME']
             data = hdul['SCI'].data
-            pxdq = hdul['DQ'].data
+            try:
+                pxdq = hdul['DQ'].data
+            except:
+                pxdq = np.zeros_like(data).astype('int')
             if data.ndim == 2:
                 data = data[np.newaxis, :]
                 pxdq = pxdq[np.newaxis, :]
@@ -261,6 +272,7 @@ class JWSTData(Data):
             iwa_all = 0.5 * np.min(wvs_all) / 6.5 * 180. / np.pi * 3600. / PIXSCALE[0]  # pix
         else:
             iwa_all = 1.  # pix
+        owa_all = np.sum(np.array(input_all.shape[1:]) / 2.)  # pix
 
         # Recenter science images so that the star is at the center of the array.
         new_center = (np.array(data.shape[1:])-1)/ 2.
@@ -279,11 +291,13 @@ class JWSTData(Data):
         self._wvs = wvs_all
         self._wcs = wcs_all
         self._IWA = iwa_all
+        self._OWA = owa_all
         
         pass
     
     def readpsflib(self,
-                   psflib_filepaths):
+                   psflib_filepaths,
+                   highpass=False):
         """
         Read the input reference observations.
         
@@ -313,7 +327,10 @@ class JWSTData(Data):
             # Read reference file.
             hdul = fits.open(filepath)
             data = hdul['SCI'].data
-            pxdq = hdul['DQ'].data
+            try:
+                pxdq = hdul['DQ'].data
+            except:
+                pxdq = np.zeros_like(data).astype('int')
             phead = hdul[0].header
             shead = hdul['SCI'].header
             if data.ndim == 2:
@@ -361,7 +378,7 @@ class JWSTData(Data):
         psflib_filenames_all = np.append(psflib_filenames_all, self._filenames, axis=0)
         
         # Initialize PSF library.
-        psflib = rdi.PSFLibrary(psflib_data_all, new_center, psflib_filenames_all, compute_correlation=True)
+        psflib = rdi.PSFLibrary(psflib_data_all, new_center, psflib_filenames_all, compute_correlation=True, highpass=highpass)
         
         # Prepare PSF library.
         psflib.prepare_library(self)
@@ -418,7 +435,7 @@ class JWSTData(Data):
             if i < 1000:
                 hdul[0].header['FILE_{0}'.format(i)] = filename + '.fits'
             else:
-                log.warning('--> Too many files to be written to header, skipping')
+                print('WARNING: Too many files to be written to header, skipping')
                 break
         
         # Write PSF subtraction parameters and pyKLIP version to header.
