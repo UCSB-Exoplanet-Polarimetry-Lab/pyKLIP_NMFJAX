@@ -16,6 +16,8 @@ import scipy.interpolate as interp
 from scipy.stats import norm
 import scipy.ndimage as ndi
 
+from tqdm.auto import trange, tqdm
+
 #Logic to test mkl exists
 try:
     import mkl
@@ -725,7 +727,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
         elif algo.lower() == 'nmf':
             import pyklip.nmf_imaging as nmf_imaging
-            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs, componentNum=numbasis[0])
+            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis[0])
             klipped = klipped.reshape(klipped.shape[0], 1)
         elif algo.lower() == "none":
             klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis
@@ -1365,11 +1367,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
     if not debug:
         if verbose is True:
             print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
-        for index, out in enumerate(outputs):
-            out.wait()
-            if (index + 1) % 10 == 0:
-                print("{0:.4}% done ({1}/{2} completed)".format((index+1)*100.0/tot_iter, index, tot_iter))
-
+        for index in trange(len(outputs)):
+            outputs[index].wait()
 
     #close to pool now and make sure there's no processes still running (there shouldn't be or else that would be bad)
     if verbose is True:
@@ -1410,7 +1409,7 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5, subsections=4, movement=3,
                  numbasis=None, numthreads=None, minrot=0, calibrate_flux=False, aligned_center=None,
                  annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, spectrum=None, psf_library=None, 
-                 highpass=False, lite=False, save_aligned = False, restored_aligned = None, dtype=None, algo='klip',
+                 highpass=False, lite=False, save_aligned = False, restored_aligned = None, save_ints = False, dtype=None, algo='klip',
                  skip_derot=False, time_collapse="mean", wv_collapse='mean', verbose = True):
     """
     run klip on a dataset class outputted by an implementation of Instrument.Data
@@ -1692,6 +1691,10 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # reformat the output to be consistent with the other modes.
         # Currently shape is (wv,b,N,y,x). Switch to (b,N,wv,y,x), then flatten in wavelength dimension
         dataset.output = np.swapaxes(dataset.output, 0, 1) # shape of (b, wv, N, y, x)
+
+        if save_ints:
+            dataset.allints = copy.copy(dataset.output)
+
         dataset.output = np.swapaxes(dataset.output, 1, 2) # shape of (b, N, wv, y, x)
         # then collapse N/wv together
         dataset.output = np.reshape(dataset.output, (dataset.output.shape[0], dataset.output.shape[1]*dataset.output.shape[2], dataset.output.shape[3], dataset.output.shape[4]) )

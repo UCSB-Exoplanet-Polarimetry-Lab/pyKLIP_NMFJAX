@@ -29,6 +29,7 @@ class Data(object):
         creator: (optional) string for creator of the data (used to identify pipelines that call pyklip)
         klipparams: (optional) a string that saves the most recent KLIP parameters
         flipx: (optional) False by default. Determines whether a relfection about the x axis is necessary to rotate image North-up East left
+        mask_centers: Array of shape (N,2) for the center of the coronagraphic mask in each input image
 
     Methods:
         readdata(): reread in the dadta
@@ -160,6 +161,10 @@ class Data(object):
             self._numwvs = int(np.size(np.unique(self.wvs)))
         return self._numwvs
 
+    # mask centers default to star centers if not overridden
+    @property
+    def mask_centers(self):
+        return self.centers
 
     ########################
     ### Required Methods ###

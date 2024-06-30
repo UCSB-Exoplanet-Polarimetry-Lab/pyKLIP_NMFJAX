@@ -539,11 +539,17 @@ def meas_contrast(dat, iwa, owa, resolution, center=None, low_pass_filter=True):
         noise_mean = np.nanmean(filtered[annulus])
         noise_std = np.nanstd(filtered[annulus], ddof=1)
         # account for small sample statistics
-        num_samples = int(np.floor(2*np.pi*sep/resolution))
+        # num_samples = int(np.floor(2*np.pi*sep/resolution)) # old method
+        # divide the number of non-nan pixels by the approximate size of one resolution element. 
+        num_good_pix = np.size(np.where(~np.isnan(filtered[annulus])))
+        num_samples = int(np.floor(num_good_pix/(np.pi * (resolution/2)**2)))
 
         # find 5 sigma flux using student-t statistics
         # Correction based on Mawet et al. 2014
-        fpf_flux = t.ppf(0.99999971334, num_samples-1, scale=noise_std) * np.sqrt(1 + 1./num_samples) + noise_mean
+        if (num_samples != 0):
+            fpf_flux = t.ppf(0.99999971334, num_samples-1, scale=noise_std) * np.sqrt(1 + 1./num_samples) + noise_mean
+        else:
+            fpf_flux = np.nan
         contrast.append(fpf_flux)
 
     return seps, np.array(contrast)

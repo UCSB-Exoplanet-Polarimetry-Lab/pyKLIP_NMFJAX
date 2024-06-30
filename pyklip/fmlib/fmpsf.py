@@ -21,7 +21,7 @@ class FMPlanetPSF(NoFM):
     def __init__(self, inputs_shape, numbasis, sep, pa, dflux, input_psfs, input_wvs, flux_conversion=None, spectrallib=None, 
                  spectrallib_units="flux", star_spt=None, refine_fit=False, field_dependent_correction=None, input_psfs_pas=None):
         """
-        Defining the planet to characterizae
+        Defining the planet to characterize
 
         Args:
             inputs_shape: shape of the inputs numpy array. Typically (N, y, x)
@@ -257,7 +257,6 @@ class FMPlanetPSF(NoFM):
             x_vec_stamp_centered /= (ref_wv/wv)
             y_vec_stamp_centered /= (ref_wv/wv)
 
-
             # use intepolation spline to generate a model PSF of planet and write to temp img
             if not self.psfs_in_time:
                 # just grab the right wavelength
@@ -270,13 +269,13 @@ class FMPlanetPSF(NoFM):
             
             # if specified, make field dependent PSF correction
             if self.field_dependent_correction is not None:
-
                 # find distance from center in x and y dimensions
                 dx = x_grid[stamp_len, stamp_width]
                 dy = y_grid[stamp_len, stamp_width]
+                minx = min(x_vec_stamp_centered, key=abs) 
+                miny = min(y_vec_stamp_centered, key=abs)
                 whiteboard[stamp_len, stamp_width] = \
                         self.field_dependent_correction(whiteboard[stamp_len, stamp_width], dx, dy)
-    
             # write model img to output (segment is collapsed in x/y so need to reshape)
             whiteboard.shape = [input_img_shape[0] * input_img_shape[1]]
             segment_with_model = copy(whiteboard[section_ind])
