@@ -7,9 +7,42 @@ import os
 from astropy.io import fits
 import traceback 
 import pyklip.NonnegMFJAX as nmf
-from pyklip.nmf_imaging import data_masked_only
-from pyklip.nmf_imaging import data_masked_only_revert
 
+def data_masked_only(data, mask = None):
+    """ Return the data where the same regions are ignored in all the data
+    Args:
+        data: (p, N) where N is the number of references, p is the number of pixels in each reference
+        mask: 1d array containing only 1 and 0, with 0 will be ignored in the output
+    Returns:
+        data_focused: (p_focused, N) where p_focused is the number of 1's in mask
+    """ 
+    p_focused = int(np.nansum(mask)) # number of pixels that will be included
+    if len(data.shape) == 2:
+        data_focused = np.zeros((p_focused, data.shape[1])) # output
+
+        for i in range(data.shape[1]):
+            data_focused[:, i] = data[:, i][np.where(mask == 1)]
+    elif len(data.shape) == 1:
+        data_focused = data[mask == 1] # output
+        data_focused = data_focused[:, np.newaxis]
+    
+    return data_focused
+    
+def data_masked_only_revert(data, mask = None):
+    """ Return the data where the same regions were ignored in all the data
+    Args:
+        data: (p_focused, N) where N is the number of references, p_focused is the number of 1's in mask
+        mask: 1d array containing only 1 and 0, with 0 was previously ignored in the input
+    Returns:
+        data_focused_revert: (p, N) where p is the number of pixels in each reference
+    """ 
+    data_focused_revert = np.zeros((len(mask), data.shape[1])) * np.nan
+    
+    for i in range(data.shape[1]):
+        data_focused_revert[np.where(mask == 1), i] = data[:, i]
+    
+    return data_focused_revert
+ 
 ## original NMFcomponents: returns components, see nmf_imaging     
 def NMFcomponents(ref, ref_err = None, mask = None, n_components = None, maxiters = 1e3, oneByOne = False, path_save = None):
     """ref and ref_err should be (n * height * width) where n is the number of references. Mask is the region we are interested in.
@@ -274,7 +307,7 @@ def NMFbff(trg, model, fracs = None):
     return fracs[np.where(std_infos == np.nanmin(std_infos))]    
 
 ## original last func: nmf_math   
-def nmf_func(trg, refs, trg_err = None, refs_err = None, mask = None, componentNum = 5, maxiters = 1e5, oneByOne = True, trg_type = 'disk'):
+def nmf_func(trg, refs, trg_err = None, refs_err = None, mask = None, componentNum = [5], maxiters = 1e5, oneByOne = True, trg_type = 'disk'):
     """ Main NMF function for high contrast imaging.
     Input:  trg (1D array): target image, dimension: height * width.
             refs (2D array): reference cube, dimension: referenceNumber * height * width.
@@ -300,28 +333,30 @@ def nmf_func(trg, refs, trg_err = None, refs_err = None, mask = None, componentN
     if trg_err is None:
         trg_err = np.ones(trg.shape)
 
-    if componentNum > refs.shape[0]:
-        componentNum = refs.shape[0]
+    maxcomponents = max(componentNum)
 
-    try: 
-        components = NMFcomponents(refs, ref_err = refs_err, n_components = componentNum, maxiters = maxiters, oneByOne=oneByOne, 
-                                   mask = mask)
-    except Exception as e:
-        # Print out the error message
-        print(f"An error occurred: {e}")
-        traceback.print_exc()
+    if maxcomponents > refs.shape[0]:
+            maxcomponents = refs.shape[0].copy()
     
-    model = NMFmodelling(trg = trg, components = components, n_components = componentNum, trg_err = trg_err, mask_components=mask,
-                             maxiters=maxiters, trgThresh=0.0)
-
-    #Bff Procedure below: for planets, it will not be implemented.
-    if trg_type == 'p' or trg_type == 'planet': # planets
-        best_frac = 1
-    elif trg_type == 'd' or trg_type == 'disk': # disks
-        best_frac = NMFbff(trg = trg, model = model)
+    components = NMFcomponents(refs, ref_err = refs_err, n_components = maxcomponents, maxiters = maxiters, 
+                                oneByOne=oneByOne, mask = mask)
     
-    result = NMFsubtraction(trg = trg, model = model, mask = mask, frac = best_frac)
-    result = result.flatten()
-    result[badpix] = np.nan
+    results = []
+    for num in componentNum:
+        model = NMFmodelling(trg = trg, components = components[:num], n_components = num, trg_err = trg_err, mask_components=mask,
+                            maxiters=maxiters, trgThresh=0.0)
+        
+        #Bff Procedure below: for planets, it will not be implemented.
+        if trg_type == 'p' or trg_type == 'planet': # planets
+            best_frac = 1
+        elif trg_type == 'd' or trg_type == 'disk': # disks
+            best_frac = NMFbff(trg = trg, model = model)
 
-    return result
+        result = NMFsubtraction(trg = trg, model = model, mask = mask, frac = best_frac)
+        result = result.flatten()
+        result[badpix] = np.nan
+        results.append(result)
+
+    results = np.array(results).T
+
+    return results

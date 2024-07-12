@@ -731,8 +731,7 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             klipped = klipped.reshape(klipped.shape[0], 1)
         elif algo.lower() == 'nmf_jax':
             import pyklip.nmf_imaging_JAX as nmf_imaging_jax
-            klipped = nmf_imaging_jax.nmf_func(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis[0])
-            klipped = klipped.reshape(klipped.shape[0], 1)
+            klipped = nmf_imaging_jax.nmf_func(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis)
         elif algo.lower() == "none":
             klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis
             klipped = klipped.T # retrun in shape (p, b) as expected
@@ -1189,9 +1188,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
         if np.size(numbasis) > 1:
             raise ValueError("NMF can only be run with one basis")
     elif algo.lower() == 'nmf_jax':
+        # check to see the correct nmf_jax packages are installed
         import pyklip.nmf_imaging_JAX as nmf_imaging_jax
-        if np.size(numbasis) > 1:
-            raise ValueError("NMF can only be run with one basis")
     elif algo.lower() == 'none':
         pass
     else:
