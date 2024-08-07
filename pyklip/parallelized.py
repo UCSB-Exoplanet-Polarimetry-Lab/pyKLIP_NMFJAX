@@ -34,7 +34,8 @@ if debug is True:
 
 
 def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_shape, output_imgs, output_imgs_shape,
-                pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_library, psf_library_shape):
+                pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_library, psf_library_shape,
+                datamasks, datamasks_shape, rdimasks, rdimasks_shape):
     """
     Initializer function for the thread pool that initializes various shared variables. Main things to note that all
     except the shapes are shared arrays (mp.Array).
@@ -54,7 +55,7 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
         psf_library: array of shape (N_lib, y, x) with N_lib PSF library images
     """
     global original, original_shape, aligned, aligned_shape, output, output_shape, img_pa, img_wv, img_center, img_filenums, \
-        psf_lib, psf_lib_shape
+        psf_lib, psf_lib_shape, data_mask, data_mask_shape, rdi_mask,rdi_mask_shape
     # original images from files to read and align&scale. Shape of (N,y,x)
     original = original_imgs
     original_shape = original_imgs_shape
@@ -71,6 +72,12 @@ def _tpool_init(original_imgs, original_imgs_shape, aligned_imgs, aligned_imgs_s
     img_filenums = filenums_imgs
     psf_lib = psf_library
     psf_lib_shape = psf_library_shape
+
+    # mask parameters
+    data_mask = datamasks 
+    data_mask_shape = datamasks_shape
+    rdi_mask = rdimasks
+    rdi_mask_shape = rdimasks_shape
 
 
 def _save_spectral_cubes(dataset, pixel_weights, time_collapse, numbasis, flux_cal, outputdirpath, fileprefix):
@@ -187,7 +194,7 @@ def _arraytonumpy(shared_array, shape=None, dtype=None):
 
 def _align_and_scale_per_image(img_index, aligned_center, ref_wv, dtype=None):
     """
-    Aligns and scales the an individual image (used for pyklip lite)
+    Aligns and scales an individual image (used for pyklip lite)
 
     Args:
         img_index: index of image for the shared arrays
@@ -408,13 +415,25 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     #export some of klip.klip_math functions to here to minimize computation repeats
 
     #load aligned images for this wavelength
-    #if lite memory, the aligend array has a different size
+    #if lite memory, the aligned array has a different size
+    #TODO: change size for rdi masks
     if lite:
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]),dtype=dtype)
+        data_masks = _arraytonumpy(data_mask, (aligned_shape[0], aligned_shape[1] * aligned_shape[2]),dtype=dtype)
     else:
         aligned_imgs = _arraytonumpy(aligned, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
+        data_masks = _arraytonumpy(data_mask, (aligned_shape[0], aligned_shape[1], aligned_shape[2] * aligned_shape[3]),dtype=dtype)[wv_index]
 
     ref_psfs = aligned_imgs[:,  section_ind[0]]
+
+    if data_mask is None:
+        data_masks = None
+    else:
+        data_masks = data_masks[:, section_ind[0]]
+    if rdi_mask is None:
+        rdi_masks = None
+    else:
+        rdi_masks = rdi_mask[:, section_ind[0]]
 
     if algo.lower() == 'empca':
 
@@ -422,6 +441,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
         try:
             full_model = np.zeros(ref_psfs.shape)
             ref_psfs[np.isnan(ref_psfs)] = 0.
+            # TODO: do I need to add this for empca? - emma
             good_ind = np.sum(ref_psfs > 0., axis=0) > numbasis[-1]
 
             # set weights for empca
@@ -447,7 +467,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     
     #do the same for the reference PSFs
     #playing some tricks to vectorize the subtraction of the mean for each row
-    if algo.lower() == 'nmf'  or 'nmf_jax': # do not do mean subtraction for NMF
+    if algo.lower() == 'nmf' or 'nmf_jax': # do not do mean subtraction for NMF
         ref_psfs_mean_sub = ref_psfs
     else:
         ref_psfs_mean_sub = ref_psfs - np.nanmean(ref_psfs, axis=1)[:, None]
@@ -463,6 +483,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
     if ref_psfs_mean_sub.shape[0] == 1:
         # EDGE CASE: if there's only 1 image, we need to reshape to covariance matrix into a 2D matrix
         covar_psfs = covar_psfs.reshape((1,1))
+        # TODO: do we need an edge case for masks?
 
     if corr_smooth > 0:
         # calcualte the correlation matrix, with possible smoothing  
@@ -502,7 +523,6 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
         covar_diag = np.diagflat(1./np.sqrt(np.diag(covar_psfs)))
         corr_psfs = np.dot( np.dot(covar_diag, covar_psfs ), covar_diag)
         
-
     #grab the parangs
     parangs = _arraytonumpy(img_pa, dtype=dtype)
     filenums = _arraytonumpy(img_filenums, dtype=dtype)
@@ -513,7 +533,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
                                             parang, filenum, wavelength, wv_index, (radstart + radend) / 2.0, numbasis,
                                             maxnumbasis, minmove, minrot, maxrot, mode, psflib_good=psflib_good,
                                             psflib_corr=psflib_corr, spectrum=spectrum, lite=lite, dtype=dtype,
-                                            algo=algo, verbose=verbose)
+                                            algo=algo, verbose=verbose, datamasks = data_masks, rdimasks = rdi_masks)
         except (ValueError, RuntimeError, TypeError) as err:
             print(err.args)
             return False
@@ -529,7 +549,7 @@ def _klip_section_multifile(scidata_indices, wavelength, wv_index, numbasis, max
 def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr, parang, filenum, wavelength, wv_index, avg_rad,
                                     numbasis, maxnumbasis, minmove, minrot, maxrot, mode,
                                     psflib_good=None, psflib_corr=None,
-                                    spectrum=None, lite=False, dtype=None, algo='klip', verbose=True):
+                                    spectrum=None, lite=False, dtype=None, algo='klip', verbose=True, datamasks = None, rdimasks = None):
     """
     Imitates the rest of _klip_section for the multifile code. Does the rest of the PSF reference selection and runs KLIP.
 
@@ -565,12 +585,17 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
     """
     if dtype is None:
         dtype = ctypes.c_float
-        
     # grab the files suitable for reference PSF
     # load shared arrays for wavelengths, PAs, and filenumbers
     wvs_imgs = _arraytonumpy(img_wv, dtype=dtype)
     pa_imgs = _arraytonumpy(img_pa, dtype=dtype)
     filenums_imgs = _arraytonumpy(img_filenums, dtype=dtype)
+    
+    # TODO: don't want to pass in masks, want to save to shared memory
+    data_masks = datamasks
+    rdi_masks = rdimasks
+    #print(data_mask.shape, data_masks.shape)
+
     # calculate average movement in this section for each PSF reference image w.r.t the science image
     moves = klip.estimate_movement(avg_rad, parang, pa_imgs, wavelength, wvs_imgs, mode)
     # check all the PSF selection criterion
@@ -671,19 +696,26 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
 
         # grab smaller set of reference PSFs
         ref_psfs_selected = ref_psfs[good_file_ind[0][closest_matched], :]
-        # grab the new and smaller covariance matrix
+        if data_mask is not None:
+            data_masks_selected = data_masks[good_file_ind[0][closest_matched], :]
         covar_files = covar_files[closest_matched.reshape(np.size(closest_matched), 1), closest_matched]
 
         if include_rdi:
             rdi_psfs_selected = psf_library[rdi_closest_matched]
             rdi_psfs_selected = rdi_psfs_selected[:, section_ind[0]]
+            if rdi_masks is None:
+                rdi_masks_selected = None
+            else:
+                rdi_masks_selected = rdi_masks[rdi_closest_matched]
+                rdi_masks_selected = rdi_masks_selected[:, section_ind[0]]
     else:
         # else just grab the reference PSFs for all the valid files
         ref_psfs_selected = ref_psfs[good_file_ind[0], :]
+        data_masks_selected = data_masks[good_file_ind[0], :]
 
         if include_rdi:
             rdi_psfs_selected = psf_library[psflib_good][:, section_ind[0]]
-    
+            rdi_masks_selected = rdi_masks[psflib_good][:, section_ind[0]]
     # add PSF library to reference psf list and covariance matrix if needed
     if include_rdi:
 
@@ -694,6 +726,8 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         else:
             rdi_psfs_selected = rdi_psfs_selected - np.nanmean(rdi_psfs_selected, axis=1)[:, None]
         rdi_psfs_selected[np.where(np.isnan(rdi_psfs_selected))] = 0
+        if rdi_mask is not None:
+            rdi_masks_selected[np.where(np.isnan(rdi_psfs_selected))] = 1
 
         # compute covariances. I could just grab these from ~20 lines above, but too lazy
         rdi_covar = np.cov(rdi_psfs_selected) # N_rdi_sel x N_rdi_sel
@@ -717,7 +751,6 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
         # append the rdi psfs to the reference PSFs
         ref_psfs_selected = np.append(ref_psfs_selected, rdi_psfs_selected, axis=0)
 
-
     # output_images has shape (N, y*x, b) and not (N, y, x, b) as normal
     output_imgs = _arraytonumpy(output, (output_shape[0], output_shape[1]*output_shape[2], output_shape[3]),dtype=dtype)
 
@@ -727,11 +760,10 @@ def _klip_section_multifile_perfile(img_num, section_ind, ref_psfs, covar,  corr
             klipped = klip.klip_math(aligned_imgs[img_num, section_ind[0]], ref_psfs_selected, numbasis, covar_psfs=covar_files)
         elif algo.lower() == 'nmf':
             import pyklip.nmf_imaging as nmf_imaging
-            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis[0])
-            klipped = klipped.reshape(klipped.shape[0], 1)
+            klipped = nmf_imaging.nmf_math(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis, ignore_mask = data_masks_selected.T)
         elif algo.lower() == 'nmf_jax':
             import pyklip.nmf_imaging_JAX as nmf_imaging_jax
-            klipped = nmf_imaging_jax.nmf_func(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis)
+            klipped = nmf_imaging_jax.nmf_func(aligned_imgs[img_num, section_ind].ravel(), ref_psfs_selected, componentNum=numbasis, mask = data_masks_selected.T)
         elif algo.lower() == "none":
             klipped = np.array([aligned_imgs[img_num, section_ind[0]] for _ in range(len(numbasis))]) # duplicate by requested numbasis
             klipped = klipped.T # retrun in shape (p, b) as expected
@@ -868,7 +900,8 @@ def generate_noise_maps(imgs, aligned_center, dr, IWA=None, OWA=None, numthreads
 def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode='ADI+SDI', annuli=5, subsections=4,
                            movement=3, numbasis=None, aligned_center = None, numthreads=None, minrot=0, maxrot=360,
                            annuli_spacing="constant", maxnumbasis=None, corr_smooth=1, 
-                           spectrum=None, dtype=None, algo='klip', compute_noise_cube=False, **kwargs):
+                           spectrum=None, dtype=None, algo='klip', compute_noise_cube=False, 
+                           datamasks = None, rdimasks = None, **kwargs):
     """
     multithreaded KLIP PSF Subtraction, has a smaller memory foot print than the original
 
@@ -1007,14 +1040,34 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
     filenums_imgs_np = _arraytonumpy(filenums_imgs,dtype=dtype)
     filenums_imgs_np[:] = filenums
 
+    if datamasks is not None:
+        data_mask = mp.Array(mp_data_type, np.size(datamasks))
+        data_mask_np = _arraytonumpy(psf_lib, datamasks.shape, dtype=dtype)
+        data_mask_np[:] = datamasks
+        data_mask_shape = datamasks.shape
+    else:
+        data_mask = None 
+        data_mask_shape = None 
+    
+    if rdimasks is not None:
+        rdi_mask = mp.Array(mp_data_type, np.size(rdimasks))
+        rdi_mask_np = _arraytonumpy(psf_lib, rdimasks.shape, dtype=dtype)
+        rdi_mask_np[:] = rdimasks
+        rdi_mask_shape = rdimasks.shape
+    else:
+        rdi_mask = None
+        rdi_mask_shape = None
+
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None), maxtasksperchild=50)
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None,
+                              data_mask, data_mask_shape, rdi_mask, rdi_mask_shape), maxtasksperchild=50)
 
     # SINGLE THREAD DEBUG PURPOSES ONLY
     if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None)
+                              output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, None, None,
+                              data_mask, data_mask_shape, rdi_mask, rdi_mask_shape)
 
     print("Total number of tasks for KLIP processing is {0}".format(tot_iter))
     jobs_complete = 0
@@ -1049,7 +1102,6 @@ def klip_parallelized_lite(imgs, centers, parangs, wvs, filenums, IWA, OWA=None,
 
         #perform KLIP asynchronously for each group of files of a specific wavelength and section of the image
         lite = True
-
         if not debug:
             outputs += [tpool.apply_async(_klip_section_multifile,
                                           args=(scidata_indices, this_wv, wv_index, numbasis,
@@ -1114,7 +1166,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                       numbasis=None, aligned_center=None, numthreads=None, minrot=0, maxrot=360, 
                       annuli_spacing="constant", maxnumbasis=None, corr_smooth=1,
                       spectrum=None, psf_library=None, psf_library_good=None, psf_library_corr=None,
-                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False, verbose = True):
+                      save_aligned = False, restored_aligned = None, dtype=None, algo='klip', compute_noise_cube=False, verbose = True,
+                      datamasks = None, rdimasks = None):
     """
     Multitprocessed KLIP PSF Subtraction
 
@@ -1185,10 +1238,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
     elif algo.lower() == 'nmf':
         # check to see the correct nmf packages are installed 
         import pyklip.nmf_imaging as nmf_imaging
-        if np.size(numbasis) > 1:
-            raise ValueError("NMF can only be run with one basis")
     elif algo.lower() == 'nmf_jax':
-        # check to see the correct nmf_jax packages are installed
+        # check to see the correct nmf_jax packages are installed 
         import pyklip.nmf_imaging_JAX as nmf_imaging_jax
     elif algo.lower() == 'none':
         pass
@@ -1302,6 +1353,27 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
     else:
         psf_lib = None
         psf_lib_shape = None
+    
+    #TODO
+    ## for datamasks -- need to see how shared memory is used so that this is names/used correctly
+    if datamasks is not None:
+        data_mask = mp.Array(mp_data_type, np.size(datamasks))
+        data_mask_np = _arraytonumpy(data_mask, datamasks.shape, dtype=dtype)
+        data_mask_np[:] = datamasks
+        data_mask_shape = datamasks.shape
+    else:
+        data_mask = None
+        data_mask_shape = None   
+    ## for rdimasks -- need to see how shared memory is used so that this is names/used correctly
+    if rdimasks is None:
+        rdi_mask = None
+        rdi_mask_shape = None 
+    else:
+        rdi_mask = mp.Array(mp_data_type, np.size(rdimasks))
+        rdi_mask_np = _arraytonumpy(rdi_mask, rdimasks.shape, dtype=dtype)
+        rdi_mask_np[:] = rdimasks
+        rdi_mask_shape = rdimasks.shape
+    # should I add these to the mp.Pool? I do below, but idk
 
     if restored_aligned is not None:
         recentered_imgs_np = _arraytonumpy(recentered_imgs, recentered_imgs_shape,dtype=dtype)
@@ -1309,13 +1381,15 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
 
     tpool = mp.Pool(processes=numthreads, initializer=_tpool_init,
                     initargs=(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape),
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape, 
+                            data_mask, data_mask_shape, rdi_mask, rdi_mask_shape),
                     maxtasksperchild=50)
 
     # # SINGLE THREAD DEBUG PURPOSES ONLY
     if debug:
         _tpool_init(original_imgs, original_imgs_shape, recentered_imgs, recentered_imgs_shape, output_imgs,
-                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape)
+                            output_imgs_shape, pa_imgs, wvs_imgs, centers_imgs, filenums_imgs, psf_lib, psf_lib_shape,
+                            data_mask, data_mask_shape, rdi_mask, rdi_mask_shape)
 
 
     if restored_aligned is None:
@@ -1364,7 +1438,8 @@ def klip_parallelized(imgs, centers, parangs, wvs, filenums, IWA, OWA=None, mode
                                                 aligned_center, minrot, maxrot, spectrum,
                                                 mode, corr_smooth,
                                                 psf_library_good, psf_library_corr, False,
-                                                dtype, algo, verbose)
+                                                dtype, algo, verbose,
+                                                datamasks, rdimasks)
                         for phistart,phiend in phi_bounds
                         for radstart, radend in rad_bounds]
 
@@ -1457,7 +1532,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         restore_aligned: The aligned and scaled images from a previous run of klip_dataset
         				(usually restored_aligned = dataset.aligned_and_scaled)
         dtype:          data type of the arrays. Should be either ctypes.c_float(default) or ctypes.c_double
-        algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'nmf_jax', 'none'). None will run no PSF subtraction. 
+        algo (str):     algorithm to use ('klip', 'nmf', 'empca', 'nmf_jax','none'). None will run no PSF subtraction. 
         skip_derot:     if True, skips derotating the images. **Note, the saved time-collapsed cubes may not make sense**
         time_collapse:  how to collapse the data in time. Currently support: "mean", "weighted-mean", 'median', "weighted-median"
         wv_collapse:    how to collapse the data in wavelength. Currently support: 'median', 'mean', 'trimmed-mean'
@@ -1494,7 +1569,17 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         else:
             numbasis = np.array([numbasis])
 
-
+    if dataset.datamasks is not None:
+        dataset.datamasks = np.array(dataset.datamasks)
+        datamasks = dataset.datamasks
+    else:
+        datamasks = None 
+    if dataset.rdimasks is not None:
+        dataset.rdimasks = np.array(dataset.rdimasks)
+        rdimasks = dataset.rdimasks
+    else:
+        rdimasks = None
+    print('defined masks in klip_dataset')
     time_collapse = time_collapse.lower()
     weighted = "weighted" in time_collapse # boolean whether to use weights
 
@@ -1609,7 +1694,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
                     'spectrum':spectra_template, 'psf_library':master_library,
                     'psf_library_corr':rdi_corr_matrix, 'psf_library_good':rdi_good_psfs,
                     'save_aligned' : save_aligned, 'restored_aligned' : restored_aligned, 'dtype':dtype,
-                    'algo':algo, 'compute_noise_cube':weighted, 'verbose':verbose}
+                    'algo':algo, 'compute_noise_cube':weighted, 'verbose':verbose, 'datamasks': datamasks, 'rdimasks': rdimasks}
 
     #Set MLK parameters
     if mkl_exists:
@@ -1645,7 +1730,7 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         # construct the output wcs info, but it's currently just a copy of the input one until we rotate it
         dataset.output_wcs = np.array([w.deepcopy() if w is not None else None for w in dataset.wcs])
 
-    # For ADI only datasets, can run KLIP on each wavelenght separately
+    # For ADI only datasets, can run KLIP on each wavelength separately
     else:
         # set up output, output centers, and output wcs variables but they are the same as the input for now
         dataset.output_centers = np.copy(dataset.centers)
@@ -1686,6 +1771,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             # if we need to save the aligned_and_scaled images, put them in a list
             if save_aligned:
                 dataset.aligned_and_scaled.append(klip_output[-1][0])
+        outputtoprint = dataset.output.copy()
+
 
         # convert lists to numpy arrays
         dataset.output = np.array(dataset.output)
@@ -1713,7 +1800,6 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
             stddev_frames = np.reshape(stddev_frames, (stddev_frames.shape[0], stddev_frames.shape[1]*stddev_frames.shape[2], stddev_frames.shape[3], stddev_frames.shape[4]) )
         else:
             stddev_frames = 1
-
     # TODO: handling of only a single numbasis
     # derotate all the images
     # flatten so it's just a 3D array (collapse KL and Nframes dimensions)
@@ -1774,4 +1860,4 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     if mkl_exists:
         mkl.set_num_threads(old_mkl)
 
-    return
+    return outputtoprint
