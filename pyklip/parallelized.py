@@ -1610,6 +1610,22 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
         rdi_corr_matrix = None
         rdi_good_psfs = None
 
+    # if using NMF then bump up the minimimm value to be greater than 0. 
+    if 'nmf' in algo.lower(): 
+        data_offset = 0.
+        dataset_min = np.nanmin(dataset.input)
+        if dataset_min < 0:
+            dataset.input = dataset.input - dataset_min + 1e-10
+            data_offset = dataset_min + 1e-10    
+        
+        if "RDI" in mode:
+            rdi_dataset_min = np.nanmin(master_library)
+            if rdi_dataset_min < 0:
+                master_library = master_library - rdi_dataset_min + 1e-10
+    else: 
+        data_offset = 0.
+
+    print("Data Offsets: ", data_offset)
     ######### End chcking inputs ########
 
     # Save the WCS and centers info, incase we need it again!
@@ -1841,6 +1857,8 @@ def klip_dataset(dataset, mode='ADI+SDI', outputdir=".", fileprefix="", annuli=5
     dataset.output_centers[:,0] = aligned_center[0]
     dataset.output_centers[:,1] = aligned_center[1]
 
+    #If the data was offset earlier, add it back in. 
+    dataset.output = dataset.output + data_offset
    
     # valid output path and write iamges
     outputdirpath = os.path.realpath(outputdir)
