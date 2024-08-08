@@ -61,6 +61,8 @@ def NMFcomponents(ref, ref_err = None, mask = None, n_components = None, maxiter
 
     if mask is None:
         mask = np.ones_like(ref)
+    else: 
+        mask = mask.T
         
     # ignore certain values in component construction
     mask[ref <= 0] = 0 # 1. negative values
@@ -85,7 +87,7 @@ def NMFcomponents(ref, ref_err = None, mask = None, n_components = None, maxiter
     ref_err_columnized = data_masked_only(ref_err, mask = mask_mark)
     mask_columnized = data_masked_only(mask, mask = mask_mark)
     mask_columnized_boolean = np.array(data_masked_only(mask, mask = mask_mark), dtype = bool)
-    ref_columnized[mask_columnized == 0] = 0 # assign 0 to ignored values, should not impact the final result given the usage of mask_columnized_boolean
+    # ref_columnized[mask_columnized == 0] = 0 # assign 0 to ignored values, should not impact the final result given the usage of mask_columnized_boolean
     ref_err_columnized[mask_columnized == 0] = np.nanmax(ref_err_columnized) # assign max uncertainty to ignored values, should not impact the final result
 
     
@@ -343,7 +345,7 @@ def nmf_func(trg, refs, trg_err = None, refs_err = None, mask = None, componentN
     
     results = []
     for num in componentNum:
-        model = NMFmodelling(trg = trg, components = components[:num], n_components = num, trg_err = trg_err, mask_components=mask,
+        model = NMFmodelling(trg = trg, components = components[:num], n_components = num, trg_err = trg_err, mask_components=None,
                             maxiters=maxiters, trgThresh=0.0)
         
         #Bff Procedure below: for planets, it will not be implemented.
@@ -352,7 +354,11 @@ def nmf_func(trg, refs, trg_err = None, refs_err = None, mask = None, componentN
         elif trg_type == 'd' or trg_type == 'disk': # disks
             best_frac = NMFbff(trg = trg, model = model)
 
-        result = NMFsubtraction(trg = trg, model = model, mask = mask, frac = best_frac)
+        # print("Doing Subtraction")
+        mask_components = np.ones(trg.shape)
+        mask_components[np.where(np.isnan(components[0]))] = np.nan
+
+        result = NMFsubtraction(trg = trg, model = model, mask = mask_components, frac = best_frac)
         result = result.flatten()
         result[badpix] = np.nan
         results.append(result)

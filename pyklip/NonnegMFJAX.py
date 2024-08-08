@@ -375,7 +375,7 @@ def SolveNMF(self_maxiters, self_W, self_H, self_tol, self_X, self_V, self_V_siz
 
 
     time_used = (time()-t0)/60.
-    print("Took "+str(time_used)+" minutes to reach current solution.", flush=True)
+    # print("Took "+str(time_used)+" minutes to reach current solution.", flush=True)
         #This is really uneeded since JAX JIT doesn't work well with time
 
     return chi2, niter, self_H, self_W
